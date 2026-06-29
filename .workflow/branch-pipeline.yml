@@ -30,6 +30,7 @@ stages:
         pythonVersion: '3.12'
         commands:
           - export PATH="$HOME/.local/bin:$PATH"
+          - python3 -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
           - python3 -m pip install --upgrade pip -q
           - python3 -m pip install ruff -q
           - python3 -m ruff check services/ tests/
@@ -40,6 +41,7 @@ stages:
         pythonVersion: '3.12'
         commands:
           - export PATH="$HOME/.local/bin:$PATH"
+          - python3 -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
           - python3 -m pip install --upgrade pip -q
           - python3 -m pip install -r services/mcp_crawl/requirements.txt -q
           - python3 -m pip install -r services/mcp_wewe/requirements.txt -q
