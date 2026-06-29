@@ -17,7 +17,7 @@ variables:
   MONGO_ROOT_PASSWORD: pr_agent_2024
 stages:
   # ═══════════════════════════════════════════════════════════
-  # Lint + Test（快速反馈）
+  # Lint + Test
   # ═══════════════════════════════════════════════════════════
   - name: check
     displayName: 代码检查与测试
@@ -29,18 +29,20 @@ stages:
         displayName: Python Lint (ruff)
         pythonVersion: '3.12'
         commands:
+          - export PATH="$HOME/.local/bin:$PATH"
           - python3 -m pip install --upgrade pip -q
           - python3 -m pip install ruff -q
-          - ruff check services/ tests/
-          - ruff format --check services/ tests/
+          - python3 -m ruff check services/ tests/
+          - python3 -m ruff format --check services/ tests/
       - step: build@python
         name: test_python
         displayName: Python Test (pytest)
         pythonVersion: '3.12'
         commands:
+          - export PATH="$HOME/.local/bin:$PATH"
           - python3 -m pip install --upgrade pip -q
           - python3 -m pip install -r services/mcp_crawl/requirements.txt -q
           - python3 -m pip install -r services/mcp_wewe/requirements.txt -q
           - python3 -m pip install -r services/backend/requirements.txt -q
           - python3 -m pip install pytest pytest-asyncio pytest-cov pytest-mock pytest-timeout httpx mongomock -q
-          - pytest tests/ --cov=services --cov-report=term-missing -v --tb=short --timeout=60
+          - python3 -m pytest tests/ --cov=services --cov-report=term-missing -v --tb=short --timeout=60

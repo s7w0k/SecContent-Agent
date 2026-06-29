@@ -24,10 +24,11 @@ stages:
         displayName: Python Lint (ruff)
         pythonVersion: '3.12'
         commands:
+          - export PATH="$HOME/.local/bin:$PATH"
           - python3 -m pip install --upgrade pip -q
           - python3 -m pip install ruff -q
-          - ruff check services/ tests/
-          - ruff format --check services/ tests/
+          - python3 -m ruff check services/ tests/
+          - python3 -m ruff format --check services/ tests/
 
   # ═══════════════════════════════════════════════════════════
   # 阶段二：Test
@@ -44,12 +45,13 @@ stages:
         displayName: Python Test (pytest)
         pythonVersion: '3.12'
         commands:
+          - export PATH="$HOME/.local/bin:$PATH"
           - python3 -m pip install --upgrade pip -q
           - python3 -m pip install -r services/mcp_crawl/requirements.txt -q
           - python3 -m pip install -r services/mcp_wewe/requirements.txt -q
           - python3 -m pip install -r services/backend/requirements.txt -q
           - python3 -m pip install pytest pytest-asyncio pytest-cov pytest-mock pytest-timeout httpx mongomock -q
-          - pytest tests/ --cov=services --cov-report=term-missing --cov-report=xml -v --tb=short --timeout=60
+          - python3 -m pytest tests/ --cov=services --cov-report=term-missing --cov-report=xml -v --tb=short --timeout=60
           # 覆盖率门禁
           - |
             python3 -c "
