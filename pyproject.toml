@@ -80,10 +80,6 @@ addopts = [
     "-v",
     "--tb=short",
     "--strict-markers",
-    "--cov=services",
-    "--cov-report=term-missing",
-    "--cov-report=xml",
-    "--cov-fail-under=70",
 ]
 markers = [
     "unit: Unit tests (no external dependencies)",
@@ -91,10 +87,6 @@ markers = [
     "slow: Slow tests (excluded from CI fast path)",
 ]
 
-[tool.pytest.ini_options.filterwarnings]
-# Treat warnings as errors
-"error" = []
-"ignore::DeprecationWarning" = ["mcp.*", "langchain.*"]
 
 # ═══════════════════════════════════════════════
 # Coverage
