@@ -1,0 +1,22 @@
+# Backend — PR Agent Demo 核心后端
+# Python 3.12+
+
+# Web 框架
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+httpx>=0.27.0
+
+# 数据库
+motor>=3.7.0
+pymongo>=4.10.0
+
+# 配置
+pydantic>=2.10.0
+pydantic-settings>=2.6.0
+
+# LLM（阶段二：LangChain + LangGraph）
+# langchain>=0.3.0
+# langgraph>=0.2.0
+
+# 工具
+python-multipart>=0.0.12

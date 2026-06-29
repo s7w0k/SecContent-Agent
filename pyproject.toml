@@ -52,8 +52,11 @@ select = [
     "RUF", # Ruff-specific rules
 ]
 ignore = [
-    "E501",  # line-too-long (handled by formatter)
-    "B008",  # do-not-perform-function-calls-in-argument-defaults
+    "E501",   # line-too-long (handled by formatter)
+    "B008",   # do-not-perform-function-calls-in-argument-defaults
+    "RUF001", # ambiguous fullwidth chars in Chinese docstrings
+    "RUF002", # ambiguous fullwidth chars in Chinese docstrings
+    "RUF003", # ambiguous fullwidth chars in Chinese comments
 ]
 
 [tool.ruff.lint.isort]
