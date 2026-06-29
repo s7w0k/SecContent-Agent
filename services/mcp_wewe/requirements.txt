@@ -1,0 +1,27 @@
+# ═══════════════════════════════════════════════════════════
+# wewe_mcp — WeWe RSS MCP Server 依赖
+# ═══════════════════════════════════════════════════════════
+
+# ── MCP 核心（wewe_mcp_server.py）─────────────────────────
+mcp>=1.0.0
+
+# ── RSS & 网页抓取（feed_tools.py）────────────────────────
+feedparser>=6.0
+requests>=2.32
+beautifulsoup4>=4.12
+python-dateutil>=2.8
+
+# ── LLM 调用（feed_tools.py — DeepSeek API）──────────────
+openai>=1.50
+
+# ── HTTP 桥接（http_mcp_bridge.py）────────────────────────
+fastapi>=0.110
+uvicorn>=0.30
+
+# ── LangChain Agent 验证（test_mcp_agent.py）───────────────
+langchain>=0.3
+langchain-openai>=0.3
+langchain-mcp-adapters>=0.1
+
+# ── 可选：二维码生成（account_tools.py）───────────────────
+qrcode>=7.4

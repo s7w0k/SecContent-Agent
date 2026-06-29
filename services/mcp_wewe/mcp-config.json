@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "wewe-rss": {
+      "command": "python",
+      "args": ["wewe_mcp_server.py"],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "WEWE_RSS_URL": "http://49.232.145.182:4001",
+        "WEWE_AUTH_CODE": "123567",
+        "DEEPSEEK_API_KEY": "sk-your-key-here"
+      }
+    }
+  }
+}
