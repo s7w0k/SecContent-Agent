@@ -14,39 +14,33 @@ triggers:
         - main
         - master
 variables:
-  PYTHON_VERSION: '3.12'
   MONGO_ROOT_PASSWORD: pr_agent_2024
 stages:
   # ═══════════════════════════════════════════════════════════
-  # 阶段一：Lint（快速反馈，并行执行）
+  # Lint + Test（快速反馈）
   # ═══════════════════════════════════════════════════════════
-  - name: lint
-    displayName: 代码检查
+  - name: check
+    displayName: 代码检查与测试
     strategy: naturally
     trigger: auto
     steps:
       - step: build@python
         name: lint_python
         displayName: Python Lint (ruff)
-        pythonVersion: ${PYTHON_VERSION}
+        pythonVersion: '3.12'
         commands:
           - python3 -m pip install --upgrade pip -q
-          - pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-          - pip3 install ruff -q
+          - python3 -m pip install ruff -q
           - ruff check services/ tests/
           - ruff format --check services/ tests/
       - step: build@python
         name: test_python
         displayName: Python Test (pytest)
-        pythonVersion: ${PYTHON_VERSION}
+        pythonVersion: '3.12'
         commands:
           - python3 -m pip install --upgrade pip -q
-          - pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-          # 安装所有服务依赖
-          - pip3 install -r services/mcp_crawl/requirements.txt -q
-          - pip3 install -r services/mcp_wewe/requirements.txt -q
-          - pip3 install -r services/backend/requirements.txt -q
-          - pip3 install pytest pytest-asyncio pytest-cov pytest-mock httpx mongomock -q
-          # 运行测试
-          - cd $GITEE_WORKSPACE
+          - python3 -m pip install -r services/mcp_crawl/requirements.txt -q
+          - python3 -m pip install -r services/mcp_wewe/requirements.txt -q
+          - python3 -m pip install -r services/backend/requirements.txt -q
+          - python3 -m pip install pytest pytest-asyncio pytest-cov pytest-mock pytest-timeout httpx mongomock -q
           - pytest tests/ --cov=services --cov-report=term-missing -v --tb=short --timeout=60
