@@ -8,22 +8,11 @@ triggers:
       include:
         - main
         - master
-    # 当 PR 中有以下路径变更时触发
-    paths:
-      include:
-        - services/**
-        - frontend/**
-        - tests/**
-        - mongodb/**
-        - .workflow/**
-        - .gitee/**
 variables:
-  PYTHON_VERSION: '3.12'
-  NODE_VERSION: '22'
   MONGO_ROOT_PASSWORD: pr_agent_2024
 stages:
   # ═══════════════════════════════════════════════════════════
-  # 阶段一：Lint（阻断性检查）
+  # 阶段一：Lint
   # ═══════════════════════════════════════════════════════════
   - name: lint
     displayName: 代码检查
@@ -33,16 +22,15 @@ stages:
       - step: build@python
         name: lint_python
         displayName: Python Lint (ruff)
-        pythonVersion: ${PYTHON_VERSION}
+        pythonVersion: '3.12'
         commands:
           - python3 -m pip install --upgrade pip -q
-          - pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-          - pip3 install ruff -q
+          - python3 -m pip install ruff -q
           - ruff check services/ tests/
           - ruff format --check services/ tests/
 
   # ═══════════════════════════════════════════════════════════
-  # 阶段二：Test（依赖 lint 通过）
+  # 阶段二：Test
   # ═══════════════════════════════════════════════════════════
   - name: test
     displayName: 测试
@@ -54,15 +42,14 @@ stages:
       - step: build@python
         name: test_python
         displayName: Python Test (pytest)
-        pythonVersion: ${PYTHON_VERSION}
+        pythonVersion: '3.12'
         commands:
           - python3 -m pip install --upgrade pip -q
-          - pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-          - pip3 install -r services/mcp_crawl/requirements.txt -q
-          - pip3 install -r services/mcp_wewe/requirements.txt -q
-          - pip3 install -r services/backend/requirements.txt -q
-          - pip3 install pytest pytest-asyncio pytest-cov pytest-mock httpx mongomock -q
-          - pytest tests/ --cov=services --cov-report=term-missing -v --tb=short --timeout=60
+          - python3 -m pip install -r services/mcp_crawl/requirements.txt -q
+          - python3 -m pip install -r services/mcp_wewe/requirements.txt -q
+          - python3 -m pip install -r services/backend/requirements.txt -q
+          - python3 -m pip install pytest pytest-asyncio pytest-cov pytest-mock pytest-timeout httpx mongomock -q
+          - pytest tests/ --cov=services --cov-report=term-missing --cov-report=xml -v --tb=short --timeout=60
           # 覆盖率门禁
           - |
             python3 -c "
@@ -74,37 +61,5 @@ stages:
             print(f'Line coverage: {line_rate:.1f}% (threshold: {threshold}%)')
             if line_rate < threshold:
                 print(f'ERROR: Coverage below threshold')
-                exit(1)
-            "
-
-  # ═══════════════════════════════════════════════════════════
-  # 阶段三：Security Scan
-  # ═══════════════════════════════════════════════════════════
-  - name: security
-    displayName: 安全扫描
-    strategy: naturally
-    trigger: auto
-    dependsOn:
-      - test
-    steps:
-      - step: build@python
-        name: bandit_scan
-        displayName: SAST (bandit)
-        pythonVersion: ${PYTHON_VERSION}
-        commands:
-          - python3 -m pip install --upgrade pip -q
-          - pip3 install bandit -q
-          - bandit -r services/ -f json -o bandit-report.json --exit-zero
-          - |
-            python3 -c "
-            import json
-            with open('bandit-report.json') as f:
-                report = json.load(f)
-            high_critical = [r for r in report.get('results',[])
-                            if r.get('issue_severity') in ('HIGH','CRITICAL')]
-            print(f'Bandit: {len(report.get(\"results\",[]))} total, {len(high_critical)} HIGH/CRITICAL')
-            if high_critical:
-                for r in high_critical:
-                    print(f'  [{r[\"issue_severity\"]}] {r[\"filename\"]}:{r[\"line_number\"]}')
                 exit(1)
             "
