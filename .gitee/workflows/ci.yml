@@ -1,0 +1,224 @@
+# ═══════════════════════════════════════════════════════════════
+# PR Agent Demo — 主 CI 流水线
+# 触发条件: push/PR 到 main 分支
+# 阶段: Lint → Test → Build → Security Scan
+# ═══════════════════════════════════════════════════════════════
+
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, "feat/*", "fix/*", "chore/*"]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+
+# ═══════════════════════════════════════════════════════════════
+# Jobs
+# ═══════════════════════════════════════════════════════════════
+
+jobs:
+  # ── 阶段一：Lint（并行）────────────────────────────────────
+  lint-python:
+    name: Lint Python (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: ruff check
+        run: ruff check services/ tests/
+
+      - name: ruff format check
+        run: ruff format --check services/ tests/
+
+  lint-frontend:
+    name: Lint Frontend (biome)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: cd frontend && npm ci
+
+      - name: biome lint
+        run: cd frontend && npx biome check src/ --max-diagnostics=50
+
+  lint-docker:
+    name: Lint Docker (hadolint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: hadolint
+        uses: hadolint/hadolint-action@v3
+        with:
+          dockerfile: |
+            services/mcp_wewe/Dockerfile
+            services/mcp_crawl/Dockerfile
+            services/backend/Dockerfile
+            frontend/Dockerfile
+          failure-threshold: warning
+
+  # ── 阶段二：Test（依赖 lint 通过）─────────────────────────
+  test-python:
+    name: Test Python (pytest)
+    needs: [lint-python]
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:7
+        env:
+          MONGO_INITDB_ROOT_USERNAME: admin
+          MONGO_INITDB_ROOT_PASSWORD: test_password
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")' --quiet"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r services/mcp_crawl/requirements.txt
+          pip install -r services/mcp_wewe/requirements.txt
+          pip install -r services/backend/requirements.txt
+          pip install pytest pytest-asyncio pytest-cov pytest-mock httpx mongomock
+
+      - name: Run tests with coverage
+        env:
+          MONGODB_URI: mongodb://admin:test_password@localhost:27017
+          DEEPSEEK_API_KEY: ci-test-mock-key
+          TAVILY_API_KEY: ci-test-mock-key
+          WEWE_RSS_URL: http://localhost:4000
+          WEWE_AUTH_CODE: ci-test-mock-code
+        run: |
+          pytest tests/ \
+            --cov=services \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            -v \
+            --tb=short \
+            --timeout=60
+
+      - name: Check coverage threshold
+        run: |
+          python -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
+          line_rate = float(root.attrib.get('line-rate', 0)) * 100
+          threshold = 70
+          print(f'Line coverage: {line_rate:.1f}% (threshold: {threshold}%)')
+          if line_rate < threshold:
+              print(f'ERROR: Coverage {line_rate:.1f}% is below threshold {threshold}%')
+              exit(1)
+          "
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  test-frontend:
+    name: Test Frontend (vitest)
+    needs: [lint-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: cd frontend && npm ci
+
+      - name: Run vitest
+        run: cd frontend && npx vitest run --reporter=verbose
+
+  # ── 阶段三：Build（依赖 test 通过）────────────────────────
+  build:
+    name: Build Docker Images
+    needs: [test-python, test-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build images
+        run: docker compose build --no-cache
+
+      - name: Verify images
+        run: |
+          docker images | grep pr-agent-demo || echo "No custom images found (using official images only)"
+
+  # ── 阶段四：Security Scan（依赖 build 通过）───────────────
+  security-scan:
+    name: Security Scan (bandit + pip-audit)
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install security tools
+        run: pip install bandit pip-audit
+
+      - name: bandit SAST
+        run: bandit -r services/ -f json -o bandit-report.json --exit-zero
+
+      - name: Check bandit results
+        run: |
+          python -c "
+          import json
+          with open('bandit-report.json') as f:
+              report = json.load(f)
+          high_critical = [r for r in report.get('results', [])
+                          if r.get('issue_severity') in ('HIGH', 'CRITICAL')]
+          print(f'Bandit: {len(report.get(\"results\",[]))} issues total, {len(high_critical)} HIGH/CRITICAL')
+          if high_critical:
+              for r in high_critical:
+                  print(f'  [{r[\"issue_severity\"]}] {r[\"filename\"]}:{r[\"line_number\"]} — {r[\"issue_text\"]}')
+              exit(1)
+          "
+
+      - name: pip-audit dependency scan
+        run: pip-audit --fix 2>&1 || echo "Dependency vulnerabilities found (non-blocking in phase 1)"
+
+      - name: Upload bandit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-report
+          path: bandit-report.json

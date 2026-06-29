@@ -1,52 +1,74 @@
-# Git
+# ═══════════════════════════════════════════════════════════
+# .dockerignore — 排除不必要的文件，减小构建上下文
+# ═══════════════════════════════════════════════════════════
+
+# ── Git ─────────────────────────────────────────────
 .git
 .gitignore
 .gitattributes
 
-# Python
+# ── Python ──────────────────────────────────────────
 __pycache__
 *.pyc
 *.pyo
+.python-version
 .venv
 venv
 *.egg-info
 dist
 build
 .pytest_cache
+.mypy_cache
+.ruff_cache
+*.egg
 
-# Node
+# ── Node ────────────────────────────────────────────
 node_modules
 frontend/node_modules
 frontend/dist
 frontend/.vite
 
-# IDE
+# ── IDE ─────────────────────────────────────────────
 .vscode
 .idea
 *.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
 
-# Env (keep template, ignore real)
+# ── Env（保留模板，排除真实密钥）───────────────────
 .env
 .env.*
 !.env.example
 
-# Docs (挂载到容器，无需打入镜像)
+# ── Docs（挂载到容器，无需打入镜像）────────────────
 docs/
 
-# CI/CD
+# ── CI/CD ───────────────────────────────────────────
 .gitee/
 .github/
 
-# Tests
+# ── Tests ───────────────────────────────────────────
 tests/
 .coverage
 htmlcov
 pytest.xml
+coverage.xml
 
-# Misc
+# ── 脚本 & 工具（不进入镜像）───────────────────────
+scripts/
+*.sh
+!*.py
+
+# ── Misc ────────────────────────────────────────────
 *.md
 !README.md
-.gitignore
 .dockerignore
 CLAUDE.md
-pre-commit-config.yaml
+.pre-commit-config.yaml
+.secrets.baseline
+.editorconfig
+Makefile
+docker-compose*.yml

@@ -68,6 +68,14 @@ coverage.xml
 test-results/
 
 # ═══════════════════════════════════════════════
+# CI/CD Artifacts
+# ═══════════════════════════════════════════════
+bandit-report.json
+pip-audit-report.json
+secrets-report.json
+trivy-report.json
+
+# ═══════════════════════════════════════════════
 # Logs
 # ═══════════════════════════════════════════════
 *.log

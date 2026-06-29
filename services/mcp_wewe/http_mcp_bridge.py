@@ -230,7 +230,7 @@ async def delete_account(account_id: str):
 # ═══════════════════════════════════════════════════════════
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="WeWe RSS MCP HTTP Bridge")
-    parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--port", type=int, default=8100)
     parser.add_argument("--host", default="0.0.0.0")
     args = parser.parse_args()
 

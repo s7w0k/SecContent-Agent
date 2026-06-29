@@ -1,0 +1,45 @@
+# ═══════════════════════════════════════════════════════════════
+# PR Agent Demo — 开发环境覆盖（与 docker-compose.yml 合并使用）
+# 用法:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#   或: make dev / .\scripts\dev.ps1
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  # ──────────────────────────────────────────────────────────
+  # Backend — 热重载 + live code sync
+  # ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./services/backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./services/backend:/app        # live code sync（源码挂载）
+      - ./docs:/app/docs:ro            # 产品知识库只读
+    command: uvicorn main:app --reload --host 0.0.0.0 --port 8000
+    environment:
+      # 开发环境启用调试日志
+      LOG_LEVEL: DEBUG
+
+  # ──────────────────────────────────────────────────────────
+  # Frontend — Vite 开发服务器（热重载）
+  # ──────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: pr-agent-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend/src:/app/src       # live code sync
+      - ./frontend/public:/app/public
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+    command: npm run dev -- --host 0.0.0.0
+    networks:
+      - agent-net
+    depends_on:
+      - backend

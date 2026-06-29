@@ -1,0 +1,162 @@
+# ═══════════════════════════════════════════════════════════════
+# PR Agent Demo — 安全扫描流水线
+# 触发: 手动 / 定时（每周一 9:00）/ PR 到 main
+# ═══════════════════════════════════════════════════════════════
+
+name: Security Scan
+
+on:
+  schedule:
+    # 每周一 9:00 CST 执行依赖漏洞扫描
+    - cron: "0 1 * * 1" # UTC 01:00 = CST 09:00
+  workflow_dispatch:      # 手动触发
+  pull_request:
+    branches: [main]
+    paths:
+      - "services/**/requirements.txt"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "docker-compose.yml"
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # ── SAST：Python 静态安全分析 ─────────────────────────────
+  sast-bandit:
+    name: SAST — Bandit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Run bandit
+        run: |
+          pip install bandit
+          bandit -r services/ \
+            -f json \
+            -o bandit-report.json \
+            --skip B101,B104,B301,B403 \
+            --exit-zero
+
+      - name: Publish bandit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sast-bandit-report
+          path: bandit-report.json
+
+  # ── 依赖漏洞扫描：Python ──────────────────────────────────
+  dep-audit-python:
+    name: Dep Audit — Python (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install all Python deps + pip-audit
+        run: |
+          pip install pip-audit
+          pip install -r services/mcp_crawl/requirements.txt
+          pip install -r services/mcp_wewe/requirements.txt
+          pip install -r services/backend/requirements.txt
+
+      - name: Run pip-audit
+        run: pip-audit --format json -o pip-audit-report.json 2>&1 || echo "Vulnerabilities detected"
+
+      - name: Publish pip-audit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dep-audit-python-report
+          path: pip-audit-report.json
+
+  # ── 依赖漏洞扫描：Node.js ──────────────────────────────────
+  dep-audit-node:
+    name: Dep Audit — Node.js (npm audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: npm audit
+        run: |
+          cd frontend
+          npm ci
+          npm audit --audit-level=high || echo "High/Critical vulnerabilities found"
+
+  # ── 密钥泄露扫描 ──────────────────────────────────────────
+  secret-scan:
+    name: Secret Scan (detect-secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 全量历史，用于检测历史提交中的密钥
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Run detect-secrets
+        run: |
+          pip install detect-secrets
+          # 扫描当前代码库
+          detect-secrets scan --all-files \
+            --exclude-files "\.secrets\.baseline$|\.env\.example$|poetry\.lock$|package-lock\.json$" \
+            > secrets-report.json 2>&1 || true
+
+      - name: Check for new secrets
+        run: |
+          # 如果有 .secrets.baseline，使用 audit 模式对比
+          if [ -f .secrets.baseline ]; then
+            pip install detect-secrets
+            detect-secrets audit .secrets.baseline 2>&1 || echo "Review needed"
+          fi
+
+      - name: Publish secret scan report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: secret-scan-report
+          path: secrets-report.json
+
+  # ── Docker 镜像扫描（仅手动触发）──────────────────────────
+  docker-scan:
+    name: Docker Image Scan (Trivy)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build images
+        run: docker compose build
+
+      - name: Run Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: image
+          image-ref: pr-agent-demo-backend:latest
+          format: json
+          output: trivy-report.json
+          severity: HIGH,CRITICAL
+
+      - name: Publish Trivy report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-scan-report
+          path: trivy-report.json

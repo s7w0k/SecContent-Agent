@@ -1,0 +1,169 @@
+# ═══════════════════════════════════════════════════════════════
+# PR Agent Demo — Docker Compose 编排
+# 用法:
+#   启动:  docker compose up -d
+#   停止:  docker compose down -v
+#   构建:  docker compose build
+#   日志:  docker compose logs -f
+# ═══════════════════════════════════════════════════════════════
+
+x-common-security: &common-security
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  read_only: true
+  tmpfs:
+    - /tmp
+
+services:
+  # ──────────────────────────────────────────────────────────
+  # MongoDB 7 — 数据持久化
+  # ──────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: pr-agent-mongo
+    restart: unless-stopped
+    <<: *common-security
+    # MongoDB 需要写数据目录，覆盖 read_only
+    read_only: false
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-pr_agent_2024}
+      MONGO_INITDB_DATABASE: pr_agent
+    volumes:
+      - mongo_data:/data/db
+      - ./mongodb/init.js:/docker-entrypoint-initdb.d/init.js:ro
+    networks:
+      - agent-net
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh -u $$MONGO_INITDB_ROOT_USERNAME -p $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval 'db.adminCommand(\"ping\")' --quiet || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ──────────────────────────────────────────────────────────
+  # MCP-WeWe — 微信公众号 RSS MCP HTTP 桥接
+  # ──────────────────────────────────────────────────────────
+  mcp-wewe:
+    build:
+      context: ./services/mcp_wewe
+      dockerfile: Dockerfile
+    container_name: pr-agent-wewe
+    restart: unless-stopped
+    <<: *common-security
+    environment:
+      WEWE_RSS_URL: ${WEWE_RSS_URL:-}
+      WEWE_AUTH_CODE: ${WEWE_AUTH_CODE:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+    networks:
+      - agent-net
+    # 不暴露端口到宿主机（仅内部网络可达）
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import httpx; httpx.get('http://localhost:8100/health').raise_for_status()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ──────────────────────────────────────────────────────────
+  # MCP-Crawl — 海外安全新闻爬虫 MCP HTTP 桥接
+  # ──────────────────────────────────────────────────────────
+  mcp-crawl:
+    build:
+      context: ./services/mcp_crawl
+      dockerfile: Dockerfile
+    container_name: pr-agent-crawl
+    restart: unless-stopped
+    <<: *common-security
+    environment:
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+    networks:
+      - agent-net
+    # 不暴露端口到宿主机（仅内部网络可达）
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import httpx; httpx.get('http://localhost:8101/health').raise_for_status()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ──────────────────────────────────────────────────────────
+  # Backend — 核心后端服务（API 网关 + Agent 流水线）
+  # ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./services/backend
+      dockerfile: Dockerfile
+    container_name: pr-agent-backend
+    restart: unless-stopped
+    <<: *common-security
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      MONGODB_URI: mongodb://admin:${MONGO_ROOT_PASSWORD:-pr_agent_2024}@mongodb:27017
+      MONGODB_DB: pr_agent
+      MCP_WEWE_URL: http://mcp-wewe:8100
+      MCP_CRAWL_URL: http://mcp-crawl:8101
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      KNOWLEDGE_BASE_DIR: /app/docs
+    volumes:
+      - ./docs:/app/docs:ro
+    networks:
+      - agent-net
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      mcp-wewe:
+        condition: service_started
+      mcp-crawl:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import httpx; httpx.get('http://localhost:8000/api/health').raise_for_status()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+# ═══════════════════════════════════════════════════════════════
+# 持久卷
+# ═══════════════════════════════════════════════════════════════
+volumes:
+  mongo_data:
+    driver: local
+
+# ═══════════════════════════════════════════════════════════════
+# 内部网络（仅 backend 暴露端口到宿主机）
+# ═══════════════════════════════════════════════════════════════
+networks:
+  agent-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
