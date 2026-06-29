@@ -6,44 +6,47 @@ triggers:
   push:
     branches:
       include:
-        - .*
+        - feat/*
+        - fix/*
+        - chore/*
+        - test/*
       exclude:
+        - main
         - master
 variables:
+  PYTHON_VERSION: '3.12'
   MONGO_ROOT_PASSWORD: pr_agent_2024
 stages:
-  - name: compile
-    displayName: 编译
+  # ═══════════════════════════════════════════════════════════
+  # 阶段一：Lint（快速反馈，并行执行）
+  # ═══════════════════════════════════════════════════════════
+  - name: lint
+    displayName: 代码检查
     strategy: naturally
     trigger: auto
     steps:
       - step: build@python
-        name: build_python
-        displayName: Python 构建
-        pythonVersion: '3.9'
+        name: lint_python
+        displayName: Python Lint (ruff)
+        pythonVersion: ${PYTHON_VERSION}
         commands:
-          - python3 -m pip install --upgrade pip
+          - python3 -m pip install --upgrade pip -q
           - pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-          - pip3 install -r requirements.txt
-          - python3 ./main.py
-        artifacts:
-          - name: BUILD_ARTIFACT
-            path:
-              - ./
-      - step: publish@general_artifacts
-        name: publish_general_artifacts
-        displayName: 上传制品
-        dependArtifact: BUILD_ARTIFACT
-        artifactName: output
-        dependsOn: build_python
-  - name: release
-    displayName: 发布
-    strategy: naturally
-    trigger: auto
-    steps:
-      - step: publish@release_artifacts
-        name: publish_release_artifacts
-        displayName: 发布
-        dependArtifact: output
-        version: 1.0.0.0
-        autoIncrement: true
+          - pip3 install ruff -q
+          - ruff check services/ tests/
+          - ruff format --check services/ tests/
+      - step: build@python
+        name: test_python
+        displayName: Python Test (pytest)
+        pythonVersion: ${PYTHON_VERSION}
+        commands:
+          - python3 -m pip install --upgrade pip -q
+          - pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          # 安装所有服务依赖
+          - pip3 install -r services/mcp_crawl/requirements.txt -q
+          - pip3 install -r services/mcp_wewe/requirements.txt -q
+          - pip3 install -r services/backend/requirements.txt -q
+          - pip3 install pytest pytest-asyncio pytest-cov pytest-mock httpx mongomock -q
+          # 运行测试
+          - cd $GITEE_WORKSPACE
+          - pytest tests/ --cov=services --cov-report=term-missing -v --tb=short --timeout=60
