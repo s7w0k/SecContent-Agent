@@ -1,0 +1,61 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: Uvicorn (debug)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "main:app",
+        "--host", "0.0.0.0",
+        "--port", "8000",
+        "--reload"
+      ],
+      "cwd": "${workspaceFolder}/services/backend",
+      "jinja": true,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/backend:${workspaceFolder}/services/mcp_crawl:${workspaceFolder}/services/mcp_wewe"
+      },
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "mcp-crawl: HTTP Bridge",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "http_bridge:app",
+        "--host", "0.0.0.0",
+        "--port", "8101",
+        "--reload"
+      ],
+      "cwd": "${workspaceFolder}/services/mcp_crawl",
+      "jinja": true,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/mcp_crawl"
+      },
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "Pytest: Current File",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["${file}", "-v", "--no-cov"],
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/backend:${workspaceFolder}/services/mcp_crawl:${workspaceFolder}/services/mcp_wewe"
+      },
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "Frontend: Vite Dev",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/frontend/src",
+      "preLaunchTask": "npm: dev --prefix frontend"
+    }
+  ]
+}

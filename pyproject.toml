@@ -1,0 +1,127 @@
+[project]
+name = "pr-agent-demo"
+version = "0.1.0"
+description = "智能体安全PR情报Agent系统 Demo"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "s7w0k" }
+]
+keywords = ["agent", "security", "pr", "intelligence", "mcp"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "pytest-mock>=3.12",
+    "mongomock>=4.2",
+    "httpx>=0.27",
+    "bandit>=1.7",
+    "ruff>=0.5",
+]
+
+# ═══════════════════════════════════════════════
+# Ruff — Python Linter & Formatter
+# ═══════════════════════════════════════════════
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "node_modules",
+    "dist",
+    "build",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "T20", # flake8-print
+    "RUF", # Ruff-specific rules
+]
+ignore = [
+    "E501",  # line-too-long (handled by formatter)
+    "B008",  # do-not-perform-function-calls-in-argument-defaults
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["services", "mcp_wewe", "mcp_crawl"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+# ═══════════════════════════════════════════════
+# Pytest
+# ═══════════════════════════════════════════════
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = [
+    "services/mcp_wewe",
+    "services/mcp_crawl",
+    "services/backend",
+]
+asyncio_mode = "auto"
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "--cov=services",
+    "--cov-report=term-missing",
+    "--cov-report=xml",
+    "--cov-fail-under=70",
+]
+markers = [
+    "unit: Unit tests (no external dependencies)",
+    "integration: Integration tests (requires Docker services)",
+    "slow: Slow tests (excluded from CI fast path)",
+]
+
+[tool.pytest.ini_options.filterwarnings]
+# Treat warnings as errors
+"error" = []
+"ignore::DeprecationWarning" = ["mcp.*", "langchain.*"]
+
+# ═══════════════════════════════════════════════
+# Coverage
+# ═══════════════════════════════════════════════
+[tool.coverage.run]
+source = ["services"]
+omit = [
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/migrations/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
+fail_under = 70
+
+# ═══════════════════════════════════════════════
+# Mypy (类型检查，可选开启)
+# ═══════════════════════════════════════════════
+[tool.mypy]
+python_version = "3.12"
+strict = false
+warn_return_any = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+exclude = ["\\.venv/", "node_modules/", "dist/"]

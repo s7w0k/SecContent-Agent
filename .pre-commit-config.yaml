@@ -1,0 +1,68 @@
+# Pre-commit hooks — 在 git commit 前自动执行检查
+# 安装: pip install pre-commit && pre-commit install
+# 手动运行所有文件: pre-commit run --all-files
+repos:
+  # ── 通用文件检查 ──────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-json
+      - id: check-toml
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: no-commit-to-branch
+        args: [--branch, main]
+        stages: [pre-push]
+
+  # ── 密钥扫描 ──────────────────────────────────
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--baseline, .secrets.baseline]
+        exclude: >
+          (?x)^(
+            .env.example|
+            poetry.lock|
+            package-lock.json
+          )$
+
+  # ── Python 格式化 & Lint ──────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  # ── Python 安全检查 ───────────────────────────
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.10
+    hooks:
+      - id: bandit
+        args: [--configfile, pyproject.toml]
+        additional_dependencies: [".[toml]"]
+
+  # ── Dockerfile 检查 ───────────────────────────
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.13.0-beta
+    hooks:
+      - id: hadolint
+        args: [--failure-threshold, warning]
+
+  # ── 前端格式化 & Lint ─────────────────────────
+  - repo: https://github.com/biomejs/pre-commit
+    rev: v0.6.0
+    hooks:
+      - id: biome-check
+        additional_dependencies: ["@biomejs/biome@1.9.0"]
+        files: ^frontend/

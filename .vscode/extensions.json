@@ -1,0 +1,19 @@
+{
+  "recommendations": [
+    "charliermarsh.ruff",
+    "biomejs.biome",
+    "ms-python.python",
+    "ms-python.vscode-pytest",
+    "ms-azuretools.vscode-docker",
+    "mongodb.mongodb-vscode",
+    "esbenp.prettier-vscode",
+    "github.vscode-github-actions",
+    "yzhang.markdown-all-in-one",
+    "editorconfig.editorconfig"
+  ],
+  "unwantedRecommendations": [
+    "ms-python.pylint",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode"
+  ]
+}
