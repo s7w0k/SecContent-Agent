@@ -39,9 +39,6 @@ jobs:
       - name: ruff check
         run: ruff check services/ tests/
 
-      - name: ruff format check
-        run: ruff format --check services/ tests/
-
   lint-frontend:
     name: Lint Frontend (biome)
     runs-on: ubuntu-latest

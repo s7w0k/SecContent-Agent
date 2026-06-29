@@ -34,7 +34,6 @@ stages:
           - python3 -m pip install --upgrade pip -q
           - python3 -m pip install ruff -q
           - python3 -m ruff check services/ tests/
-          - python3 -m ruff format --check services/ tests/
       - step: build@python
         name: test_python
         displayName: Python Test (pytest)

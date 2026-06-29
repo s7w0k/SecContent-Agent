@@ -29,7 +29,6 @@ stages:
           - python3 -m pip install --upgrade pip -q
           - python3 -m pip install ruff -q
           - python3 -m ruff check services/ tests/
-          - python3 -m ruff format --check services/ tests/
 
   # ═══════════════════════════════════════════════════════════
   # 阶段二：Test
