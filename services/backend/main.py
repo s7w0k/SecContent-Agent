@@ -37,7 +37,7 @@ logger = logging.getLogger("backend")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期：启动时连接 MongoDB，关闭时断开。"""
+    """应用生命周期：启动时连接 MongoDB + 初始化 Agent 组件，关闭时清理。"""
     settings = get_settings()
 
     # ── 启动 ─────────────────────────────────────────
@@ -53,17 +53,62 @@ async def lifespan(app: FastAPI):
             max_pool_size=settings.MONGODB_MAX_POOL_SIZE,
             min_pool_size=settings.MONGODB_MIN_POOL_SIZE,
         )
+        app.state.db = MongoDB.get_db()
         logger.info("MongoDB connected: %s", settings.MONGODB_DB)
     except Exception as e:
         logger.error("MongoDB connection failed: %s", e)
         logger.warning("Backend will start without MongoDB — database features unavailable")
+        app.state.db = None
 
-    # MCP 服务（阶段二启用）
-    logger.info(
-        "MCP services configured: wewe=%s, crawl=%s",
-        settings.MCP_WEWE_URL,
-        settings.MCP_CRAWL_URL,
-    )
+    # ── Agent 组件初始化（阶段二）─────────────────────
+    try:
+        from agent.tools import create_mcp_toolset
+        from agent.knowledge import KnowledgeLoader
+        from agent.scorer import ScoringAgent
+        from agent.reporter import ReportAgent
+        from agent.pipeline import PipelineManager
+        from langchain_openai import ChatOpenAI
+
+        # 1. MCP 工具集
+        tools = create_mcp_toolset(
+            wewe_url=settings.MCP_WEWE_URL,
+            crawl_url=settings.MCP_CRAWL_URL,
+        )
+        logger.info("MCP tools initialized: %d tools", len(tools))
+
+        # 2. 知识库
+        knowledge_loader = KnowledgeLoader(docs_dir=settings.KNOWLEDGE_BASE_DIR)
+        await knowledge_loader.load()
+        app.state.knowledge_loader = knowledge_loader
+        logger.info("Knowledge loaded: %d features", len(knowledge_loader._cache.core_features) if knowledge_loader._cache else 0)
+
+        # 3. LLM
+        llm = ChatOpenAI(
+            model=settings.DEEPSEEK_MODEL,
+            api_key=settings.DEEPSEEK_API_KEY,
+            base_url=f"{settings.DEEPSEEK_BASE_URL}/v1",
+            temperature=0.1,
+        )
+
+        # 4. Agent
+        scorer = ScoringAgent(llm=llm, knowledge=knowledge_loader._cache)
+        reporter = ReportAgent(llm=llm, knowledge=knowledge_loader._cache, db=app.state.db)
+
+        # 5. 流水线管理器
+        pipeline_manager = PipelineManager(
+            tools=tools,
+            scorer=scorer,
+            reporter=reporter,
+            knowledge=knowledge_loader,
+            db=app.state.db,
+        )
+        app.state.pipeline_manager = pipeline_manager
+        logger.info("Agent pipeline initialized")
+
+    except Exception as e:
+        logger.warning("Agent components initialization skipped: %s", e)
+        app.state.pipeline_manager = None
+        app.state.knowledge_loader = None
 
     yield  # ← 应用运行中
 
@@ -103,8 +148,21 @@ app.add_middleware(
 
 
 # ═══════════════════════════════════════════════════════════
-# 路由
+# 路由注册（阶段二：Agent 流水线 + 仪表盘 API）
 # ═══════════════════════════════════════════════════════════
+
+from api.pipeline import router as pipeline_router
+from api.dashboard import router as dashboard_router
+from api.reports import router as reports_router
+
+app.include_router(pipeline_router)
+app.include_router(dashboard_router)
+app.include_router(reports_router)
+
+
+# ═══════════════════════════════════════════════════════════════
+# 系统端点
+# ═══════════════════════════════════════════════════════════════
 
 
 @app.get("/api/health", tags=["System"])
