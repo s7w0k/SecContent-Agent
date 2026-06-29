@@ -15,8 +15,13 @@ pydantic>=2.10.0
 pydantic-settings>=2.6.0
 
 # LLM（阶段二：LangChain + LangGraph）
-# langchain>=0.3.0
-# langgraph>=0.2.0
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-openai>=0.3.0
+langgraph>=0.2.0
+
+# MCP Client
+mcp>=1.0.0
 
 # 工具
 python-multipart>=0.0.12
