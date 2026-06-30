@@ -35,13 +35,21 @@ const client: AxiosInstance = axios.create({
   },
 });
 
-// 响应拦截器：统一提取 data
+// 请求拦截器：记录日志
+client.interceptors.request.use((config) => {
+  console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`, config.params || config.data || "");
+  return config;
+});
+
+// 响应拦截器：统一提取 data + 记录日志
 client.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log(`[API] ${response.status} ${response.config.url} (${response.data?.total ?? "ok"})`);
+    return response;
+  },
   (error) => {
-    const message =
-      error.response?.data?.detail || error.message || "Network error";
-    console.error("[API]", message);
+    const message = error.response?.data?.detail || error.message || "Network error";
+    console.error(`[API] ERROR ${error.response?.status || ""} ${error.config?.url}: ${message}`);
     return Promise.reject(error);
   },
 );
