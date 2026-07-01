@@ -64,6 +64,7 @@ async def _init_mcp():
     server_params = StdioServerParameters(
         command=sys.executable,
         args=[MCP_SERVER_PATH],
+        env={**os.environ},
     )
 
     _stdio_ctx = stdio_client(server_params)

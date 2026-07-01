@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import logging
+import httpx
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
@@ -104,3 +106,89 @@ async def pipeline_status(request: Request):
     """返回当前流水线的运行状态和进度"""
     manager = _get_manager(request)
     return manager.get_status()
+
+
+@router.post("/import-wewe", summary="导入 WeWe RSS 全部文章")
+async def import_wewe_articles(request: Request):
+    """从 WeWe RSS 获取全部文章并入库（含公众号来源和中文日期）。"""
+    import hashlib
+    import json
+    from urllib.request import Request, urlopen
+    from urllib.parse import quote
+    from datetime import datetime, timezone, timedelta
+
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    log = logging.getLogger("backend.api.pipeline")
+    log.info("[import-wewe] Starting WeWe article import...")
+
+    try:
+        # 1. 获取 Atom feed（含 <author><name> 公众号名称）
+        import xml.etree.ElementTree as ET
+        atom_url = "http://49.232.145.182:4001/feeds/all.atom"
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(atom_url)
+            xml_text = resp.text
+
+        NS = {"atom": "http://www.w3.org/2005/Atom"}
+        root = ET.fromstring(xml_text)
+        entries = root.findall("atom:entry", NS)
+        log.info(f"[import-wewe] Atom feed has {len(entries)} articles")
+
+        # 2. 入库
+        saved = 0
+        tz = timezone(timedelta(hours=8))
+        for entry in entries:
+            title_el = entry.find("atom:title", NS)
+            link_el = entry.find("atom:link", NS)
+            author_el = entry.find("atom:author/atom:name", NS)
+            updated_el = entry.find("atom:updated", NS)
+
+            title = title_el.text if title_el is not None else ""
+            url = link_el.get("href", "") if link_el is not None else ""
+            source_name = author_el.text if author_el is not None else "微信公众号"
+            pub_date_raw = updated_el.text if updated_el is not None else ""
+
+            if not url:
+                continue
+
+            # 日期格式转换: "2026-06-29T01:02:20.000Z" → "2026年6月29日"
+            pub_date = pub_date_raw[:10].replace("-", "年", 1).replace("-", "月") + "日" if pub_date_raw else ""
+
+            url_hash = hashlib.md5(url.encode()).hexdigest()
+            existing = await db["articles"].find_one({"url_hash": url_hash})
+            if existing:
+                continue
+
+            doc = {
+                "url_hash": url_hash,
+                "title": title,
+                "url": url,
+                "source": source_name,
+                "source_type": "wechat_mp",
+                "published_at": pub_date,
+                "added_at": datetime.now(tz).strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+                "summary": "",
+                "summary_cn": "",
+                "content_md": "",
+                "is_ai_security": False,
+                "is_agent_security": False,
+                "category": "",
+                "ai_relevance_score": 0,
+                "reportability_score": 0,
+                "score_reason": "",
+                "has_report": False,
+                "report_id": None,
+                "pipeline_status": "crawled",
+            }
+            await db["articles"].insert_one(doc)
+            saved += 1
+
+        log.info(f"[import-wewe] Saved {saved} new ({len(entries) - saved} dupes)")
+        return {"ok": True, "total": len(entries), "saved": saved}
+
+    except Exception as e:
+        log.error(f"[import-wewe] Failed: {e}")
+        raise HTTPException(status_code=502, detail=str(e))

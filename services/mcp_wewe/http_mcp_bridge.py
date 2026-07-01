@@ -63,6 +63,7 @@ async def _init_mcp():
     server_params = StdioServerParameters(
         command=sys.executable,
         args=[MCP_SERVER_PATH],
+        env={**os.environ},
     )
 
     _stdio_ctx = stdio_client(server_params)
@@ -134,6 +135,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ═══════════════════════════════════════════════════════════
+# 健康检查
+# ═══════════════════════════════════════════════════════════
+
+@app.get("/health")
+async def health():
+    return {"ok": True, "status": "healthy", "mcp_connected": _mcp_session is not None}
 
 
 # ═══════════════════════════════════════════════════════════

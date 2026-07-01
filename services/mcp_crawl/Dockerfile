@@ -1,29 +1,18 @@
 # MCP-Crawl Service Dockerfile
-# Multi-stage build — 减小最终镜像体积
-FROM python:3.12-slim AS builder
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
-
-# ── 运行阶段 ──
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# 从 builder 复制已安装的包
-COPY --from=builder /root/.local /root/.local
-ENV PATH=/root/.local/bin:$PATH
+COPY requirements.txt .
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple \
+    && pip install --no-cache-dir -r requirements.txt
 
-# 复制应用代码
 COPY . .
 
-# 安全加固
 RUN groupadd -r mcpuser && useradd -r -g mcpuser mcpuser \
     && chown -R mcpuser:mcpuser /app
 USER mcpuser
 
-# 健康检查
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD python -c "import httpx; httpx.get('http://localhost:8101/health').raise_for_status()"
 

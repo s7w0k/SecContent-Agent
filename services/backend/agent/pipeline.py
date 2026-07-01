@@ -84,8 +84,13 @@ async def crawl_node(state: dict, tools: dict, db: Any) -> dict:
         tools: MCP Tool 字典（来自 tools.create_mcp_toolset）
         db: MongoDB 数据库实例
     """
+    import uuid
+    batch_id = uuid.uuid4().hex[:12]
+    state["batch_id"] = batch_id
+    from api.logs import log_pipeline
     state["current_phase"] = PipelinePhase.CRAWL.value
-    logger.info("[crawl] Starting crawl phase (days=%d)", state["crawl_days"])
+    logger.info("[crawl] Starting crawl phase (days=%d, batch=%s)", state["crawl_days"], batch_id)
+    log_pipeline(db, "INFO", "crawl", f"start crawl (days={state['crawl_days']})")
 
     if PipelinePhase.CRAWL.value not in state["phases"]:
         logger.info("[crawl] Skipped (not in selected phases)")
@@ -103,32 +108,62 @@ async def crawl_node(state: dict, tools: dict, db: Any) -> dict:
             if isinstance(data, dict) and "articles" in data:
                 articles.extend(data["articles"])
 
-        # 2. 获取微信公众号文章
+        # 2. 获取微信公众号文章（从 Atom feed，含 author 信息）
         try:
-            wewe_result = await tools["fetch_wewe_articles"].ainvoke({"payload": {}})
-            if wewe_result.get("ok") and wewe_result.get("data"):
-                data = wewe_result["data"]
-                wewe_articles = data if isinstance(data, list) else data.get("articles", [])
-                articles.extend(wewe_articles)
+            import httpx
+            atom_url = "http://49.232.145.182:4001/feeds/all.atom"
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(atom_url)
+                import xml.etree.ElementTree as ET
+                NS = {"atom": "http://www.w3.org/2005/Atom"}
+                root = ET.fromstring(resp.text)
+                entries = root.findall("atom:entry", NS)
+                for entry in entries:
+                    title_el = entry.find("atom:title", NS)
+                    link_el = entry.find("atom:link", NS)
+                    author_el = entry.find("atom:author/atom:name", NS)
+                    updated_el = entry.find("atom:updated", NS)
+                    title = title_el.text if title_el is not None else ""
+                    url = link_el.get("href", "") if link_el is not None else ""
+                    source_name = author_el.text if author_el is not None else "微信公众号"
+                    pub_date = updated_el.text[:10].replace("-", "年", 1).replace("-", "月") + "日" if updated_el is not None and updated_el.text else ""
+                    if url:
+                        articles.append({
+                            "title": title,
+                            "url": url,
+                            "source": source_name,
+                            "source_type": "wechat_mp",
+                            "published_at": pub_date,
+                            "summary": "",
+                        })
+                logger.info("[crawl] WeWe Atom: %d articles", len(entries))
         except Exception as e:
             logger.warning("[crawl] WeWe fetch failed (non-critical): %s", e)
 
         # 3. 去重 + 入库
         if db is not None and articles:
             saved_count = 0
+            skipped = 0
             for art in articles:
                 try:
-                    url_hash = art.get("url_hash", "")
-                    if not url_hash:
-                        import hashlib
-                        url_hash = hashlib.md5(
-                            art.get("url", "").encode()
-                        ).hexdigest()
+                    url = art.get("url", "")
+                    if not url:
+                        continue
+                    import hashlib
+                    url_hash = art.get("url_hash") or hashlib.md5(url.encode()).hexdigest()
 
-                    # Upsert: 已存在的跳过
+                    # 去重：检查是否已存在
                     existing = await db["articles"].find_one({"url_hash": url_hash})
                     if existing:
+                        skipped += 1
                         continue
+
+                    # 日期格式化
+                    pub = art.get("published_at", "")
+                    if pub and "-" in pub:
+                        parts = pub.split("-")
+                        if len(parts) == 3:
+                            pub = f"{parts[0]}年{int(parts[1])}月{int(parts[2])}日"
 
                     doc = {
                         "url_hash": url_hash,
@@ -136,7 +171,7 @@ async def crawl_node(state: dict, tools: dict, db: Any) -> dict:
                         "url": art.get("url", ""),
                         "source": art.get("source", ""),
                         "source_type": art.get("source_type", "overseas_news"),
-                        "published_at": art.get("published_at", ""),
+                        "published_at": pub if pub else art.get("published_at", ""),
                         "summary": art.get("summary", ""),
                         "summary_cn": art.get("summary_cn", ""),
                         "content_md": art.get("content_md", ""),
@@ -150,15 +185,22 @@ async def crawl_node(state: dict, tools: dict, db: Any) -> dict:
                         "report_id": None,
                         "added_at": _now_iso(),
                         "pipeline_status": "crawled",
+                        "batch_id": state.get("batch_id", ""),
                     }
-                    await db["articles"].insert_one(doc)
+                    # upsert: 存在则更新，不存在则插入
+                    await db["articles"].update_one(
+                        {"url_hash": url_hash},
+                        {"$setOnInsert": doc},
+                        upsert=True,
+                    )
                     saved_count += 1
                 except Exception as e:
-                    logger.warning("[crawl] Failed to save article: %s", e)
+                    logger.warning("[crawl] Failed to save: %s", e)
 
             state["crawled_count"] = saved_count
-            logger.info("[crawl] Saved %d new articles (%d total crawled, %d duplicates)",
-                        saved_count, len(articles), len(articles) - saved_count)
+            logger.info("[crawl] Saved %d new, skipped %d duplicates (of %d total)",
+                        saved_count, skipped, len(articles))
+            log_pipeline(db, "INFO", "crawl", f"saved {saved_count} new, skipped {skipped} dupes")
         else:
             state["crawled_count"] = len(articles)
             logger.info("[crawl] %d articles crawled (no DB, not saved)", len(articles))
@@ -175,6 +217,7 @@ async def classify_node(state: dict, tools: dict, db: Any) -> dict:
 
     从 MongoDB 读取 pipeline_status="crawled" 的文章，调用 mcp-crawl 分类。
     """
+    from api.logs import log_pipeline
     state["current_phase"] = PipelinePhase.CLASSIFY.value
     logger.info("[classify] Starting classify phase")
 
@@ -187,7 +230,6 @@ async def classify_node(state: dict, tools: dict, db: Any) -> dict:
             logger.info("[classify] No DB, skipping")
             return state
 
-        # 读取待分类文章
         cursor = db["articles"].find({"pipeline_status": "crawled"})
         raw_articles = await cursor.to_list(length=100)
 
@@ -195,42 +237,45 @@ async def classify_node(state: dict, tools: dict, db: Any) -> dict:
             logger.info("[classify] No articles to classify")
             return state
 
-        # 转换为分类请求格式
+        # 并行分类：每篇文章独立调用 classify 工具
         import json as _json
-        articles_json = _json.dumps([
-            {
-                "title": a.get("title", ""),
-                "url": a.get("url", ""),
-                "source": a.get("source", ""),
-                "summary": a.get("summary", ""),
-            }
-            for a in raw_articles
-        ], ensure_ascii=False)
+        sem = asyncio.Semaphore(10)
 
-        classify_result = await tools["classify_articles"].ainvoke(
-            {"payload": {"articles_json": articles_json}}
-        )
+        async def _classify_one(art):
+            async with sem:
+                try:
+                    ajson = _json.dumps([{
+                        "title": art.get("title", ""),
+                        "url": art.get("url", ""),
+                        "source": art.get("source", ""),
+                        "summary": art.get("summary", ""),
+                    }], ensure_ascii=False)
+                    r = await tools["classify_articles"].ainvoke({"payload": {"articles_json": ajson, "batch_size": 1}})
+                    if r.get("ok") and r.get("data"):
+                        data = r["data"]
+                        classified = data.get("classified", []) if isinstance(data, dict) else data
+                        if classified:
+                            cls = classified[0]
+                            await db["articles"].update_one(
+                                {"_id": art["_id"]},
+                                {"$set": {
+                                    "is_ai_security": cls.get("is_ai_security", False),
+                                    "is_agent_security": cls.get("is_agent_security", False),
+                                    "category": cls.get("category", ""),
+                                    "summary_cn": cls.get("summary_cn", ""),
+                                    "pipeline_status": "classified",
+                                }},
+                            )
+                            return True
+                except Exception as e:
+                    logger.warning("[classify] Article failed: %s", e)
+                return False
 
-        if classify_result.get("ok") and classify_result.get("data"):
-            data = classify_result["data"]
-            classified = data.get("classified", []) if isinstance(data, dict) else data
-
-            for i, art in enumerate(raw_articles):
-                if i < len(classified):
-                    cls = classified[i]
-                    await db["articles"].update_one(
-                        {"_id": art["_id"]},
-                        {"$set": {
-                            "is_ai_security": cls.get("is_ai_security", False),
-                            "is_agent_security": cls.get("is_agent_security", False),
-                            "category": cls.get("category", ""),
-                            "summary_cn": cls.get("summary_cn", ""),
-                            "pipeline_status": "classified",
-                        }},
-                    )
-
-            state["classified_count"] = len(raw_articles)
-            logger.info("[classify] Classified %d articles", len(raw_articles))
+        results = await asyncio.gather(*[_classify_one(a) for a in raw_articles])
+        classified_count = sum(1 for r in results if r)
+        state["classified_count"] = classified_count
+        logger.info("[classify] Parallel classified %d/%d articles", classified_count, len(raw_articles))
+        log_pipeline(db, "INFO", "classify", f"parallel classified {classified_count}/{len(raw_articles)}")
 
     except Exception as e:
         logger.error("[classify] Phase failed: %s", e)
@@ -250,6 +295,7 @@ async def score_node(
 
     从 MongoDB 读取 pipeline_status="classified" 且 is_ai_security=true 的文章。
     """
+    from api.logs import log_pipeline
     state["current_phase"] = PipelinePhase.SCORE.value
     logger.info("[score] Starting score phase")
 
@@ -265,21 +311,16 @@ async def score_node(
         # 确保知识库已加载
         await knowledge.load()
 
-        # 读取待打分文章
-        cursor = db["articles"].find({
-            "pipeline_status": "classified",
-            "is_ai_security": True,
-        })
+        cursor = db["articles"].find({"pipeline_status": "classified", "is_ai_security": True})
         raw_articles = await cursor.to_list(length=50)
 
         if not raw_articles:
             logger.info("[score] No articles to score")
             return state
 
-        # 批量打分
+        # LLM 批量打分
         scored = await scorer.score_batch(raw_articles)
         scored_count = 0
-
         for art, scores in zip(raw_articles, scored):
             if not scores.get("_fallback", True):
                 await db["articles"].update_one(
@@ -292,9 +333,9 @@ async def score_node(
                     }},
                 )
                 scored_count += 1
-
         state["scored_count"] = scored_count
-        logger.info("[score] Scored %d/%d articles", scored_count, len(raw_articles))
+        logger.info("[score] LLM scored %d/%d articles", scored_count, len(raw_articles))
+        log_pipeline(db, "INFO", "score", f"scored {scored_count}/{len(raw_articles)} articles")
 
     except Exception as e:
         logger.error("[score] Phase failed: %s", e)
@@ -314,6 +355,7 @@ async def report_node(
 
     从 MongoDB 读取 pipeline_status="scored" 且 total_score≥140 的文章。
     """
+    from api.logs import log_pipeline
     state["current_phase"] = PipelinePhase.REPORT.value
     logger.info("[report] Starting report generation phase")
 

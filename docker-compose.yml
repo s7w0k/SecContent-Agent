@@ -24,8 +24,9 @@ services:
     image: mongo:7
     container_name: pr-agent-mongo
     restart: unless-stopped
-    <<: *common-security
-    # MongoDB 需要写数据目录，覆盖 read_only
+    # MongoDB 需要更多权限，不使用 common-security
+    security_opt:
+      - no-new-privileges:true
     read_only: false
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
@@ -111,8 +112,8 @@ services:
   # ──────────────────────────────────────────────────────────
   backend:
     build:
-      context: ./services/backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/backend/Dockerfile
     container_name: pr-agent-backend
     restart: unless-stopped
     <<: *common-security

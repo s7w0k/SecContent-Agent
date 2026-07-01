@@ -3,14 +3,21 @@ import { Layout, Menu, Typography } from "antd";
 import {
   DashboardOutlined,
   InfoCircleOutlined,
+  WechatOutlined,
+  FileTextOutlined,
+  FileTextOutlined,
 } from "@ant-design/icons";
 import Dashboard from "./pages/Dashboard";
+import AccountPage from "./pages/AccountPage";
+import LogsPage from "./pages/LogsPage";
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
 
 const menuItems = [
   { key: "dashboard", icon: <DashboardOutlined />, label: "仪表盘" },
+  { key: "accounts", icon: <WechatOutlined />, label: "公众号账号" },
+  { key: "logs", icon: <FileTextOutlined />, label: "运行日志" },
   { key: "about", icon: <InfoCircleOutlined />, label: "关于" },
 ];
 
@@ -44,16 +51,18 @@ function App() {
       </Header>
       <Content>
         {tab === "dashboard" && <Dashboard />}
+        {tab === "accounts" && <AccountPage />}
+        {tab === "logs" && <LogsPage />}
         {tab === "about" && (
           <div style={{ padding: 48, maxWidth: 800, margin: "0 auto" }}>
             <h2>🚀 PR Agent Dashboard</h2>
-            <p>智能体安全PR情报Agent系统 — 阶段一至三已完成</p>
+            <p>智能体安全PR情报Agent系统</p>
             <ul>
-              <li>MongoDB — 数据持久化</li>
-              <li>mcp-wewe — 微信公众号 RSS 桥接</li>
-              <li>mcp-crawl — 海外安全新闻爬虫桥接</li>
-              <li>Backend — FastAPI + Agent Pipeline + REST API</li>
-              <li>Frontend — React + Ant Design 仪表盘</li>
+              <li>MongoDB</li>
+              <li>mcp-wewe</li>
+              <li>mcp-crawl</li>
+              <li>Backend (FastAPI + Agent Pipeline)</li>
+              <li>Frontend (React + Ant Design)</li>
             </ul>
           </div>
         )}

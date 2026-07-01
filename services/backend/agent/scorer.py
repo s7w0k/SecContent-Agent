@@ -45,65 +45,51 @@ logger = logging.getLogger("backend.agent.scorer")
 # 常量
 # ═══════════════════════════════════════════════════════════════
 
-DEFAULT_CONCURRENCY = 3
+DEFAULT_CONCURRENCY = 20
 SCORE_MIN = 0
 SCORE_MAX = 100
 HIGH_VALUE_THRESHOLD = 140
 DEFAULT_TEMPERATURE = 0.1  # 低温度确保打分一致性
 MAX_RETRIES = 1
 
-SYSTEM_PROMPT_TEMPLATE = """你是一个智能体安全领域的技术情报分析师。
+SYSTEM_PROMPT_TEMPLATE = """你是一个智能体安全领域的技术情报分析师。请根据以下产品知识库，判断文章与产品的语义相关度。
 
-## 产品背景
+## 产品知识库
 {knowledge_context}
 
 ## 打分任务
-请对给定的安全新闻文章进行双维度评分，判断是否值得生成 PR 情报报道。
+基于产品知识库内容，判断以下文章与该产品的语义相关度和可报道性。
 
 ## 评分维度
 
 ### 1. AI/Agent安全相关度 (ai_relevance_score: 0-100)
-- **90-100**: 直接涉及智能体身份安全核心领域
-  （身份认证、权限管控、意图识别、MCP协议安全、Agent劫持、提示注入防御）
-- **70-89**: 密切相关领域重要事件
-  （模型安全、AI供应链安全、AI数据安全、AI合规标准）
-- **40-69**: 泛安全领域有一定关联
-  （传统安全涉及AI元素、AI应用安全事件）
-- **0-39**: 基本不相关
-  （传统网络安全事件，无明显AI关联）
+阅读文章全文，判断其内容与上述产品知识库中描述的产品定位、核心功能、技术壁垒、控标点的语义相关度：
+- **90-100**: 文章主题与产品核心领域直接对齐（身份安全/Agent安全/MCP协议/权限管控）
+- **70-89**: 文章内容与产品相关领域有明确交集（AI安全/模型安全/供应链安全）
+- **40-69**: 文章涉及泛安全话题，与产品有间接关联
+- **0-39**: 与产品知识库内容无明显语义关联
 
 ### 2. 可报道性 (reportability_score: 0-100)
-- **90-100**: 重大漏洞披露/新技术突破/行业标志性事件/直接影响客户
-- **70-89**: 有分析价值的趋势变化/竞品重要动态/行业标准更新
-- **40-69**: 常规安全新闻报道，有一定参考价值
-- **0-39**: 日常报道，无明显新闻价值或与产品无关
+判断该文章作为内部PR情报的价值：
+- **90-100**: 含重大漏洞/技术突破，对客户或产品有直接影响
+- **70-89**: 有价值的行业趋势/竞品动态，可指导产品规划
+- **40-69**: 一般性安全报道，可作为行业背景参考
+- **0-39**: 日常动态，无报道价值
 
-## 输出格式要求
-请严格按以下 JSON 格式输出（不要添加其他内容）：
-```json
-{{
-  "ai_relevance_score": <0-100的整数>,
-  "reportability_score": <0-100的整数>,
-  "score_reason": "<50字以内的中文理由>",
-  "tags": ["<标签1>", "<标签2>"]
-}}
-```
-
-## 标签参考
-MCP协议、身份认证、权限管控、意图注入、提示注入、模型攻击、
-供应链安全、合规政策、竞品动态、技术突破、漏洞披露、行业趋势
+## 输出格式
+请严格输出JSON，不要加代码块标记：
+{{"ai_relevance_score": 85, "reportability_score": 70, "score_reason": "简短理由", "tags": ["标签"]}}
 """
 
-USER_PROMPT_TEMPLATE = """请对以下文章进行评分：
+USER_PROMPT_TEMPLATE = """请基于产品知识库对以下文章进行语义相关度评分：
 
 **标题**: {title}
 **来源**: {source}
 **分类**: {category}
-**原标题摘要**: {summary}
-**AI判断**:
-  - AI安全相关: {is_ai_security}
-  - Agent安全相关: {is_agent_security}
+**文章摘要**: {summary}
+**文章正文（前段）**: {content}
 """
+
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -122,91 +108,46 @@ class ScoringAgent:
         self,
         llm: BaseChatModel,
         knowledge: ProductKnowledge,
-        concurrency: int = DEFAULT_CONCURRENCY,
         temperature: float = DEFAULT_TEMPERATURE,
     ):
-        """
-        Args:
-            llm: LangChain ChatModel（ChatOpenAI 兼容接口）
-            knowledge: 产品知识库
-            concurrency: 并发打分上限
-            temperature: LLM 温度参数
-        """
         self.llm = llm
-        self.llm.temperature = temperature  # 覆盖温度
+        self.llm.temperature = temperature
         self.knowledge = knowledge
-        self.semaphore = asyncio.Semaphore(concurrency)
         self.system_prompt = self._build_system_prompt()
 
     # ── 公开接口 ──────────────────────────────────────────────
 
     async def score_single(self, article: dict | Any) -> dict:
-        """对单篇文章打分。
-
-        Args:
-            article: 文章数据（dict 或 ArticleBase 对象）
-
-        Returns:
-            {
-                "ai_relevance_score": int,
-                "reportability_score": int,
-                "score_reason": str,
-                "tags": list[str],
-                "total_score": int,
-                "is_high_value": bool,
-            }
-        """
-        # 统一转为 dict
+        """单篇打分（被 score_batch 批量调用时使用批量 LLM 打分，更快）"""
         art = article if isinstance(article, dict) else article.model_dump()
+        return await self._score_with_llm(art)
 
+    async def _score_with_llm(self, art: dict) -> dict:
         user_prompt = self._build_user_prompt(art)
-
         for attempt in range(MAX_RETRIES + 1):
             try:
                 response = await self.llm.ainvoke([
                     SystemMessage(content=self.system_prompt),
                     HumanMessage(content=user_prompt),
                 ])
-                raw_text = response.content if hasattr(response, "content") else str(response)
-                parsed = self._parse_response(raw_text)
-                validated = self._validate_and_fix(parsed)
-                return self._enrich_result(validated)
-
+                raw = response.content if hasattr(response, "content") else str(response)
+                return self._enrich_result(self._validate_and_fix(self._parse_response(raw)))
             except Exception as e:
-                logger.warning(
-                    "Scoring attempt %d/%d failed: %s",
-                    attempt + 1, MAX_RETRIES + 1, e,
-                )
                 if attempt == MAX_RETRIES:
                     return self._fallback_score(str(e))
-
-        return self._fallback_score("max retries exceeded")
+        return self._fallback_score("max retries")
 
     async def score_batch(self, articles: list[dict | Any]) -> list[dict]:
-        """批量并发打分。
-
-        Args:
-            articles: 文章列表
-
-        Returns:
-            打分结果列表（与输入同序）
-        """
         if not articles:
             return []
-
-        logger.info("Scoring %d articles (max concurrency=%d)", len(articles), DEFAULT_CONCURRENCY)
-
-        async def _score_with_limit(article):
-            async with self.semaphore:
-                return await self.score_single(article)
-
-        tasks = [_score_with_limit(a) for a in articles]
-        results = await asyncio.gather(*tasks)
-        results_list = list(results)
-
-        success_count = sum(1 for r in results_list if not r.get("_fallback"))
-        logger.info("Scoring complete: %d/%d successful", success_count, len(results_list))
-        return results_list
+        logger.info("Scoring %d articles (parallel)", len(articles))
+        results = await asyncio.gather(*[self._score_with_llm(
+            a if isinstance(a, dict) else a.model_dump()
+        ) for a in articles])
+        rlist = list(results)
+        ok = sum(1 for r in rlist if not r.get("_fallback"))
+        logger.info("Scored: %d/%d ok", ok, len(rlist))
+        return rlist
 
     # ── Prompt 构建 ──────────────────────────────────────────
 
@@ -219,16 +160,15 @@ class ScoringAgent:
 
     @staticmethod
     def _build_user_prompt(article: dict) -> str:
-        """构建单篇文章的 User Prompt"""
         category = article.get("category", "") or "未分类"
         summary = article.get("summary", "") or article.get("summary_cn", "") or "无"
+        content = (article.get("content_md", "") or article.get("summary", "") or "")[:500]
         return USER_PROMPT_TEMPLATE.format(
             title=article.get("title", ""),
             source=article.get("source", ""),
             category=category,
             summary=summary,
-            is_ai_security=article.get("is_ai_security", False),
-            is_agent_security=article.get("is_agent_security", False),
+            content=content or "（暂无正文）",
         )
 
     # ── 响应解析 ─────────────────────────────────────────────

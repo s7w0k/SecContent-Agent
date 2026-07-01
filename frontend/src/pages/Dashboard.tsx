@@ -6,7 +6,8 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Drawer, message, Space, Tag, Typography } from "antd";
+import { Button, Drawer, message, Space, Tag, Typography } from "antd";
+import { ImportOutlined } from "@ant-design/icons";
 import StatsCards from "../components/StatsCards";
 import FilterBar from "../components/FilterBar";
 import ArticleTable from "../components/ArticleTable";
@@ -140,10 +141,28 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <div style={{ padding: 24, maxWidth: 1400, margin: "0 auto" }}>
-      <Title level={3} style={{ marginBottom: 24 }}>
-        🚀 PR Agent Dashboard
-      </Title>
+    <div style={{ padding: "16px 24px", maxWidth: 1600, margin: "0 auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <Title level={3} style={{ margin: 0 }}>
+          🚀 PR Agent Dashboard
+        </Title>
+        <Button
+          type="dashed"
+          icon={<ImportOutlined />}
+          onClick={async () => {
+            try {
+              const res = await api.importWewe();
+              message.success(`WeWe 导入完成: 新增 ${res.saved} 篇 (总计 ${res.total_in_rss} 篇)`);
+              loadStats();
+              loadArticles();
+            } catch (e: any) {
+              message.error(`导入失败: ${e?.response?.data?.detail || e.message}`);
+            }
+          }}
+        >
+          导入公众号文章
+        </Button>
+      </div>
 
       {/* 统计卡片 */}
       <StatsCards stats={stats} loading={loading} reportCount={reportCount} />
@@ -169,13 +188,11 @@ export default function Dashboard() {
         loading={tableLoading}
         page={page}
         pageSize={pageSize}
-        onPageChange={(p, ps) => {
-          setPage(p);
-          setPageSize(ps);
-        }}
+        onPageChange={(p, ps) => { setPage(p); setPageSize(ps); }}
         onSortChange={handleSortChange}
         onViewReport={handleViewReport}
         onViewDetail={handleViewDetail}
+        onRefresh={loadArticles}
       />
 
       {/* 报道查看器 Modal */}

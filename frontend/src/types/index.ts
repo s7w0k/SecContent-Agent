@@ -161,3 +161,42 @@ export interface FilterValues {
   keyword?: string;
   is_high_value?: boolean;
 }
+
+// ═══════════════════════════════════════════════════════════
+// WeWe Account（公众号账号管理）
+// ═══════════════════════════════════════════════════════════
+
+export interface WeWeAccount {
+  id: string;
+  name: string;
+  status: string;        // active / expired / disabled
+  vid?: string;
+  token?: string;
+  last_login?: string;
+}
+
+export interface AccountStatusResult {
+  ok: boolean;
+  accounts?: WeWeAccount[];
+  total?: number;
+  active_count?: number;
+  message?: string;
+}
+
+export interface QRCodeResult {
+  ok: boolean;
+  uuid?: string;
+  qr_base64?: string;    // base64 PNG (from backend)
+  qrcode_img?: string;   // alias
+  scan_url?: string;
+  message?: string;
+}
+
+export interface PollLoginResult {
+  ok: boolean;
+  status?: string;        // waiting / scanned / confirmed / expired
+  vid?: string;
+  token?: string;
+  name?: string;
+  message?: string;
+}

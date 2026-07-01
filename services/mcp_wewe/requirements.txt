@@ -25,3 +25,4 @@ langchain-mcp-adapters>=0.1
 
 # ── 可选：二维码生成（account_tools.py）───────────────────
 qrcode>=7.4
+Pillow>=10.0

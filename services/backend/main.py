@@ -105,7 +105,7 @@ async def lifespan(app: FastAPI):
         llm = ChatOpenAI(
             model=settings.DEEPSEEK_MODEL,
             api_key=settings.DEEPSEEK_API_KEY,
-            base_url=f"{settings.DEEPSEEK_BASE_URL}/v1",
+            base_url=settings.DEEPSEEK_BASE_URL,
             temperature=0.1,
         )
         _log("INFO", f"LLM initialized: model={settings.DEEPSEEK_MODEL}")
@@ -176,10 +176,14 @@ async def log_requests(request: Request, call_next):
 from api.pipeline import router as pipeline_router
 from api.dashboard import router as dashboard_router
 from api.reports import router as reports_router
+from api.accounts import router as accounts_router
+from api.logs import router as logs_router
 
 app.include_router(pipeline_router)
 app.include_router(dashboard_router)
 app.include_router(reports_router)
+app.include_router(accounts_router)
+app.include_router(logs_router)
 
 
 # ── System endpoints ────────────────────────────────────
@@ -212,16 +216,6 @@ async def config_summary():
         "deepseek_configured": bool(s.DEEPSEEK_API_KEY),
         "score_threshold": s.PIPELINE_SCORE_THRESHOLD,
         "crawl_days_default": s.PIPELINE_CRAWL_DEFAULT_DAYS,
-    }
-
-
-@app.get("/api/logs", tags=["System"])
-async def view_logs(limit: int = 50):
-    """View recent in-memory logs. Pass ?limit=100 for more."""
-    logs = list(_log_buffer)
-    return {
-        "count": len(logs),
-        "logs": logs[-limit:],
     }
 
 

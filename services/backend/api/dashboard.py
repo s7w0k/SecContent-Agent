@@ -130,6 +130,96 @@ async def get_article(url_hash: str, request: Request):
     return article
 
 
+@router.delete("/articles/{url_hash}", summary="删除文章")
+async def delete_article(url_hash: str, request: Request):
+    """删除指定文章。"""
+    db = _get_db(request)
+    result = await db["articles"].delete_one({"url_hash": url_hash})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Article not found")
+    return {"ok": True, "deleted": result.deleted_count}
+
+
+@router.post("/articles/{url_hash}/fetch-content", summary="获取推文原文")
+async def fetch_article_content(url_hash: str, request: Request):
+    """抓取公众号推文原文并保存。"""
+    import httpx as _httpx
+    db = _get_db(request)
+    article = await db["articles"].find_one({"url_hash": url_hash})
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    url = article.get("url", "")
+    if not url:
+        raise HTTPException(status_code=400, detail="Article has no URL")
+
+    try:
+        # 调用 mcp-wewe 抓取全文
+        async with _httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post("http://mcp-wewe:8100/fetch-article",
+                                     json={"link": url})
+            resp.raise_for_status()
+            data = resp.json()
+        content = ""
+        if isinstance(data, dict):
+            content = data.get("text", "") or data.get("content_md", "") or data.get("content", "") or data.get("fulltext", "")
+            if not content and "result" in data:
+                content = data["result"].get("content", "") if isinstance(data["result"], dict) else data["result"]
+        if not content:
+            # fallback: 直接 requests 抓取
+            import requests as _req
+            from bs4 import BeautifulSoup
+            r = _req.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+            soup = BeautifulSoup(r.text, "html.parser")
+            el = soup.select_one("#js_content") or soup.select_one(".rich_media_content")
+            content = el.get_text() if el else r.text[:5000]
+        # 保存到 DB
+        await db["articles"].update_one(
+            {"url_hash": url_hash},
+            {"$set": {"content_md": content[:50000]}},
+        )
+        return {"ok": True, "content": content[:5000]}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.post("/articles/{url_hash}/summarize", summary="生成摘要")
+async def summarize_article(url_hash: str, request: Request):
+    """用 DeepSeek 生成 150 字中文摘要并保存。"""
+    db = _get_db(request)
+    article = await db["articles"].find_one({"url_hash": url_hash})
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    content = article.get("content_md", "") or article.get("summary", "")
+    if len(content) < 50:
+        raise HTTPException(status_code=400, detail="Content too short, fetch original first")
+
+    try:
+        import os, json as _json
+        from openai import OpenAI
+        client = OpenAI(
+            api_key=os.getenv("DEEPSEEK_API_KEY", "sk-REDACTED"),
+            base_url="https://api.deepseek.com/v1",
+        )
+        resp = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[{
+                "role": "user",
+                "content": f"请用150个汉字以内的篇幅总结以下文章的核心内容：\n\n{content[:4000]}",
+            }],
+            max_tokens=300,
+            temperature=0.3,
+        )
+        summary = resp.choices[0].message.content.strip()
+        await db["articles"].update_one(
+            {"url_hash": url_hash},
+            {"$set": {"summary_cn": summary}},
+        )
+        return {"ok": True, "summary_cn": summary}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @router.get("/stats", summary="统计概览")
 async def get_stats(request: Request):
     """返回仪表盘统计数据：总数、分类分布、来源分布、评分分布"""

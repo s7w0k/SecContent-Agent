@@ -99,19 +99,24 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
   // ── 触发操作 ──────────────────────────────────────────────
 
   const trigger = useCallback(
-    async (action: keyof typeof api, label: string, days?: number) => {
+    async (action: "run" | "crawl" | "score" | "report", label: string, days?: number) => {
+      console.log(`[Pipeline] Triggering ${action}...`);
       setRunning(true);
       setErrors([]);
       setStatus("running");
       message.loading({ content: `${label}中...`, key: "pipeline", duration: 0 });
 
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (api[action] as any)(...(days !== undefined ? [days] : []));
+        if (action === "run") await api.run(days || 1);
+        else if (action === "crawl") await api.crawl(days || 1);
+        else if (action === "score") await api.score();
+        else if (action === "report") await api.report();
+        console.log(`[Pipeline] ${action} triggered successfully`);
         message.success({ content: `${label}已触发`, key: "pipeline", duration: 2 });
         startPolling();
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "未知错误";
+        console.error(`[Pipeline] ${action} failed:`, e);
         message.error({ content: `${label}失败: ${msg}`, key: "pipeline" });
         setRunning(false);
         setStatus("failed");

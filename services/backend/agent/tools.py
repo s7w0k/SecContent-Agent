@@ -40,8 +40,8 @@ logger = logging.getLogger("backend.agent.tools")
 # 通用 HTTP 调用辅助
 # ═══════════════════════════════════════════════════════════════
 
-DEFAULT_TIMEOUT = 30.0
-MAX_RETRIES = 1
+DEFAULT_TIMEOUT = 120.0
+MAX_RETRIES = 0
 
 
 async def _http_call(

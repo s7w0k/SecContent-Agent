@@ -11,12 +11,15 @@
 
 import axios, { type AxiosInstance } from "axios";
 import type {
+  AccountStatusResult,
   Article,
   ArticleQuery,
   KnowledgeSummary,
   PaginatedResponse,
   PipelineResult,
   PipelineStatusResponse,
+  PollLoginResult,
+  QRCodeResult,
   Report,
   StatsData,
 } from "../types";
@@ -29,7 +32,7 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 const client: AxiosInstance = axios.create({
   baseURL: BASE_URL,
-  timeout: 30000,
+  timeout: 300000,
   headers: {
     "Content-Type": "application/json",
   },
@@ -70,6 +73,24 @@ export const dashboardApi = {
   /** 单篇文章详情 */
   async getArticle(hash: string): Promise<Article> {
     const { data } = await client.get(`/articles/${hash}`);
+    return data;
+  },
+
+  /** 删除文章 */
+  async deleteArticle(hash: string): Promise<{ ok: boolean }> {
+    const { data } = await client.delete(`/articles/${hash}`);
+    return data;
+  },
+
+  /** 获取推文原文 */
+  async fetchContent(hash: string): Promise<{ ok: boolean; content: string }> {
+    const { data } = await client.post(`/articles/${hash}/fetch-content`);
+    return data;
+  },
+
+  /** 生成摘要 */
+  async summarizeArticle(hash: string): Promise<{ ok: boolean; summary_cn: string }> {
+    const { data } = await client.post(`/articles/${hash}/summarize`);
     return data;
   },
 
@@ -118,6 +139,12 @@ export const pipelineApi = {
     const { data } = await client.get("/pipeline/status");
     return data;
   },
+
+  /** 导入 WeWe RSS 全部文章 */
+  async importWewe(): Promise<{ ok: boolean; saved: number; total_in_rss: number }> {
+    const { data } = await client.post("/pipeline/import-wewe");
+    return data;
+  },
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -150,6 +177,54 @@ export const reportsApi = {
 };
 
 // ═══════════════════════════════════════════════════════════
+// Accounts API（公众号账号管理）
+// ═══════════════════════════════════════════════════════════
+
+export const accountsApi = {
+  /** 查询所有账号状态 */
+  async getAccountStatus(): Promise<AccountStatusResult> {
+    const { data } = await client.get("/accounts/status");
+    return data;
+  },
+
+  /** 创建登录二维码 */
+  async createQRCode(): Promise<QRCodeResult> {
+    const { data } = await client.post("/accounts/qrcode");
+    return data;
+  },
+
+  /** 轮询扫码结果 */
+  async pollLogin(uuid: string, timeout: number = 120): Promise<PollLoginResult> {
+    const { data } = await client.post("/accounts/poll-login", null, {
+      params: { uuid, timeout_seconds: timeout },
+    });
+    return data;
+  },
+
+  /** 保存账号到 WeWe RSS */
+  async saveAccount(vid: string, token: string, name: string): Promise<{ ok: boolean }> {
+    const { data } = await client.post("/accounts/save", null, {
+      params: { vid, token, name },
+    });
+    return data;
+  },
+
+  /** 启用/停用账号 */
+  async toggleAccount(accountId: string, status: number): Promise<{ ok: boolean }> {
+    const { data } = await client.post("/accounts/toggle", null, {
+      params: { account_id: accountId, status },
+    });
+    return data;
+  },
+
+  /** 更新全部最新文章 */
+  async refreshArticles(): Promise<{ ok: boolean; saved: number; total: number }> {
+    const { data } = await client.post("/accounts/refresh");
+    return data;
+  },
+};
+
+// ═══════════════════════════════════════════════════════════
 // 统一导出
 // ═══════════════════════════════════════════════════════════
 
@@ -157,6 +232,7 @@ const api = {
   ...dashboardApi,
   ...pipelineApi,
   ...reportsApi,
+  ...accountsApi,
 };
 
 export default api;
