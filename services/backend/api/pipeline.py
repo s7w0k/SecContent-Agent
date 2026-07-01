@@ -76,12 +76,104 @@ async def pipeline_run(body: PipelineRunRequest, request: Request):
     return result
 
 
-@router.post("/crawl", summary="仅执行爬取阶段")
+@router.post("/crawl", summary="爬取+分类")
 async def pipeline_crawl(body: PipelinePhaseRequest, request: Request):
-    """仅爬取文章（crawl → classify）"""
+    """爬取文章并分类（crawl → classify）"""
     manager = _get_manager(request)
     result = await manager.run_phase("classify", crawl_days=body.crawl_days)
     return result
+
+
+@router.post("/crawl-overseas", summary="仅爬取海外安全新闻")
+async def crawl_overseas_only(request: Request, days: int = 1):
+    """仅调 mcp-crawl 爬取海外新闻 → 入库"""
+    import hashlib, os
+    from datetime import datetime, timezone, timedelta
+
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    tz = timezone(timedelta(hours=8))
+    tools = getattr(request.app.state, "pipeline_manager", None)
+    if tools is None:
+        raise HTTPException(status_code=503, detail="Pipeline not initialized")
+
+    try:
+        result = await tools.tools["crawl_overseas_news"].ainvoke({"payload": {"days": days}})
+        articles = []
+        if result.get("ok") and result.get("data"):
+            data = result["data"]
+            articles = data.get("articles", []) if isinstance(data, dict) else data
+
+        saved = 0
+        for art in articles:
+            url = art.get("url", "")
+            if not url: continue
+            url_hash = hashlib.md5(url.encode()).hexdigest()
+            existing = await db["articles"].find_one({"url_hash": url_hash})
+            if existing: continue
+            await db["articles"].insert_one({
+                "url_hash": url_hash, "title": art.get("title", ""), "url": url,
+                "source": art.get("source", ""), "source_type": "overseas_news",
+                "published_at": art.get("published_at", ""),
+                "added_at": datetime.now(tz).strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+                "summary": art.get("summary", ""), "content_md": "",
+                "pipeline_status": "crawled",
+            })
+            saved += 1
+        return {"ok": True, "total": len(articles), "saved": saved}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.post("/crawl-wewe", summary="仅爬取公众号文章")
+async def crawl_wewe_only(request: Request):
+    """仅直连 WeWe RSS Atom feed 爬取公众号文章 → 入库"""
+    import hashlib, xml.etree.ElementTree as ET
+    from datetime import datetime, timezone, timedelta
+
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    tz = timezone(timedelta(hours=8))
+    log = logging.getLogger("backend.api.pipeline")
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get("http://49.232.145.182:4001/feeds/all.atom")
+            xml_text = resp.text
+
+        NS = {"atom": "http://www.w3.org/2005/Atom"}
+        root = ET.fromstring(xml_text)
+        entries = root.findall("atom:entry", NS)
+        saved = 0
+        for entry in entries:
+            title_el = entry.find("atom:title", NS)
+            link_el = entry.find("atom:link", NS)
+            author_el = entry.find("atom:author/atom:name", NS)
+            updated_el = entry.find("atom:updated", NS)
+            title = title_el.text if title_el is not None else ""
+            url = link_el.get("href", "") if link_el is not None else ""
+            source = author_el.text if author_el is not None else "微信公众号"
+            pub = updated_el.text[:10].replace("-", "年", 1).replace("-", "月") + "日" if updated_el is not None and updated_el.text else ""
+            if not url: continue
+            url_hash = hashlib.md5(url.encode()).hexdigest()
+            existing = await db["articles"].find_one({"url_hash": url_hash})
+            if existing: continue
+            await db["articles"].insert_one({
+                "url_hash": url_hash, "title": title, "url": url,
+                "source": source, "source_type": "wechat_mp",
+                "published_at": pub,
+                "added_at": datetime.now(tz).strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+                "summary": "", "content_md": "", "pipeline_status": "crawled",
+            })
+            saved += 1
+        log.info(f"[crawl-wewe] Saved {saved}/{len(entries)}")
+        return {"ok": True, "total": len(entries), "saved": saved}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.post("/score", summary="仅执行打分阶段")

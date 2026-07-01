@@ -13,6 +13,7 @@ import {
   message,
   Modal,
   Button,
+  Popconfirm,
   Space,
   Spin,
   Table,
@@ -176,25 +177,22 @@ export default function AccountPage() {
       key: "actions",
       width: 120,
       render: (_: any, record: any) => {
-        const isActive = record.status === 1;
+        const isActive = record.status === 1 || record.status_code === 1;
         return (
-          <Button
-            type="link"
-            size="small"
-            danger={isActive}
-            onClick={async () => {
-              const newStatus = isActive ? 0 : 1;
-              try {
-                await api.toggleAccount(record.id, newStatus);
-                message.success(isActive ? "已停用" : "已启用");
-                loadStatus();
-              } catch (e: any) {
-                message.error("操作失败");
-              }
-            }}
-          >
-            {isActive ? "停用" : "启用"}
-          </Button>
+          <Space size="small">
+            <Button type="link" size="small" danger={isActive}
+              onClick={async () => {
+                const ns = isActive ? 0 : 1;
+                try { await api.toggleAccount(record.id, ns); message.success(isActive ? "disabled" : "enabled"); loadStatus(); }
+                catch { message.error("failed"); }
+              }}>{isActive ? "停用" : "启用"}</Button>
+            <Popconfirm title="确定删除此账号？" onConfirm={async () => {
+              try { await api.deleteAccount(record.id); message.success("deleted"); loadStatus(); }
+              catch { message.error("delete failed"); }
+            }}>
+              <Button type="link" size="small" danger>删除</Button>
+            </Popconfirm>
+          </Space>
         );
       },
     },

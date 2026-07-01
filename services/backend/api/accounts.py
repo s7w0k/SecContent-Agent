@@ -90,7 +90,7 @@ async def create_qrcode(request: FastAPIRequest):
 @router.post("/poll-login")
 async def poll_login(uuid: str, timeout_seconds: int = 5):
     try:
-        data = await _trpc("platform.pollLogin", {"uuid": uuid, "timeoutSeconds": timeout_seconds}, "POST")
+        data = await _trpc("platform.pollLoginResult", {"uuid": uuid, "timeoutSeconds": timeout_seconds}, "POST")
         return {"ok": True, "status": data.get("status", "waiting"),
                 "vid": data.get("vid"), "token": data.get("token"), "name": data.get("name")}
     except Exception as e:
@@ -104,6 +104,23 @@ async def save_account(vid: str, token: str, name: str):
         return {"ok": True, "id": data.get("id")}
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.delete("/delete/{account_id}")
+async def delete_account_route(account_id: str, request: FastAPIRequest):
+    """Remove account from crawl config (WeWe RSS does not support delete)."""
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="DB not available")
+    # Remove from crawl config
+    await db["crawl_accounts"].delete_many({"name": account_id})
+    # Also try to disable in WeWe RSS (set status=0)
+    try:
+        await _trpc("account.add", {"id": account_id, "name": account_id, "token": account_id, "status": 0}, "POST")
+    except Exception:
+        pass
+    logger.info(f"Account removed: {account_id}")
+    return {"ok": True}
 
 
 @router.post("/toggle")

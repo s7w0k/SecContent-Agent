@@ -126,7 +126,21 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
   );
 
   const handleRunFull = useCallback(() => trigger("run", "全流程", 1), [trigger]);
-  const handleCrawl = useCallback(() => trigger("crawl", "爬取", 1), [trigger]);
+  const handleCrawl = useCallback(() => trigger("crawl", "爬取+分类", 1), [trigger]);
+  const handleCrawlOverseas = useCallback(async () => {
+    try {
+      const res = await api.crawlOverseas(1);
+      message.success(`海外新闻: ${res.saved} 篇入库`);
+      onComplete();
+    } catch (e: any) { message.error("海外爬取失败"); }
+  }, [onComplete]);
+  const handleCrawlWewe = useCallback(async () => {
+    try {
+      const res = await api.crawlWewe();
+      message.success(`公众号: ${res.saved} 篇入库`);
+      onComplete();
+    } catch (e: any) { message.error("公众号爬取失败"); }
+  }, [onComplete]);
   const handleScore = useCallback(() => trigger("score", "打分"), [trigger]);
   const handleReport = useCallback(() => trigger("report", "报道"), [trigger]);
 
@@ -184,7 +198,13 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
           onClick={handleCrawl}
           disabled={running}
         >
-          仅爬取
+          爬取+分类
+        </Button>
+        <Button onClick={handleCrawlOverseas} disabled={running}>
+          海外新闻
+        </Button>
+        <Button onClick={handleCrawlWewe} disabled={running}>
+          公众号
         </Button>
         <Button
           icon={<ExperimentOutlined />}

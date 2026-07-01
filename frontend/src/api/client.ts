@@ -114,11 +114,21 @@ export const pipelineApi = {
     return data;
   },
 
-  /** 仅爬取 */
+  /** 爬取+分类 */
   async crawl(crawlDays: number = 1): Promise<PipelineResult> {
-    const { data } = await client.post("/pipeline/crawl", {
-      crawl_days: crawlDays,
-    });
+    const { data } = await client.post("/pipeline/crawl", { crawl_days: crawlDays });
+    return data;
+  },
+
+  /** 仅爬取海外新闻 */
+  async crawlOverseas(days: number = 1): Promise<{ ok: boolean; saved: number }> {
+    const { data } = await client.post("/pipeline/crawl-overseas", null, { params: { days } });
+    return data;
+  },
+
+  /** 仅爬取公众号 */
+  async crawlWewe(): Promise<{ ok: boolean; saved: number }> {
+    const { data } = await client.post("/pipeline/crawl-wewe");
     return data;
   },
 
@@ -226,6 +236,12 @@ export const accountsApi = {
   /** 更新全部最新文章 */
   async refreshArticles(): Promise<{ ok: boolean; saved: number; total: number }> {
     const { data } = await client.post("/accounts/refresh");
+    return data;
+  },
+
+  /** 删除账号 */
+  async deleteAccount(accountId: string): Promise<{ ok: boolean }> {
+    const { data } = await client.delete(`/accounts/delete/${accountId}`);
     return data;
   },
 };
