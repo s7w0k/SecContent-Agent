@@ -179,6 +179,7 @@ from api.reports import router as reports_router
 from api.accounts import router as accounts_router
 from api.logs import router as logs_router
 from api.crawl_config import router as crawl_config_router
+from api.overseas_crawl import router as overseas_router
 
 app.include_router(pipeline_router)
 app.include_router(dashboard_router)
@@ -186,6 +187,7 @@ app.include_router(reports_router)
 app.include_router(accounts_router)
 app.include_router(logs_router)
 app.include_router(crawl_config_router)
+app.include_router(overseas_router)
 
 
 # ── System endpoints ────────────────────────────────────

@@ -6,10 +6,12 @@ import {
   WechatOutlined,
   FileTextOutlined,
   FileTextOutlined,
+  SearchOutlined,
 } from "@ant-design/icons";
 import Dashboard from "./pages/Dashboard";
 import AccountPage from "./pages/AccountPage";
 import LogsPage from "./pages/LogsPage";
+import SearchPage from "./pages/SearchPage";
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
@@ -17,6 +19,7 @@ const { Text } = Typography;
 const menuItems = [
   { key: "dashboard", icon: <DashboardOutlined />, label: "仪表盘" },
   { key: "accounts", icon: <WechatOutlined />, label: "公众号账号" },
+  { key: "search", icon: <SearchOutlined />, label: "海外搜索" },
   { key: "logs", icon: <FileTextOutlined />, label: "运行日志" },
   { key: "about", icon: <InfoCircleOutlined />, label: "关于" },
 ];
@@ -53,6 +56,7 @@ function App() {
         {tab === "dashboard" && <Dashboard />}
         {tab === "accounts" && <AccountPage />}
         {tab === "logs" && <LogsPage />}
+        {tab === "search" && <SearchPage />}
         {tab === "about" && (
           <div style={{ padding: 48, maxWidth: 800, margin: "0 auto" }}>
             <h2>🚀 PR Agent Dashboard</h2>
