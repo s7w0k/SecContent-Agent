@@ -13,6 +13,7 @@ import FilterBar from "../components/FilterBar";
 import ArticleTable from "../components/ArticleTable";
 import PipelineControl from "../components/PipelineControl";
 import ReportViewer from "../components/ReportViewer";
+import CrawlConfig from "../components/CrawlConfig";
 import api from "../api/client";
 import type {
   Article,
@@ -146,23 +147,18 @@ export default function Dashboard() {
         <Title level={3} style={{ margin: 0 }}>
           🚀 PR Agent Dashboard
         </Title>
-        <Button
-          type="dashed"
-          icon={<ImportOutlined />}
+        <Button icon={<ImportOutlined />}
           onClick={async () => {
             try {
               const res = await api.importWewe();
-              message.success(`WeWe 导入完成: 新增 ${res.saved} 篇 (总计 ${res.total_in_rss} 篇)`);
-              loadStats();
-              loadArticles();
-            } catch (e: any) {
-              message.error(`导入失败: ${e?.response?.data?.detail || e.message}`);
-            }
-          }}
-        >
-          导入公众号文章
-        </Button>
+              message.success(`RSS 导入: ${res.saved} 篇`);
+              loadStats(); loadArticles();
+            } catch (e: any) { message.error(`导入失败: ${e?.response?.data?.detail || e.message}`); }
+          }}>导入 RSS</Button>
       </div>
+
+      {/* API 抓取配置 */}
+      <CrawlConfig onCrawl={() => { loadStats(); loadArticles(); loadReportCount(); }} />
 
       {/* 统计卡片 */}
       <StatsCards stats={stats} loading={loading} reportCount={reportCount} />

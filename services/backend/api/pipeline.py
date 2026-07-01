@@ -101,6 +101,101 @@ async def pipeline_report(body: ReportRequest, request: Request):
     return result
 
 
+@router.post("/crawl-api", summary="API 抓取公众号文章")
+async def crawl_via_api(request: Request, days: int = 1):
+    """通过 Just One API 抓取指定公众号文章 → 逐篇抓取全文 → 入库。"""
+    import hashlib, os
+    from datetime import datetime, timezone, timedelta
+
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    api_url = os.getenv("JUST_ONE_API_URL", "https://api.justoneapi.com")
+    api_token = os.getenv("JUST_ONE_API_TOKEN", "swgbMkTrhfvwP6Rv")
+    # 从 MongoDB 读取配置的公众号列表
+    cursor = db["crawl_accounts"].find().sort("name", 1)
+    configs = await cursor.to_list(length=100)
+    accounts = [c["name"] for c in configs] if configs else os.getenv("JUST_ONE_ACCOUNTS", "安恒信息,奇安信集团,绿盟科技").split(",")
+
+    log = logging.getLogger("backend.api.pipeline")
+    tz = timezone(timedelta(hours=8))
+    all_articles = []
+
+    try:
+        # 1. 逐个公众号调 API（需要传 name 参数）
+        async with httpx.AsyncClient(timeout=30) as client:
+            for account in accounts:
+                account = account.strip()
+                if not account:
+                    continue
+                try:
+                    resp = await client.get(
+                        f"{api_url}/api/weixin/get-account-today-articles/v1"
+                        f"?token={api_token}&name={account}"
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    arts = data.get("data", []) or data.get("articles", [])
+                    if isinstance(arts, list):
+                        for a in arts:
+                            a["_source_account"] = account
+                        all_articles.extend(arts)
+                    log.info(f"[crawl-api] {account}: {len(arts) if isinstance(arts, list) else 0} articles")
+                except Exception as e:
+                    log.warning(f"[crawl-api] {account} failed: {e}")
+
+        log.info(f"[crawl-api] Total articles from API: {len(all_articles)}")
+
+        # 2. 逐篇抓取全文 + 入库
+        saved, skipped = 0, 0
+        async with httpx.AsyncClient(timeout=60) as client:
+            for art in all_articles:
+                url = art.get("url", "") or art.get("link", "")
+                title = art.get("title", "")
+                if not url:
+                    continue
+
+                url_hash = hashlib.md5(url.encode()).hexdigest()
+                existing = await db["articles"].find_one({"url_hash": url_hash})
+                if existing:
+                    skipped += 1
+                    continue
+
+                # 抓取全文 (mcp-wewe)
+                content = ""
+                try:
+                    fr = await client.post("http://mcp-wewe:8100/fetch-article", json={"link": url})
+                    fd = fr.json()
+                    content = fd.get("text", "") or ""
+                except Exception:
+                    pass
+
+                source = art.get("_source_account", art.get("author_name", art.get("author", "微信公众号")))
+                pub = art.get("publish_time", art.get("pub_time", art.get("created_at", "")))
+
+                await db["articles"].insert_one({
+                    "url_hash": url_hash,
+                    "title": title,
+                    "url": url,
+                    "source": source,
+                    "source_type": "wechat_mp",
+                    "published_at": pub,
+                    "added_at": datetime.now(tz).strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+                    "summary": art.get("digest", art.get("summary", art.get("description", ""))),
+                    "content_md": content[:50000],
+                    "pipeline_status": "crawled",
+                })
+                saved += 1
+
+        log.info(f"[crawl-api] Saved {saved}, skipped {skipped}")
+        return {"ok": True, "total": len(all_articles), "saved": saved, "skipped": skipped}
+
+    except Exception as e:
+        log.error(f"[crawl-api] Failed: {e}")
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @router.get("/status", summary="查询流水线状态")
 async def pipeline_status(request: Request):
     """返回当前流水线的运行状态和进度"""

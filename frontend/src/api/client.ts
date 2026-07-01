@@ -145,6 +145,12 @@ export const pipelineApi = {
     const { data } = await client.post("/pipeline/import-wewe");
     return data;
   },
+
+  /** API 抓取公众号文章 (Just One API) */
+  async crawlApi(days: number = 1): Promise<{ ok: boolean; saved: number; total: number }> {
+    const { data } = await client.post("/pipeline/crawl-api", { days });
+    return data;
+  },
 };
 
 // ═══════════════════════════════════════════════════════════
