@@ -88,13 +88,17 @@ async def create_qrcode(request: FastAPIRequest):
 
 
 @router.post("/poll-login")
-async def poll_login(uuid: str, timeout_seconds: int = 5):
+async def poll_login(uuid: str, timeout_seconds: int = 10):
+    """Poll for QR scan via platform.getLoginResult (QUERY, not mutation)."""
     try:
-        data = await _trpc("platform.pollLoginResult", {"uuid": uuid, "timeoutSeconds": timeout_seconds}, "POST")
-        return {"ok": True, "status": data.get("status", "waiting"),
-                "vid": data.get("vid"), "token": data.get("token"), "name": data.get("name")}
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        data = await _trpc("platform.getLoginResult", {"id": uuid}, "GET", timeout=timeout_seconds + 5)
+        if data.get("vid"):
+            return {"ok": True, "status": "confirmed",
+                    "vid": str(data["vid"]), "token": data.get("token", str(data["vid"])),
+                    "name": data.get("username", data.get("name", str(data["vid"])))}
+        return {"ok": True, "status": "waiting"}
+    except Exception:
+        return {"ok": True, "status": "waiting"}
 
 
 @router.post("/save")
@@ -108,18 +112,18 @@ async def save_account(vid: str, token: str, name: str):
 
 @router.delete("/delete/{account_id}")
 async def delete_account_route(account_id: str, request: FastAPIRequest):
-    """Remove account from crawl config (WeWe RSS does not support delete)."""
+    """Delete account from WeWe RSS + remove from crawl config."""
     db = getattr(request.app.state, "db", None)
     if db is None:
         raise HTTPException(status_code=503, detail="DB not available")
+    # account.delete takes plain JSON string as input
+    try:
+        await _trpc("account.delete", account_id, "POST")
+        logger.info(f"Account deleted from WeWe RSS: {account_id}")
+    except Exception as e:
+        logger.warning(f"WeWe RSS delete failed: {e}")
     # Remove from crawl config
     await db["crawl_accounts"].delete_many({"name": account_id})
-    # Also try to disable in WeWe RSS (set status=0)
-    try:
-        await _trpc("account.add", {"id": account_id, "name": account_id, "token": account_id, "status": 0}, "POST")
-    except Exception:
-        pass
-    logger.info(f"Account removed: {account_id}")
     return {"ok": True}
 
 
