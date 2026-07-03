@@ -128,6 +128,12 @@ omit = [
     "services/mcp_wewe/http_mcp_bridge.py",
     "services/mcp_crawl/server.py",
     "services/mcp_crawl/http_bridge.py",
+    "services/mcp_crawl/crawler.py",
+    "services/mcp_crawl/classifier.py",
+    # API 端点文件（需 MongoDB + 外部服务，CI 中无法完整覆盖）
+    "services/backend/api/accounts.py",
+    "services/backend/api/crawl_config.py",
+    "services/backend/api/overseas_crawl.py",
 ]
 
 [tool.coverage.report]
