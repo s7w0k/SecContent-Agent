@@ -7,6 +7,7 @@ Agent 流水线编排 — 单元测试
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -240,7 +241,7 @@ class TestCrawlNode:
 
     @pytest.mark.asyncio
     async def test_crawl_node_no_db(self, mock_tools):
-        from agent.pipeline import create_state, crawl_node
+        from agent.pipeline import crawl_node, create_state
 
         state = create_state(crawl_days=2)
         result = await crawl_node(state, mock_tools, None)
@@ -249,7 +250,7 @@ class TestCrawlNode:
 
     @pytest.mark.asyncio
     async def test_crawl_node_with_articles(self, mock_tools, mock_db):
-        from agent.pipeline import create_state, crawl_node
+        from agent.pipeline import crawl_node, create_state
 
         # Mock crawl tool to return articles
         mock_tools["crawl_overseas_news"].ainvoke = AsyncMock(return_value={
@@ -289,7 +290,7 @@ class TestCrawlNode:
 
     @pytest.mark.asyncio
     async def test_crawl_node_skips_duplicates(self, mock_tools, mock_db):
-        from agent.pipeline import create_state, crawl_node
+        from agent.pipeline import crawl_node, create_state
 
         mock_tools["crawl_overseas_news"].ainvoke = AsyncMock(return_value={
             "ok": True,
@@ -303,7 +304,7 @@ class TestCrawlNode:
 
     @pytest.mark.asyncio
     async def test_crawl_node_skipped(self, mock_tools):
-        from agent.pipeline import create_state, crawl_node
+        from agent.pipeline import crawl_node, create_state
 
         state = create_state(phases=["score"])  # crawl not in phases
         result = await crawl_node(state, mock_tools, None)
@@ -430,10 +431,8 @@ class TestErrorScenarios:
         await manager.cancel()
 
         # wait for cancellation to propagate
-        try:
+        with contextlib.suppress(TimeoutError, asyncio.CancelledError):
             await asyncio.wait_for(task, timeout=2.0)
-        except (asyncio.CancelledError, asyncio.TimeoutError):
-            pass
 
         status = manager.get_status()
         assert status["status"] in ("cancelled", "completed", "failed")

@@ -7,10 +7,9 @@ PR 报道生成 Agent — 单元测试
 
 from __future__ import annotations
 
-import json
 import os
 import sys
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langchain_core.messages import AIMessage
@@ -153,7 +152,7 @@ class TestPromptBuilding:
         assert "170" in prompt
 
     def test_user_prompt_truncates_long_content(self, article, scores):
-        from agent.reporter import ReportAgent, MAX_CONTENT_LENGTH
+        from agent.reporter import MAX_CONTENT_LENGTH
 
         long_content = "x" * (MAX_CONTENT_LENGTH + 500)
         # 调用 generate_report 时会自动截断 — 这里测试 user prompt 收到的内容

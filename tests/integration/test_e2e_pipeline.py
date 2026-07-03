@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import sys
@@ -208,9 +207,8 @@ def mock_db():
                     if k == "pipeline_status":
                         if a.get("pipeline_status") != v:
                             match = False
-                    elif k == "is_ai_security":
-                        if a.get("is_ai_security") != v:
-                            match = False
+                    elif k == "is_ai_security" and a.get("is_ai_security") != v:
+                        match = False
                 if match:
                     results.append(dict(a))
             return results
@@ -284,9 +282,9 @@ class TestFullPipeline:
     @pytest.mark.asyncio
     async def test_full_pipeline_with_mock_data(self, mock_tools, mock_llm, knowledge, mock_db):
         """使用 mock 数据运行完整流水线"""
-        from agent.scorer import ScoringAgent
-        from agent.reporter import ReportAgent
         from agent.pipeline import PipelineManager
+        from agent.reporter import ReportAgent
+        from agent.scorer import ScoringAgent
 
         scorer = ScoringAgent(llm=mock_llm, knowledge=knowledge)
         reporter = ReportAgent(llm=mock_llm, knowledge=knowledge, db=mock_db)
@@ -316,9 +314,9 @@ class TestFullPipeline:
     @pytest.mark.asyncio
     async def test_articles_flow_through_statuses(self, mock_tools, mock_llm, knowledge, mock_db):
         """验证文章状态流转：crawled → classified → scored"""
-        from agent.scorer import ScoringAgent
-        from agent.reporter import ReportAgent
         from agent.pipeline import PipelineManager
+        from agent.reporter import ReportAgent
+        from agent.scorer import ScoringAgent
 
         scorer = ScoringAgent(llm=mock_llm, knowledge=knowledge)
         reporter = ReportAgent(llm=mock_llm, knowledge=knowledge, db=mock_db)
@@ -333,9 +331,9 @@ class TestFullPipeline:
     @pytest.mark.asyncio
     async def test_high_value_article_generates_report(self, mock_tools, mock_llm, knowledge, mock_db):
         """高分文章（≥140）应生成报道"""
-        from agent.scorer import ScoringAgent
-        from agent.reporter import ReportAgent
         from agent.pipeline import PipelineManager
+        from agent.reporter import ReportAgent
+        from agent.scorer import ScoringAgent
 
         scorer = ScoringAgent(llm=mock_llm, knowledge=knowledge)
         reporter = ReportAgent(llm=mock_llm, knowledge=knowledge, db=mock_db)
@@ -349,9 +347,9 @@ class TestFullPipeline:
     @pytest.mark.asyncio
     async def test_pipeline_status_tracking(self, mock_tools, mock_llm, knowledge, mock_db):
         """验证流水线状态在各阶段正确更新"""
-        from agent.scorer import ScoringAgent
-        from agent.reporter import ReportAgent
         from agent.pipeline import PipelineManager
+        from agent.reporter import ReportAgent
+        from agent.scorer import ScoringAgent
 
         scorer = ScoringAgent(llm=mock_llm, knowledge=knowledge)
         reporter = ReportAgent(llm=mock_llm, knowledge=knowledge, db=mock_db)
@@ -379,9 +377,9 @@ class TestErrorRecovery:
     @pytest.mark.asyncio
     async def test_crawl_failure_does_not_block_pipeline(self, mock_tools, mock_llm, knowledge, mock_db):
         """爬取失败不应阻塞分类/打分/报道阶段"""
-        from agent.scorer import ScoringAgent
-        from agent.reporter import ReportAgent
         from agent.pipeline import PipelineManager
+        from agent.reporter import ReportAgent
+        from agent.scorer import ScoringAgent
 
         # 让 crawl tool 抛出异常
         mock_tools["crawl_overseas_news"].ainvoke = AsyncMock(
@@ -401,9 +399,9 @@ class TestErrorRecovery:
     @pytest.mark.asyncio
     async def test_phase_by_phase_execution(self, mock_tools, mock_llm, knowledge, mock_db):
         """逐阶段执行 — 验证阶段独立性"""
-        from agent.scorer import ScoringAgent
-        from agent.reporter import ReportAgent
         from agent.pipeline import PipelineManager
+        from agent.reporter import ReportAgent
+        from agent.scorer import ScoringAgent
 
         scorer = ScoringAgent(llm=mock_llm, knowledge=knowledge)
         reporter = ReportAgent(llm=mock_llm, knowledge=knowledge, db=mock_db)
@@ -431,9 +429,9 @@ class TestErrorRecovery:
     @pytest.mark.asyncio
     async def test_empty_crawl_handled_gracefully(self, mock_tools, mock_llm, knowledge, mock_db):
         """空爬取结果不应崩溃"""
-        from agent.scorer import ScoringAgent
-        from agent.reporter import ReportAgent
         from agent.pipeline import PipelineManager
+        from agent.reporter import ReportAgent
+        from agent.scorer import ScoringAgent
 
         # 返回空数据
         mock_tools["crawl_overseas_news"].ainvoke = AsyncMock(return_value={
@@ -503,8 +501,8 @@ class TestScorerReporterIntegration:
     @pytest.mark.asyncio
     async def test_score_data_flows_to_reporter(self, mock_llm, knowledge):
         """验证打分结果作为报道生成输入"""
-        from agent.scorer import ScoringAgent
         from agent.reporter import ReportAgent
+        from agent.scorer import ScoringAgent
 
         scorer = ScoringAgent(llm=mock_llm, knowledge=knowledge)
         reporter = ReportAgent(llm=mock_llm, knowledge=knowledge)

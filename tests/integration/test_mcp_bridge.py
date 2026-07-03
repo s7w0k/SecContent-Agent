@@ -7,7 +7,6 @@ HTTP Bridge 集成测试 — 验证 /health /tools /call 端点在真实 FastAPI
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 

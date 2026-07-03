@@ -222,9 +222,9 @@ class MarkdownKnowledgeParser:
     @staticmethod
     def _extract_summary(text: str) -> str:
         """提取文本摘要（取前 3 个非空行）"""
-        lines = [l.strip() for l in text.split("\n") if l.strip() and not l.startswith("#")]
+        lines = [line.strip() for line in text.split("\n") if line.strip() and not line.startswith("#")]
         # 跳过图片链接和过短的行
-        meaningful = [l for l in lines if len(l) > 10 and not l.startswith("![")]
+        meaningful = [line for line in lines if len(line) > 10 and not line.startswith("![")]
         return " ".join(meaningful[:5])
 
     @staticmethod
