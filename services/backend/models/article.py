@@ -119,6 +119,13 @@ class ArticleBase(BaseModel):
         description="V2 综合分 (product_relevance + event_impact)",
     )
 
+    # V2 PR 草稿
+    pr_drafts: list[dict] = Field(
+        default_factory=list,
+        description="V2 PR 草稿列表 [{template, perspective, content_md, title, index}, ...]",
+    )
+    pr_template_used: str = Field(default="", max_length=100, description="使用的模板名")
+
     # V1 评分（保留向后兼容）
     ai_relevance_score: int = Field(
         default=0,
