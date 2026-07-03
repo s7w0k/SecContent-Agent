@@ -384,11 +384,16 @@ class TestFastAPIApp:
     def test_app_exists(self):
         import main
         assert main.app is not None
-        assert main.app.title == "PR Agent Demo — Backend"
+        assert main.app.title == "PR Agent Demo - Backend"
 
     def test_app_routes(self):
         import main
-        routes = {r.path for r in main.app.routes}
+        # Collect routes, handling both Route and _IncludedRouter objects
+        routes = set()
+        for r in main.app.routes:
+            p = getattr(r, "path", None)
+            if p:
+                routes.add(p)
         assert "/api/health" in routes
         assert "/api/config/summary" in routes
         assert "/openapi.json" in routes
@@ -441,4 +446,4 @@ class TestFastAPIApp:
             resp = await client.get("/openapi.json")
             assert resp.status_code == 200
             schema = resp.json()
-            assert schema["info"]["title"] == "PR Agent Demo — Backend"
+            assert schema["info"]["title"] == "PR Agent Demo - Backend"
