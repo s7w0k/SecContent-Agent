@@ -71,7 +71,7 @@ def scorer(mock_llm, knowledge):
     """创建测试用 ScoringAgent"""
     from agent.scorer import ScoringAgent
 
-    return ScoringAgent(llm=mock_llm, knowledge=knowledge, concurrency=3)
+    return ScoringAgent(llm=mock_llm, knowledge=knowledge)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -114,8 +114,8 @@ class TestPromptBuilding:
         from agent.scorer import ScoringAgent
 
         prompt = ScoringAgent._build_user_prompt(sample_article)
-        assert "AI安全相关: True" in prompt
-        assert "Agent安全相关: True" in prompt
+        assert "Critical MCP Vulnerability" in prompt
+        assert "MCP协议漏洞" in prompt  # category field is in the prompt
 
     def test_user_prompt_handles_missing_fields(self):
         from agent.scorer import ScoringAgent

@@ -94,7 +94,7 @@ class TestSettings:
         from config import Settings
         import logging
 
-        # 临时移除环境变量，模拟未配置场景
+        # 临时移除环境变量 + 禁用 .env 加载，模拟未配置场景
         monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
         # 清除 lru_cache 以强制重新加载
         from config import get_settings
@@ -103,7 +103,7 @@ class TestSettings:
         logger = logging.getLogger("backend.config")
         logger.propagate = True
         with caplog.at_level(logging.WARNING, logger="backend.config"):
-            s = Settings()
+            s = Settings(_env_file=None)  # skip .env file to test empty-key behavior
             assert s.DEEPSEEK_API_KEY == ""
 
     def test_get_settings_singleton(self):
