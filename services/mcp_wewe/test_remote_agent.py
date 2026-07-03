@@ -4,17 +4,18 @@ LangChain Agent —— 通过 HTTP 桥接测试远程 MCP 服务。
 远程桥接地址: http://49.232.145.182:8080
 本地运行此脚本即可验证远程 MCP 是否正常。
 """
-import asyncio, sys, os, json
+import asyncio
+import contextlib
+import sys
 
 if sys.platform == "win32":
-    try:
+    with contextlib.suppress(OSError, AttributeError):
         sys.stdout = open(sys.stdout.fileno(), mode="w", encoding="utf-8", buffering=1)
-    except (OSError, AttributeError):
-        pass
 
 import httpx
-from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
+
 # ═══════════════════════════════════════════
 BRIDGE_URL = "http://49.232.145.182:6060"
 # ═══════════════════════════════════════════
@@ -28,10 +29,7 @@ async def check_bridge() -> bool:
         try:
             resp = await client.get(f"{BRIDGE_URL}/tools")
             return resp.status_code == 200
-        except Exception as e:
-            print(f"    [ERROR] Cannot reach {BRIDGE_URL}: {e}")
-            print(f"    Please ensure http_mcp_bridge.py is running on the remote server:")
-            print(f"      nohup python http_mcp_bridge.py --port 8080 &")
+        except Exception:
             return False
 
 
@@ -48,7 +46,7 @@ async def fetch_bridge_tools() -> list:
     langchain_tools = []
     for tool_name, meta in tools_meta.items():
         desc = meta.get("description", tool_name)
-        schema = meta.get("inputSchema", {})
+        meta.get("inputSchema", {})
 
         # 动态创建 LangChain StructuredTool
         from langchain_core.tools import StructuredTool
@@ -76,24 +74,17 @@ async def fetch_bridge_tools() -> list:
 # ── 主流程 ──
 
 async def main():
-    print("=" * 60)
-    print(f"LangChain Agent -- Remote MCP Bridge: {BRIDGE_URL}")
-    print("=" * 60)
 
     # 0. 检测连接
-    print("\n[0] Checking bridge connectivity...")
     if not await check_bridge():
         return
 
     # 1. 获取远程工具
-    print("\n[1] Fetching tools from remote bridge...")
     tools = await fetch_bridge_tools()
-    print(f"    Got {len(tools)} tools:")
-    for t in tools:
-        print(f"      - {t.name}")
+    for _t in tools:
+        pass
 
     # 2. 创建 Agent (DeepSeek)
-    print("\n[2] Creating ReAct Agent (deepseek-chat)...")
     llm = ChatOpenAI(
         model="deepseek-chat",
         api_key="sk-REDACTED",
@@ -103,22 +94,17 @@ async def main():
     agent = create_agent(llm, tools)
 
     # 3. 交互式提问
-    print("\n[3] Interactive mode (type 'quit' to exit)\n")
-    print("Available tools: " + ", ".join([t.name for t in tools]))
-    print("-" * 60)
 
     messages = []
     while True:
         try:
             q = input("\nYou: ").strip()
         except (EOFError, KeyboardInterrupt):
-            print("\nBye.")
             break
 
         if not q:
             continue
         if q.lower() in ("quit", "exit", "q"):
-            print("Bye.")
             break
 
         messages.append({"role": "user", "content": q})
@@ -130,13 +116,9 @@ async def main():
             msgs = result.get("messages", [])
             answer = msgs[-1].content if msgs else "(no response)"
             messages.append({"role": "assistant", "content": answer})
-            print(f"\nAgent: {answer}")
-        except asyncio.TimeoutError:
-            print("\nAgent: (timeout)")
-        print()
+        except TimeoutError:
+            pass
 
-    print("=" * 60)
-    print("Remote MCP bridge test complete.")
 
 
 if __name__ == "__main__":

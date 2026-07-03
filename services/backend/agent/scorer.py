@@ -32,12 +32,11 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any, Optional
-
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
+from typing import Any
 
 from agent.knowledge import ProductKnowledge
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
 
 logger = logging.getLogger("backend.agent.scorer")
 

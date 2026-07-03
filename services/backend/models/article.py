@@ -10,9 +10,8 @@ Article MongoDB 数据模型 — 安全新闻文章。
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timezone
-from enum import Enum, StrEnum
-from typing import Optional
+from datetime import UTC, datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 

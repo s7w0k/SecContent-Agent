@@ -33,8 +33,8 @@ import asyncio
 import json
 import logging
 import re
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -46,7 +46,7 @@ logger = logging.getLogger("backend.agent.classifier_v2")
 # ═══════════════════════════════════════════════════════════════
 
 
-class CategoryV2(str, Enum):
+class CategoryV2(StrEnum):
     """6 分类标签（值 = 中文类别名）"""
 
     BREAKING_EVENT = "爆点事件"            # 重大安全事件
@@ -84,7 +84,7 @@ class CategoryV2(str, Enum):
 class ClassifyResultV2:
     """单篇分类结果"""
 
-    __slots__ = ("category", "confidence", "reason", "_fallback", "_error")
+    __slots__ = ("_error", "_fallback", "category", "confidence", "reason")
 
     def __init__(
         self,

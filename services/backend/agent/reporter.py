@@ -23,16 +23,14 @@ PR 报道生成 Agent
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import re
-from datetime import datetime, timezone, timedelta
-from typing import Any, Optional
-
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from agent.knowledge import ProductKnowledge
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
 
 logger = logging.getLogger("backend.agent.reporter")
 

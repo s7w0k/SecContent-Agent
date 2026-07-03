@@ -329,7 +329,7 @@ class TestResultValidation:
         assert len(result["reason"]) <= 100
 
     def test_all_six_categories_validated(self):
-        from agent.classifier_v2 import ClassifierV2, CategoryV2
+        from agent.classifier_v2 import CategoryV2, ClassifierV2
         for cat in CategoryV2.valid_values():
             parsed = {"category": cat, "confidence": 70, "reason": "test"}
             result = ClassifierV2._validate_and_fix(parsed)
@@ -556,6 +556,6 @@ class TestConstants:
         assert MAX_RETRIES >= 1
 
     def test_confidence_bounds(self):
-        from agent.classifier_v2 import CONFIDENCE_MIN, CONFIDENCE_MAX
+        from agent.classifier_v2 import CONFIDENCE_MAX, CONFIDENCE_MIN
         assert CONFIDENCE_MIN == 0
         assert CONFIDENCE_MAX == 100

@@ -28,8 +28,8 @@ MCP 工具列表：
   DEEPSEEK_API_KEY   DeepSeek API Key
 """
 
-import sys
 import json
+import sys
 import traceback
 from typing import Any
 
@@ -44,14 +44,14 @@ if sys.platform == "win32":
 from wewe_tools.account_tools import (
     check_accounts,
     create_login_qrcode,
+    delete_account,
     poll_login_result,
     save_account,
-    delete_account,
 )
 from wewe_tools.feed_tools import (
-    fetch_yesterday_articles,
-    fetch_article_fulltext,
     analyze_articles_with_llm,
+    fetch_article_fulltext,
+    fetch_yesterday_articles,
 )
 
 # ---------------------------------------------------------------------------
@@ -181,7 +181,6 @@ TOOLS = [
 
 def log(msg: str):
     """输出到 stderr（MCP 日志通道）"""
-    print(f"[wewe-mcp] {msg}", file=sys.stderr, flush=True)
 
 
 def send(data: dict):

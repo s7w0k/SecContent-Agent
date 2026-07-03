@@ -9,7 +9,7 @@ import base64
 import io
 import time
 
-from .trpc_client import query, mutation, TrpcError
+from .trpc_client import TrpcError, mutation, query
 
 STATUS_LABEL = {
     0: "失效",

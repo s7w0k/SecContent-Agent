@@ -9,8 +9,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter, HTTPException, Query, Request
 
 router = APIRouter(prefix="/api", tags=["Dashboard"])
@@ -39,12 +37,12 @@ async def list_articles(
     request: Request,
     page: int = Query(default=1, ge=1, description="页码"),
     page_size: int = Query(default=20, ge=1, le=100, description="每页条数"),
-    source_type: Optional[str] = Query(default=None, description="来源类型: overseas_news / wechat_mp"),
-    category: Optional[str] = Query(default=None, description="分类筛选"),
-    min_score: Optional[int] = Query(default=None, ge=0, le=200, description="最低综合分"),
-    is_ai_security: Optional[bool] = Query(default=None, description="是否AI安全相关"),
-    is_high_value: Optional[bool] = Query(default=None, description="是否高分文章(≥140)"),
-    keyword: Optional[str] = Query(default=None, description="标题/摘要关键词搜索"),
+    source_type: str | None = Query(default=None, description="来源类型: overseas_news / wechat_mp"),
+    category: str | None = Query(default=None, description="分类筛选"),
+    min_score: int | None = Query(default=None, ge=0, le=200, description="最低综合分"),
+    is_ai_security: bool | None = Query(default=None, description="是否AI安全相关"),
+    is_high_value: bool | None = Query(default=None, description="是否高分文章(≥140)"),
+    keyword: str | None = Query(default=None, description="标题/摘要关键词搜索"),
     sort_by: str = Query(default="added_at", description="排序字段"),
     order: str = Query(default="desc", description="排序方向: asc / desc"),
 ):
@@ -195,7 +193,8 @@ async def summarize_article(url_hash: str, request: Request):
         raise HTTPException(status_code=400, detail="Content too short, fetch original first")
 
     try:
-        import os, json as _json
+        import os
+
         from openai import OpenAI
         client = OpenAI(
             api_key=os.getenv("DEEPSEEK_API_KEY", "sk-REDACTED"),

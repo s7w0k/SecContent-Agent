@@ -43,8 +43,8 @@ if sys.platform == "win32":
     except (OSError, AttributeError):
         pass
 
-from crawler import NewsCrawler
 from classifier import AISecurityClassifier
+from crawler import NewsCrawler
 
 # ═══════════════════════════════════════════════════════════
 # MCP 协议常量
@@ -154,7 +154,6 @@ TOOLS = [
 
 def log(msg: str):
     """输出到 stderr（MCP 日志通道）"""
-    print(f"[mcp-crawl] {msg}", file=sys.stderr, flush=True)
 
 
 def send(data: dict):
@@ -297,7 +296,7 @@ def _handle_classify(arguments: dict) -> str:
 def _handle_query(arguments: dict) -> str:
     global _article_cache
     category = arguments.get("category", "")
-    days = int(arguments.get("days", 7))
+    int(arguments.get("days", 7))
     keyword = (arguments.get("keyword", "") or "").lower()
 
     results = _article_cache
@@ -326,7 +325,7 @@ def _handle_query(arguments: dict) -> str:
 
 # ── get_stats ──
 
-def _handle_stats(arguments: dict) -> str:  # noqa: ARG001
+def _handle_stats(arguments: dict) -> str:
     global _article_cache
 
     if not _article_cache:
@@ -416,7 +415,7 @@ def _handle_export(arguments: dict) -> str:
 # ═══════════════════════════════════════════════════════════
 
 def _now_iso() -> str:
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     tz = timezone(timedelta(hours=8))
     return datetime.now(tz).strftime("%Y-%m-%dT%H:%M:%S+08:00")
 

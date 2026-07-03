@@ -12,8 +12,8 @@ LangChain + DeepSeek Agent —— verify wewe_mcp MCP 服务是否可用。
 """
 
 import asyncio
-import sys
 import os
+import sys
 
 # ── Windows GBK → UTF-8 ──
 if sys.platform == "win32":
@@ -26,10 +26,9 @@ if sys.platform == "win32":
 # 将 wewe_mcp 所在目录加入 path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
-
+from langchain_openai import ChatOpenAI
 
 # ===============================================================
 # DeepSeek LLM
@@ -55,32 +54,24 @@ MCP_CONFIG = {
 
 
 async def main():
-    print("=" * 60)
-    print("LangChain + DeepSeek Agent —— MCP verify")
-    print("=" * 60)
 
     # 1. connect MCP Server
-    print("\n[1] connect MCP Server (wewe_mcp_server.py via stdio)...")
     client = MultiServerMCPClient(MCP_CONFIG)
     tools = await client.get_tools()
 
-    print(f"    Got {len(tools)} MCP tools:")
-    for t in tools:
-        print(f"      - {t.name}: {t.description[:60]}...")
+    for _t in tools:
+        pass
 
     # 2. Create ReAct Agent
-    print("\n[2] Create ReAct Agent (LLM: deepseek-chat)...")
     agent = create_agent(llm, tools)
 
     # 3. 让 Agent 调用 MCP 工具
-    print("\n[3] Ask agent to check WeWe RSS account status\n")
 
     queries = [
         "请用 check_accounts 工具检测一下 WeWe RSS 的账号状态，并告诉我结果。",
     ]
 
     for q in queries:
-        print(f"    [User]: {q}")
         result = await agent.ainvoke({"messages": [{"role": "user", "content": q}]})
         messages = result.get("messages", [])
         ai_msg = messages[-1].content if messages else "no response"
@@ -88,12 +79,7 @@ async def main():
         output_file = "agent_output.txt"
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(ai_msg)
-        print(f"    [Agent response written to: {output_file}]")
-        print(f"    [Preview]: {ai_msg[:150]}")
-        print()
 
-    print("=" * 60)
-    print("MCP verification complete! Agent successfully used check_accounts tool.")
 
     # MCP 连接会在进程退出时自动关闭
 

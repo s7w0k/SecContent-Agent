@@ -21,15 +21,13 @@ HTTP-MCP 桥接脚本 —— 将 wewe_mcp_server.py 包装为 HTTP API，供外�
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import os
 import sys
 from contextlib import asynccontextmanager
-from typing import Any, Optional
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -50,7 +48,7 @@ if sys.platform == "win32":
 # ═══════════════════════════════════════════════════════════
 # MCP 会话管理（持久连接，启动时建立，关闭时清理）
 # ═══════════════════════════════════════════════════════════
-_mcp_session: Optional[ClientSession] = None
+_mcp_session: ClientSession | None = None
 _mcp_tools: dict[str, dict] = {}
 _stdio_ctx = None
 _session_ctx = None
@@ -81,9 +79,8 @@ async def _init_mcp():
             "inputSchema": tool.inputSchema,
         }
 
-    print(f"[bridge] MCP 已连接，{len(_mcp_tools)} 个工具可用:")
-    for name in _mcp_tools:
-        print(f"  - {name}")
+    for _name in _mcp_tools:
+        pass
 
 
 async def _shutdown_mcp():
@@ -94,10 +91,9 @@ async def _shutdown_mcp():
     if _stdio_ctx:
         await _stdio_ctx.__aexit__(None, None, None)
     _mcp_session = None
-    print("[bridge] MCP 连接已关闭")
 
 
-async def _call_tool(name: str, arguments: dict = None) -> str:
+async def _call_tool(name: str, arguments: dict | None = None) -> str:
     """调用 MCP 工具，返回结果文本。"""
     if _mcp_session is None:
         raise HTTPException(status_code=503, detail="MCP 会话未初始化")
@@ -244,6 +240,4 @@ if __name__ == "__main__":
     parser.add_argument("--host", default="0.0.0.0")
     args = parser.parse_args()
 
-    print(f"[bridge] 启动 HTTP-MCP 桥接服务: http://{args.host}:{args.port}")
-    print(f"[bridge] MCP Server: {MCP_SERVER_PATH}")
     uvicorn.run(app, host=args.host, port=args.port)

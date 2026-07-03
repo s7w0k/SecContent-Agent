@@ -7,11 +7,12 @@ tRPC v10 协议：
   - 需要 Authorization header
 """
 
+import contextlib
 import json
-import urllib.request
 import urllib.error
+import urllib.request
 
-from .config import get_wewe_url, get_auth_code
+from .config import get_auth_code, get_wewe_url
 
 
 class TrpcError(RuntimeError):
@@ -55,10 +56,8 @@ def call(method: str, procedure: str, params=None) -> dict:
             body = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = None
-        try:
+        with contextlib.suppress(Exception):
             body = json.loads(e.read().decode("utf-8"))
-        except Exception:
-            pass
         err = body.get("error", {}) if body else {}
         raise TrpcError(
             f"[{procedure}] {err.get('message', e.reason)} (HTTP {e.code})"
