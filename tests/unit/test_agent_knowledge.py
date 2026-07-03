@@ -11,7 +11,6 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -344,7 +343,7 @@ class TestKnowledgeIntegration:
         """验证关键词覆盖安全领域关键概念"""
         knowledge = await loader.load()
         keywords = knowledge.as_keywords()
-        keyword_text = " ".join(keywords)
+        " ".join(keywords)
 
         # 覆盖核心安全领域
         security_domains = ["身份", "认证", "权限", "MCP", "注入", "智能体"]

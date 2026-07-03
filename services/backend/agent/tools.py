@@ -27,9 +27,8 @@ MCP HTTP Bridge → LangChain Tool 包装
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import Any, Callable, Optional
+from collections.abc import Callable
 
 import httpx
 from langchain_core.tools import tool
@@ -61,7 +60,7 @@ async def _http_call(
     Returns:
         {"ok": true, "data": ...} 或 {"ok": false, "error": "..."}
     """
-    last_error: Optional[str] = None
+    last_error: str | None = None
 
     for attempt in range(MAX_RETRIES + 1):
         try:
@@ -126,12 +125,14 @@ def _make_post_tool(
     """创建 POST 类 Tool（参数透传）"""
 
     @tool(name, description=description)
-    async def _tool(payload: dict = {}) -> dict:
+    async def _tool(payload: dict | None = None) -> dict:
         """调用 MCP HTTP Bridge POST 端点。
 
         Args:
             payload: 端点参数，将作为 JSON body 发送
         """
+        if payload is None:
+            payload = {}
         url = f"{base_url.rstrip('/')}{path}"
         return await _http_call("POST", url, json_data=payload)
 

@@ -38,6 +38,12 @@ export interface Article {
   is_ai_security: boolean;
   is_agent_security: boolean;
   category: string;
+  // V2 6分类
+  category_v2?: string;
+  category_v2_confidence?: number;
+  category_v2_reason?: string;
+  category_v2_fallback?: boolean;
+  is_pr_eligible?: boolean;
   ai_relevance_score: number;
   reportability_score: number;
   total_score: number;

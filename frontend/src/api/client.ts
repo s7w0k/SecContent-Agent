@@ -161,6 +161,30 @@ export const pipelineApi = {
     const { data } = await client.post("/pipeline/crawl-api", { days });
     return data;
   },
+
+  /** V2 6分类 */
+  async classifyV2(
+    urlHashes?: string[],
+    force: boolean = false,
+  ): Promise<{
+    ok: boolean;
+    total: number;
+    classified: number;
+    summary: Record<string, number>;
+    results: Array<{
+      category_v2: string;
+      category_v2_confidence: number;
+      category_v2_reason: string;
+      category_v2_fallback: boolean;
+      is_pr_eligible: boolean;
+    }>;
+  }> {
+    const { data } = await client.post("/pipeline/classify-v2", {
+      url_hashes: urlHashes || null,
+      force,
+    });
+    return data;
+  },
 };
 
 // ═══════════════════════════════════════════════════════════

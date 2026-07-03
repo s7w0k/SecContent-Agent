@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import io
 import json
 import logging
-from urllib.request import Request, urlopen
 from urllib.parse import quote
+from urllib.request import urlopen
 
-import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.requests import Request as FastAPIRequest
 
@@ -144,10 +144,8 @@ async def refresh_articles(request: FastAPIRequest):
     except Exception as e:
         body = ""
         if hasattr(e, "read"):
-            try:
+            with contextlib.suppress(Exception):
                 body = e.read().decode()[:300]
-            except Exception:
-                pass
         if "401" in str(e) or "401" in body:
             return {"ok": False, "message": "token expired, please re-login"}
         return {"ok": False, "message": str(e)[:100]}

@@ -15,12 +15,10 @@ import json
 import logging
 import re
 from datetime import datetime
-from enum import Enum
-from typing import Optional
-
-from openai import AsyncOpenAI
+from enum import StrEnum
 
 from crawler import NewsArticle
+from openai import AsyncOpenAI
 
 logger = logging.getLogger("mcp-crawl.classifier")
 
@@ -29,7 +27,7 @@ logger = logging.getLogger("mcp-crawl.classifier")
 # 分类标签
 # ═══════════════════════════════════════════════════════════
 
-class ArticleCategory(str, Enum):
+class ArticleCategory(StrEnum):
     AI_SECURITY = "AI安全"
     AGENT_SECURITY = "Agent安全"
     MCP_PROTOCOL = "MCP协议漏洞"
@@ -52,11 +50,21 @@ class ClassifiedArticle:
     """分类后的文章"""
 
     __slots__ = (
-        "title", "url", "url_hash", "source", "source_type",
-        "published_at", "summary", "content_md",
-        "is_ai_security", "is_agent_security", "category",
-        "ai_relevance_score", "ai_reason", "summary_cn",
+        "ai_reason",
+        "ai_relevance_score",
+        "category",
         "classified_at",
+        "content_md",
+        "is_agent_security",
+        "is_ai_security",
+        "published_at",
+        "source",
+        "source_type",
+        "summary",
+        "summary_cn",
+        "title",
+        "url",
+        "url_hash",
     )
 
     def __init__(
@@ -76,7 +84,7 @@ class ClassifiedArticle:
         ai_relevance_score: int = 0,
         ai_reason: str = "",
         summary_cn: str = "",
-        classified_at: Optional[str] = None,
+        classified_at: str | None = None,
     ):
         self.title = title
         self.url = url
@@ -95,7 +103,7 @@ class ClassifiedArticle:
         self.classified_at = classified_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     @classmethod
-    def from_article(cls, article: NewsArticle) -> "ClassifiedArticle":
+    def from_article(cls, article: NewsArticle) -> ClassifiedArticle:
         """从未分类的原文创建（默认值）"""
         return cls(
             title=article.title,

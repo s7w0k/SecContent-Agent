@@ -20,11 +20,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("backend.agent.knowledge")
 
@@ -132,7 +130,7 @@ class MarkdownKnowledgeParser:
 
         # ── 定位关键章节 ──
         sections = MarkdownKnowledgeParser._split_sections(content)
-        section_map = {k.lower().strip(): v for k, v in sections.items()}
+        {k.lower().strip(): v for k, v in sections.items()}
 
         # ── 产品名称（从一级标题）──
         for line in content.split("\n"):
@@ -224,9 +222,9 @@ class MarkdownKnowledgeParser:
     @staticmethod
     def _extract_summary(text: str) -> str:
         """提取文本摘要（取前 3 个非空行）"""
-        lines = [l.strip() for l in text.split("\n") if l.strip() and not l.startswith("#")]
+        lines = [line.strip() for line in text.split("\n") if line.strip() and not line.startswith("#")]
         # 跳过图片链接和过短的行
-        meaningful = [l for l in lines if len(l) > 10 and not l.startswith("![")]
+        meaningful = [line for line in lines if len(line) > 10 and not line.startswith("![")]
         return " ".join(meaningful[:5])
 
     @staticmethod
@@ -293,9 +291,9 @@ class KnowledgeLoader:
         self.filepath = self.docs_dir / self.filename
 
         # 缓存
-        self._cache: Optional[ProductKnowledge] = None
+        self._cache: ProductKnowledge | None = None
         self._last_hash: str = ""
-        self._last_loaded: Optional[datetime] = None
+        self._last_loaded: datetime | None = None
 
     @property
     def is_loaded(self) -> bool:
@@ -303,7 +301,7 @@ class KnowledgeLoader:
         return self._cache is not None
 
     @property
-    def loaded_at(self) -> Optional[datetime]:
+    def loaded_at(self) -> datetime | None:
         return self._last_loaded
 
     async def load(self, force: bool = False) -> ProductKnowledge:

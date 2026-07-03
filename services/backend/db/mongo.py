@@ -12,7 +12,6 @@ MongoDB 连接管理器 — 基于 Motor (AsyncIO) 的单例连接池。
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from motor.motor_asyncio import (
     AsyncIOMotorClient,

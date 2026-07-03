@@ -12,9 +12,8 @@
 from __future__ import annotations
 
 import logging
-import httpx
-from typing import Optional
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -39,13 +38,13 @@ class PipelinePhaseRequest(BaseModel):
 
 
 class ScoreRequest(BaseModel):
-    article_url_hashes: Optional[list[str]] = Field(
+    article_url_hashes: list[str] | None = Field(
         default=None, description="指定文章 hash 列表（留空则对所有已分类文章打分）"
     )
 
 
 class ReportRequest(BaseModel):
-    article_url_hashes: Optional[list[str]] = Field(
+    article_url_hashes: list[str] | None = Field(
         default=None, description="指定文章 hash 列表（留空则对所有高分文章生成报道）"
     )
 
@@ -87,8 +86,8 @@ async def pipeline_crawl(body: PipelinePhaseRequest, request: Request):
 @router.post("/crawl-overseas", summary="仅爬取海外安全新闻")
 async def crawl_overseas_only(request: Request, days: int = 1):
     """仅调 mcp-crawl 爬取海外新闻 → 入库"""
-    import hashlib, os
-    from datetime import datetime, timezone, timedelta
+    import hashlib
+    from datetime import datetime, timedelta, timezone
 
     db = getattr(request.app.state, "db", None)
     if db is None:
@@ -109,10 +108,12 @@ async def crawl_overseas_only(request: Request, days: int = 1):
         saved = 0
         for art in articles:
             url = art.get("url", "")
-            if not url: continue
+            if not url:
+                continue
             url_hash = hashlib.md5(url.encode()).hexdigest()
             existing = await db["articles"].find_one({"url_hash": url_hash})
-            if existing: continue
+            if existing:
+                continue
             await db["articles"].insert_one({
                 "url_hash": url_hash, "title": art.get("title", ""), "url": url,
                 "source": art.get("source", ""), "source_type": "overseas_news",
@@ -124,14 +125,15 @@ async def crawl_overseas_only(request: Request, days: int = 1):
             saved += 1
         return {"ok": True, "total": len(articles), "saved": saved}
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
 
 @router.post("/crawl-wewe", summary="仅爬取公众号文章")
 async def crawl_wewe_only(request: Request):
     """仅直连 WeWe RSS Atom feed 爬取公众号文章 → 入库"""
-    import hashlib, xml.etree.ElementTree as ET
-    from datetime import datetime, timezone, timedelta
+    import hashlib
+    import xml.etree.ElementTree as ET
+    from datetime import datetime, timedelta, timezone
 
     db = getattr(request.app.state, "db", None)
     if db is None:
@@ -145,23 +147,25 @@ async def crawl_wewe_only(request: Request):
             resp = await client.get("http://49.232.145.182:4001/feeds/all.atom")
             xml_text = resp.text
 
-        NS = {"atom": "http://www.w3.org/2005/Atom"}
+        ns = {"atom": "http://www.w3.org/2005/Atom"}
         root = ET.fromstring(xml_text)
-        entries = root.findall("atom:entry", NS)
+        entries = root.findall("atom:entry", ns)
         saved = 0
         for entry in entries:
-            title_el = entry.find("atom:title", NS)
-            link_el = entry.find("atom:link", NS)
-            author_el = entry.find("atom:author/atom:name", NS)
-            updated_el = entry.find("atom:updated", NS)
+            title_el = entry.find("atom:title", ns)
+            link_el = entry.find("atom:link", ns)
+            author_el = entry.find("atom:author/atom:name", ns)
+            updated_el = entry.find("atom:updated", ns)
             title = title_el.text if title_el is not None else ""
             url = link_el.get("href", "") if link_el is not None else ""
             source = author_el.text if author_el is not None else "微信公众号"
             pub = updated_el.text[:10].replace("-", "年", 1).replace("-", "月") + "日" if updated_el is not None and updated_el.text else ""
-            if not url: continue
+            if not url:
+                continue
             url_hash = hashlib.md5(url.encode()).hexdigest()
             existing = await db["articles"].find_one({"url_hash": url_hash})
-            if existing: continue
+            if existing:
+                continue
             await db["articles"].insert_one({
                 "url_hash": url_hash, "title": title, "url": url,
                 "source": source, "source_type": "wechat_mp",
@@ -173,7 +177,7 @@ async def crawl_wewe_only(request: Request):
         log.info(f"[crawl-wewe] Saved {saved}/{len(entries)}")
         return {"ok": True, "total": len(entries), "saved": saved}
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
 
 @router.post("/score", summary="仅执行打分阶段")
@@ -196,8 +200,9 @@ async def pipeline_report(body: ReportRequest, request: Request):
 @router.post("/crawl-api", summary="API 抓取公众号文章")
 async def crawl_via_api(request: Request, days: int = 1):
     """通过 Just One API 抓取指定公众号文章 → 逐篇抓取全文 → 入库。"""
-    import hashlib, os
-    from datetime import datetime, timezone, timedelta
+    import hashlib
+    import os
+    from datetime import datetime, timedelta, timezone
 
     db = getattr(request.app.state, "db", None)
     if db is None:
@@ -285,7 +290,7 @@ async def crawl_via_api(request: Request, days: int = 1):
 
     except Exception as e:
         log.error(f"[crawl-api] Failed: {e}")
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
 
 @router.get("/status", summary="查询流水线状态")
@@ -299,10 +304,7 @@ async def pipeline_status(request: Request):
 async def import_wewe_articles(request: Request):
     """从 WeWe RSS 获取全部文章并入库（含公众号来源和中文日期）。"""
     import hashlib
-    import json
-    from urllib.request import Request, urlopen
-    from urllib.parse import quote
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
 
     db = getattr(request.app.state, "db", None)
     if db is None:
@@ -319,19 +321,19 @@ async def import_wewe_articles(request: Request):
             resp = await client.get(atom_url)
             xml_text = resp.text
 
-        NS = {"atom": "http://www.w3.org/2005/Atom"}
+        ns = {"atom": "http://www.w3.org/2005/Atom"}
         root = ET.fromstring(xml_text)
-        entries = root.findall("atom:entry", NS)
+        entries = root.findall("atom:entry", ns)
         log.info(f"[import-wewe] Atom feed has {len(entries)} articles")
 
         # 2. 入库
         saved = 0
         tz = timezone(timedelta(hours=8))
         for entry in entries:
-            title_el = entry.find("atom:title", NS)
-            link_el = entry.find("atom:link", NS)
-            author_el = entry.find("atom:author/atom:name", NS)
-            updated_el = entry.find("atom:updated", NS)
+            title_el = entry.find("atom:title", ns)
+            link_el = entry.find("atom:link", ns)
+            author_el = entry.find("atom:author/atom:name", ns)
+            updated_el = entry.find("atom:updated", ns)
 
             title = title_el.text if title_el is not None else ""
             url = link_el.get("href", "") if link_el is not None else ""
@@ -378,4 +380,95 @@ async def import_wewe_articles(request: Request):
 
     except Exception as e:
         log.error(f"[import-wewe] Failed: {e}")
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+# ═══════════════════════════════════════════════════════════════
+# V2 6分类端点
+# ═══════════════════════════════════════════════════════════════
+
+
+class ClassifyV2Request(BaseModel):
+    url_hashes: list[str] | None = Field(
+        default=None, description="指定文章 hash 列表（留空则对所有 crawled 或 classified 文章分类）"
+    )
+    force: bool = Field(
+        default=False, description="强制重新分类（忽略已有 category_v2）"
+    )
+
+
+@router.post("/classify-v2", summary="V2 6分类")
+async def classify_v2(body: ClassifyV2Request, request: Request):
+    """对文章执行6分类（爆点事件/法律法规/AI进展/竞品/行业/学术）。
+
+    读取 pipeline_status 为 crawled 或 classified 的文章，
+    调用 LLM 进行6类别归类，更新 category_v2 字段。
+    """
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    classifier = getattr(request.app.state, "classifier_v2", None)
+    if classifier is None:
+        raise HTTPException(status_code=503, detail="ClassifierV2 not initialized")
+
+    log = logging.getLogger("backend.api.pipeline")
+
+    try:
+        # 查询待分类文章
+        query: dict = {}
+        if body.url_hashes:
+            query["url_hash"] = {"$in": body.url_hashes}
+        else:
+            query["pipeline_status"] = {"$in": ["crawled", "classified"]}
+            if not body.force:
+                query["category_v2"] = {"$in": ["", None]}
+
+        cursor = db["articles"].find(query)
+        articles = await cursor.to_list(length=100)
+        log.info(f"[classify-v2] Found {len(articles)} articles to classify")
+
+        if not articles:
+            return {"ok": True, "total": 0, "classified": 0, "results": []}
+
+        # 批量分类
+        results = await classifier.classify_batch(articles)
+
+        # 更新数据库
+        updated = 0
+        for art, result in zip(articles, results, strict=False):
+            try:
+                await db["articles"].update_one(
+                    {"_id": art["_id"]},
+                    {"$set": {
+                        "category_v2": result.category,
+                        "category_v2_confidence": result.confidence,
+                        "category_v2_reason": result.reason,
+                        "category_v2_fallback": result.is_fallback,
+                        "is_pr_eligible": result.is_pr_eligible,
+                    }},
+                )
+                updated += 1
+            except Exception as e:
+                log.warning(f"[classify-v2] DB update failed: {e}")
+
+        summary = {}
+        for r in results:
+            cat = r.category
+            summary[cat] = summary.get(cat, 0) + 1
+
+        log.info(
+            f"[classify-v2] Done: {updated}/{len(articles)} updated, "
+            f"{sum(1 for r in results if r.is_pr_eligible)} PR-eligible"
+        )
+        return {
+            "ok": True,
+            "total": len(articles),
+            "classified": updated,
+            "summary": summary,
+            "results": [r.to_dict() for r in results],
+        }
+
+    except Exception as e:
+        log.error(f"[classify-v2] Failed: {e}")
+        raise HTTPException(status_code=502, detail=str(e)) from e

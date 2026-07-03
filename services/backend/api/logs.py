@@ -1,7 +1,9 @@
 """Operational logs API with date-based filtering."""
 
-from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, HTTPException, Query, Request
+import contextlib
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Query, Request
 
 router = APIRouter(prefix="/api/logs", tags=["Logs"])
 
@@ -12,11 +14,11 @@ def _tz():
     return timezone(timedelta(hours=8))
 
 
-async def _log_to_db(db, level: str, phase: str, message: str, detail: dict = None):
+async def _log_to_db(db, level: str, phase: str, message: str, detail: dict | None = None):
     """Write a log entry to MongoDB."""
     if db is None:
         return
-    try:
+    with contextlib.suppress(Exception):
         await db[LOG_COLLECTION].insert_one({
             "level": level,
             "phase": phase,
@@ -25,8 +27,6 @@ async def _log_to_db(db, level: str, phase: str, message: str, detail: dict = No
             "created_at": datetime.now(_tz()).strftime("%Y-%m-%d %H:%M:%S"),
             "date": datetime.now(_tz()).strftime("%Y-%m-%d"),
         })
-    except Exception:
-        pass
 
 
 def log_pipeline(db, level: str, phase: str, message: str, **detail):

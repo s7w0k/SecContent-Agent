@@ -12,20 +12,19 @@ import json
 import os
 import sys
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 # 确保 mcp_crawl 在 path 中
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "mcp_crawl"))
 
-from crawler import NewsArticle, NewsCrawler
 from classifier import (
     AISecurityClassifier,
-    ClassifiedArticle,
     ArticleCategory,
+    ClassifiedArticle,
 )
-
+from crawler import NewsArticle, NewsCrawler
 
 # ═══════════════════════════════════════════════════════════
 # 1. NewsArticle 数据模型测试

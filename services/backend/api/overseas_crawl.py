@@ -1,10 +1,12 @@
 """Overseas security news API — host script imports articles via /api/overseas/import."""
 
-import hashlib, logging
-from datetime import datetime, timezone, timedelta
+import hashlib
+import logging
+from datetime import UTC, datetime, timedelta, timezone
+
+import httpx
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
-import httpx
 
 router = APIRouter(prefix="/api/overseas", tags=["OverseasCrawl"])
 logger = logging.getLogger("backend.api.overseas")
@@ -52,7 +54,7 @@ async def crawl_overseas(request: Request, hours: int = Query(default=24, le=72)
     import feedparser
     db = getattr(request.app.state, "db", None)
     tz_cst = timezone(timedelta(hours=8))
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     cutoff = now_utc - timedelta(hours=hours)
     all_articles = []
 
@@ -74,7 +76,7 @@ async def crawl_overseas(request: Request, hours: int = Query(default=24, le=72)
                         v = e.get(f)
                         if v and hasattr(v, "tm_year"):
                             from calendar import timegm
-                            pub = datetime(1970,1,1,tzinfo=timezone.utc) + timedelta(seconds=timegm(v))
+                            pub = datetime(1970,1,1,tzinfo=UTC) + timedelta(seconds=timegm(v))
                             break
                     if pub and cutoff <= pub <= now_utc:
                         all_articles.append({

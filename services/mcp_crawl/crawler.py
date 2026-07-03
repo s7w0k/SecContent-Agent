@@ -15,9 +15,8 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional
 
 logger = logging.getLogger("mcp-crawl.crawler")
 
@@ -35,7 +34,7 @@ class NewsArticle:
     source: str  # "The Hacker News" | "BleepingComputer" | ...
     source_type: str = "overseas_news"
     summary: str = ""
-    published_at: Optional[datetime] = None
+    published_at: datetime | None = None
     content_md: str = ""
 
     @property
@@ -138,8 +137,8 @@ class NewsCrawler:
     async def fetch_fulltext(self, url: str) -> str:
         """抓取单篇文章全文并转为 Markdown。"""
         try:
-            from curl_cffi import requests
             from bs4 import BeautifulSoup
+            from curl_cffi import requests
         except ImportError:
             return ""
 
@@ -176,8 +175,8 @@ class NewsCrawler:
 
     def _crawl_curl_cffi(self, source: str, cfg: dict) -> list[NewsArticle]:
         try:
-            from curl_cffi import requests
             from bs4 import BeautifulSoup
+            from curl_cffi import requests
         except ImportError:
             logger.error("curl_cffi or beautifulsoup4 not installed")
             return []
@@ -275,7 +274,7 @@ class NewsCrawler:
     # ── 日期工具 ──
 
     @staticmethod
-    def _parse_date(text: str) -> Optional[datetime]:
+    def _parse_date(text: str) -> datetime | None:
         """解析多种日期格式"""
         if not text:
             return None
@@ -312,11 +311,11 @@ class NewsCrawler:
 
         return None
 
-    def _fetch_date_from_url(self, url: str) -> Optional[datetime]:
+    def _fetch_date_from_url(self, url: str) -> datetime | None:
         """从文章页面 meta/time 标签提取发表时间"""
         try:
-            from curl_cffi import requests
             from bs4 import BeautifulSoup
+            from curl_cffi import requests
         except ImportError:
             return None
 

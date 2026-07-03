@@ -10,7 +10,7 @@ Pytest 全局 fixtures。
 
 import os
 import sys
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import pytest
 from httpx import ASGITransport, AsyncClient

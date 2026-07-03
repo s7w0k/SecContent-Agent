@@ -12,17 +12,15 @@ FastAPI app:
 from __future__ import annotations
 
 import logging
-import os
 import sys
 import time
 from collections import deque
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 from config import get_settings
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 # ── Logging ─────────────────────────────────────────────
@@ -84,11 +82,11 @@ async def lifespan(app: FastAPI):
 
     # Agent components
     try:
-        from agent.tools import create_mcp_toolset
         from agent.knowledge import KnowledgeLoader
-        from agent.scorer import ScoringAgent
-        from agent.reporter import ReportAgent
         from agent.pipeline import PipelineManager
+        from agent.reporter import ReportAgent
+        from agent.scorer import ScoringAgent
+        from agent.tools import create_mcp_toolset
         from langchain_openai import ChatOpenAI
 
         tools = create_mcp_toolset(
@@ -112,6 +110,12 @@ async def lifespan(app: FastAPI):
 
         scorer = ScoringAgent(llm=llm, knowledge=knowledge_loader._cache)
         reporter = ReportAgent(llm=llm, knowledge=knowledge_loader._cache, db=app.state.db)
+
+        # V2 6分类 Agent
+        from agent.classifier_v2 import ClassifierV2
+        classifier_v2 = ClassifierV2(llm=llm)
+        app.state.classifier_v2 = classifier_v2
+        _log("INFO", "ClassifierV2 initialized")
 
         pipeline_manager = PipelineManager(
             tools=tools, scorer=scorer, reporter=reporter,
@@ -173,13 +177,13 @@ async def log_requests(request: Request, call_next):
 
 # ── Routers ─────────────────────────────────────────────
 
-from api.pipeline import router as pipeline_router
-from api.dashboard import router as dashboard_router
-from api.reports import router as reports_router
 from api.accounts import router as accounts_router
-from api.logs import router as logs_router
 from api.crawl_config import router as crawl_config_router
+from api.dashboard import router as dashboard_router
+from api.logs import router as logs_router
 from api.overseas_crawl import router as overseas_router
+from api.pipeline import router as pipeline_router
+from api.reports import router as reports_router
 
 app.include_router(pipeline_router)
 app.include_router(dashboard_router)

@@ -6,8 +6,7 @@ PR Report MongoDB 数据模型 — Agent 生成的 PR 情报报道。
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 

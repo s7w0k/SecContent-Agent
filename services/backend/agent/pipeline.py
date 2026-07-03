@@ -22,11 +22,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
-from enum import Enum
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
+from enum import StrEnum
+from typing import Any
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
 logger = logging.getLogger("backend.agent.pipeline")
 
@@ -36,14 +37,14 @@ logger = logging.getLogger("backend.agent.pipeline")
 # ═══════════════════════════════════════════════════════════════
 
 
-class PipelinePhase(str, Enum):
+class PipelinePhase(StrEnum):
     CRAWL = "crawl"
     CLASSIFY = "classify"
     SCORE = "score"
     REPORT = "report"
 
 
-class PipelineStatus(str, Enum):
+class PipelineStatus(StrEnum):
     IDLE = "idle"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -53,7 +54,7 @@ class PipelineStatus(str, Enum):
 
 def create_state(
     crawl_days: int = 1,
-    phases: Optional[list[str]] = None,
+    phases: list[str] | None = None,
 ) -> dict:
     """创建流水线初始状态（普通 dict，兼容 LangGraph）"""
     return {
@@ -321,7 +322,7 @@ async def score_node(
         # LLM 批量打分
         scored = await scorer.score_batch(raw_articles)
         scored_count = 0
-        for art, scores in zip(raw_articles, scored):
+        for art, scores in zip(raw_articles, scored, strict=False):
             if not scores.get("_fallback", True):
                 await db["articles"].update_one(
                     {"_id": art["_id"]},
@@ -355,7 +356,6 @@ async def report_node(
 
     从 MongoDB 读取 pipeline_status="scored" 且 total_score≥140 的文章。
     """
-    from api.logs import log_pipeline
     state["current_phase"] = PipelinePhase.REPORT.value
     logger.info("[report] Starting report generation phase")
 
@@ -434,8 +434,8 @@ class PipelineManager:
         self.db = db
 
         # 状态
-        self._state: Optional[dict] = None
-        self._task: Optional[asyncio.Task] = None
+        self._state: dict | None = None
+        self._task: asyncio.Task | None = None
         self._graph = self._build_graph()
 
     # ── 公开接口 ──────────────────────────────────────────────

@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import os
 import sys
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -91,10 +90,11 @@ class TestSettings:
             Settings(DEEPSEEK_API_KEY="test", API_PAGE_SIZE_MAX=1000)
 
     def test_deepseek_key_warning(self, monkeypatch, caplog):
-        from config import Settings
         import logging
 
-        # 临时移除环境变量，模拟未配置场景
+        from config import Settings
+
+        # 临时移除环境变量 + 禁用 .env 加载，模拟未配置场景
         monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
         # 清除 lru_cache 以强制重新加载
         from config import get_settings
@@ -103,11 +103,11 @@ class TestSettings:
         logger = logging.getLogger("backend.config")
         logger.propagate = True
         with caplog.at_level(logging.WARNING, logger="backend.config"):
-            s = Settings()
+            s = Settings(_env_file=None)  # skip .env file to test empty-key behavior
             assert s.DEEPSEEK_API_KEY == ""
 
     def test_get_settings_singleton(self):
-        from config import Settings, get_settings
+        from config import get_settings
 
         s1 = get_settings()
         s2 = get_settings()
@@ -180,8 +180,9 @@ class TestMongoDBConnection:
         assert "host:27017" in masked
 
     def test_health_check_disconnected(self):
-        from db.mongo import MongoDB
         import asyncio
+
+        from db.mongo import MongoDB
 
         result = asyncio.run(MongoDB.health_check())
         assert result["status"] == "disconnected"
@@ -246,7 +247,6 @@ class TestArticleModel:
         assert art2.is_high_value is False  # 100 < 140
 
     def test_score_bounds(self):
-        from models.article import ArticleBase
 
         with pytest.raises(ValidationError):
             self._make_article(ai_relevance_score=150)
@@ -255,7 +255,7 @@ class TestArticleModel:
             self._make_article(reportability_score=-1)
 
     def test_source_type_enum(self):
-        from models.article import ArticleBase, SourceType
+        from models.article import SourceType
 
         art = self._make_article(source_type=SourceType.WECHAT_MP)
         assert art.source_type == "wechat_mp"
@@ -264,7 +264,6 @@ class TestArticleModel:
         assert art2.source_type == "paper"
 
     def test_invalid_source_type(self):
-        from models.article import ArticleBase
 
         with pytest.raises(ValidationError):
             self._make_article(source_type="invalid_source")
@@ -385,11 +384,16 @@ class TestFastAPIApp:
     def test_app_exists(self):
         import main
         assert main.app is not None
-        assert main.app.title == "PR Agent Demo — Backend"
+        assert main.app.title == "PR Agent Demo - Backend"
 
     def test_app_routes(self):
         import main
-        routes = {r.path for r in main.app.routes}
+        # Collect routes, handling both Route and _IncludedRouter objects
+        routes = set()
+        for r in main.app.routes:
+            p = getattr(r, "path", None)
+            if p:
+                routes.add(p)
         assert "/api/health" in routes
         assert "/api/config/summary" in routes
         assert "/openapi.json" in routes
@@ -442,4 +446,4 @@ class TestFastAPIApp:
             resp = await client.get("/openapi.json")
             assert resp.status_code == 200
             schema = resp.json()
-            assert schema["info"]["title"] == "PR Agent Demo — Backend"
+            assert schema["info"]["title"] == "PR Agent Demo - Backend"

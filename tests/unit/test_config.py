@@ -144,15 +144,16 @@ class TestSettingsValidation:
             Settings(DEEPSEEK_API_KEY="test", API_PAGE_SIZE_MAX=5)
 
     def test_deepseek_key_empty_warning(self, monkeypatch, caplog):
-        from config import Settings
         import logging
+
+        from config import Settings
 
         # Override both env var and .env file
         monkeypatch.setenv("DEEPSEEK_API_KEY", "  ")
         from config import get_settings
         get_settings.cache_clear()
 
-        logger = logging.getLogger("backend.config")
+        logging.getLogger("backend.config")
         with caplog.at_level(logging.WARNING, logger="backend.config"):
             s = Settings()
             # Key is stripped — verifies the field_validator runs
@@ -164,7 +165,6 @@ class TestSettingsSingleton:
 
     def test_get_settings_same_instance(self):
         from config import get_settings
-        from config import Settings
 
         s1 = get_settings()
         s2 = get_settings()

@@ -10,9 +10,8 @@ Article MongoDB 数据模型 — 安全新闻文章。
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timezone
-from enum import Enum, StrEnum
-from typing import Optional
+from datetime import UTC, datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -82,7 +81,23 @@ class ArticleBase(BaseModel):
     # 分类
     is_ai_security: bool = Field(default=False, description="是否 AI 安全相关")
     is_agent_security: bool = Field(default=False, description="是否 Agent 安全相关")
-    category: str = Field(default="", max_length=100, description="分类标签")
+    category: str = Field(default="", max_length=100, description="分类标签（V1）")
+
+    # V2 6分类
+    category_v2: str = Field(
+        default="",
+        max_length=50,
+        description="6分类标签（爆点事件/法律法规监管动态/AI技术重大进展/国内外竞品信息/运营商行业事件/学术会展高校）",
+    )
+    category_v2_confidence: int = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="6分类置信度",
+    )
+    category_v2_reason: str = Field(default="", max_length=100, description="6分类理由")
+    category_v2_fallback: bool = Field(default=False, description="6分类是否降级")
+    is_pr_eligible: bool = Field(default=False, description="是否可进入PR流程（V2分类结果）")
 
     # 评分（0-100）
     ai_relevance_score: int = Field(
