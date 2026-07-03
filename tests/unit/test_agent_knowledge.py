@@ -405,10 +405,10 @@ class TestV2MultiFile:
     @pytest.mark.asyncio
     async def test_discover_all_files(self):
         """不指定 filename 时递归扫描所有 .md"""
-        from agent.knowledge import KnowledgeLoader
-
         # 使用实际 docs/ 目录（至少有 5+ .md 文件）
         import os as _os
+
+        from agent.knowledge import KnowledgeLoader
         docs_dir = _os.path.join(
             _os.path.dirname(__file__), "..", "..", "docs",
         )
@@ -440,7 +440,7 @@ class TestV2MultiFile:
     @pytest.mark.asyncio
     async def test_merge_deduplication(self):
         """合并时去重"""
-        from agent.knowledge import ProductKnowledge, KnowledgeLoader
+        from agent.knowledge import KnowledgeLoader, ProductKnowledge
 
         base = ProductKnowledge(
             core_features=["功能A", "功能B"],
