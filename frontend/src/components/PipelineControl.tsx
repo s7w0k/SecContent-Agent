@@ -143,6 +143,24 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
   }, [onComplete]);
   const handleScore = useCallback(() => trigger("score", "打分"), [trigger]);
   const handleReport = useCallback(() => trigger("report", "报道"), [trigger]);
+  const handleClassifyV2 = useCallback(async () => {
+    try {
+      setRunning(true);
+      message.loading({ content: "6分类中...", key: "classifyV2", duration: 0 });
+      const res = await api.classifyV2();
+      message.success({
+        content: `6分类完成: ${res.classified} 篇 (${res.summary ? Object.entries(res.summary).map(([k, v]) => `${k}:${v}`).join(", ") : ""})`,
+        key: "classifyV2",
+        duration: 5,
+      });
+      onComplete();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "未知错误";
+      message.error({ content: `6分类失败: ${msg}`, key: "classifyV2" });
+    } finally {
+      setRunning(false);
+    }
+  }, [onComplete]);
 
   // ── 当前阶段索引 ──────────────────────────────────────────
 
@@ -212,6 +230,13 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
           disabled={running}
         >
           仅打分
+        </Button>
+        <Button
+          icon={<ExperimentOutlined />}
+          onClick={handleClassifyV2}
+          disabled={running}
+        >
+          V2分类
         </Button>
         <Button
           icon={<FileTextOutlined />}

@@ -58,6 +58,20 @@ export default function ArticleTable({
       render: (t: string, r: Article) => <a href={r.url} target="_blank" rel="noopener noreferrer">{t}</a> },
     { title: "分类", dataIndex: "category", key: "category", width: 100, sorter: true,
       render: (c: string) => c ? <Tag>{c}</Tag> : <Tag color="default">-</Tag> },
+    { title: "V2分类", dataIndex: "category_v2", key: "category_v2", width: 130,
+      render: (c: string, r: Article) => {
+        const colorMap: Record<string, string> = {
+          "爆点事件": "red",
+          "法律法规/监管动态": "orange",
+          "AI技术重大进展": "purple",
+          "国内外竞品信息": "blue",
+          "运营商/行业事件": "cyan",
+          "学术/会展/高校": "green",
+        };
+        const color = c ? (colorMap[c] || "default") : "default";
+        const icon = r.is_pr_eligible ? " 🔥" : "";
+        return c ? <Tag color={color}>{c}{icon}</Tag> : <Tag color="default">-</Tag>;
+      }},
     { title: "相关度", dataIndex: "ai_relevance_score", key: "ai_relevance_score", width: 90, sorter: true,
       render: (s: number) => <Progress percent={s} size="small" strokeColor={s >= 70 ? "#52c41a" : s >= 40 ? "#faad14" : "#ff4d4f"} format={() => s} /> },
     { title: "可报道", dataIndex: "reportability_score", key: "reportability_score", width: 90, sorter: true,

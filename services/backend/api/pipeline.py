@@ -379,3 +379,94 @@ async def import_wewe_articles(request: Request):
     except Exception as e:
         log.error(f"[import-wewe] Failed: {e}")
         raise HTTPException(status_code=502, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════
+# V2 6分类端点
+# ═══════════════════════════════════════════════════════════════
+
+
+class ClassifyV2Request(BaseModel):
+    url_hashes: Optional[list[str]] = Field(
+        default=None, description="指定文章 hash 列表（留空则对所有 crawled 或 classified 文章分类）"
+    )
+    force: bool = Field(
+        default=False, description="强制重新分类（忽略已有 category_v2）"
+    )
+
+
+@router.post("/classify-v2", summary="V2 6分类")
+async def classify_v2(body: ClassifyV2Request, request: Request):
+    """对文章执行6分类（爆点事件/法律法规/AI进展/竞品/行业/学术）。
+
+    读取 pipeline_status 为 crawled 或 classified 的文章，
+    调用 LLM 进行6类别归类，更新 category_v2 字段。
+    """
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    classifier = getattr(request.app.state, "classifier_v2", None)
+    if classifier is None:
+        raise HTTPException(status_code=503, detail="ClassifierV2 not initialized")
+
+    log = logging.getLogger("backend.api.pipeline")
+
+    try:
+        # 查询待分类文章
+        query: dict = {}
+        if body.url_hashes:
+            query["url_hash"] = {"$in": body.url_hashes}
+        else:
+            query["pipeline_status"] = {"$in": ["crawled", "classified"]}
+            if not body.force:
+                query["category_v2"] = {"$in": ["", None]}
+
+        cursor = db["articles"].find(query)
+        articles = await cursor.to_list(length=100)
+        log.info(f"[classify-v2] Found {len(articles)} articles to classify")
+
+        if not articles:
+            return {"ok": True, "total": 0, "classified": 0, "results": []}
+
+        # 批量分类
+        results = await classifier.classify_batch(articles)
+
+        # 更新数据库
+        updated = 0
+        for art, result in zip(articles, results):
+            try:
+                await db["articles"].update_one(
+                    {"_id": art["_id"]},
+                    {"$set": {
+                        "category_v2": result.category,
+                        "category_v2_confidence": result.confidence,
+                        "category_v2_reason": result.reason,
+                        "category_v2_fallback": result.is_fallback,
+                        "is_pr_eligible": result.is_pr_eligible,
+                    }},
+                )
+                updated += 1
+            except Exception as e:
+                log.warning(f"[classify-v2] DB update failed: {e}")
+
+        summary = {}
+        for r in results:
+            cat = r.category
+            summary[cat] = summary.get(cat, 0) + 1
+
+        log.info(
+            f"[classify-v2] Done: {updated}/{len(articles)} updated, "
+            f"{sum(1 for r in results if r.is_pr_eligible)} PR-eligible"
+        )
+        return {
+            "ok": True,
+            "total": len(articles),
+            "classified": updated,
+            "summary": summary,
+            "results": [r.to_dict() for r in results],
+        }
+
+    except Exception as e:
+        log.error(f"[classify-v2] Failed: {e}")
+        raise HTTPException(status_code=502, detail=str(e))

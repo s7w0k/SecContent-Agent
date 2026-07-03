@@ -113,6 +113,12 @@ async def lifespan(app: FastAPI):
         scorer = ScoringAgent(llm=llm, knowledge=knowledge_loader._cache)
         reporter = ReportAgent(llm=llm, knowledge=knowledge_loader._cache, db=app.state.db)
 
+        # V2 6分类 Agent
+        from agent.classifier_v2 import ClassifierV2
+        classifier_v2 = ClassifierV2(llm=llm)
+        app.state.classifier_v2 = classifier_v2
+        _log("INFO", "ClassifierV2 initialized")
+
         pipeline_manager = PipelineManager(
             tools=tools, scorer=scorer, reporter=reporter,
             knowledge=knowledge_loader, db=app.state.db,
