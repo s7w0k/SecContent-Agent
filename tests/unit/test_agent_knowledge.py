@@ -349,3 +349,223 @@ class TestKnowledgeIntegration:
         security_domains = ["身份", "认证", "权限", "MCP", "注入", "智能体"]
         covered = [d for d in security_domains if any(d in k for k in keywords)]
         assert len(covered) >= 3, f"Only {len(covered)}/{len(security_domains)} domains covered"
+
+
+# ═══════════════════════════════════════════════════════════════
+# 5. V2 多文件加载测试
+# ═══════════════════════════════════════════════════════════════
+
+
+SAMPLE_DOC_2 = """
+# 竞品分析报告
+
+## 竞品
+
+- CrowdStrike AI Security
+- Wiz AI Security Posture Management
+
+## 目标行业
+
+金融、医疗
+"""
+
+
+SAMPLE_DOC_3 = """
+# 智能体安全技术白皮书
+
+## 架构设计
+
+- 微隔离引擎
+- 动态信任评估
+- 实时风险评分
+
+## 控标点
+
+- 信创适配（鲲鹏/飞腾）
+- 国密算法SM2/SM4支持
+"""
+
+
+class TestV2MultiFile:
+    """V2 多文件加载与合并"""
+
+    @pytest.mark.asyncio
+    async def test_discover_single_file(self, sample_doc_dir):
+        """指定 filename 时仅返回一个文件（向后兼容）"""
+        from agent.knowledge import KnowledgeLoader
+
+        loader = KnowledgeLoader(
+            docs_dir=sample_doc_dir,
+            filename="智能体身份安全产品计划和目标.md",
+        )
+        files = loader._discover_files()
+        assert len(files) == 1
+        assert "智能体身份安全产品计划和目标.md" in str(files[0])
+
+    @pytest.mark.asyncio
+    async def test_discover_all_files(self):
+        """不指定 filename 时递归扫描所有 .md"""
+        from agent.knowledge import KnowledgeLoader
+
+        # 使用实际 docs/ 目录（至少有 5+ .md 文件）
+        import os as _os
+        docs_dir = _os.path.join(
+            _os.path.dirname(__file__), "..", "..", "docs",
+        )
+        if _os.path.isdir(docs_dir):
+            loader = KnowledgeLoader(docs_dir=docs_dir)
+            files = loader._discover_files()
+            assert len(files) >= 1  # at least the product doc
+
+    @pytest.mark.asyncio
+    async def test_multi_file_merge(self):
+        """加载多个文件并合并知识"""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            doc1 = Path(tmpdir) / "产品.md"
+            doc1.write_text(SAMPLE_DOC, encoding="utf-8")
+            doc2 = Path(tmpdir) / "竞品.md"
+            doc2.write_text(SAMPLE_DOC_2, encoding="utf-8")
+
+            from agent.knowledge import KnowledgeLoader
+            loader = KnowledgeLoader(docs_dir=tmpdir)
+            knowledge = await loader.load()
+
+            # 合并后: 功能来自 doc1, 竞品来自 doc2
+            assert len(knowledge.core_features) >= 3
+            assert len(knowledge.competitors) >= 3  # 1 from doc1 + 2 from doc2
+            assert "金融" in knowledge.target_industries
+            assert len(knowledge.source_files) == 2
+
+    @pytest.mark.asyncio
+    async def test_merge_deduplication(self):
+        """合并时去重"""
+        from agent.knowledge import ProductKnowledge, KnowledgeLoader
+
+        base = ProductKnowledge(
+            core_features=["功能A", "功能B"],
+            key_terms=["术语1"],
+        )
+        add = ProductKnowledge(
+            core_features=["功能B", "功能C"],  # "功能B" 重复
+            key_terms=["术语1", "术语2"],       # "术语1" 重复
+        )
+        merged = KnowledgeLoader._merge_knowledge(base, add)
+        assert len(merged.core_features) == 3  # A, B, C
+        assert len(merged.key_terms) > 0
+        assert merged.core_features.count("功能B") == 1
+
+    @pytest.mark.asyncio
+    async def test_source_files_tracking(self):
+        """验证 source_files 追踪所有来源"""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            doc1 = Path(tmpdir) / "doc1.md"
+            doc1.write_text("# Test\n\n## 核心功能\n- 功能X\n- 功能Y", encoding="utf-8")
+            doc2 = Path(tmpdir) / "doc2.md"
+            doc2.write_text("# Test2\n\n## 竞品\n- 竞品Z", encoding="utf-8")
+
+            from agent.knowledge import KnowledgeLoader
+            loader = KnowledgeLoader(docs_dir=tmpdir)
+            knowledge = await loader.load()
+            assert len(knowledge.source_files) == 2
+            assert any("doc1.md" in s for s in knowledge.source_files)
+            assert any("doc2.md" in s for s in knowledge.source_files)
+
+    @pytest.mark.asyncio
+    async def test_backward_compat_source_file(self):
+        """V1 的 source_file 属性兼容"""
+        from agent.knowledge import ProductKnowledge
+
+        pk = ProductKnowledge()
+        pk.source_file = "/test/path.md"
+        assert pk.source_file == "/test/path.md"
+        assert "/test/path.md" in pk.source_files
+
+        pk2 = ProductKnowledge()
+        assert pk2.source_file == ""
+
+
+class TestV2EnhancedPrompt:
+    """V2 增强 System Prompt"""
+
+    def test_prompt_includes_product_name(self):
+        from agent.knowledge import ProductKnowledge
+
+        pk = ProductKnowledge(
+            product_name="测试产品名",
+            product_positioning="测试定位",
+        )
+        prompt = pk.as_system_prompt()
+        assert "测试产品名" in prompt
+
+    def test_prompt_includes_competitors(self):
+        from agent.knowledge import ProductKnowledge
+
+        pk = ProductKnowledge(competitors=["友商A", "友商B"])
+        prompt = pk.as_system_prompt()
+        assert "竞品信息" in prompt
+        assert "友商A" in prompt
+
+    def test_prompt_includes_source_annotation(self):
+        from agent.knowledge import ProductKnowledge
+
+        pk = ProductKnowledge(source_files=["/path/a.md", "/path/b.md"])
+        prompt = pk.as_system_prompt()
+        assert "知识来源" in prompt
+
+    def test_parse_extracts_key_terms(self):
+        from agent.knowledge import MarkdownKnowledgeParser
+
+        content = "本文讨论MCP协议在Agent安全中的身份认证与权限管控问题"
+        knowledge = MarkdownKnowledgeParser.parse(content)
+        assert len(knowledge.key_terms) > 0
+        # 至少包含默认术语和自动提取的新术语
+        assert any("MCP协议" in t for t in knowledge.key_terms)
+
+
+class TestV2HotReload:
+    """V2 多文件热重载"""
+
+    @pytest.mark.asyncio
+    async def test_multi_file_reload(self):
+        """多文件变更检测"""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            doc1 = Path(tmpdir) / "doc1.md"
+            doc1.write_text("# Test\n\n## 核心功能\n- MCP协议安全防护能力", encoding="utf-8")
+
+            from agent.knowledge import KnowledgeLoader
+            loader = KnowledgeLoader(docs_dir=tmpdir)
+            knowledge = await loader.load()
+            assert len(knowledge.core_features) >= 1
+
+            # 添加新文件
+            doc2 = Path(tmpdir) / "doc2.md"
+            doc2.write_text("# Test2\n\n## 核心功能\n- 智能体身份认证授权", encoding="utf-8")
+
+            changed = await loader.reload_if_changed()
+            assert changed is True
+
+            # 新知识合并了所有文件
+            knowledge2 = await loader.load()
+            assert len(knowledge2.core_features) >= 2
+
+    @pytest.mark.asyncio
+    async def test_file_removal_detected(self):
+        """文件被删除后重载（无文件时不触发变更）"""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            doc1 = Path(tmpdir) / "doc1.md"
+            doc1.write_text("# Test\n\n## 核心功能\n- MCP协议安全防护", encoding="utf-8")
+
+            from agent.knowledge import KnowledgeLoader
+            loader = KnowledgeLoader(docs_dir=tmpdir)
+            await loader.load()
+
+            # 修改文件内容触发变更
+            doc1.write_text("# Test Updated\n\n## 技术壁垒\n- 动态上下文感知", encoding="utf-8")
+
+            changed = await loader.reload_if_changed()
+            # 文件内容变更，触发重载
+            assert changed is True
