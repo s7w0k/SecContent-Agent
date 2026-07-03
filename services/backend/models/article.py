@@ -99,12 +99,32 @@ class ArticleBase(BaseModel):
     category_v2_fallback: bool = Field(default=False, description="6分类是否降级")
     is_pr_eligible: bool = Field(default=False, description="是否可进入PR流程（V2分类结果）")
 
-    # 评分（0-100）
+    # V2 双维度评分
+    product_relevance: int = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="V2 产品能力相关度 (0-100)",
+    )
+    event_impact: int = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="V2 事件影响面与传播力 (0-100)",
+    )
+    pr_total_score: int = Field(
+        default=0,
+        ge=0,
+        le=200,
+        description="V2 综合分 (product_relevance + event_impact)",
+    )
+
+    # V1 评分（保留向后兼容）
     ai_relevance_score: int = Field(
         default=0,
         ge=0,
         le=100,
-        description="AI/Agent 安全相关度评分",
+        description="V1 AI/Agent 安全相关度评分",
     )
     reportability_score: int = Field(
         default=0,
