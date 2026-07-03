@@ -81,16 +81,6 @@ ignore = [
 "tests/unit/test_mcp_crawl.py" = ["B005"]
 "tests/unit/test_agent_pipeline.py" = ["N801"]
 
-[tool.coverage.run]
-omit = [
-    # MCP server/service 入口（需真实服务运行，无法在 CI 中覆盖）
-    "services/mcp_wewe/wewe_mcp_server.py",
-    "services/mcp_wewe/wewe_tools/*",
-    "services/mcp_wewe/http_mcp_bridge.py",
-    "services/mcp_crawl/server.py",
-    "services/mcp_crawl/http_bridge.py",
-]
-
 [tool.ruff.lint.isort]
 known-first-party = ["services", "mcp_wewe", "mcp_crawl"]
 
@@ -132,6 +122,12 @@ omit = [
     "*/test_*",
     "*/__pycache__/*",
     "*/migrations/*",
+    # MCP server/service 入口（需真实服务运行，无法在 CI 中覆盖）
+    "services/mcp_wewe/wewe_mcp_server.py",
+    "services/mcp_wewe/wewe_tools/*",
+    "services/mcp_wewe/http_mcp_bridge.py",
+    "services/mcp_crawl/server.py",
+    "services/mcp_crawl/http_bridge.py",
 ]
 
 [tool.coverage.report]
