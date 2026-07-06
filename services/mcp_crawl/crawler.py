@@ -115,8 +115,7 @@ class NewsCrawler:
         },
         "BleepingComputer": {
             "domain": "bleepingcomputer.com",
-            # 使用 news 分类 RSS 排除 deals/tutorials
-            "feed": "https://www.bleepingcomputer.com/feed/?post_type=post&category_name=news",
+            "feed": "https://www.bleepingcomputer.com/feed/",
         },
         "SecurityWeek": {
             "domain": "securityweek.com",
@@ -213,16 +212,23 @@ class NewsCrawler:
         """通过 RSS/Atom feed 爬取文章，严格按 cutoff 时间过滤。"""
         from email.utils import parsedate_to_datetime
 
-        import feedparser as _fp
+        try:
+            import feedparser as _fp
+        except ImportError:
+            logger.error("  feedparser not installed!")
+            return []
 
         try:
             feed = _fp.parse(cfg["feed"])
             if feed.bozo and not feed.entries:
-                logger.warning("  RSS parse warning: %s", feed.bozo_exception)
+                logger.warning("  RSS: %s (bozo=%s)", source, feed.bozo_exception)
                 return []
         except Exception as e:
-            logger.error("  RSS fetch error: %s", e)
+            logger.error("  RSS fetch error (%s): %s", source, e)
             return []
+
+        if not feed.entries:
+            logger.warning("  %s: feed returned 0 entries", source)
 
         articles: list[NewsArticle] = []
         for entry in feed.entries:
