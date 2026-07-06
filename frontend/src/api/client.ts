@@ -162,7 +162,25 @@ export const pipelineApi = {
     return data;
   },
 
-  /** V2 智能 PR 流水线 */
+  /** V2 智能 PR 流水线（单文章） */
+  async runV2Single(urlHash: string): Promise<{
+    ok: boolean;
+    url_hash: string;
+    title: string;
+    steps: Array<{
+      phase: string;
+      category?: string;
+      product_relevance?: number;
+      event_impact?: number;
+      pr_total_score?: number;
+      draft_count?: number;
+    }>;
+  }> {
+    const { data } = await client.post(`/pipeline/run-v2/${urlHash}`);
+    return data;
+  },
+
+  /** V2 智能 PR 流水线（全量） */
   async runV2(crawlDays: number = 1): Promise<PipelineResult> {
     const { data } = await client.post("/pipeline/run-v2", { crawl_days: crawlDays });
     return data;

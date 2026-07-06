@@ -132,6 +132,25 @@ export default function Dashboard() {
     setViewingReportId(article.report_id);
   }, []);
 
+  // ── 单文章 V2 流水线 ────────────────────────────────────
+  const handleRunV2Single = useCallback(async (article: Article) => {
+    message.loading({ content: "V2流水线运行中...", key: "v2single", duration: 0 });
+    try {
+      const res = await api.runV2Single(article.url_hash);
+      const steps = res.steps.map((s) => {
+        if (s.phase === "classify_v2") return `分类:${s.category}`;
+        if (s.phase === "score_v2") return `综合分:${s.pr_total_score}`;
+        if (s.phase === "draft") return `草稿:${s.draft_count}篇`;
+        return s.phase;
+      }).join(" → ");
+      message.success({ content: `V2完成: ${steps}`, key: "v2single", duration: 5 });
+      loadArticles();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "未知错误";
+      message.error({ content: `V2失败: ${msg}`, key: "v2single" });
+    }
+  }, [loadArticles]);
+
   // ── 查看 V2 草稿 ────────────────────────────────────────
   const handleViewDrafts = useCallback((article: Article) => {
     setDraftArticle(article);
@@ -196,6 +215,7 @@ export default function Dashboard() {
         onViewReport={handleViewReport}
         onViewDetail={handleViewDetail}
         onViewDrafts={handleViewDrafts}
+        onRunV2Single={handleRunV2Single}
         onRefresh={loadArticles}
       />
 

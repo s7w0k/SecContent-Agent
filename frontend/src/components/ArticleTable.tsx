@@ -7,7 +7,8 @@ import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import type { SorterResult } from "antd/es/table/interface";
 import { Button, message, Popconfirm, Popover, Progress, Space, Table, Tag, Typography } from "antd";
 import {
-  DeleteOutlined, EyeOutlined, FileSearchOutlined, FileTextOutlined, RobotOutlined,
+  DeleteOutlined, EyeOutlined, FileSearchOutlined, FileTextOutlined,
+  PlayCircleOutlined, RobotOutlined,
 } from "@ant-design/icons";
 import api from "../api/client";
 import type { Article } from "../types";
@@ -23,12 +24,13 @@ interface ArticleTableProps {
   onViewReport: (article: Article) => void;
   onViewDetail: (article: Article) => void;
   onViewDrafts: (article: Article) => void;
+  onRunV2Single: (article: Article) => void;
   onRefresh: () => void;  // called after fetch/summarize to reload data
 }
 
 export default function ArticleTable({
   articles, total, loading, page, pageSize,
-  onPageChange, onSortChange, onViewReport, onViewDetail, onViewDrafts, onRefresh,
+  onPageChange, onSortChange, onViewReport, onViewDetail, onViewDrafts, onRunV2Single, onRefresh,
 }: ArticleTableProps) {
   const [busy, setBusy] = useState<Set<string>>(new Set());
 
@@ -102,6 +104,8 @@ export default function ArticleTable({
         const hasSummary = !!record.summary_cn;
         return (
           <Space size="small">
+            <Button type="link" size="small" icon={<PlayCircleOutlined />}
+              onClick={() => onRunV2Single(record)}>V2</Button>
             {record.source_type === "wechat_mp" && !hasContent && (
               <Button type="link" size="small" icon={<FileTextOutlined />} loading={b}
                 onClick={() => handleFetch(record.url_hash)}>原文</Button>

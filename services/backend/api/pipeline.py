@@ -491,3 +491,104 @@ async def classify_v2(body: ClassifyV2Request, request: Request):
     except Exception as e:
         log.error(f"[classify-v2] Failed: {e}")
         raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@router.post("/run-v2/{url_hash}", summary="单文章 V2 智能 PR 流水线")
+async def run_v2_single(url_hash: str, request: Request):
+    """对单篇文章执行 V2 全流程：classify_v2 → score_v2 → draft。
+
+    仅操作指定的单篇文章，避免批量调用 LLM。
+    """
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    classifier = getattr(request.app.state, "classifier_v2", None)
+    if classifier is None:
+        raise HTTPException(status_code=503, detail="ClassifierV2 not initialized")
+
+    log = logging.getLogger("backend.api.pipeline")
+
+    try:
+        # 1. 获取文章
+        article = await db["articles"].find_one({"url_hash": url_hash})
+        if article is None:
+            raise HTTPException(status_code=404, detail="Article not found")
+
+        result = {
+            "url_hash": url_hash,
+            "title": article.get("title", ""),
+            "steps": [],
+        }
+
+        # 2. V2 6分类
+        classify_result = await classifier.classify_single(dict(article))
+        await db["articles"].update_one(
+            {"url_hash": url_hash},
+            {"$set": {
+                "category_v2": classify_result.category,
+                "category_v2_confidence": classify_result.confidence,
+                "category_v2_reason": classify_result.reason,
+                "category_v2_fallback": classify_result.is_fallback,
+                "is_pr_eligible": classify_result.is_pr_eligible,
+            }},
+        )
+        result["steps"].append({
+            "phase": "classify_v2",
+            "category": classify_result.category,
+            "confidence": classify_result.confidence,
+            "is_pr_eligible": classify_result.is_pr_eligible,
+        })
+        log.info(f"[run-v2-single] Classify: {classify_result.category} (PR={classify_result.is_pr_eligible})")
+
+        # 3. 仅对 PR 候选文章打分
+        if classify_result.is_pr_eligible:
+            scorer = getattr(request.app.state, "scorer_v2", None)
+            if scorer:
+                scores = await scorer.score_single(dict(article))
+                await db["articles"].update_one(
+                    {"url_hash": url_hash},
+                    {"$set": {
+                        "product_relevance": scores["product_relevance"],
+                        "event_impact": scores["event_impact"],
+                        "pr_total_score": scores["pr_total_score"],
+                        "score_reason": scores.get("score_reason", ""),
+                    }},
+                )
+                result["steps"].append({
+                    "phase": "score_v2",
+                    "product_relevance": scores["product_relevance"],
+                    "event_impact": scores["event_impact"],
+                    "pr_total_score": scores["pr_total_score"],
+                    "is_pr_candidate": scores.get("is_pr_candidate", False),
+                })
+                log.info(f"[run-v2-single] Score: {scores['pr_total_score']} (candidate={scores.get('is_pr_candidate')})")
+
+                # 4. 高分文章生成草稿
+                if scores.get("is_pr_candidate"):
+                    draft_gen = getattr(request.app.state, "draft_gen", None)
+                    if draft_gen:
+                        drafts = await draft_gen.generate(dict(article), scores)
+                        if drafts["ok"]:
+                            await db["articles"].update_one(
+                                {"url_hash": url_hash},
+                                {"$set": {
+                                    "pr_drafts": drafts["drafts"],
+                                    "pr_template_used": drafts["drafts"][0]["template"] if drafts["drafts"] else "",
+                                }},
+                            )
+                        result["steps"].append({
+                            "phase": "draft",
+                            "draft_count": len(drafts["drafts"]),
+                            "templates": list({d["template"] for d in drafts["drafts"]}),
+                        })
+                        log.info(f"[run-v2-single] Drafts: {len(drafts['drafts'])} generated")
+
+        result["ok"] = True
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"[run-v2-single] Failed: {e}")
+        raise HTTPException(status_code=502, detail=str(e)) from e
