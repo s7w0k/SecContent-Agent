@@ -98,7 +98,7 @@ async def lifespan(app: FastAPI):
         knowledge_loader = KnowledgeLoader(docs_dir=settings.KNOWLEDGE_BASE_DIR)
         await knowledge_loader.load()
         app.state.knowledge_loader = knowledge_loader
-        _log("INFO", f"Knowledge loaded: source={knowledge_loader.filepath}")
+        _log("INFO", f"Knowledge loaded: {len(knowledge_loader._cache.source_files) if knowledge_loader._cache else 0} files from {settings.KNOWLEDGE_BASE_DIR}")
 
         llm = ChatOpenAI(
             model=settings.DEEPSEEK_MODEL,
