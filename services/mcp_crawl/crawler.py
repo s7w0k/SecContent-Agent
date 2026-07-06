@@ -140,17 +140,20 @@ class NewsCrawler:
         cutoff = datetime.now() - timedelta(days=days)
         all_articles: list[NewsArticle] = []
         self._last_errors: dict[str, str] = {}
+        self._per_site: dict[str, int] = {}
 
         for site_name, cfg in self.SITES.items():
             logger.info("Crawling: %s (RSS)", site_name)
             try:
                 articles = self._crawl_rss(site_name, cfg, cutoff)
+                self._per_site[site_name] = len(articles)
                 logger.info("  %s: %d articles", site_name, len(articles))
                 all_articles.extend(articles)
             except Exception as e:
                 msg = str(e)
                 logger.error("  %s: %s", site_name, msg)
                 self._last_errors[site_name] = msg
+                self._per_site[site_name] = 0
 
         # URL 去重 + 时间过滤 + 非新闻内容过滤
         seen: set[str] = set()

@@ -227,6 +227,7 @@ def _handle_crawl_news(arguments: dict) -> str:
             "count": len(_article_cache),
             "crawled_at": _now_iso(),
             "errors": getattr(crawler, "_last_errors", {}),
+            "per_site": getattr(crawler, "_per_site", {}),
         },
     }, ensure_ascii=False)
 
