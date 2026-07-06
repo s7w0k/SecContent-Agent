@@ -1,17 +1,24 @@
 """
-海外安全新闻爬虫 — 从 site_crawl 提取并解耦数据库依赖。
+海外安全新闻爬虫 — 基于 RSS/Atom Feed 的标准新闻抓取。
 
-混合策略:
-  - The Hacker News: curl_cffi 直接 HTML 解析（国内可达）
-  - BleepingComputer / SecurityWeek / Help Net Security: Tavily API site: 搜索
+所有站点通过 RSS feed 获取（feedparser），严格按时间过滤，
+无日期文章直接丢弃。无需任何 API Key。
+
+覆盖:
+  - The Hacker News (FeedBurner RSS)
+  - BleepingComputer (WordPress RSS)
+  - SecurityWeek (WordPress RSS)
+  - Help Net Security (WordPress RSS)
+  - Dark Reading (RSS XML)
 
 使用方式:
-    crawler = NewsCrawler(tavily_api_key="tvly-xxx")
+    crawler = NewsCrawler()
     articles = await crawler.crawl(days=1)
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
 import re
@@ -84,35 +91,29 @@ class NewsCrawler:
     SITES = {
         "The Hacker News": {
             "domain": "thehackernews.com",
-            "method": "curl_cffi",
-            "homepage": "https://thehackernews.com/",
+            "feed": "https://feeds.feedburner.com/TheHackersNews",
         },
         "BleepingComputer": {
             "domain": "bleepingcomputer.com",
-            "method": "tavily",
-            "homepage": "https://www.bleepingcomputer.com/",
+            "feed": "https://www.bleepingcomputer.com/feed/",
         },
         "SecurityWeek": {
             "domain": "securityweek.com",
-            "method": "tavily",
-            "homepage": "https://www.securityweek.com/",
+            "feed": "https://www.securityweek.com/feed/",
         },
         "Help Net Security": {
             "domain": "helpnetsecurity.com",
-            "method": "tavily",
-            "homepage": "https://www.helpnetsecurity.com/",
+            "feed": "https://www.helpnetsecurity.com/feed/",
+        },
+        "Dark Reading": {
+            "domain": "darkreading.com",
+            "feed": "https://www.darkreading.com/rss.xml",
         },
     }
 
-    def __init__(self, tavily_api_key: str):
-        if not tavily_api_key:
-            raise ValueError("TAVILY_API_KEY is required")
-        try:
-            from tavily import TavilyClient
-
-            self.tavily = TavilyClient(api_key=tavily_api_key)
-        except ImportError:
-            raise ImportError("tavily-python is required. pip install tavily-python")
+    def __init__(self, tavily_api_key: str = ""):
+        # RSS-only mode, no API key needed
+        pass
 
     async def crawl(self, days: int = 1) -> list[NewsArticle]:
         """爬取所有站点最近 N 天的文章（同步阻塞方法用 asyncio.to_thread 包装时调用者负责）"""
@@ -120,12 +121,9 @@ class NewsCrawler:
         all_articles: list[NewsArticle] = []
 
         for site_name, cfg in self.SITES.items():
-            logger.info("Crawling: %s (%s)", site_name, cfg["method"])
+            logger.info("Crawling: %s (RSS)", site_name)
             try:
-                if cfg["method"] == "curl_cffi":
-                    articles = self._crawl_curl_cffi(site_name, cfg)
-                else:
-                    articles = self._crawl_tavily(site_name, cfg, days)
+                articles = self._crawl_rss(site_name, cfg, cutoff)
 
                 logger.info("  %s: %d articles", site_name, len(articles))
                 all_articles.extend(articles)
@@ -188,100 +186,55 @@ class NewsCrawler:
         markdown = f"# {title}\n\n{article.get_text(separator='\n', strip=True)}"
         return markdown
 
-    # ── curl_cffi: 直接解析 The Hacker News ──
+    # ── RSS: feedparser 解析标准 RSS/Atom ──
 
-    def _crawl_curl_cffi(self, source: str, cfg: dict) -> list[NewsArticle]:
-        try:
-            from bs4 import BeautifulSoup
-            from curl_cffi import requests
-        except ImportError:
-            logger.error("curl_cffi or beautifulsoup4 not installed")
-            return []
+    def _crawl_rss(self, source: str, cfg: dict, cutoff: datetime) -> list[NewsArticle]:
+        """通过 RSS/Atom feed 爬取文章，严格按 cutoff 时间过滤。"""
+        from email.utils import parsedate_to_datetime
+
+        import feedparser as _fp
 
         try:
-            resp = requests.get(
-                f"https://{cfg['domain']}",
-                impersonate="chrome124",
-                timeout=20,
-            )
+            feed = _fp.parse(cfg["feed"])
+            if feed.bozo and not feed.entries:
+                logger.warning("  RSS parse warning: %s", feed.bozo_exception)
+                return []
         except Exception as e:
-            logger.error("  HTTP error: %s", e)
-            return []
-
-        if resp.status_code != 200:
-            logger.warning("  HTTP %d", resp.status_code)
-            return []
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-        articles: list[NewsArticle] = []
-
-        for item in soup.select("div.body-post, div.Story, div.clear.home-right"):
-            link = item.select_one("a.story-link, h2.home-title a")
-            if not link:
-                continue
-
-            title = link.get_text(strip=True)
-            href = link.get("href", "")
-            if href.startswith("/"):
-                href = f"https://{cfg['domain']}{href}"
-            if cfg["domain"] not in href:
-                continue
-
-            date_el = item.select_one("div.item-label, span.h-datetime, div.date")
-            pub_date = self._parse_date(date_el.get_text() if date_el else "")
-
-            desc_el = item.select_one("div.home-desc, div.Story-body, p")
-            summary = desc_el.get_text(strip=True)[:400] if desc_el else ""
-
-            articles.append(
-                NewsArticle(
-                    title=title,
-                    url=href,
-                    source=source,
-                    published_at=pub_date or datetime.now(),
-                    summary=summary,
-                )
-            )
-
-        return articles
-
-    # ── Tavily: site:domain 搜索 ──
-
-    def _crawl_tavily(self, source: str, cfg: dict, days: int = 1) -> list[NewsArticle]:
-        domain = cfg["domain"]
-        time_range = "day" if days <= 1 else "week" if days <= 7 else "month"
-
-        try:
-            response = self.tavily.search(
-                query=f"site:{domain} security",
-                search_depth="advanced",
-                max_results=30,
-                include_domains=[domain],
-                time_range=time_range,
-            )
-        except Exception as e:
-            logger.error("  Tavily error: %s", e)
+            logger.error("  RSS fetch error: %s", e)
             return []
 
         articles: list[NewsArticle] = []
-        for item in response.get("results", []):
-            url = item.get("url", "")
-            if domain not in url:
+        for entry in feed.entries:
+            url = entry.get("link", "")
+            if not url or cfg["domain"] not in url:
+                continue
+            if _is_non_news_url(url):
                 continue
 
-            title = item.get("title", "")
-            summary = (item.get("content") or "")[:400]
-            pub_date = self._parse_date(item.get("published_date", ""))
+            title = entry.get("title", "")
+            summary = (entry.get("summary", "") or entry.get("description", ""))[:500]
 
-            if not pub_date:
-                pub_date = self._fetch_date_from_url(url)
+            # 解析日期
+            pub_date = None
+            if hasattr(entry, "published_parsed") and entry.published_parsed:
+                from calendar import timegm
+                pub_date = datetime(1970, 1, 1) + timedelta(seconds=timegm(entry.published_parsed))
+            elif entry.get("published"):
+                with contextlib.suppress(Exception):
+                    pub_date = parsedate_to_datetime(entry["published"])
+
+            # 严格时间过滤：无日期或超出范围跳过
+            if pub_date is None:
+                continue
+            if pub_date < cutoff:
+                continue
 
             articles.append(
                 NewsArticle(
                     title=title,
                     url=url,
                     source=source,
-                    published_at=pub_date or datetime.now(),
+                    published_at=pub_date,
                     summary=summary,
                 )
             )
@@ -292,7 +245,7 @@ class NewsCrawler:
 
     @staticmethod
     def _parse_date(text: str) -> datetime | None:
-        """解析多种日期格式"""
+        """解析多种日期格式（保留供外部使用）"""
         if not text:
             return None
         text = str(text).strip()
@@ -325,49 +278,5 @@ class NewsCrawler:
                 )
             except ValueError:
                 pass
-
-        return None
-
-    def _fetch_date_from_url(self, url: str) -> datetime | None:
-        """从文章页面 meta/time 标签提取发表时间"""
-        try:
-            from bs4 import BeautifulSoup
-            from curl_cffi import requests
-        except ImportError:
-            return None
-
-        try:
-            resp = requests.get(url, impersonate="chrome124", timeout=10)
-            if resp.status_code != 200:
-                return None
-        except Exception:
-            return None
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        for prop in [
-            "article:published_time", "date", "pubdate",
-            "DC.date.issued", "og:article:published_time",
-        ]:
-            meta = soup.select_one(f'meta[property="{prop}"], meta[name="{prop}"]')
-            if meta and meta.get("content"):
-                dt = self._parse_date(meta["content"])
-                if dt:
-                    return dt
-
-        for el in soup.select("time[datetime]"):
-            dt = self._parse_date(el.get("datetime", ""))
-            if dt:
-                return dt
-
-        for sel in [
-            "span.date", "div.date", "time.date", "span.post-date",
-            "span.published", "span.entry-date", "time.entry-date",
-        ]:
-            el = soup.select_one(sel)
-            if el:
-                dt = self._parse_date(el.get_text())
-                if dt:
-                    return dt
 
         return None

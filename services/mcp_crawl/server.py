@@ -212,11 +212,7 @@ def _handle_crawl_news(arguments: dict) -> str:
     days = int(arguments.get("days", 1))
     days = max(1, min(days, 30))
 
-    tavily_key = os.getenv("TAVILY_API_KEY", "")
-    if not tavily_key:
-        return json.dumps({"ok": False, "error": "TAVILY_API_KEY not set"}, ensure_ascii=False)
-
-    crawler = NewsCrawler(tavily_api_key=tavily_key)
+    crawler = NewsCrawler()
 
     # NewsCrawler.crawl 是同步的 → 直接调用
     import asyncio
