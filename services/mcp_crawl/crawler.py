@@ -65,18 +65,38 @@ class NewsArticle:
 # 爬虫
 # ═══════════════════════════════════════════════════════════
 
-# 非新闻内容 URL 黑名单（促销/广告/视频/播客等）
+# 非新闻内容 URL/域名 黑名单
+_NON_NEWS_DOMAINS = [
+    "deals.bleepingcomputer.com",
+]
 _NON_NEWS_PATTERNS = [
     "/deals/", "/offer/", "/sales/", "/shop/", "/store/",
     "/webinar", "/podcast", "/video/", "/videos/",
     "/sponsor", "/advertise", "/free-", "discount", "coupon",
+    "/how-to-", "/deal-", "-deal", "giveaway",
+]
+# 非新闻标题关键词（含其一则跳过）
+_NON_NEWS_TITLE_WORDS = [
+    "deal", "sale", "discount", "coupon", "giveaway",
+    "just $", "only $", "% off", "save ", "webinar",
 ]
 
 
-def _is_non_news_url(url: str) -> bool:
-    """判断 URL 是否为非新闻内容（促销、广告等）"""
+def _is_non_news(url: str, title: str = "") -> bool:
+    """判断是否为非新闻内容（促销、广告、教程等）"""
     url_lower = url.lower()
-    return any(p.lower() in url_lower for p in _NON_NEWS_PATTERNS)
+    # 域名黑名单
+    if any(d in url_lower for d in _NON_NEWS_DOMAINS):
+        return True
+    # URL 路径模式
+    if any(p.lower() in url_lower for p in _NON_NEWS_PATTERNS):
+        return True
+    # 标题关键词
+    if title:
+        title_lower = title.lower()
+        if any(w in title_lower for w in _NON_NEWS_TITLE_WORDS):
+            return True
+    return False
 
 
 class NewsCrawler:
@@ -95,7 +115,8 @@ class NewsCrawler:
         },
         "BleepingComputer": {
             "domain": "bleepingcomputer.com",
-            "feed": "https://www.bleepingcomputer.com/feed/",
+            # 使用 news 分类 RSS 排除 deals/tutorials
+            "feed": "https://www.bleepingcomputer.com/feed/?post_type=post&category_name=news",
         },
         "SecurityWeek": {
             "domain": "securityweek.com",
@@ -140,7 +161,7 @@ class NewsCrawler:
             seen.add(key)
             if art.published_at and art.published_at < cutoff:
                 continue
-            if _is_non_news_url(art.url):
+            if _is_non_news(art.url, art.title):
                 logger.debug("  Skipping non-news: %s", art.url)
                 continue
             filtered.append(art)
@@ -208,10 +229,9 @@ class NewsCrawler:
             url = entry.get("link", "")
             if not url or cfg["domain"] not in url:
                 continue
-            if _is_non_news_url(url):
-                continue
-
             title = entry.get("title", "")
+            if _is_non_news(url, title):
+                continue
             summary = (entry.get("summary", "") or entry.get("description", ""))[:500]
 
             # 解析日期
