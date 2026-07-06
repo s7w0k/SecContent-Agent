@@ -162,6 +162,21 @@ export const pipelineApi = {
     return data;
   },
 
+  /** V2 双维度打分（批量） */
+  async scoreV2(): Promise<{ ok: boolean; total: number; scored: number; candidates: number }> {
+    const { data } = await client.post("/pipeline/score-v2");
+    return data;
+  },
+
+  /** V2 双维度打分（单篇） */
+  async scoreV2Single(urlHash: string): Promise<{
+    ok: boolean; product_relevance: number; event_impact: number;
+    pr_total_score: number; is_pr_candidate: boolean;
+  }> {
+    const { data } = await client.post(`/pipeline/score-v2/${urlHash}`);
+    return data;
+  },
+
   /** V2 智能 PR 流水线（单文章） */
   async runV2Single(urlHash: string): Promise<{
     ok: boolean;

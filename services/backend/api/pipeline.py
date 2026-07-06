@@ -592,3 +592,90 @@ async def run_v2_single(url_hash: str, request: Request):
     except Exception as e:
         log.error(f"[run-v2-single] Failed: {e}")
         raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@router.post("/score-v2", summary="V2 双维度打分（批量）")
+async def score_v2_all(request: Request):
+    """对所有 is_pr_eligible=True 的文章进行 V2 双维度打分。"""
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    scorer = getattr(request.app.state, "scorer_v2", None)
+    if scorer is None:
+        raise HTTPException(status_code=503, detail="ScoringAgentV2 not initialized")
+
+    log = logging.getLogger("backend.api.pipeline")
+
+    try:
+        cursor = db["articles"].find({"is_pr_eligible": True})
+        articles = await cursor.to_list(length=50)
+
+        if not articles:
+            return {"ok": True, "total": 0, "scored": 0}
+
+        scored = await scorer.score_batch(articles)
+        scored_count = 0
+        candidates = 0
+        for art, result in zip(articles, scored, strict=False):
+            if not result.get("_fallback", True):
+                await db["articles"].update_one(
+                    {"_id": art["_id"]},
+                    {"$set": {
+                        "product_relevance": result["product_relevance"],
+                        "event_impact": result["event_impact"],
+                        "pr_total_score": result["pr_total_score"],
+                        "score_reason": result.get("score_reason", ""),
+                    }},
+                )
+                scored_count += 1
+                if result.get("is_pr_candidate"):
+                    candidates += 1
+
+        log.info(f"[score-v2] Scored: {scored_count}/{len(articles)}, {candidates} PR candidates")
+        return {"ok": True, "total": len(articles), "scored": scored_count, "candidates": candidates}
+
+    except Exception as e:
+        log.error(f"[score-v2] Failed: {e}")
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@router.post("/score-v2/{url_hash}", summary="V2 双维度打分（单篇）")
+async def score_v2_single(url_hash: str, request: Request):
+    """对单篇文章进行 V2 双维度打分。"""
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    scorer = getattr(request.app.state, "scorer_v2", None)
+    if scorer is None:
+        raise HTTPException(status_code=503, detail="ScoringAgentV2 not initialized")
+
+    log = logging.getLogger("backend.api.pipeline")
+
+    try:
+        article = await db["articles"].find_one({"url_hash": url_hash})
+        if article is None:
+            raise HTTPException(status_code=404, detail="Article not found")
+
+        scores = await scorer.score_single(dict(article))
+        await db["articles"].update_one(
+            {"url_hash": url_hash},
+            {"$set": {
+                "product_relevance": scores["product_relevance"],
+                "event_impact": scores["event_impact"],
+                "pr_total_score": scores["pr_total_score"],
+                "score_reason": scores.get("score_reason", ""),
+            }},
+        )
+
+        log.info(f"[score-v2-single] {scores['product_relevance']}+{scores['event_impact']}={scores['pr_total_score']}")
+        return {"ok": True, "product_relevance": scores["product_relevance"],
+                "event_impact": scores["event_impact"], "pr_total_score": scores["pr_total_score"],
+                "is_pr_candidate": scores.get("is_pr_candidate", False)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"[score-v2-single] Failed: {e}")
+        raise HTTPException(status_code=502, detail=str(e)) from e

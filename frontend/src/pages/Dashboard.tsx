@@ -132,6 +132,21 @@ export default function Dashboard() {
     setViewingReportId(article.report_id);
   }, []);
 
+  // ── 单文章 V2 打分 ──────────────────────────────────────
+  const handleScoreV2Single = useCallback(async (article: Article) => {
+    message.loading({ content: "V2打分中...", key: "scoresingle", duration: 0 });
+    try {
+      const res = await api.scoreV2Single(article.url_hash);
+      message.success({
+        content: `V2打分: 产品${res.product_relevance}+事件${res.event_impact}=${res.pr_total_score} ${res.is_pr_candidate ? "达标" : "未达标"}`,
+        key: "scoresingle", duration: 4,
+      });
+      loadArticles();
+    } catch (e: unknown) {
+      message.error({ content: "V2打分失败", key: "scoresingle" });
+    }
+  }, [loadArticles]);
+
   // ── 单文章 V2 流水线 ────────────────────────────────────
   const handleRunV2Single = useCallback(async (article: Article) => {
     message.loading({ content: "V2流水线运行中...", key: "v2single", duration: 0 });
@@ -216,6 +231,7 @@ export default function Dashboard() {
         onViewDetail={handleViewDetail}
         onViewDrafts={handleViewDrafts}
         onRunV2Single={handleRunV2Single}
+        onScoreV2Single={handleScoreV2Single}
         onRefresh={loadArticles}
       />
 

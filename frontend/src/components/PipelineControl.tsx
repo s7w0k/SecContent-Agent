@@ -141,7 +141,22 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
       onComplete();
     } catch (e: any) { message.error("公众号爬取失败"); }
   }, [onComplete]);
-  const handleScore = useCallback(() => trigger("score", "打分"), [trigger]);
+  const handleScoreV2 = useCallback(async () => {
+    try {
+      setRunning(true);
+      message.loading({ content: "V2打分中...", key: "scoreV2", duration: 0 });
+      const res = await api.scoreV2();
+      message.success({
+        content: `V2打分: ${res.scored} 篇 (${res.candidates} 篇达标≥80)`,
+        key: "scoreV2", duration: 4,
+      });
+      onComplete();
+    } catch (e: unknown) {
+      message.error({ content: `V2打分失败`, key: "scoreV2" });
+    } finally {
+      setRunning(false);
+    }
+  }, [onComplete]);
   const handleReport = useCallback(() => trigger("report", "报道"), [trigger]);
   const handleClassifyV2 = useCallback(async () => {
     try {
@@ -243,10 +258,10 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
         </Button>
         <Button
           icon={<ExperimentOutlined />}
-          onClick={handleScore}
+          onClick={handleScoreV2}
           disabled={running}
         >
-          仅打分
+          V2打分
         </Button>
         <Button
           icon={<ExperimentOutlined />}

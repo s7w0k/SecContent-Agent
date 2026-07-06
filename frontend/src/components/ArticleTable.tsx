@@ -7,8 +7,8 @@ import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import type { SorterResult } from "antd/es/table/interface";
 import { Button, message, Popconfirm, Popover, Progress, Space, Table, Tag, Typography } from "antd";
 import {
-  DeleteOutlined, EyeOutlined, FileSearchOutlined, FileTextOutlined,
-  PlayCircleOutlined, RobotOutlined,
+  DeleteOutlined, ExperimentOutlined, EyeOutlined, FileSearchOutlined,
+  FileTextOutlined, PlayCircleOutlined, RobotOutlined,
 } from "@ant-design/icons";
 import api from "../api/client";
 import type { Article } from "../types";
@@ -25,12 +25,13 @@ interface ArticleTableProps {
   onViewDetail: (article: Article) => void;
   onViewDrafts: (article: Article) => void;
   onRunV2Single: (article: Article) => void;
+  onScoreV2Single: (article: Article) => void;
   onRefresh: () => void;  // called after fetch/summarize to reload data
 }
 
 export default function ArticleTable({
   articles, total, loading, page, pageSize,
-  onPageChange, onSortChange, onViewReport, onViewDetail, onViewDrafts, onRunV2Single, onRefresh,
+  onPageChange, onSortChange, onViewReport, onViewDetail, onViewDrafts, onRunV2Single, onScoreV2Single, onRefresh,
 }: ArticleTableProps) {
   const [busy, setBusy] = useState<Set<string>>(new Set());
 
@@ -59,8 +60,6 @@ export default function ArticleTable({
       render: (v: string) => v?.slice(0, 11) || "-" },
     { title: "题目", dataIndex: "title", key: "title", width: 250, ellipsis: true,
       render: (t: string, r: Article) => <a href={r.url} target="_blank" rel="noopener noreferrer">{t}</a> },
-    { title: "分类", dataIndex: "category", key: "category", width: 100, sorter: true,
-      render: (c: string) => c ? <Tag>{c}</Tag> : <Tag color="default">-</Tag> },
     { title: "V2分类", dataIndex: "category_v2", key: "category_v2", width: 130,
       render: (c: string, r: Article) => {
         const colorMap: Record<string, string> = {
@@ -75,12 +74,6 @@ export default function ArticleTable({
         const icon = r.is_pr_eligible ? " 🔥" : "";
         return c ? <Tag color={color}>{c}{icon}</Tag> : <Tag color="default">-</Tag>;
       }},
-    { title: "相关度", dataIndex: "ai_relevance_score", key: "ai_relevance_score", width: 90, sorter: true,
-      render: (s: number) => <Progress percent={s} size="small" strokeColor={s >= 70 ? "#52c41a" : s >= 40 ? "#faad14" : "#ff4d4f"} format={() => s} /> },
-    { title: "可报道", dataIndex: "reportability_score", key: "reportability_score", width: 90, sorter: true,
-      render: (s: number) => <Progress percent={s} size="small" strokeColor={s >= 70 ? "#722ed1" : s >= 40 ? "#faad14" : "#ff4d4f"} format={() => s} /> },
-    { title: "综合分", dataIndex: "total_score", key: "total_score", width: 75, sorter: true,
-      render: (s: number) => <Tag color={s >= 140 ? "red" : s >= 100 ? "orange" : "default"}>{s}</Tag> },
     { title: "产品相关", dataIndex: "product_relevance", key: "product_relevance", width: 85, sorter: true,
       render: (s: number) => s ? <Progress percent={s} size="small" strokeColor={s >= 70 ? "#1890ff" : s >= 40 ? "#faad14" : "#ff4d4f"} format={() => s} /> : null },
     { title: "事件影响", dataIndex: "event_impact", key: "event_impact", width: 85, sorter: true,
@@ -106,6 +99,8 @@ export default function ArticleTable({
           <Space size="small">
             <Button type="link" size="small" icon={<PlayCircleOutlined />}
               onClick={() => onRunV2Single(record)}>V2</Button>
+            <Button type="link" size="small" icon={<ExperimentOutlined />}
+              onClick={() => onScoreV2Single(record)}>打分</Button>
             {record.source_type === "wechat_mp" && !hasContent && (
               <Button type="link" size="small" icon={<FileTextOutlined />} loading={b}
                 onClick={() => handleFetch(record.url_hash)}>原文</Button>
