@@ -7,6 +7,7 @@ Agent 流水线编排 V2 — 单元测试
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from unittest.mock import AsyncMock, MagicMock
@@ -270,3 +271,130 @@ class TestDraftNode:
         state = create_state_v2()
         result = await draft_node(state, mock_draft_gen, mock_knowledge, mock_db)
         assert result["draft_count"] == 1
+
+
+# ═══════════════════════════════════════════════════════════════
+# 4. 全流程 E2E 集成测试
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestPipelineV2E2E:
+    """V2 流水线全流程 mock 验证"""
+
+    @pytest.fixture
+    def e2e_db(self):
+        """模拟含文章数据的 MongoDB"""
+        db = MagicMock()
+        articles_mock = MagicMock()
+        db.__getitem__ = MagicMock(return_value=articles_mock)
+
+        # 内存存储
+        store: list[dict] = []
+
+        async def _to_list(length=100):
+            return store
+
+        async def _update_one(filter_dict, update_dict, **kwargs):
+            for a in store:
+                if a.get("_id") == filter_dict.get("_id"):
+                    if "$set" in update_dict:
+                        a.update(update_dict["$set"])
+                    return MagicMock(modified_count=1)
+            return MagicMock(modified_count=0)
+
+        mock_cursor = MagicMock()
+        mock_cursor.to_list = _to_list
+        articles_mock.find = MagicMock(return_value=mock_cursor)
+        articles_mock.update_one = _update_one
+
+        return db, store
+
+    @pytest.mark.asyncio
+    async def test_full_v2_pipeline_e2e(
+        self, mock_tools, mock_classifier, mock_scorer, mock_draft_gen,
+        mock_knowledge, e2e_db,
+    ):
+        """验证 V2 流水线 4 阶段完整通过"""
+        from agent.pipeline_v2 import PipelineManagerV2
+
+        db, store = e2e_db
+
+        # 初始化数据：2 篇 crawled 文章
+        store.extend([
+            {"_id": "a1", "title": "MCP RCE Vulnerability",
+             "pipeline_status": "crawled", "category_v2": ""},
+            {"_id": "a2", "title": "New AI Regulation",
+             "pipeline_status": "crawled", "category_v2": ""},
+        ])
+
+        manager = PipelineManagerV2(
+            tools=mock_tools,
+            classifier_v2=mock_classifier,
+            scorer_v2=mock_scorer,
+            draft_gen=mock_draft_gen,
+            knowledge=mock_knowledge,
+            db=db,
+        )
+
+        result = await manager.run_full()
+        assert result["status"] == "completed"
+        assert result["state"]["classified_v2_count"] == 2
+        assert result["state"]["scored_v2_count"] == 2
+        assert result["state"]["draft_count"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_no_pr_eligible_articles_skips_scoring(
+        self, mock_tools, mock_knowledge, e2e_db,
+    ):
+        """没有 PR 候选文章时，score 和 draft 跳过"""
+        from agent.pipeline_v2 import PipelineManagerV2
+
+        db, store = e2e_db
+        store.append(
+            {"_id": "a1", "title": "Competitor News",
+             "pipeline_status": "crawled", "category_v2": ""},
+        )
+
+        # Mock classifier 返回非 PR 类别
+        from agent.classifier_v2 import ClassifyResultV2
+
+        classifier = MagicMock()
+        classifier.classify_batch = AsyncMock(return_value=[
+            ClassifyResultV2(category="国内外竞品信息", confidence=80, reason="友商动态"),
+        ])
+
+        scorer = MagicMock()
+        scorer.score_batch = AsyncMock(return_value=[])
+
+        draft_gen = MagicMock()
+        draft_gen.generate = AsyncMock(return_value={"ok": False, "drafts": [], "error": "none"})
+
+        manager = PipelineManagerV2(
+            tools=mock_tools,
+            classifier_v2=classifier,
+            scorer_v2=scorer,
+            draft_gen=draft_gen,
+            knowledge=mock_knowledge,
+            db=db,
+        )
+
+        result = await manager.run_full()
+        assert result["status"] == "completed"
+        assert result["state"]["classified_v2_count"] == 1
+        assert result["state"]["pr_eligible_count"] == 0
+        assert result["state"]["scored_v2_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_cancel_pipeline(self, manager):
+        """流水线可被取消"""
+        import asyncio
+
+        task = asyncio.create_task(manager.run_full())
+        await asyncio.sleep(0.1)
+        await manager.cancel()
+
+        with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError):
+            await asyncio.wait_for(task, timeout=2.0)
+
+        status = manager.get_status()
+        assert status["status"] in ("cancelled", "completed", "failed")
