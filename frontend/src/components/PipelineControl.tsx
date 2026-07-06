@@ -43,9 +43,10 @@ const PHASE_STEPS = [
 
 interface PipelineControlProps {
   onComplete: () => void;
+  onRefresh: () => void;
 }
 
-export default function PipelineControl({ onComplete }: PipelineControlProps) {
+export default function PipelineControl({ onComplete, onRefresh }: PipelineControlProps) {
   const [status, setStatus] = useState<PipelineStatus>("idle");
   const [state, setState] = useState<PipelineState | null>(null);
   const [running, setRunning] = useState(false);
@@ -151,12 +152,13 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
         key: "scoreV2", duration: 4,
       });
       onComplete();
+      onRefresh();
     } catch (e: unknown) {
       message.error({ content: `V2打分失败`, key: "scoreV2" });
     } finally {
       setRunning(false);
     }
-  }, [onComplete]);
+  }, [onComplete, onRefresh]);
   const handleReport = useCallback(() => trigger("report", "报道"), [trigger]);
   const handleClassifyV2 = useCallback(async () => {
     try {

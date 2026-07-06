@@ -205,7 +205,7 @@ export default function Dashboard() {
       <StatsCards stats={stats} loading={loading} reportCount={reportCount} />
 
       {/* 流水线控制 */}
-      <PipelineControl onComplete={handlePipelineComplete} />
+      <PipelineControl onComplete={handlePipelineComplete} onRefresh={loadArticles} />
 
       {/* 筛选栏 */}
       <FilterBar
