@@ -67,12 +67,31 @@ def _get_manager(request: Request):
 # ═══════════════════════════════════════════════════════════════
 
 
-@router.post("/run", summary="触发完整流水线")
+@router.post("/run", summary="触发完整流水线 (V1)")
 async def pipeline_run(body: PipelineRunRequest, request: Request):
     """执行全流程：crawl → classify → score → report"""
     manager = _get_manager(request)
     result = await manager.run_full(crawl_days=body.crawl_days)
     return result
+
+
+@router.post("/run-v2", summary="触发 V2 智能 PR 流水线")
+async def pipeline_run_v2(body: PipelineRunRequest, request: Request):
+    """执行 V2 全流程：crawl → classify_v2 → score_v2 → draft"""
+    manager_v2 = getattr(request.app.state, "pipeline_v2", None)
+    if manager_v2 is None:
+        raise HTTPException(status_code=503, detail="Pipeline V2 not initialized")
+    result = await manager_v2.run_full(crawl_days=body.crawl_days)
+    return result
+
+
+@router.get("/status-v2", summary="查询 V2 流水线状态")
+async def pipeline_status_v2(request: Request):
+    """返回 V2 流水线的运行状态"""
+    manager_v2 = getattr(request.app.state, "pipeline_v2", None)
+    if manager_v2 is None:
+        raise HTTPException(status_code=503, detail="Pipeline V2 not initialized")
+    return manager_v2.get_status()
 
 
 @router.post("/crawl", summary="爬取+分类")

@@ -117,12 +117,30 @@ async def lifespan(app: FastAPI):
         app.state.classifier_v2 = classifier_v2
         _log("INFO", "ClassifierV2 initialized")
 
+        # V2 打分 + 草稿 + 流水线
+        from agent.draft_generator import DraftGenerator
+        from agent.pipeline_v2 import PipelineManagerV2
+        from agent.scorer_v2 import ScoringAgentV2
+
+        scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge_loader._cache)
+        draft_gen = DraftGenerator(llm=llm, knowledge=knowledge_loader._cache)
+        pipeline_v2 = PipelineManagerV2(
+            tools=tools,
+            classifier_v2=classifier_v2,
+            scorer_v2=scorer_v2,
+            draft_gen=draft_gen,
+            knowledge=knowledge_loader,
+            db=app.state.db,
+        )
+        app.state.pipeline_v2 = pipeline_v2
+        _log("INFO", "Pipeline V2 initialized (classify_v2 -> score_v2 -> draft)")
+
         pipeline_manager = PipelineManager(
             tools=tools, scorer=scorer, reporter=reporter,
             knowledge=knowledge_loader, db=app.state.db,
         )
         app.state.pipeline_manager = pipeline_manager
-        _log("INFO", "Agent pipeline initialized")
+        _log("INFO", "Agent pipeline initialized (V1)")
     except Exception as e:
         _log("WARNING", f"Agent init skipped: {e}")
         app.state.pipeline_manager = None
