@@ -36,7 +36,6 @@ import logging
 import re
 from typing import Any
 
-from agent.knowledge import ProductKnowledge
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -114,7 +113,7 @@ class ScoringAgentV2:
     def __init__(
         self,
         llm: BaseChatModel,
-        knowledge: ProductKnowledge,
+        knowledge: Any,  # ProductKnowledge or KnowledgeLoader
         temperature: float = DEFAULT_TEMPERATURE,
     ):
         self.llm = llm
@@ -169,7 +168,11 @@ class ScoringAgentV2:
 
     def _build_system_prompt(self) -> str:
         """构建 System Prompt（含 V2 知识库上下文）。"""
-        knowledge_context = self.knowledge.as_system_prompt()
+        # 优先用 as_scoring_prompt() 拼接原文，fallback 到结构化提取
+        if hasattr(self.knowledge, "as_scoring_prompt"):
+            knowledge_context = self.knowledge.as_scoring_prompt()
+        else:
+            knowledge_context = self.knowledge.as_system_prompt()
         if not knowledge_context:
             knowledge_context = "（知识库未加载，使用通用安全知识）"
         return SYSTEM_PROMPT_TEMPLATE.format(knowledge_context=knowledge_context)

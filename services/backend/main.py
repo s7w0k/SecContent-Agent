@@ -122,7 +122,7 @@ async def lifespan(app: FastAPI):
         from agent.pipeline_v2 import PipelineManagerV2
         from agent.scorer_v2 import ScoringAgentV2
 
-        scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge_loader._cache)
+        scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge_loader)
         draft_gen = DraftGenerator(llm=llm, knowledge=knowledge_loader._cache)
         app.state.scorer_v2 = scorer_v2
         app.state.draft_gen = draft_gen
