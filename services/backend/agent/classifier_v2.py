@@ -34,7 +34,7 @@ import json
 import logging
 import re
 from enum import StrEnum
-from typing import Any, ClassVar
+from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -133,7 +133,26 @@ CONFIDENCE_MAX = 100
 
 # ── System Prompt ──────────────────────────────────────────
 
-SYSTEM_PROMPT = """你是一个安全情报分析师。请阅读文章内容，将其归入以下6类之一：
+SYSTEM_PROMPT = """你是一个安全情报分析师。请按两步完成分类：
+
+## 第一步：判断是否与AI/Agent安全相关
+
+首先判断文章是否涉及以下任一领域，若不涉及则直接返回"不相关"：
+
+**相关领域（满足任一即进入第二步）：**
+- AI安全：大模型安全、AI模型攻击/防御、AI基础设施安全
+- Agent安全：智能体身份、MCP协议、A2A协议、工具调用安全、Agent越权
+- 安全漏洞/事件：漏洞披露（CVE）、APT攻击、数据泄露、勒索软件、0day
+- 网络安全法规：GDPR、网络安全法、数据安全法、等保、合规监管
+- AI/Agent技术突破：新模型发布、Agent框架重大更新、MCP/A2A协议进展
+
+**不相关（直接返回"不相关"）：**
+- 纯AI公司融资/人事/财报（不涉及安全议题）
+- 通用IT新闻、消费电子、游戏娱乐
+- 非安全类的学术论文、教育培训
+- 传统行业新闻（金融/医疗/制造无安全角度）
+
+## 第二步：若相关，归入以下6类之一
 
 ## 分类定义
 
@@ -181,12 +200,21 @@ AI/Agent安全领域的重要技术突破或产品发布。
 
 ## 输出格式
 严格按 JSON 格式输出，不要添加代码块标记：
-{"category": "类别名（必须是上述6类之一）", "confidence": 0-100的整数, "reason": "20字以内的分类理由"}
+{"category": "类别名", "confidence": 0-100的整数, "reason": "20字以内的分类理由"}
+
+**category 可选值（7选1）：**
+- "不相关" — 与AI/Agent安全无关
+- "爆点事件"
+- "法律法规/监管动态"
+- "AI技术重大进展"
+- "国内外竞品信息"
+- "运营商/行业事件"
+- "学术/会展/高校"
 
 ## 注意事项
-- category 必须严格等于上述6类之一的中文名，不得自创新类别
-- 如果文章内容模糊，优先选择最接近的类别，confidence 适当降低
-- 如果文章与上述6类都无法匹配，选择"学术/会展/高校"作为兜底类别
+- 若文章与AI/Agent安全完全无关，category 必须返回 "不相关"，confidence 给 90+
+- 若有关但类别模糊，选最接近的，confidence 适当降低
+- 不得自创上述7个值以外的类别
 """
 
 # ── User Prompt 模板 ──────────────────────────────────────
@@ -220,52 +248,10 @@ class ClassifierV2:
         self.llm = llm
         self.llm.temperature = temperature
 
-    # ── 安全相关性预筛选 ──────────────────────────────────────
-
-    # 必须匹配的关键词组合（标题+摘要中至少命中一个）
-    SECURITY_KEYWORDS: ClassVar[list[str]] = [
-        # AI/Agent 安全直接相关 (中英文)
-        "AI安全", "AI Security", "Agent安全", "Agent Security",
-        "智能体安全", "大模型安全",
-        "MCP协议", "MCP安全", "A2A协议", "MCP", "A2A",
-        "提示注入", "Prompt注入", "prompt injection",
-        "模型攻击", "对抗攻击", "adversarial",
-        "身份认证", "权限管控", "意图识别", "越权",
-        "authentication", "authorization", "identity",
-        # 安全事件/漏洞
-        "漏洞", "攻击", "泄露", "勒索", "0day", "APT", "黑客",
-        "入侵", "供应链攻击", "数据泄露", "后门",
-        "vulnerability", "exploit", "CVE", "RCE", "attack",
-        "breach", "ransomware", "leak", "backdoor",
-        # AI/Agent 技术进展
-        "大模型", "LLM", "GPT", "Claude", "Agent", "智能体",
-        "深度学习", "多模态", "RAG", "工具调用",
-        "AI", "artificial intelligence", "machine learning",
-        # 法规合规
-        "网络安全法", "数据安全法", "等保", "GDPR", "合规",
-        "个人信息保护", "关基", "监管", "regulation",
-        # 安全厂商/产品
-        "安全防护", "安全审计", "安全检测", "安全方案",
-        "零信任", "身份安全", "security", "cyber",
-    ]
-
-    @classmethod
-    def _is_security_relevant(cls, article: dict) -> bool:
-        """预筛选：判断文章是否与 AI/Agent/漏洞/安全事件相关。
-
-        对标题和摘要做关键词匹配，命中任一即视为相关。
-        不相关文章直接标记为 NOT_RELEVANT，跳过 LLM 调用。
-        """
-        title = (article.get("title", "") or "").lower()
-        summary = (article.get("summary", "") or article.get("summary_cn", "") or "").lower()
-        text = title + " " + summary
-
-        return any(kw.lower() in text for kw in cls.SECURITY_KEYWORDS)
-
     # ── 公开接口 ──────────────────────────────────────────────
 
     async def classify_single(self, article: dict | Any) -> ClassifyResultV2:
-        """对单篇文章进行分类（含安全相关性预筛选）。
+        """对单篇文章进行分类（LLM 自行判断安全相关性 + 6分类）。
 
         Args:
             article: 文章数据（dict 或 Pydantic model）
@@ -276,17 +262,6 @@ class ClassifierV2:
         art = article if isinstance(article, dict) else (
             article.model_dump() if hasattr(article, "model_dump") else article
         )
-
-        # 预筛选：与AI/Agent安全无关的文章直接跳过
-        if not self._is_security_relevant(art):
-            logger.debug("Article not security-relevant, skipping: %s", art.get("title", "")[:50])
-            return ClassifyResultV2(
-                category=CategoryV2.NOT_RELEVANT.value,
-                confidence=100,
-                reason="与AI/Agent安全无关，跳过分类",
-                fallback=False,
-            )
-
         return await self._classify_with_llm(art)
 
     async def classify_batch(
@@ -307,64 +282,25 @@ class ClassifierV2:
             return []
 
         logger.info("Batch classifying %d articles (concurrency=%d)", len(articles), concurrency)
+        sem = asyncio.Semaphore(concurrency)
 
-        # 预筛选：分离相关和不相关文章
-        relevant: list[dict] = []
-        results: list[ClassifyResultV2] = []
-        for a in articles:
-            d = a if isinstance(a, dict) else (
-                a.model_dump() if hasattr(a, "model_dump") else a
-            )
-            if self._is_security_relevant(d):
-                relevant.append(d)
-            else:
-                results.append(ClassifyResultV2(
-                    category=CategoryV2.NOT_RELEVANT.value,
-                    confidence=100,
-                    reason="与AI/Agent安全无关，跳过分类",
-                    fallback=False,
-                ))
-
-        skipped = len(articles) - len(relevant)
-        if skipped > 0:
-            logger.info("Pre-filter: %d/%d articles skipped (not security-relevant)", skipped, len(articles))
-
-        # 仅对相关文章调用 LLM
-        if relevant:
-            sem = asyncio.Semaphore(concurrency)
-
-            async def _classify_one(art: dict) -> ClassifyResultV2:
-                async with sem:
-                    return await self._classify_with_llm(art)
-
-            llm_results = await asyncio.gather(*[_classify_one(a) for a in relevant])
-            # 按 articles 原始顺序重建结果列表
-            skips = [r for r in results if r.category == CategoryV2.NOT_RELEVANT.value]
-            llm_idx = 0
-            skip_idx = 0
-            indexed: dict[int, ClassifyResultV2] = {}
-            for i, a in enumerate(articles):
-                d = a if isinstance(a, dict) else (
-                    a.model_dump() if hasattr(a, "model_dump") else a
+        async def _classify_one(art: dict) -> ClassifyResultV2:
+            async with sem:
+                d = art if isinstance(art, dict) else (
+                    art.model_dump() if hasattr(art, "model_dump") else art
                 )
-                if self._is_security_relevant(d):
-                    indexed[i] = list(llm_results)[llm_idx]
-                    llm_idx += 1
-                else:
-                    indexed[i] = skips[skip_idx]
-                    skip_idx += 1
-            final_list = [indexed[i] for i in range(len(articles))]
-        else:
-            final_list = results
+                return await self._classify_with_llm(d)
 
-        ok_count = sum(1 for r in final_list if not r.is_fallback)
-        pr_count = sum(1 for r in final_list if r.is_pr_eligible)
-        llm_calls = sum(1 for r in final_list if r.category != CategoryV2.NOT_RELEVANT.value)
+        results = await asyncio.gather(*[_classify_one(a) for a in articles])
+        rlist = list(results)
+        ok_count = sum(1 for r in rlist if not r.is_fallback)
+        pr_count = sum(1 for r in rlist if r.is_pr_eligible)
+        not_relevant = sum(1 for r in rlist if r.category == CategoryV2.NOT_RELEVANT.value)
         logger.info(
-            "Classified: %d/%d ok, %d PR-eligible, %d LLM calls (saved %d)",
-            ok_count, len(final_list), pr_count, llm_calls, skipped,
+            "Classified: %d/%d ok, %d PR-eligible, %d not-relevant",
+            ok_count, len(rlist), pr_count, not_relevant,
         )
-        return final_list
+        return rlist
 
     # ── 核心分类逻辑 ──────────────────────────────────────────
 
@@ -462,9 +398,9 @@ class ClassifierV2:
         """
         result: dict = {}
 
-        # category — 必须白名单校验
+        # category — 必须白名单校验（7个有效值：6类 + 不相关）
         category = str(parsed.get("category", "")).strip()
-        valid_categories = CategoryV2.valid_values()
+        valid_categories = CategoryV2.valid_values() | {CategoryV2.NOT_RELEVANT.value}
         if category not in valid_categories:
             logger.debug(
                 "Invalid category '%s', falling back to default", category,

@@ -48,8 +48,8 @@ def sample_article_competitor():
         "url": "https://example.com/panw-funding",
         "source": "TechCrunch",
         "source_type": "overseas_news",
-        "summary": "Palo Alto Networks announced a $500M funding round for AI security...",
-        "summary_cn": "Palo Alto Networks获5亿美元融资用于AI安全平台，聚焦智能体安全",
+        "summary": "Palo Alto Networks announced a $500M funding round...",
+        "summary_cn": "Palo Alto Networks获5亿美元融资用于AI安全平台",
         "content_md": "",
     }
 
@@ -98,9 +98,9 @@ def mock_llm_ambiguous():
     llm = MagicMock()
     llm.temperature = None
     llm.ainvoke = AsyncMock(return_value=AIMessage(content=json.dumps({
-        "category": "学术/会展/高校",
+        "category": "不相关",
         "confidence": 30,
-        "reason": "内容模糊，无法确定具体类别",
+        "reason": "与AI/Agent安全无关",
     })))
     return llm
 
@@ -195,7 +195,8 @@ class TestPromptBuilding:
 
     def test_system_prompt_has_validation_rule(self):
         from agent.classifier_v2 import SYSTEM_PROMPT
-        assert "必须严格等于上述6类之一" in SYSTEM_PROMPT
+        assert "不相关" in SYSTEM_PROMPT
+        assert "7个" in SYSTEM_PROMPT  # 6 categories + 不相关
 
     def test_user_prompt_contains_article_fields(self, sample_article):
         from agent.classifier_v2 import ClassifierV2
@@ -412,7 +413,7 @@ class TestClassificationFlow:
     @pytest.mark.asyncio
     async def test_classify_batch(self, classifier_breaking):
         articles = [
-            {"title": f"MCP漏洞 Article {i}", "source": "S", "summary": f"安全事件 Summary {i}"}
+            {"title": f"Article {i}", "source": "S", "summary": f"Summary {i}"}
             for i in range(5)
         ]
         results = await classifier_breaking.classify_batch(articles)
@@ -448,7 +449,7 @@ class TestClassificationFlow:
         mock_llm_breaking.ainvoke = AsyncMock(side_effect=track_order)
         classifier = ClassifierV2(llm=mock_llm_breaking)
 
-        articles = [{"title": f"安全漏洞 Article {i}", "source": "S", "summary": ""} for i in range(3)]
+        articles = [{"title": f"Article {i}", "source": "S", "summary": ""} for i in range(3)]
         results = await classifier.classify_batch(articles)
         assert len(results) == 3
 
@@ -505,12 +506,12 @@ class TestClassificationFlow:
 
     @pytest.mark.asyncio
     async def test_classify_ambiguous_content(self, mock_llm_ambiguous, sample_article_ambiguous):
-        """非安全相关文章被预筛选跳过，不调 LLM，直接标记为不相关"""
+        """LLM 判断非安全相关内容，直接返回'不相关'"""
         from agent.classifier_v2 import ClassifierV2
         classifier = ClassifierV2(llm=mock_llm_ambiguous)
         result = await classifier.classify_single(sample_article_ambiguous)
         assert result.category == "不相关"
-        assert result.confidence == 100  # 预筛选标记，非 LLM 输出
+        assert result.confidence == 30  # 来自 mock LLM
         assert result.is_pr_eligible is False
         assert result.is_fallback is False
 
