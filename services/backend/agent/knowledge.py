@@ -322,6 +322,13 @@ _SCORING_FILE_PATTERNS = [
 ]
 
 
+# 产品关键词 → 文件夹映射（按文章匹配最相关产品）
+_PRODUCT_KEYWORDS: dict[str, list[str]] = {
+    "1-智能体身份安全": ["身份", "认证", "权限", "MCP", "IBAC", "Agent卡", "智能体", "agent", "CUA", "越权", "意图"],
+    "3-AI-BOM": ["BOM", "SBOM", "资产", "物料", "台账", "影子AI", "shadow", "盘点", "供应链"],
+}
+
+
 def _is_scoring_relevant(root_dir: Path, filepath: Path) -> bool:
     """判断文件是否与产品相关度评分有关。排除 tasks/architecture/原始文档/海外版。"""
     for pattern in _SCORING_FILE_PATTERNS:
@@ -557,21 +564,32 @@ class KnowledgeLoader:
             return ""
         return self._cache.as_system_prompt()
 
-    def as_scoring_prompt(self) -> str:
-        """按 CLAUDE.md 市场部指引，拼接 PR/打分所需的文件原文。
+    def _match_products(self, article: dict[str, str] | None) -> list[str]:
+        """根据文章标题+摘要匹配最相关的产品文件夹。无匹配时返回所有。"""
+        if not article:
+            return list(_PRODUCT_KEYWORDS.keys())
+        text = (article.get("title", "") + " " + article.get("summary", "") +
+                article.get("category_v2", "")).lower()
+        matched = []
+        for folder, keywords in _PRODUCT_KEYWORDS.items():
+            if any(kw.lower() in text for kw in keywords):
+                matched.append(folder)
+        return matched or list(_PRODUCT_KEYWORDS.keys())
+
+    def as_scoring_prompt(self, article: dict[str, str] | None = None) -> str:
+        """按 CLAUDE.md 市场部指引，根据文章匹配最相关产品，拼接文件原文。
 
         CLAUDE.md 市场部操作步骤:
           1. 先读 X-产品名/overview.md
-          2. 再读 market-brief.md（热点类型、金句、传播角度）
+          2. 再读 market-brief.md
           3. 匹配热点时加读 shared/hot-event-playbook.md
         """
-        key_files = [
-            "1-智能体身份安全/overview.md",
-            "1-智能体身份安全/market-brief.md",
-            "3-AI-BOM/overview.md",
-            "3-AI-BOM/market-brief.md",
-            "shared/hot-event-playbook.md",
-        ]
+        products = self._match_products(article)
+        key_files = ["shared/hot-event-playbook.md"]
+        for folder in products:
+            key_files.append(f"{folder}/overview.md")
+            key_files.append(f"{folder}/market-brief.md")
+
         parts: list[str] = []
         for rel_path in key_files:
             fp = self.docs_dir / rel_path
@@ -585,7 +603,7 @@ class KnowledgeLoader:
                     pass
         if not parts:
             return self.as_system_prompt()
-        logger.info("Scoring prompt built from %d files (market role)", len(parts))
+        logger.info("Scoring prompt: %d products + playbook (%d files)", len(products), len(parts))
         return "\n\n---\n\n".join(parts)
 
     def as_keywords(self) -> list[str]:

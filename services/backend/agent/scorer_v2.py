@@ -166,13 +166,14 @@ class ScoringAgentV2:
 
     # ── Prompt 构建 ──────────────────────────────────────────
 
-    def _build_system_prompt(self) -> str:
-        """构建 System Prompt（含 V2 知识库上下文）。"""
-        # 优先用 as_scoring_prompt() 拼接原文，fallback 到结构化提取
+    def _build_system_prompt(self, article: dict | None = None) -> str:
+        """构建 System Prompt（含 V2 知识库上下文，按文章匹配产品）。"""
         if hasattr(self.knowledge, "as_scoring_prompt"):
-            knowledge_context = self.knowledge.as_scoring_prompt()
-        else:
+            knowledge_context = self.knowledge.as_scoring_prompt(article)
+        elif hasattr(self.knowledge, "as_system_prompt"):
             knowledge_context = self.knowledge.as_system_prompt()
+        else:
+            knowledge_context = ""
         if not knowledge_context:
             knowledge_context = "（知识库未加载，使用通用安全知识）"
         return SYSTEM_PROMPT_TEMPLATE.format(knowledge_context=knowledge_context)
@@ -205,11 +206,12 @@ class ScoringAgentV2:
     async def _score_with_llm(self, article: dict) -> dict:
         """调用 LLM 进行双维度打分（含重试和降级）。"""
         user_prompt = self._build_user_prompt(article)
+        system_prompt = self._build_system_prompt(article)
 
         for attempt in range(MAX_RETRIES + 1):
             try:
                 response = await self.llm.ainvoke([
-                    SystemMessage(content=self.system_prompt),
+                    SystemMessage(content=system_prompt),
                     HumanMessage(content=user_prompt),
                 ])
                 raw = response.content if hasattr(response, "content") else str(response)
