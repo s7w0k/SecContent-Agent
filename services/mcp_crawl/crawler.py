@@ -58,6 +58,20 @@ class NewsArticle:
 # 爬虫
 # ═══════════════════════════════════════════════════════════
 
+# 非新闻内容 URL 黑名单（促销/广告/视频/播客等）
+_NON_NEWS_PATTERNS = [
+    "/deals/", "/offer/", "/sales/", "/shop/", "/store/",
+    "/webinar", "/podcast", "/video/", "/videos/",
+    "/sponsor", "/advertise", "/free-", "discount", "coupon",
+]
+
+
+def _is_non_news_url(url: str) -> bool:
+    """判断 URL 是否为非新闻内容（促销、广告等）"""
+    url_lower = url.lower()
+    return any(p.lower() in url_lower for p in _NON_NEWS_PATTERNS)
+
+
 class NewsCrawler:
     """
     海外安全新闻混合爬虫。
@@ -118,7 +132,7 @@ class NewsCrawler:
             except Exception as e:
                 logger.error("  %s: %s", site_name, e)
 
-        # URL 去重 + 时间过滤
+        # URL 去重 + 时间过滤 + 非新闻内容过滤
         seen: set[str] = set()
         filtered: list[NewsArticle] = []
         for art in all_articles:
@@ -127,6 +141,9 @@ class NewsCrawler:
                 continue
             seen.add(key)
             if art.published_at and art.published_at < cutoff:
+                continue
+            if _is_non_news_url(art.url):
+                logger.debug("  Skipping non-news: %s", art.url)
                 continue
             filtered.append(art)
 
