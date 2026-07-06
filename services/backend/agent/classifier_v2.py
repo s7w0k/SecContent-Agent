@@ -34,7 +34,7 @@ import json
 import logging
 import re
 from enum import StrEnum
-from typing import Any
+from typing import Any, ClassVar
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -55,11 +55,12 @@ class CategoryV2(StrEnum):
     COMPETITOR = "国内外竞品信息"            # 友商动态
     INDUSTRY_EVENT = "运营商/行业事件"       # 行业安全事件
     ACADEMIC = "学术/会展/高校"              # 学术前沿
+    NOT_RELEVANT = "不相关"                  # 与AI/Agent安全无关
 
     @classmethod
     def valid_values(cls) -> set[str]:
         """返回所有有效类别名的集合"""
-        return {m.value for m in cls}
+        return {m.value for m in cls if m != cls.NOT_RELEVANT}
 
     @classmethod
     def pr_eligible(cls) -> set[str]:
@@ -72,8 +73,8 @@ class CategoryV2(StrEnum):
 
     @classmethod
     def default(cls) -> str:
-        """降级时使用的默认类别（最不敏感的类别）"""
-        return cls.ACADEMIC.value
+        """降级时使用的默认类别"""
+        return cls.NOT_RELEVANT.value
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -219,10 +220,52 @@ class ClassifierV2:
         self.llm = llm
         self.llm.temperature = temperature
 
+    # ── 安全相关性预筛选 ──────────────────────────────────────
+
+    # 必须匹配的关键词组合（标题+摘要中至少命中一个）
+    SECURITY_KEYWORDS: ClassVar[list[str]] = [
+        # AI/Agent 安全直接相关 (中英文)
+        "AI安全", "AI Security", "Agent安全", "Agent Security",
+        "智能体安全", "大模型安全",
+        "MCP协议", "MCP安全", "A2A协议", "MCP", "A2A",
+        "提示注入", "Prompt注入", "prompt injection",
+        "模型攻击", "对抗攻击", "adversarial",
+        "身份认证", "权限管控", "意图识别", "越权",
+        "authentication", "authorization", "identity",
+        # 安全事件/漏洞
+        "漏洞", "攻击", "泄露", "勒索", "0day", "APT", "黑客",
+        "入侵", "供应链攻击", "数据泄露", "后门",
+        "vulnerability", "exploit", "CVE", "RCE", "attack",
+        "breach", "ransomware", "leak", "backdoor",
+        # AI/Agent 技术进展
+        "大模型", "LLM", "GPT", "Claude", "Agent", "智能体",
+        "深度学习", "多模态", "RAG", "工具调用",
+        "AI", "artificial intelligence", "machine learning",
+        # 法规合规
+        "网络安全法", "数据安全法", "等保", "GDPR", "合规",
+        "个人信息保护", "关基", "监管", "regulation",
+        # 安全厂商/产品
+        "安全防护", "安全审计", "安全检测", "安全方案",
+        "零信任", "身份安全", "security", "cyber",
+    ]
+
+    @classmethod
+    def _is_security_relevant(cls, article: dict) -> bool:
+        """预筛选：判断文章是否与 AI/Agent/漏洞/安全事件相关。
+
+        对标题和摘要做关键词匹配，命中任一即视为相关。
+        不相关文章直接标记为 NOT_RELEVANT，跳过 LLM 调用。
+        """
+        title = (article.get("title", "") or "").lower()
+        summary = (article.get("summary", "") or article.get("summary_cn", "") or "").lower()
+        text = title + " " + summary
+
+        return any(kw.lower() in text for kw in cls.SECURITY_KEYWORDS)
+
     # ── 公开接口 ──────────────────────────────────────────────
 
     async def classify_single(self, article: dict | Any) -> ClassifyResultV2:
-        """对单篇文章进行分类。
+        """对单篇文章进行分类（含安全相关性预筛选）。
 
         Args:
             article: 文章数据（dict 或 Pydantic model）
@@ -233,6 +276,17 @@ class ClassifierV2:
         art = article if isinstance(article, dict) else (
             article.model_dump() if hasattr(article, "model_dump") else article
         )
+
+        # 预筛选：与AI/Agent安全无关的文章直接跳过
+        if not self._is_security_relevant(art):
+            logger.debug("Article not security-relevant, skipping: %s", art.get("title", "")[:50])
+            return ClassifyResultV2(
+                category=CategoryV2.NOT_RELEVANT.value,
+                confidence=100,
+                reason="与AI/Agent安全无关，跳过分类",
+                fallback=False,
+            )
+
         return await self._classify_with_llm(art)
 
     async def classify_batch(
@@ -254,24 +308,63 @@ class ClassifierV2:
 
         logger.info("Batch classifying %d articles (concurrency=%d)", len(articles), concurrency)
 
-        sem = asyncio.Semaphore(concurrency)
+        # 预筛选：分离相关和不相关文章
+        relevant: list[dict] = []
+        results: list[ClassifyResultV2] = []
+        for a in articles:
+            d = a if isinstance(a, dict) else (
+                a.model_dump() if hasattr(a, "model_dump") else a
+            )
+            if self._is_security_relevant(d):
+                relevant.append(d)
+            else:
+                results.append(ClassifyResultV2(
+                    category=CategoryV2.NOT_RELEVANT.value,
+                    confidence=100,
+                    reason="与AI/Agent安全无关，跳过分类",
+                    fallback=False,
+                ))
 
-        async def _classify_one(art: dict) -> ClassifyResultV2:
-            async with sem:
-                d = art if isinstance(art, dict) else (
-                    art.model_dump() if hasattr(art, "model_dump") else art
+        skipped = len(articles) - len(relevant)
+        if skipped > 0:
+            logger.info("Pre-filter: %d/%d articles skipped (not security-relevant)", skipped, len(articles))
+
+        # 仅对相关文章调用 LLM
+        if relevant:
+            sem = asyncio.Semaphore(concurrency)
+
+            async def _classify_one(art: dict) -> ClassifyResultV2:
+                async with sem:
+                    return await self._classify_with_llm(art)
+
+            llm_results = await asyncio.gather(*[_classify_one(a) for a in relevant])
+            # 按 articles 原始顺序重建结果列表
+            skips = [r for r in results if r.category == CategoryV2.NOT_RELEVANT.value]
+            llm_idx = 0
+            skip_idx = 0
+            indexed: dict[int, ClassifyResultV2] = {}
+            for i, a in enumerate(articles):
+                d = a if isinstance(a, dict) else (
+                    a.model_dump() if hasattr(a, "model_dump") else a
                 )
-                return await self._classify_with_llm(d)
+                if self._is_security_relevant(d):
+                    indexed[i] = list(llm_results)[llm_idx]
+                    llm_idx += 1
+                else:
+                    indexed[i] = skips[skip_idx]
+                    skip_idx += 1
+            final_list = [indexed[i] for i in range(len(articles))]
+        else:
+            final_list = results
 
-        results = await asyncio.gather(*[_classify_one(a) for a in articles])
-        rlist = list(results)
-        ok_count = sum(1 for r in rlist if not r.is_fallback)
-        pr_count = sum(1 for r in rlist if r.is_pr_eligible)
+        ok_count = sum(1 for r in final_list if not r.is_fallback)
+        pr_count = sum(1 for r in final_list if r.is_pr_eligible)
+        llm_calls = sum(1 for r in final_list if r.category != CategoryV2.NOT_RELEVANT.value)
         logger.info(
-            "Classified: %d/%d ok, %d PR-eligible",
-            ok_count, len(rlist), pr_count,
+            "Classified: %d/%d ok, %d PR-eligible, %d LLM calls (saved %d)",
+            ok_count, len(final_list), pr_count, llm_calls, skipped,
         )
-        return rlist
+        return final_list
 
     # ── 核心分类逻辑 ──────────────────────────────────────────
 
