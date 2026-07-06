@@ -98,9 +98,9 @@ def mock_llm_ambiguous():
     llm = MagicMock()
     llm.temperature = None
     llm.ainvoke = AsyncMock(return_value=AIMessage(content=json.dumps({
-        "category": "学术/会展/高校",
+        "category": "不相关",
         "confidence": 30,
-        "reason": "内容模糊，无法确定具体类别",
+        "reason": "与AI/Agent安全无关",
     })))
     return llm
 
@@ -151,7 +151,13 @@ class TestCategoryV2Enum:
 
     def test_default_category(self):
         from agent.classifier_v2 import CategoryV2
-        assert CategoryV2.default() == "学术/会展/高校"
+        assert CategoryV2.default() == "不相关"
+
+    def test_not_relevant_category(self):
+        from agent.classifier_v2 import CategoryV2
+        assert CategoryV2.NOT_RELEVANT.value == "不相关"
+        assert "不相关" not in CategoryV2.valid_values()
+        assert "不相关" not in CategoryV2.pr_eligible()
 
     def test_enum_values_match_chinese(self):
         from agent.classifier_v2 import CategoryV2
@@ -189,7 +195,8 @@ class TestPromptBuilding:
 
     def test_system_prompt_has_validation_rule(self):
         from agent.classifier_v2 import SYSTEM_PROMPT
-        assert "必须严格等于上述6类之一" in SYSTEM_PROMPT
+        assert "不相关" in SYSTEM_PROMPT
+        assert "7个" in SYSTEM_PROMPT  # 6 categories + 不相关
 
     def test_user_prompt_contains_article_fields(self, sample_article):
         from agent.classifier_v2 import ClassifierV2
@@ -289,13 +296,13 @@ class TestResultValidation:
         from agent.classifier_v2 import ClassifierV2
         parsed = {"category": "不存在的类别", "confidence": 80, "reason": "..."}
         result = ClassifierV2._validate_and_fix(parsed)
-        assert result["category"] == "学术/会展/高校"  # default fallback
+        assert result["category"] == "不相关"  # default fallback
 
     def test_empty_category_falls_back(self):
         from agent.classifier_v2 import ClassifierV2
         parsed = {"category": "", "confidence": 80, "reason": "..."}
         result = ClassifierV2._validate_and_fix(parsed)
-        assert result["category"] == "学术/会展/高校"
+        assert result["category"] == "不相关"
 
     def test_confidence_clamped_to_max(self):
         from agent.classifier_v2 import ClassifierV2
@@ -458,7 +465,7 @@ class TestClassificationFlow:
         result = await classifier.classify_single(sample_article)
         assert result.is_fallback is True
         assert "API timeout" in result.reason
-        assert result.category == "学术/会展/高校"  # default fallback
+        assert result.category == "不相关"  # default fallback
         assert result.confidence == 0
 
     @pytest.mark.asyncio
@@ -499,12 +506,14 @@ class TestClassificationFlow:
 
     @pytest.mark.asyncio
     async def test_classify_ambiguous_content(self, mock_llm_ambiguous, sample_article_ambiguous):
+        """LLM 判断非安全相关内容，直接返回'不相关'"""
         from agent.classifier_v2 import ClassifierV2
         classifier = ClassifierV2(llm=mock_llm_ambiguous)
         result = await classifier.classify_single(sample_article_ambiguous)
-        assert result.category == "学术/会展/高校"
-        assert result.confidence == 30
+        assert result.category == "不相关"
+        assert result.confidence == 30  # 来自 mock LLM
         assert result.is_pr_eligible is False
+        assert result.is_fallback is False
 
     @pytest.mark.asyncio
     async def test_batch_with_mixed_results(self, sample_article, sample_article_competitor):

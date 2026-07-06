@@ -55,11 +55,12 @@ class CategoryV2(StrEnum):
     COMPETITOR = "国内外竞品信息"            # 友商动态
     INDUSTRY_EVENT = "运营商/行业事件"       # 行业安全事件
     ACADEMIC = "学术/会展/高校"              # 学术前沿
+    NOT_RELEVANT = "不相关"                  # 与AI/Agent安全无关
 
     @classmethod
     def valid_values(cls) -> set[str]:
         """返回所有有效类别名的集合"""
-        return {m.value for m in cls}
+        return {m.value for m in cls if m != cls.NOT_RELEVANT}
 
     @classmethod
     def pr_eligible(cls) -> set[str]:
@@ -72,8 +73,8 @@ class CategoryV2(StrEnum):
 
     @classmethod
     def default(cls) -> str:
-        """降级时使用的默认类别（最不敏感的类别）"""
-        return cls.ACADEMIC.value
+        """降级时使用的默认类别"""
+        return cls.NOT_RELEVANT.value
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -132,7 +133,26 @@ CONFIDENCE_MAX = 100
 
 # ── System Prompt ──────────────────────────────────────────
 
-SYSTEM_PROMPT = """你是一个安全情报分析师。请阅读文章内容，将其归入以下6类之一：
+SYSTEM_PROMPT = """你是一个安全情报分析师。请按两步完成分类：
+
+## 第一步：判断是否与AI/Agent安全相关
+
+首先判断文章是否涉及以下任一领域，若不涉及则直接返回"不相关"：
+
+**相关领域（满足任一即进入第二步）：**
+- AI安全：大模型安全、AI模型攻击/防御、AI基础设施安全
+- Agent安全：智能体身份、MCP协议、A2A协议、工具调用安全、Agent越权
+- 安全漏洞/事件：漏洞披露（CVE）、APT攻击、数据泄露、勒索软件、0day
+- 网络安全法规：GDPR、网络安全法、数据安全法、等保、合规监管
+- AI/Agent技术突破：新模型发布、Agent框架重大更新、MCP/A2A协议进展
+
+**不相关（直接返回"不相关"）：**
+- 纯AI公司融资/人事/财报（不涉及安全议题）
+- 通用IT新闻、消费电子、游戏娱乐
+- 非安全类的学术论文、教育培训
+- 传统行业新闻（金融/医疗/制造无安全角度）
+
+## 第二步：若相关，归入以下6类之一
 
 ## 分类定义
 
@@ -180,12 +200,21 @@ AI/Agent安全领域的重要技术突破或产品发布。
 
 ## 输出格式
 严格按 JSON 格式输出，不要添加代码块标记：
-{"category": "类别名（必须是上述6类之一）", "confidence": 0-100的整数, "reason": "20字以内的分类理由"}
+{"category": "类别名", "confidence": 0-100的整数, "reason": "20字以内的分类理由"}
+
+**category 可选值（7选1）：**
+- "不相关" — 与AI/Agent安全无关
+- "爆点事件"
+- "法律法规/监管动态"
+- "AI技术重大进展"
+- "国内外竞品信息"
+- "运营商/行业事件"
+- "学术/会展/高校"
 
 ## 注意事项
-- category 必须严格等于上述6类之一的中文名，不得自创新类别
-- 如果文章内容模糊，优先选择最接近的类别，confidence 适当降低
-- 如果文章与上述6类都无法匹配，选择"学术/会展/高校"作为兜底类别
+- 若文章与AI/Agent安全完全无关，category 必须返回 "不相关"，confidence 给 90+
+- 若有关但类别模糊，选最接近的，confidence 适当降低
+- 不得自创上述7个值以外的类别
 """
 
 # ── User Prompt 模板 ──────────────────────────────────────
@@ -222,7 +251,7 @@ class ClassifierV2:
     # ── 公开接口 ──────────────────────────────────────────────
 
     async def classify_single(self, article: dict | Any) -> ClassifyResultV2:
-        """对单篇文章进行分类。
+        """对单篇文章进行分类（LLM 自行判断安全相关性 + 6分类）。
 
         Args:
             article: 文章数据（dict 或 Pydantic model）
@@ -253,7 +282,6 @@ class ClassifierV2:
             return []
 
         logger.info("Batch classifying %d articles (concurrency=%d)", len(articles), concurrency)
-
         sem = asyncio.Semaphore(concurrency)
 
         async def _classify_one(art: dict) -> ClassifyResultV2:
@@ -267,9 +295,10 @@ class ClassifierV2:
         rlist = list(results)
         ok_count = sum(1 for r in rlist if not r.is_fallback)
         pr_count = sum(1 for r in rlist if r.is_pr_eligible)
+        not_relevant = sum(1 for r in rlist if r.category == CategoryV2.NOT_RELEVANT.value)
         logger.info(
-            "Classified: %d/%d ok, %d PR-eligible",
-            ok_count, len(rlist), pr_count,
+            "Classified: %d/%d ok, %d PR-eligible, %d not-relevant",
+            ok_count, len(rlist), pr_count, not_relevant,
         )
         return rlist
 
@@ -369,9 +398,9 @@ class ClassifierV2:
         """
         result: dict = {}
 
-        # category — 必须白名单校验
+        # category — 必须白名单校验（7个有效值：6类 + 不相关）
         category = str(parsed.get("category", "")).strip()
-        valid_categories = CategoryV2.valid_values()
+        valid_categories = CategoryV2.valid_values() | {CategoryV2.NOT_RELEVANT.value}
         if category not in valid_categories:
             logger.debug(
                 "Invalid category '%s', falling back to default", category,
