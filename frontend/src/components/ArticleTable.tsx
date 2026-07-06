@@ -22,12 +22,13 @@ interface ArticleTableProps {
   onSortChange: (field: string, order: "asc" | "desc" | undefined) => void;
   onViewReport: (article: Article) => void;
   onViewDetail: (article: Article) => void;
+  onViewDrafts: (article: Article) => void;
   onRefresh: () => void;  // called after fetch/summarize to reload data
 }
 
 export default function ArticleTable({
   articles, total, loading, page, pageSize,
-  onPageChange, onSortChange, onViewReport, onViewDetail, onRefresh,
+  onPageChange, onSortChange, onViewReport, onViewDetail, onViewDrafts, onRefresh,
 }: ArticleTableProps) {
   const [busy, setBusy] = useState<Set<string>>(new Set());
 
@@ -78,6 +79,12 @@ export default function ArticleTable({
       render: (s: number) => <Progress percent={s} size="small" strokeColor={s >= 70 ? "#722ed1" : s >= 40 ? "#faad14" : "#ff4d4f"} format={() => s} /> },
     { title: "综合分", dataIndex: "total_score", key: "total_score", width: 75, sorter: true,
       render: (s: number) => <Tag color={s >= 140 ? "red" : s >= 100 ? "orange" : "default"}>{s}</Tag> },
+    { title: "产品相关", dataIndex: "product_relevance", key: "product_relevance", width: 85, sorter: true,
+      render: (s: number) => s ? <Progress percent={s} size="small" strokeColor={s >= 70 ? "#1890ff" : s >= 40 ? "#faad14" : "#ff4d4f"} format={() => s} /> : null },
+    { title: "事件影响", dataIndex: "event_impact", key: "event_impact", width: 85, sorter: true,
+      render: (s: number) => s ? <Progress percent={s} size="small" strokeColor={s >= 70 ? "#722ed1" : s >= 40 ? "#faad14" : "#ff4d4f"} format={() => s} /> : null },
+    { title: "V2综合", dataIndex: "pr_total_score", key: "pr_total_score", width: 70, sorter: true,
+      render: (s: number) => s ? <Tag color={s >= 80 ? "red" : "orange"}>{s}</Tag> : null },
     { title: "摘要", dataIndex: "summary_cn", key: "summary_cn", width: 220,
       render: (v: string) => v ? (
         <Space size={0}>
@@ -106,6 +113,10 @@ export default function ArticleTable({
             {record.has_report && (
               <Button type="link" size="small" icon={<FileSearchOutlined />}
                 onClick={() => onViewReport(record)}>报道</Button>
+            )}
+            {record.pr_drafts && record.pr_drafts.length > 0 && (
+              <Button type="link" size="small" icon={<FileTextOutlined />}
+                onClick={() => onViewDrafts(record)}>草稿</Button>
             )}
             <Button type="link" size="small" icon={<EyeOutlined />}
               onClick={() => onViewDetail(record)}>详情</Button>

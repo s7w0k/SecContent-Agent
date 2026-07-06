@@ -161,6 +161,23 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
       setRunning(false);
     }
   }, [onComplete]);
+  const handleRunV2 = useCallback(async () => {
+    try {
+      setRunning(true);
+      message.loading({ content: "V2智能PR流水线运行中...", key: "pipelineV2", duration: 0 });
+      const res = await api.runV2(1);
+      message.success({
+        content: `V2流水线完成: 分类${res.state?.classified_v2_count || 0} 打分${res.state?.scored_v2_count || 0} 草稿${res.state?.draft_count || 0}`,
+        key: "pipelineV2", duration: 5,
+      });
+      onComplete();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "未知错误";
+      message.error({ content: `V2流水线失败: ${msg}`, key: "pipelineV2" });
+    } finally {
+      setRunning(false);
+    }
+  }, [onComplete]);
 
   // ── 当前阶段索引 ──────────────────────────────────────────
 
@@ -237,6 +254,14 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
           disabled={running}
         >
           V2分类
+        </Button>
+        <Button
+          type="primary"
+          icon={<PlayCircleOutlined />}
+          onClick={handleRunV2}
+          loading={running}
+        >
+          智能PR流水线
         </Button>
         <Button
           icon={<FileTextOutlined />}

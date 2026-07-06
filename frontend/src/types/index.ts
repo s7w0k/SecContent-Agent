@@ -44,6 +44,14 @@ export interface Article {
   category_v2_reason?: string;
   category_v2_fallback?: boolean;
   is_pr_eligible?: boolean;
+  // V2 双维度评分
+  product_relevance?: number;
+  event_impact?: number;
+  pr_total_score?: number;
+  // V2 PR 草稿
+  pr_drafts?: DraftItem[];
+  pr_template_used?: string;
+  // V1 评分（保留兼容）
   ai_relevance_score: number;
   reportability_score: number;
   total_score: number;
@@ -107,6 +115,18 @@ export interface Report {
   };
   generated_by: string;
   created_at: string;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Draft（V2 PR 草稿）
+// ═══════════════════════════════════════════════════════════
+
+export interface DraftItem {
+  template: string;
+  perspective: string;
+  content_md: string;
+  title: string;
+  index: number;
 }
 
 // ═══════════════════════════════════════════════════════════

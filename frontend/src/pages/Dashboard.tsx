@@ -13,6 +13,7 @@ import FilterBar from "../components/FilterBar";
 import ArticleTable from "../components/ArticleTable";
 import PipelineControl from "../components/PipelineControl";
 import ReportViewer from "../components/ReportViewer";
+import DraftViewer from "../components/DraftViewer";
 import CrawlConfig from "../components/CrawlConfig";
 import api from "../api/client";
 import type {
@@ -43,6 +44,7 @@ export default function Dashboard() {
   // ── 报道查看 ──────────────────────────────────────────────
   const [viewingReportId, setViewingReportId] = useState<string | null>(null);
   const [viewingArticle, setViewingArticle] = useState<Article | null>(null);
+  const [draftArticle, setDraftArticle] = useState<Article | null>(null);
 
   // ── 文章详情 Drawer ──────────────────────────────────────
   const [detailArticle, setDetailArticle] = useState<Article | null>(null);
@@ -130,6 +132,11 @@ export default function Dashboard() {
     setViewingReportId(article.report_id);
   }, []);
 
+  // ── 查看 V2 草稿 ────────────────────────────────────────
+  const handleViewDrafts = useCallback((article: Article) => {
+    setDraftArticle(article);
+  }, []);
+
   // ── 查看文章详情 ────────────────────────────────────────
   const handleViewDetail = useCallback(async (article: Article) => {
     try {
@@ -188,6 +195,7 @@ export default function Dashboard() {
         onSortChange={handleSortChange}
         onViewReport={handleViewReport}
         onViewDetail={handleViewDetail}
+        onViewDrafts={handleViewDrafts}
         onRefresh={loadArticles}
       />
 
@@ -200,6 +208,14 @@ export default function Dashboard() {
           setViewingArticle(null);
         }}
       />
+
+      {/* V2 PR 草稿查看器 Modal */}
+      {draftArticle && (
+        <DraftViewer
+          article={draftArticle}
+          onClose={() => setDraftArticle(null)}
+        />
+      )}
 
       {/* 文章详情 Drawer */}
       <Drawer

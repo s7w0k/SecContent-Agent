@@ -162,6 +162,18 @@ export const pipelineApi = {
     return data;
   },
 
+  /** V2 智能 PR 流水线 */
+  async runV2(crawlDays: number = 1): Promise<PipelineResult> {
+    const { data } = await client.post("/pipeline/run-v2", { crawl_days: crawlDays });
+    return data;
+  },
+
+  /** V2 流水线状态 */
+  async getStatusV2(): Promise<PipelineStatusResponse> {
+    const { data } = await client.get("/pipeline/status-v2");
+    return data;
+  },
+
   /** V2 6分类 */
   async classifyV2(
     urlHashes?: string[],
