@@ -142,7 +142,8 @@ async def crawl_overseas_only(request: Request, days: int = 1):
                 "pipeline_status": "crawled",
             })
             saved += 1
-        return {"ok": True, "total": len(articles), "saved": saved}
+        errors = data.get("errors", {}) if isinstance(data, dict) else {}
+        return {"ok": True, "total": len(articles), "saved": saved, "errors": errors}
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
