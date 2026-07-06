@@ -141,12 +141,14 @@ class NewsCrawler:
         all_articles: list[NewsArticle] = []
         self._last_errors: dict[str, str] = {}
         self._per_site: dict[str, int] = {}
+        self._per_site_detail: dict[str, dict] = {}
 
         for site_name, cfg in self.SITES.items():
             logger.info("Crawling: %s (RSS)", site_name)
             try:
-                articles = self._crawl_rss(site_name, cfg, cutoff)
+                articles, detail = self._crawl_rss(site_name, cfg, cutoff)
                 self._per_site[site_name] = len(articles)
+                self._per_site_detail[site_name] = detail
                 logger.info("  %s: %d articles", site_name, len(articles))
                 all_articles.extend(articles)
             except Exception as e:
@@ -236,28 +238,62 @@ class NewsCrawler:
             logger.warning("  %s: feed returned 0 entries", source)
 
         articles: list[NewsArticle] = []
+        total_entries = len(feed.entries)
+        skipped_no_date = 0
+        skipped_old = 0
+        skipped_non_news = 0
         for entry in feed.entries:
             url = entry.get("link", "") or entry.get("guid", "") or entry.get("id", "")
             if not url:
                 continue
             title = entry.get("title", "")
             if _is_non_news(url, title):
+                skipped_non_news += 1
                 continue
             summary = (entry.get("summary", "") or entry.get("description", ""))[:500]
 
-            # 解析日期
+            # 解析日期 — 多字段 + 多格式尝试
             pub_date = None
-            if hasattr(entry, "published_parsed") and entry.published_parsed:
-                from calendar import timegm
-                pub_date = datetime(1970, 1, 1) + timedelta(seconds=timegm(entry.published_parsed))
-            elif entry.get("published"):
-                with contextlib.suppress(Exception):
-                    pub_date = parsedate_to_datetime(entry["published"])
+            for field in ("published_parsed", "updated_parsed"):
+                v = entry.get(field)
+                if v and hasattr(v, "tm_year"):
+                    from calendar import timegm
+                    pub_date = datetime(1970, 1, 1) + timedelta(seconds=timegm(v))
+                    break
+            if pub_date is None:
+                for field in ("published", "updated", "pubDate", "dc:date", "created"):
+                    raw = entry.get(field, "")
+                    if raw:
+                        with contextlib.suppress(Exception):
+                            pub_date = parsedate_to_datetime(str(raw))
+                        if pub_date:
+                            break
+            # 最后尝试 datetime.strptime 常见 RSS 格式
+            if pub_date is None:
+                for field in ("published", "updated", "pubDate"):
+                    raw = entry.get(field, "")
+                    if raw:
+                        for fmt in (
+                            "%a, %d %b %Y %H:%M:%S %z",
+                            "%a, %d %b %Y %H:%M:%S %Z",
+                            "%Y-%m-%dT%H:%M:%S%z",
+                            "%Y-%m-%dT%H:%M:%SZ",
+                            "%Y-%m-%d %H:%M:%S",
+                            "%Y-%m-%d",
+                        ):
+                            with contextlib.suppress(Exception):
+                                pub_date = datetime.strptime(str(raw), fmt)
+                            if pub_date:
+                                break
+                        if pub_date:
+                            break
 
             # 严格时间过滤：无日期或超出范围跳过
             if pub_date is None:
+                skipped_no_date += 1
                 continue
             if pub_date < cutoff:
+                skipped_old += 1
                 continue
 
             articles.append(
@@ -270,7 +306,14 @@ class NewsCrawler:
                 )
             )
 
-        return articles
+        detail = {
+            "feed_entries": total_entries,
+            "skipped_no_date": skipped_no_date,
+            "skipped_old": skipped_old,
+            "skipped_non_news": skipped_non_news,
+            "accepted": len(articles),
+        }
+        return articles, detail
 
     # ── 日期工具 ──
 
