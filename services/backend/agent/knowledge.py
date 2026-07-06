@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -308,6 +309,32 @@ class MarkdownKnowledgeParser:
 # ═══════════════════════════════════════════════════════════════
 
 
+# 评分相关文件白名单（相对于知识库根目录）
+_SCORING_FILE_PATTERNS = [
+    "0-产品全景/*.md",
+    "1-智能体身份安全/overview.md",
+    "1-智能体身份安全/market-brief.md",
+    "1-智能体身份安全/sales-brief.md",
+    "3-AI-BOM/overview.md",
+    "3-AI-BOM/market-brief.md",
+    "3-AI-BOM/sales-brief.md",
+    "shared/*.md",
+]
+
+
+def _is_scoring_relevant(root_dir: Path, filepath: Path) -> bool:
+    """判断文件是否与产品相关度评分有关。排除 tasks/architecture/原始文档/海外版。"""
+    for pattern in _SCORING_FILE_PATTERNS:
+        if filepath.match(pattern.replace("/", os.sep)):
+            return True
+    rel = str(filepath.relative_to(root_dir)).replace("\\", "/")
+    return not any(
+        p in rel for p in ("原始文档", "海外版", "tasks.md", "architecture-brief.md",
+                           "CLAUDE.md", "AGENTS.md", "README.md", "qa-log.md",
+                           ".git", "项目核心逻辑.md", "工作日报.md")
+    )
+
+
 class KnowledgeLoader:
     """产品知识库加载器（V2）。
 
@@ -356,7 +383,7 @@ class KnowledgeLoader:
     # ── 文件发现 ──────────────────────────────────────────────
 
     def _discover_files(self) -> list[Path]:
-        """递归扫描 docs_dir 下所有 .md 文件。
+        """递归扫描 docs_dir 下评分相关的 .md 文件。
 
         如果构造时指定了 filename，则只返回该文件（向后兼容）。
         """
@@ -367,9 +394,12 @@ class KnowledgeLoader:
             logger.warning("Specified file not found: %s", filepath)
             return []
 
-        # V2: 递归扫描所有 .md
-        files = sorted(self.docs_dir.rglob("*.md"))
-        logger.debug("Discovered %d .md files in %s", len(files), self.docs_dir)
+        # V2: 递归扫描所有 .md，按评分相关性过滤
+        all_files = sorted(self.docs_dir.rglob("*.md"))
+        files = [f for f in all_files if _is_scoring_relevant(self.docs_dir, f)]
+        skipped = len(all_files) - len(files)
+        logger.info("Discovered %d .md files (%d scoring-relevant, %d skipped)",
+                     len(all_files), len(files), skipped)
         return files
 
     # ── 文件读取与哈希 ────────────────────────────────────────

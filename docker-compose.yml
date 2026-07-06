@@ -129,7 +129,7 @@ services:
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
       KNOWLEDGE_BASE_DIR: /app/documents
     volumes:
-      - ./documents:/app/documents:ro
+      - ./agent-security-briefs:/app/documents:ro
       - ./docs:/app/docs:ro
     networks:
       - agent-net
