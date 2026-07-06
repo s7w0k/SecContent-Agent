@@ -214,15 +214,10 @@ def _handle_crawl_news(arguments: dict) -> str:
 
     crawler = NewsCrawler()
 
-    # NewsCrawler.crawl 是同步的 → 直接调用
     import asyncio
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
+    loop = asyncio.new_event_loop()
     articles = loop.run_until_complete(crawler.crawl(days=days))
+    loop.close()
     _article_cache = [a.to_dict() for a in articles]
 
     return json.dumps({
@@ -231,6 +226,7 @@ def _handle_crawl_news(arguments: dict) -> str:
             "articles": _article_cache,
             "count": len(_article_cache),
             "crawled_at": _now_iso(),
+            "errors": getattr(crawler, "_last_errors", {}),
         },
     }, ensure_ascii=False)
 

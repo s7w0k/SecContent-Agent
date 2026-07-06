@@ -136,19 +136,21 @@ class NewsCrawler:
         pass
 
     async def crawl(self, days: int = 1) -> list[NewsArticle]:
-        """爬取所有站点最近 N 天的文章（同步阻塞方法用 asyncio.to_thread 包装时调用者负责）"""
+        """爬取所有站点最近 N 天的文章"""
         cutoff = datetime.now() - timedelta(days=days)
         all_articles: list[NewsArticle] = []
+        self._last_errors: dict[str, str] = {}
 
         for site_name, cfg in self.SITES.items():
             logger.info("Crawling: %s (RSS)", site_name)
             try:
                 articles = self._crawl_rss(site_name, cfg, cutoff)
-
                 logger.info("  %s: %d articles", site_name, len(articles))
                 all_articles.extend(articles)
             except Exception as e:
-                logger.error("  %s: %s", site_name, e)
+                msg = str(e)
+                logger.error("  %s: %s", site_name, msg)
+                self._last_errors[site_name] = msg
 
         # URL 去重 + 时间过滤 + 非新闻内容过滤
         seen: set[str] = set()
