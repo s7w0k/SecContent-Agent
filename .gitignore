@@ -93,3 +93,4 @@ logs/
 *.temp
 .claude/plans/
 .npm-cache/
+agent-security-briefs/.git
