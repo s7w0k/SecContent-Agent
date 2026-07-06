@@ -232,8 +232,8 @@ class NewsCrawler:
 
         articles: list[NewsArticle] = []
         for entry in feed.entries:
-            url = entry.get("link", "")
-            if not url or cfg["domain"] not in url:
+            url = entry.get("link", "") or entry.get("guid", "") or entry.get("id", "")
+            if not url:
                 continue
             title = entry.get("title", "")
             if _is_non_news(url, title):
