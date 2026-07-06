@@ -60,8 +60,6 @@ export default function ArticleTable({
       render: (v: string) => v?.slice(0, 11) || "-" },
     { title: "题目", dataIndex: "title", key: "title", width: 250, ellipsis: true,
       render: (t: string, r: Article) => <a href={r.url} target="_blank" rel="noopener noreferrer">{t}</a> },
-    { title: "分类", dataIndex: "category", key: "category", width: 100, sorter: true,
-      render: (c: string) => c ? <Tag>{c}</Tag> : <Tag color="default">-</Tag> },
     { title: "V2分类", dataIndex: "category_v2", key: "category_v2", width: 130,
       render: (c: string, r: Article) => {
         const colorMap: Record<string, string> = {
@@ -76,12 +74,6 @@ export default function ArticleTable({
         const icon = r.is_pr_eligible ? " 🔥" : "";
         return c ? <Tag color={color}>{c}{icon}</Tag> : <Tag color="default">-</Tag>;
       }},
-    { title: "相关度", dataIndex: "ai_relevance_score", key: "ai_relevance_score", width: 90, sorter: true,
-      render: (s: number) => <Progress percent={s} size="small" strokeColor={s >= 70 ? "#52c41a" : s >= 40 ? "#faad14" : "#ff4d4f"} format={() => s} /> },
-    { title: "可报道", dataIndex: "reportability_score", key: "reportability_score", width: 90, sorter: true,
-      render: (s: number) => <Progress percent={s} size="small" strokeColor={s >= 70 ? "#722ed1" : s >= 40 ? "#faad14" : "#ff4d4f"} format={() => s} /> },
-    { title: "综合分", dataIndex: "total_score", key: "total_score", width: 75, sorter: true,
-      render: (s: number) => <Tag color={s >= 140 ? "red" : s >= 100 ? "orange" : "default"}>{s}</Tag> },
     { title: "产品相关", dataIndex: "product_relevance", key: "product_relevance", width: 85, sorter: true,
       render: (s: number) => s ? <Progress percent={s} size="small" strokeColor={s >= 70 ? "#1890ff" : s >= 40 ? "#faad14" : "#ff4d4f"} format={() => s} /> : null },
     { title: "事件影响", dataIndex: "event_impact", key: "event_impact", width: 85, sorter: true,
