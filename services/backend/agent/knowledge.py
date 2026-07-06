@@ -558,18 +558,19 @@ class KnowledgeLoader:
         return self._cache.as_system_prompt()
 
     def as_scoring_prompt(self) -> str:
-        """返回打分专用的知识库上下文（直接拼接关键文件原文）。
+        """按 CLAUDE.md 市场部指引，拼接 PR/打分所需的文件原文。
 
-        与 as_system_prompt() 不同，此方法绕过 MarkdownKnowledgeParser，
-        直接将 overview / market-brief / glossary / hot-event-playbook
-        的文件原文拼接为 LLM 可读的上下文。避免结构化提取丢失信息。
+        CLAUDE.md 市场部操作步骤:
+          1. 先读 X-产品名/overview.md
+          2. 再读 market-brief.md（热点类型、金句、传播角度）
+          3. 匹配热点时加读 shared/hot-event-playbook.md
         """
         key_files = [
-            "0-产品全景/overview.md", "0-产品全景/glossary.md",
-            "1-智能体身份安全/overview.md", "1-智能体身份安全/market-brief.md",
-            "1-智能体身份安全/sales-brief.md",
-            "3-AI-BOM/overview.md", "3-AI-BOM/market-brief.md",
-            "shared/hot-event-playbook.md", "shared/competitor-brief.md",
+            "1-智能体身份安全/overview.md",
+            "1-智能体身份安全/market-brief.md",
+            "3-AI-BOM/overview.md",
+            "3-AI-BOM/market-brief.md",
+            "shared/hot-event-playbook.md",
         ]
         parts: list[str] = []
         for rel_path in key_files:
@@ -577,15 +578,14 @@ class KnowledgeLoader:
             if fp.exists():
                 try:
                     content = self._read_file(fp)
-                    # 截断过长文件（保留前 3000 字符，足够覆盖核心信息）
-                    if len(content) > 3000:
-                        content = content[:3000] + "\n\n... (truncated)"
-                    parts.append(f"<!-- {rel_path} -->\n{content}")
+                    if len(content) > 2500:
+                        content = content[:2500] + "\n\n... (truncated)"
+                    parts.append(content)
                 except Exception:
                     pass
         if not parts:
-            return self.as_system_prompt()  # fallback
-        logger.info("Scoring prompt built from %d files", len(parts))
+            return self.as_system_prompt()
+        logger.info("Scoring prompt built from %d files (market role)", len(parts))
         return "\n\n---\n\n".join(parts)
 
     def as_keywords(self) -> list[str]:
