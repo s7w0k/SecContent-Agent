@@ -7,8 +7,8 @@ import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import type { SorterResult } from "antd/es/table/interface";
 import { Button, message, Popconfirm, Popover, Progress, Space, Table, Tag, Typography } from "antd";
 import {
-  DeleteOutlined, EyeOutlined, FileSearchOutlined, FileTextOutlined,
-  PlayCircleOutlined, RobotOutlined,
+  DeleteOutlined, ExperimentOutlined, EyeOutlined, FileSearchOutlined,
+  FileTextOutlined, PlayCircleOutlined, RobotOutlined,
 } from "@ant-design/icons";
 import api from "../api/client";
 import type { Article } from "../types";
@@ -25,12 +25,13 @@ interface ArticleTableProps {
   onViewDetail: (article: Article) => void;
   onViewDrafts: (article: Article) => void;
   onRunV2Single: (article: Article) => void;
+  onScoreV2Single: (article: Article) => void;
   onRefresh: () => void;  // called after fetch/summarize to reload data
 }
 
 export default function ArticleTable({
   articles, total, loading, page, pageSize,
-  onPageChange, onSortChange, onViewReport, onViewDetail, onViewDrafts, onRunV2Single, onRefresh,
+  onPageChange, onSortChange, onViewReport, onViewDetail, onViewDrafts, onRunV2Single, onScoreV2Single, onRefresh,
 }: ArticleTableProps) {
   const [busy, setBusy] = useState<Set<string>>(new Set());
 
@@ -106,6 +107,8 @@ export default function ArticleTable({
           <Space size="small">
             <Button type="link" size="small" icon={<PlayCircleOutlined />}
               onClick={() => onRunV2Single(record)}>V2</Button>
+            <Button type="link" size="small" icon={<ExperimentOutlined />}
+              onClick={() => onScoreV2Single(record)}>打分</Button>
             {record.source_type === "wechat_mp" && !hasContent && (
               <Button type="link" size="small" icon={<FileTextOutlined />} loading={b}
                 onClick={() => handleFetch(record.url_hash)}>原文</Button>
