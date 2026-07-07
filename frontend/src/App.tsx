@@ -2,13 +2,14 @@ import { useState } from "react";
 import { Layout, Menu, Typography } from "antd";
 import {
   DashboardOutlined,
+  EditOutlined,
   InfoCircleOutlined,
   WechatOutlined,
-  FileTextOutlined,
   FileTextOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
 import Dashboard from "./pages/Dashboard";
+import ChatPage from "./pages/ChatPage";
 import AccountPage from "./pages/AccountPage";
 import LogsPage from "./pages/LogsPage";
 import SearchPage from "./pages/SearchPage";
@@ -18,6 +19,7 @@ const { Text } = Typography;
 
 const menuItems = [
   { key: "dashboard", icon: <DashboardOutlined />, label: "仪表盘" },
+  { key: "chat", icon: <EditOutlined />, label: "对话改稿" },
   { key: "accounts", icon: <WechatOutlined />, label: "公众号账号" },
   { key: "search", icon: <SearchOutlined />, label: "海外搜索" },
   { key: "logs", icon: <FileTextOutlined />, label: "运行日志" },
@@ -54,6 +56,7 @@ function App() {
       </Header>
       <Content>
         {tab === "dashboard" && <Dashboard />}
+        {tab === "chat" && <ChatPage />}
         {tab === "accounts" && <AccountPage />}
         {tab === "logs" && <LogsPage />}
         {tab === "search" && <SearchPage />}
