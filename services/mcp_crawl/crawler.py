@@ -32,6 +32,7 @@ logger = logging.getLogger("mcp-crawl.crawler")
 # 数据模型
 # ═══════════════════════════════════════════════════════════
 
+
 @dataclass
 class NewsArticle:
     """标准化新闻文章数据结构"""
@@ -70,15 +71,37 @@ _NON_NEWS_DOMAINS = [
     "deals.bleepingcomputer.com",
 ]
 _NON_NEWS_PATTERNS = [
-    "/deals/", "/offer/", "/sales/", "/shop/", "/store/",
-    "/webinar", "/podcast", "/video/", "/videos/",
-    "/sponsor", "/advertise", "/free-", "discount", "coupon",
-    "/how-to-", "/deal-", "-deal", "giveaway",
+    "/deals/",
+    "/offer/",
+    "/sales/",
+    "/shop/",
+    "/store/",
+    "/webinar",
+    "/podcast",
+    "/video/",
+    "/videos/",
+    "/sponsor",
+    "/advertise",
+    "/free-",
+    "discount",
+    "coupon",
+    "/how-to-",
+    "/deal-",
+    "-deal",
+    "giveaway",
 ]
 # 非新闻标题关键词（含其一则跳过）
 _NON_NEWS_TITLE_WORDS = [
-    "deal", "sale", "discount", "coupon", "giveaway",
-    "just $", "only $", "% off", "save ", "webinar",
+    "deal",
+    "sale",
+    "discount",
+    "coupon",
+    "giveaway",
+    "just $",
+    "only $",
+    "% off",
+    "save ",
+    "webinar",
 ]
 
 
@@ -112,22 +135,27 @@ class NewsCrawler:
         "The Hacker News": {
             "domain": "thehackernews.com",
             "feed": "https://feeds.feedburner.com/TheHackersNews",
+            "fallback": "https://news.google.com/rss/search?q=site:thehackernews.com+(AI+OR+agent+OR+security+OR+vulnerability)&hl=en-US&gl=US&ceid=US:en",
         },
         "BleepingComputer": {
             "domain": "bleepingcomputer.com",
             "feed": "https://www.bleepingcomputer.com/feed/",
+            "fallback": "https://news.google.com/rss/search?q=site:bleepingcomputer.com+(AI+OR+agent+OR+security+OR+vulnerability)&hl=en-US&gl=US&ceid=US:en",
         },
         "SecurityWeek": {
             "domain": "securityweek.com",
             "feed": "https://www.securityweek.com/feed/",
+            "fallback": "https://news.google.com/rss/search?q=site:securityweek.com+(AI+OR+agent+OR+security+OR+vulnerability)&hl=en-US&gl=US&ceid=US:en",
         },
         "Help Net Security": {
             "domain": "helpnetsecurity.com",
             "feed": "https://www.helpnetsecurity.com/feed/",
+            "fallback": "https://news.google.com/rss/search?q=site:helpnetsecurity.com+(AI+OR+agent+OR+security+OR+vulnerability)&hl=en-US&gl=US&ceid=US:en",
         },
         "Dark Reading": {
             "domain": "darkreading.com",
             "feed": "https://www.darkreading.com/rss.xml",
+            "fallback": "https://news.google.com/rss/search?q=site:darkreading.com+(AI+OR+agent+OR+security+OR+vulnerability)&hl=en-US&gl=US&ceid=US:en",
         },
     }
 
@@ -215,7 +243,9 @@ class NewsCrawler:
 
     # ── RSS: feedparser 解析标准 RSS/Atom ──
 
-    def _crawl_rss(self, source: str, cfg: dict, cutoff: datetime) -> list[NewsArticle]:
+    def _crawl_rss(
+        self, source: str, cfg: dict, cutoff: datetime
+    ) -> tuple[list[NewsArticle], dict]:
         """通过 RSS/Atom feed 爬取文章，严格按 cutoff 时间过滤。"""
         from email.utils import parsedate_to_datetime
 
@@ -223,16 +253,55 @@ class NewsCrawler:
             import feedparser as _fp
         except ImportError:
             logger.error("  feedparser not installed!")
-            return []
+            return [], {}
 
+        # 先用 httpx 获取 RSS 内容（带 UA），再交给 feedparser 解析
+        # 这样可以避免 feedparser 内置 urllib 在 Docker 中被拒绝的问题
+        # 如果主 feed 失败，尝试 Google News fallback
+        feed = None
+        feed_urls = [cfg["feed"]]
+        if cfg.get("fallback"):
+            feed_urls.append(cfg["fallback"])
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+        }
         try:
-            feed = _fp.parse(cfg["feed"])
-            if feed.bozo and not feed.entries:
-                logger.warning("  RSS: %s (bozo=%s)", source, feed.bozo_exception)
-                return []
+            import httpx
+
+            with httpx.Client(timeout=20, headers=headers, follow_redirects=True) as http_client:
+                for i, feed_url in enumerate(feed_urls):
+                    tag = "primary" if i == 0 else "fallback"
+                    try:
+                        resp = http_client.get(feed_url)
+                        if resp.status_code == 200:
+                            parsed = _fp.parse(resp.content)
+                            if parsed.entries:
+                                feed = parsed
+                                logger.info(
+                                    "  RSS: %s (%s) -> %d entries", source, tag, len(parsed.entries)
+                                )
+                                break
+                            else:
+                                logger.warning("  RSS: %s (%s) -> 0 entries", source, tag)
+                        else:
+                            logger.warning(
+                                "  RSS: %s (%s) -> HTTP %d", source, tag, resp.status_code
+                            )
+                    except Exception as e:
+                        logger.warning("  RSS: %s (%s) -> %s", source, tag, e)
+
+            if feed is None:
+                return [], {}
+
         except Exception as e:
-            logger.error("  RSS fetch error (%s): %s", source, e)
-            return []
+            logger.warning("  RSS fetch error (%s): %s", source, e)
+            return [], {}
+
+        if feed.bozo and not feed.entries:
+            logger.warning("  RSS: %s (bozo=%s)", source, feed.bozo_exception)
+            return [], {}
 
         if not feed.entries:
             logger.warning("  %s: feed returned 0 entries", source)
@@ -258,6 +327,7 @@ class NewsCrawler:
                 v = entry.get(field)
                 if v and hasattr(v, "tm_year"):
                     from calendar import timegm
+
                     pub_date = datetime(1970, 1, 1) + timedelta(seconds=timegm(v))
                     break
             if pub_date is None:
@@ -326,8 +396,10 @@ class NewsCrawler:
 
         # ISO 8601
         for fmt in [
-            "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ",
-            "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d",
+            "%Y-%m-%dT%H:%M:%S%z",
+            "%Y-%m-%dT%H:%M:%SZ",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%d",
         ]:
             try:
                 dt = datetime.strptime(text, fmt)
