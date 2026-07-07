@@ -255,49 +255,98 @@ class NewsCrawler:
             logger.error("  feedparser not installed!")
             return [], {}
 
-        # 先用 httpx 获取 RSS 内容（带 UA），再交给 feedparser 解析
-        # 这样可以避免 feedparser 内置 urllib 在 Docker 中被拒绝的问题
+        # 用 curl_cffi 浏览器指纹模拟获取 RSS 内容，绕过 Cloudflare 403
         # 如果主 feed 失败，尝试 Google News fallback
         feed = None
         feed_urls = [cfg["feed"]]
         if cfg.get("fallback"):
             feed_urls.append(cfg["fallback"])
 
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-            "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
-        }
         try:
-            import httpx
+            from curl_cffi import requests as cffi_requests
 
-            with httpx.Client(timeout=15, headers=headers, follow_redirects=True) as http_client:
-                for i, feed_url in enumerate(feed_urls):
-                    tag = "primary" if i == 0 else "fallback"
-                    try:
-                        resp = http_client.get(feed_url)
-                        if resp.status_code == 200:
-                            parsed = _fp.parse(resp.content)
-                            if parsed.entries:
-                                feed = parsed
-                                logger.info(
-                                    "  RSS: %s (%s) -> %d entries", source, tag, len(parsed.entries)
-                                )
-                                break
-                            else:
-                                logger.warning("  RSS: %s (%s) -> 0 entries", source, tag)
-                        else:
-                            logger.warning(
-                                "  RSS: %s (%s) -> HTTP %d", source, tag, resp.status_code
+            for i, feed_url in enumerate(feed_urls):
+                tag = "primary" if i == 0 else "fallback"
+                try:
+                    resp = cffi_requests.get(
+                        feed_url,
+                        impersonate="chrome124",
+                        timeout=15,
+                    )
+                    if resp.status_code == 200:
+                        parsed = _fp.parse(resp.content)
+                        if parsed.entries:
+                            feed = parsed
+                            logger.info(
+                                "  RSS: %s (%s) -> %d entries",
+                                source,
+                                tag,
+                                len(parsed.entries),
                             )
-                    except Exception as e:
-                        logger.warning("  RSS: %s (%s) -> %s", source, tag, e)
+                            break
+                        else:
+                            logger.warning("  RSS: %s (%s) -> 0 entries", source, tag)
+                    else:
+                        logger.warning(
+                            "  RSS: %s (%s) -> HTTP %d",
+                            source,
+                            tag,
+                            resp.status_code,
+                        )
+                except Exception as e:
+                    logger.warning("  RSS: %s (%s) -> %s", source, tag, e)
 
             if feed is None:
                 return [], {}
 
-        except Exception as e:
-            logger.warning("  RSS fetch error (%s): %s", source, e)
-            return [], {}
+        except ImportError:
+            logger.warning("  curl_cffi not installed, falling back to httpx")
+            import httpx
+
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+            }
+            try:
+                with httpx.Client(
+                    timeout=15, headers=headers, follow_redirects=True
+                ) as http_client:
+                    for i, feed_url in enumerate(feed_urls):
+                        tag = "primary" if i == 0 else "fallback"
+                        try:
+                            resp = http_client.get(feed_url)
+                            if resp.status_code == 200:
+                                parsed = _fp.parse(resp.content)
+                                if parsed.entries:
+                                    feed = parsed
+                                    logger.info(
+                                        "  RSS: %s (%s) -> %d entries",
+                                        source,
+                                        tag,
+                                        len(parsed.entries),
+                                    )
+                                    break
+                                else:
+                                    logger.warning(
+                                        "  RSS: %s (%s) -> 0 entries",
+                                        source,
+                                        tag,
+                                    )
+                            else:
+                                logger.warning(
+                                    "  RSS: %s (%s) -> HTTP %d",
+                                    source,
+                                    tag,
+                                    resp.status_code,
+                                )
+                        except Exception as e:
+                            logger.warning("  RSS: %s (%s) -> %s", source, tag, e)
+
+                if feed is None:
+                    return [], {}
+            except Exception as e:
+                logger.warning("  RSS fetch error (%s): %s", source, e)
+                return [], {}
 
         if feed.bozo and not feed.entries:
             logger.warning("  RSS: %s (bozo=%s)", source, feed.bozo_exception)
