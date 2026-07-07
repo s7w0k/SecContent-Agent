@@ -86,3 +86,73 @@ make down         # 停止所有服务
 - [智能体身份安全产品计划](docs/智能体身份安全产品计划和目标.md)
 - [阶段一：精细化实施计划](docs/阶段一/基础架构搭建-精细化实施计划.md)
 - [API 契约规范](docs/阶段一/API契约规范.md)
+
+## CI/CD 合规规范
+
+### 提交前必须执行的检查清单
+
+```bash
+# 1. ruff 检查（后端）
+ruff check services/ tests/
+ruff format --check services/ tests/
+
+# 2. pytest 运行（模拟 CI 环境，必须 0 FAILED）
+python -m pytest tests/ --cov=services --cov-report=term-missing --timeout=60 -v
+
+# 3. 前端测试
+cd frontend && npx vitest run --reporter=verbose
+
+# 4. 推送到远程仓库
+git push origin main
+```
+
+### 测试禁止事项
+
+| 禁止 | 正确做法 |
+|------|----------|
+| `patch("tavily.xxx")` 依赖未安装的模块 | mock 项目内部代码，不 mock 外部不存在的模块 |
+| 测试中发起真实网络请求 | `patch.object(Class, "method", ...)` mock 所有网络调用 |
+| 测试依赖环境变量存在 | 测试中自行设置/清理环境变量 |
+| 测试依赖文件系统特定路径 | 使用 `tmp_path` fixture 或 mock |
+| 测试期望旧行为但代码已重构 | 重构代码时同步更新测试 |
+
+### 代码重构时必须同步更新测试
+
+- 修改 `__init__` 签名/行为 → 检查所有实例化该类的测试
+- 移除依赖（如 tavily）→ 搜索测试中所有对该依赖的引用并清除
+- 修改数据结构（如 SITES 配置）→ 更新断言中的字段名
+- 修改 API 响应格式 → 更新 API 测试的断言
+
+### CI 环境与本地环境差异
+
+| CI 环境 (Linux) | 本地环境 (Windows) | 注意事项 |
+|-----------------|-------------------|----------|
+| Python 3.12.4 | 可能 3.13 | 版本差异可能导致行为不同 |
+| 无可选模块（如 tavily） | 可能有残留 | 测试不能依赖非 requirements.txt 中的模块 |
+| `timeout method: signal` | `timeout method: thread` | CI 中超时行为更严格 |
+| 无 Windows Bad file descriptor | 本地有 | 本地用 `-p no:capture` 可绕过，CI 不能 |
+
+### Git 规范
+
+- 每次 commit 后**必须 push 到远程仓库**
+- Commit message 使用 Conventional Commits 格式
+- 不提交 `.env`、`node_modules/`、`__pycache__/` 等文件
+
+## 错误沉淀记录
+
+### #001 — CI 流水线测试失败（2026-07-07）
+
+**错误**: 4 个 `test_mcp_crawl.py` 测试在 CI 中失败
+
+| 测试 | 根因 | 修复 |
+|------|------|------|
+| `test_init_requires_api_key` | 爬虫重构为 RSS-only，`__init__` 不再校验 API key | 改为 `test_init_without_api_key` |
+| `test_init_accepts_api_key` | `patch("tavily.TavilyClient")` 但 tavily 未安装 | 移除 tavily mock |
+| `test_sites_configuration` | 同上 + SITES 配置结构已变（`method` → `feed`） | 检查 feed 配置 |
+| `test_tools_call_without_api_key` | RSS-only 模式不报错，发起真实网络请求超时 60s | mock `NewsCrawler.crawl` |
+
+**教训**:
+1. 代码重构后必须立即检查并更新相关测试
+2. 测试不能依赖未在 requirements.txt 中的模块
+3. 测试不能发起真实网络请求
+4. 提交前必须本地运行完整测试套件确认 0 FAILED
