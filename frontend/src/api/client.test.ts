@@ -13,10 +13,12 @@ import type { AxiosInstance } from "axios";
 vi.mock("axios", () => {
   const mockGet = vi.fn();
   const mockPost = vi.fn();
+  const mockDelete = vi.fn();
   const mockAxios = {
     create: vi.fn(() => ({
       get: mockGet,
       post: mockPost,
+      delete: mockDelete,
       interceptors: {
         response: { use: vi.fn() },
         request: { use: vi.fn() },
@@ -28,6 +30,7 @@ vi.mock("axios", () => {
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
+const mockDelete = vi.fn();
 
 // Re-create client with controlled mocks
 let api: ReturnType<typeof import("./client").default>;
@@ -40,6 +43,7 @@ async function setupApi() {
   (axios.create as ReturnType<typeof vi.fn>).mockReturnValue({
     get: mockGet,
     post: mockPost,
+    delete: mockDelete,
     interceptors: {
       response: { use: vi.fn() },
       request: { use: vi.fn() },
@@ -255,5 +259,44 @@ describe("Chat API", () => {
       "/articles/abc123/drafts/0/revisions/rev-001/apply",
     );
     expect(result.applied).toBe(true);
+  });
+
+  it("getChatHistory calls GET /articles/:hash/drafts/:index/chat-history", async () => {
+    const mockResponse = {
+      ok: true,
+      data: {
+        messages: [
+          { role: "user", content: "问题", created_at: "2026-07-07T10:00:00" },
+          { role: "assistant", content: "回答", created_at: "2026-07-07T10:00:01" },
+        ],
+      },
+    };
+    mockGet.mockResolvedValueOnce({ data: mockResponse });
+
+    const { chatApi } = await import("./client");
+    const result = await chatApi.getChatHistory("abc123", 0);
+
+    expect(mockGet).toHaveBeenCalledWith(
+      "/articles/abc123/drafts/0/chat-history",
+    );
+    expect(result).toHaveLength(2);
+    expect(result[0].role).toBe("user");
+    expect(result[1].role).toBe("assistant");
+  });
+
+  it("clearChatHistory calls DELETE /articles/:hash/drafts/:index/chat-history", async () => {
+    const mockResponse = {
+      ok: true,
+      data: { cleared: true },
+    };
+    mockDelete.mockResolvedValueOnce({ data: mockResponse });
+
+    const { chatApi } = await import("./client");
+    const result = await chatApi.clearChatHistory("abc123", 0);
+
+    expect(mockDelete).toHaveBeenCalledWith(
+      "/articles/abc123/drafts/0/chat-history",
+    );
+    expect(result.cleared).toBe(true);
   });
 });

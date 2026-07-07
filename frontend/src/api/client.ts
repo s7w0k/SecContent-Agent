@@ -17,6 +17,7 @@ import type {
   ArticleQuery,
   ChatAskRequest,
   ChatAskResponse,
+  ChatMessage,
   DraftReviseRequest,
   DraftReviseResponse,
   KnowledgeSummary,
@@ -352,6 +353,28 @@ export const chatApi = {
   ): Promise<ApplyRevisionResponse> {
     const { data } = await client.post(
       `/articles/${urlHash}/drafts/${draftIndex}/revisions/${revisionId}/apply`,
+    );
+    return data.data;
+  },
+
+  /** 获取对话历史 */
+  async getChatHistory(
+    urlHash: string,
+    draftIndex: number,
+  ): Promise<ChatMessage[]> {
+    const { data } = await client.get(
+      `/articles/${urlHash}/drafts/${draftIndex}/chat-history`,
+    );
+    return data.data.messages;
+  },
+
+  /** 清空对话历史 */
+  async clearChatHistory(
+    urlHash: string,
+    draftIndex: number,
+  ): Promise<{ cleared: boolean }> {
+    const { data } = await client.delete(
+      `/articles/${urlHash}/drafts/${draftIndex}/chat-history`,
     );
     return data.data;
   },

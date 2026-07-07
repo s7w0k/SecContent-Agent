@@ -1,10 +1,12 @@
 """
-对话改稿 REST API — 问答、改稿、应用修订
+对话改稿 REST API — 问答、改稿、应用修订、对话历史
 
 端点:
   POST /api/chat/ask                                          问答模式
   POST /api/articles/{url_hash}/drafts/{draft_index}/revise   生成修订稿
   POST /api/articles/{url_hash}/drafts/{draft_index}/revisions/{revision_id}/apply  应用修订
+  GET  /api/articles/{url_hash}/drafts/{draft_index}/chat-history  获取对话历史
+  DELETE /api/articles/{url_hash}/drafts/{draft_index}/chat-history  清空对话历史
 """
 
 from __future__ import annotations
@@ -36,12 +38,10 @@ def _get_db(request: Request):
 
 def _get_draft_chat_agent(request: Request):
     """获取 DraftChatAgent 实例，必要时从现有组件构造"""
-    # 优先使用已挂载的 agent
     agent = getattr(request.app.state, "draft_chat_agent", None)
     if agent is not None:
         return agent
 
-    # 从现有组件构造
     knowledge_loader = getattr(request.app.state, "knowledge_loader", None)
     draft_gen = getattr(request.app.state, "draft_gen", None)
 
@@ -51,7 +51,6 @@ def _get_draft_chat_agent(request: Request):
             detail="Agent components not initialized (knowledge_loader or draft_gen missing)",
         )
 
-    # 懒加载构造并缓存
     from agent.draft_chat import DraftChatAgent
 
     agent = DraftChatAgent(
@@ -60,6 +59,40 @@ def _get_draft_chat_agent(request: Request):
     )
     request.app.state.draft_chat_agent = agent
     return agent
+
+
+def _now_cn() -> str:
+    """当前东八区时间 ISO 字符串"""
+    return datetime.now(_TZ_CN).isoformat()
+
+
+async def _save_chat_message(
+    db,
+    url_hash: str,
+    draft_index: int,
+    role: str,
+    content: str,
+) -> None:
+    """将一条消息追加到 chat_sessions 集合。
+
+    使用 (article_url_hash, draft_index) 作为复合唯一键，
+    不存在则创建，存在则追加到 messages 数组。
+    """
+    msg = {
+        "role": role,
+        "content": content,
+        "created_at": _now_cn(),
+    }
+
+    await db["chat_sessions"].update_one(
+        {"article_url_hash": url_hash, "draft_index": draft_index},
+        {
+            "$push": {"messages": msg},
+            "$set": {"updated_at": _now_cn()},
+            "$setOnInsert": {"created_at": _now_cn()},
+        },
+        upsert=True,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -129,6 +162,7 @@ async def chat_ask(request: Request, body: ChatAskRequest):
     - 如果传入 draft_index，读取对应 PR 草稿
     - 加载产品知识库摘要
     - 调用 DraftChatAgent.answer() 返回回答
+    - 自动保存对话记录到 chat_sessions 集合
     """
     db = _get_db(request)
     agent = _get_draft_chat_agent(request)
@@ -175,6 +209,23 @@ async def chat_ask(request: Request, body: ChatAskRequest):
     except LLMError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
+    # 保存对话记录到 chat_sessions
+    if body.article_url_hash and body.draft_index is not None:
+        await _save_chat_message(
+            db,
+            body.article_url_hash,
+            body.draft_index,
+            "user",
+            body.message,
+        )
+        await _save_chat_message(
+            db,
+            body.article_url_hash,
+            body.draft_index,
+            "assistant",
+            result["answer"],
+        )
+
     return {"ok": True, "data": result}
 
 
@@ -194,6 +245,7 @@ async def revise_draft(
     - 根据 draft_index 定位草稿
     - 调用 DraftChatAgent.revise() 生成修订稿
     - save=true 时追加到 pr_drafts[draft_index].revisions
+    - 自动保存对话记录到 chat_sessions 集合
     """
     db = _get_db(request)
     agent = _get_draft_chat_agent(request)
@@ -235,12 +287,11 @@ async def revise_draft(
             "instruction": body.instruction,
             "content_md": revised_content,
             "change_summary": change_summary,
-            "created_at": datetime.now(_TZ_CN).isoformat(),
+            "created_at": _now_cn(),
             "created_by": "local-user",
             "applied": False,
         }
 
-        # 读出整个 pr_drafts 数组 → 内存修改 → 整体 $set 回写
         drafts[draft_index].setdefault("revisions", [])
         drafts[draft_index]["revisions"].append(revision_record)
 
@@ -249,6 +300,13 @@ async def revise_draft(
             {"$set": {"pr_drafts": drafts}},
         )
         saved = True
+
+    # 保存对话记录到 chat_sessions
+    assistant_content = "已生成修订稿。\n\n修改摘要：\n" + "\n".join(
+        f"- {s}" for s in change_summary
+    )
+    await _save_chat_message(db, url_hash, draft_index, "user", body.instruction)
+    await _save_chat_message(db, url_hash, draft_index, "assistant", assistant_content)
 
     return {
         "ok": True,
@@ -271,25 +329,17 @@ async def apply_revision(
     draft_index: int,
     revision_id: str,
 ):
-    """应用修订：将修订稿写回草稿主稿 content_md，并标记 applied=true。
-
-    - 定位文章、草稿和修订记录
-    - 将 revision.content_md 写回 pr_drafts[draft_index].content_md
-    - 标记该修订记录 applied = true
-    """
+    """应用修订：将修订稿写回草稿主稿 content_md，并标记 applied=true。"""
     db = _get_db(request)
 
-    # 查询文章
     article = await db["articles"].find_one({"url_hash": url_hash})
     if article is None:
         raise HTTPException(status_code=404, detail="Article not found")
 
-    # 定位草稿
     drafts = article.get("pr_drafts", [])
     if draft_index < 0 or draft_index >= len(drafts):
         raise HTTPException(status_code=404, detail="Draft not found")
 
-    # 定位修订记录
     revisions = drafts[draft_index].get("revisions", [])
     target_revision = None
     for r in revisions:
@@ -300,11 +350,9 @@ async def apply_revision(
     if target_revision is None:
         raise HTTPException(status_code=404, detail="Revision not found")
 
-    # 内存修改：写回主稿 + 标记 applied
     drafts[draft_index]["content_md"] = target_revision["content_md"]
     target_revision["applied"] = True
 
-    # 整体 $set 回写
     await db["articles"].update_one(
         {"url_hash": url_hash},
         {"$set": {"pr_drafts": drafts}},
@@ -319,3 +367,52 @@ async def apply_revision(
             "applied": True,
         },
     }
+
+
+@router.get(
+    "/articles/{url_hash}/drafts/{draft_index}/chat-history",
+    summary="获取对话历史",
+)
+async def get_chat_history(
+    request: Request,
+    url_hash: str,
+    draft_index: int,
+):
+    """获取指定文章+草稿的对话历史记录。
+
+    返回 chat_sessions 集合中存储的 messages 数组。
+    """
+    db = _get_db(request)
+
+    session = await db["chat_sessions"].find_one(
+        {"article_url_hash": url_hash, "draft_index": draft_index},
+    )
+
+    if session is None:
+        return {"ok": True, "data": {"messages": []}}
+
+    return {
+        "ok": True,
+        "data": {
+            "messages": session.get("messages", []),
+        },
+    }
+
+
+@router.delete(
+    "/articles/{url_hash}/drafts/{draft_index}/chat-history",
+    summary="清空对话历史",
+)
+async def clear_chat_history(
+    request: Request,
+    url_hash: str,
+    draft_index: int,
+):
+    """清空指定文章+草稿的对话历史记录。"""
+    db = _get_db(request)
+
+    await db["chat_sessions"].delete_one(
+        {"article_url_hash": url_hash, "draft_index": draft_index},
+    )
+
+    return {"ok": True, "data": {"cleared": True}}

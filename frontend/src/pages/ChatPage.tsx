@@ -27,6 +27,7 @@ import {
   QuestionCircleOutlined,
   EditOutlined,
   SendOutlined,
+  ClearOutlined,
 } from "@ant-design/icons";
 import ReactMarkdown from "react-markdown";
 import api, { chatApi } from "../api/client";
@@ -74,6 +75,9 @@ export default function ChatPage() {
   // ── 错误 ─────────────────────────────────────────────────
   const [error, setError] = useState<string | null>(null);
 
+  // ── 历史加载 ─────────────────────────────────────────────
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // ── 加载有草稿的文章列表 ──────────────────────────────────
@@ -94,6 +98,19 @@ export default function ChatPage() {
     loadArticles();
   }, [loadArticles]);
 
+  // ── 加载对话历史 ──────────────────────────────────────────
+  const loadChatHistory = useCallback(async (urlHash: string, dIndex: number) => {
+    setHistoryLoading(true);
+    try {
+      const history = await chatApi.getChatHistory(urlHash, dIndex);
+      setMessages(history);
+    } catch {
+      setMessages([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
   // ── 消息列表滚动到底部 ────────────────────────────────────
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -104,10 +121,15 @@ export default function ChatPage() {
     const article = articles.find((a) => a.url_hash === urlHash) || null;
     setSelectedArticle(article);
     setDraftIndex(0);
-    setMessages([]);
     setRevisionResult(null);
     setViewingRevision(null);
     setError(null);
+    // 加载新文章+草稿0的对话历史
+    if (article) {
+      loadChatHistory(urlHash, 0);
+    } else {
+      setMessages([]);
+    }
   };
 
   // ── 选择草稿 ─────────────────────────────────────────────
@@ -115,6 +137,10 @@ export default function ChatPage() {
     setDraftIndex(index);
     setRevisionResult(null);
     setViewingRevision(null);
+    // 加载新草稿的对话历史
+    if (selectedArticle) {
+      loadChatHistory(selectedArticle.url_hash, index);
+    }
   };
 
   // ── 发送消息 ─────────────────────────────────────────────
@@ -237,6 +263,18 @@ export default function ChatPage() {
     a.download = `PR-revision-${revId.slice(0, 8)}.md`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // ── 清空对话历史 ──────────────────────────────────────────
+  const handleClearHistory = async () => {
+    if (!selectedArticle) return;
+    try {
+      await chatApi.clearChatHistory(selectedArticle.url_hash, draftIndex);
+      setMessages([]);
+      message.success("对话历史已清空");
+    } catch {
+      message.error("清空失败");
+    }
   };
 
   // ── 当前草稿 ─────────────────────────────────────────────
@@ -390,6 +428,16 @@ export default function ChatPage() {
                 : "请先选择文章和草稿"}
             </Text>
           )}
+          {messages.length > 0 && selectedArticle && (
+            <Button
+              size="small"
+              icon={<ClearOutlined />}
+              onClick={handleClearHistory}
+              style={{ marginLeft: "auto" }}
+            >
+              清空对话
+            </Button>
+          )}
         </div>
 
         {/* 错误提示 */}
@@ -406,7 +454,12 @@ export default function ChatPage() {
         {/* 消息列表 */}
         <div className={styles.messagesContainer}>
           <div className={styles.messagesList}>
-            {messages.length === 0 ? (
+            {historyLoading ? (
+              <div className={styles.loadingIndicator}>
+                <Spin size="small" />
+                <span>加载对话历史...</span>
+              </div>
+            ) : messages.length === 0 ? (
               <div className={styles.emptyState}>
                 <div className={styles.emptyIcon}>💬</div>
                 <div className={styles.emptyText}>

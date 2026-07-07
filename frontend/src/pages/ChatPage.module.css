@@ -140,6 +140,10 @@
 
 .modeSwitch {
   margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .emptyState {
