@@ -79,6 +79,7 @@ export default function ChatPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   // ── 加载有草稿的文章列表 ──────────────────────────────────
   const loadArticles = useCallback(async () => {
@@ -113,7 +114,10 @@ export default function ChatPage() {
 
   // ── 消息列表滚动到底部 ────────────────────────────────────
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = messagesContainerRef.current;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
   }, [messages]);
 
   // ── 选择文章 ─────────────────────────────────────────────
@@ -207,22 +211,46 @@ export default function ChatPage() {
           },
         );
       } else {
-        const resp = await chatApi.reviseDraft(
+        // 流式改稿：先插入空 assistant 消息，逐 chunk 更新
+        const assistantIdx = newMessages.length;
+        setMessages([...newMessages, { role: "assistant", content: "" }]);
+
+        await chatApi.reviseDraftStream(
           selectedArticle!.url_hash,
           draftIndex,
           { instruction: text, save: true },
-        );
-        setRevisionResult(resp);
-        setViewingRevision(null);
-        setMessages([
-          ...newMessages,
-          {
-            role: "assistant",
-            content: `已生成修订稿。\n\n修改摘要：\n${resp.change_summary.map((s) => `- ${s}`).join("\n")}`,
+          (chunk) => {
+            setMessages((prev) => {
+              const updated = [...prev];
+              if (updated[assistantIdx]) {
+                updated[assistantIdx] = {
+                  ...updated[assistantIdx],
+                  content: updated[assistantIdx].content + chunk,
+                };
+              }
+              return updated;
+            });
           },
-        ]);
-        message.success("修订稿已生成并保存");
-        await refreshArticle();
+          (result) => {
+            setRevisionResult(result);
+            setViewingRevision(null);
+            message.success("修订稿已生成并保存");
+            refreshArticle();
+          },
+          (errMsg) => {
+            setError(errMsg);
+            setMessages((prev) => {
+              const updated = [...prev];
+              if (updated[assistantIdx]) {
+                updated[assistantIdx] = {
+                  ...updated[assistantIdx],
+                  content: updated[assistantIdx].content || `错误：${errMsg}`,
+                };
+              }
+              return updated;
+            });
+          },
+        );
       }
     } catch (err: any) {
       const errMsg = err?.response?.data?.detail || err?.message || "请求失败";
@@ -489,7 +517,7 @@ export default function ChatPage() {
         )}
 
         {/* 消息列表 */}
-        <div className={styles.messagesContainer}>
+        <div className={styles.messagesContainer} ref={messagesContainerRef}>
           <div className={styles.messagesList}>
             {historyLoading ? (
               <div className={styles.loadingIndicator}>

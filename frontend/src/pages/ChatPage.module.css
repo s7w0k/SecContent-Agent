@@ -1,11 +1,13 @@
 .layout {
-  min-height: calc(100vh - 64px);
+  height: calc(100vh - 64px);
+  overflow: hidden;
 }
 
 .sider {
   background: #fff;
   padding: 16px;
-  overflow: auto;
+  overflow-y: auto;
+  height: 100%;
   border-right: 1px solid #f0f0f0;
 }
 
@@ -14,6 +16,8 @@
   display: flex;
   flex-direction: column;
   background: #f5f7fa;
+  height: 100%;
+  overflow: hidden;
 }
 
 .card {
@@ -97,7 +101,9 @@
 
 .messagesContainer {
   flex: 1;
-  overflow: auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 16px;
   background: #fff;
   border-radius: 12px;

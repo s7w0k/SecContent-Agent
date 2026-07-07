@@ -405,6 +405,103 @@ async def revise_draft(
 
 
 @router.post(
+    "/articles/{url_hash}/drafts/{draft_index}/revise_stream",
+    summary="流式改稿（SSE）",
+)
+async def revise_draft_stream(
+    request: Request,
+    url_hash: str,
+    draft_index: int,
+    body: DraftReviseRequest,
+):
+    """流式改稿模式：通过 SSE 逐 chunk 返回改稿内容。
+
+    SSE 事件格式:
+        data: {"chunk": "文本片段"}\\n\\n
+        data: {"done": true, "revision_id": "...", "revised_content_md": "...", "change_summary": [...], "saved": true}\\n\\n
+        data: {"error": "错误信息"}\\n\\n
+    """
+    db = _get_db(request)
+    agent = _get_draft_chat_agent(request)
+
+    # 查询文章
+    article = await db["articles"].find_one({"url_hash": url_hash})
+    if article is None:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    drafts = article.get("pr_drafts", [])
+    if draft_index < 0 or draft_index >= len(drafts):
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    draft = drafts[draft_index]
+    article["_id"] = str(article["_id"])
+
+    from agent.draft_chat import LLMError, parse_revise_output
+
+    async def event_stream():
+        """SSE 事件生成器"""
+        full_text = []
+        try:
+            async for chunk in agent.stream_revise(
+                instruction=body.instruction,
+                article=article,
+                draft=draft,
+            ):
+                full_text.append(chunk)
+                yield f"data: {json.dumps({'chunk': chunk}, ensure_ascii=False)}\n\n"
+
+            raw_text = "".join(full_text)
+            change_summary, revised_content = parse_revise_output(raw_text)
+            revision_id = str(uuid.uuid4())
+            saved = False
+
+            # 保存修订记录
+            if body.save:
+                revision_record = {
+                    "revision_id": revision_id,
+                    "instruction": body.instruction,
+                    "content_md": revised_content,
+                    "change_summary": change_summary,
+                    "created_at": _now_cn(),
+                    "created_by": "local-user",
+                    "applied": False,
+                }
+
+                drafts[draft_index].setdefault("revisions", [])
+                drafts[draft_index]["revisions"].append(revision_record)
+
+                await db["articles"].update_one(
+                    {"url_hash": url_hash},
+                    {"$set": {"pr_drafts": drafts}},
+                )
+                saved = True
+
+            # 保存对话记录
+            assistant_content = "已生成修订稿。\n\n修改摘要：\n" + "\n".join(
+                f"- {s}" for s in change_summary
+            )
+            await _save_chat_message(db, url_hash, draft_index, "user", body.instruction)
+            await _save_chat_message(db, url_hash, draft_index, "assistant", assistant_content)
+
+            yield f"data: {json.dumps({'done': True, 'revision_id': revision_id, 'revised_content_md': revised_content, 'change_summary': change_summary, 'saved': saved}, ensure_ascii=False)}\n\n"
+
+        except LLMError as e:
+            yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': f'服务器错误: {e}'}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post(
     "/articles/{url_hash}/drafts/{draft_index}/revisions/{revision_id}/apply",
     summary="应用修订稿",
 )

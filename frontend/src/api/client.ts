@@ -422,6 +422,86 @@ export const chatApi = {
     return data.data;
   },
 
+  /**
+   * 流式改稿（SSE）
+   *
+   * @param onChunk     每收到一个文本片段时的回调
+   * @param onDone      流结束时的回调（收到解析后的修订稿数据）
+   * @param onError     出错时的回调
+   */
+  async reviseDraftStream(
+    urlHash: string,
+    draftIndex: number,
+    request: DraftReviseRequest,
+    onChunk: (chunk: string) => void,
+    onDone?: (result: DraftReviseResponse) => void,
+    onError?: (error: string) => void,
+  ): Promise<void> {
+    const url = `${BASE_URL}/articles/${urlHash}/drafts/${draftIndex}/revise_stream`;
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        onError?.(errorText || `HTTP ${response.status}`);
+        return;
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        onError?.("无法读取响应流");
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.chunk) {
+              onChunk(event.chunk);
+            } else if (event.done) {
+              onDone?.({
+                revision_id: event.revision_id,
+                revised_content_md: event.revised_content_md,
+                change_summary: event.change_summary || [],
+                saved: event.saved || false,
+              });
+              return;
+            } else if (event.error) {
+              onError?.(event.error);
+              return;
+            }
+          } catch {
+            // JSON 解析失败，跳过
+          }
+        }
+      }
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "网络错误");
+    }
+  },
+
   /** 应用修订稿 */
   async applyRevision(
     urlHash: string,

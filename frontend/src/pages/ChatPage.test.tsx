@@ -19,6 +19,7 @@ vi.mock("../api/client", () => ({
     ask: vi.fn(),
     askStream: vi.fn(),
     reviseDraft: vi.fn(),
+    reviseDraftStream: vi.fn(),
     applyRevision: vi.fn(),
     getChatHistory: vi.fn().mockResolvedValue([]),
     clearChatHistory: vi.fn().mockResolvedValue({ cleared: true }),

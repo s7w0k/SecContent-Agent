@@ -346,6 +346,57 @@ class DraftChatAgent:
             "change_summary": change_summary,
         }
 
+    # ── 流式改稿 ─────────────────────────────────────────────
+
+    async def stream_revise(
+        self,
+        instruction: str,
+        article: dict,
+        draft: dict,
+    ) -> AsyncIterator[str]:
+        """流式改稿模式：逐 chunk 产出改稿文本。
+
+        与 revise() 不同，stream_revise 只产出原始文本，
+        解析（修改摘要 + 修订稿分离）由调用方在流结束后处理。
+
+        Yields:
+            str: LLM 产出的文本片段
+
+        Raises:
+            LLMError: LLM 调用失败时抛出
+        """
+        knowledge_context = self._get_knowledge_prompt()
+        system_prompt = REVISE_SYSTEM_PROMPT.format(
+            knowledge_context=knowledge_context,
+        )
+
+        original_content = draft.get("content_md", "")[:MAX_CONTENT_LENGTH]
+        user_prompt = REVISE_USER_PROMPT.format(
+            instruction=instruction,
+            template=draft.get("template", ""),
+            perspective=draft.get("perspective", ""),
+            original_content=original_content,
+            title=article.get("title", ""),
+            source=article.get("source", ""),
+            category_v2=article.get("category_v2", "未分类"),
+            product_relevance=article.get("product_relevance", 0),
+            event_impact=article.get("event_impact", 0),
+        )
+
+        try:
+            async for chunk in self.llm.astream(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_prompt),
+                ]
+            ):
+                text = chunk.content if hasattr(chunk, "content") else str(chunk)
+                if text:
+                    yield text
+        except Exception as e:
+            logger.error("LLM stream_revise failed: %s", e)
+            raise LLMError(f"LLM 流式调用失败: {e}") from e
+
     # ── 上下文构建 ─────────────────────────────────────────────
 
     def _get_knowledge_prompt(self) -> str:
