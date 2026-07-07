@@ -184,3 +184,76 @@ describe("Reports API", () => {
     expect(result.loaded).toBe(true);
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+// Chat API
+// ═══════════════════════════════════════════════════════════
+
+describe("Chat API", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await setupApi();
+  });
+
+  it("ask calls POST /chat/ask", async () => {
+    const mockResponse = {
+      ok: true,
+      data: { answer: "测试回答", references: ["knowledge"] },
+    };
+    mockPost.mockResolvedValueOnce({ data: mockResponse });
+
+    const { chatApi } = await import("./client");
+    const result = await chatApi.ask({ message: "问题" });
+
+    expect(mockPost).toHaveBeenCalledWith("/chat/ask", { message: "问题" });
+    expect(result.answer).toBe("测试回答");
+    expect(result.references).toEqual(["knowledge"]);
+  });
+
+  it("reviseDraft calls POST /articles/:hash/drafts/:index/revise", async () => {
+    const mockResponse = {
+      ok: true,
+      data: {
+        revision_id: "rev-001",
+        revised_content_md: "# 新稿",
+        change_summary: ["修改1"],
+        saved: true,
+      },
+    };
+    mockPost.mockResolvedValueOnce({ data: mockResponse });
+
+    const { chatApi } = await import("./client");
+    const result = await chatApi.reviseDraft("abc123", 0, {
+      instruction: "改意见",
+      save: true,
+    });
+
+    expect(mockPost).toHaveBeenCalledWith(
+      "/articles/abc123/drafts/0/revise",
+      { instruction: "改意见", save: true },
+    );
+    expect(result.revision_id).toBe("rev-001");
+    expect(result.saved).toBe(true);
+  });
+
+  it("applyRevision calls POST /articles/:hash/drafts/:index/revisions/:id/apply", async () => {
+    const mockResponse = {
+      ok: true,
+      data: {
+        article_url_hash: "abc123",
+        draft_index: 0,
+        revision_id: "rev-001",
+        applied: true,
+      },
+    };
+    mockPost.mockResolvedValueOnce({ data: mockResponse });
+
+    const { chatApi } = await import("./client");
+    const result = await chatApi.applyRevision("abc123", 0, "rev-001");
+
+    expect(mockPost).toHaveBeenCalledWith(
+      "/articles/abc123/drafts/0/revisions/rev-001/apply",
+    );
+    expect(result.applied).toBe(true);
+  });
+});

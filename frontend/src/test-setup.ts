@@ -43,6 +43,9 @@ Object.defineProperty(navigator, "clipboard", {
 global.URL.createObjectURL = vi.fn(() => "blob:test");
 global.URL.revokeObjectURL = vi.fn();
 
+// Mock scrollIntoView（ChatPage 消息列表滚动）
+Element.prototype.scrollIntoView = vi.fn();
+
 // 抑制 Ant Design 的 React 18 严格模式警告
 const originalError = console.error;
 console.error = (...args: unknown[]) => {
