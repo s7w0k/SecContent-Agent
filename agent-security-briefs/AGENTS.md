@@ -1,12 +1,20 @@
 # 智能体安全产品速查
 
-> 本文件是 `CLAUDE.md` 的入口副本，完整规则见 CLAUDE.md。各 AI Agent 读取本文件后，请先完整阅读 CLAUDE.md 再回答问题。
+本文件是给不识别 `CLAUDE.md` 的 AI 工具看的入口副本。
 
-请先阅读项目根目录下的 `CLAUDE.md`，其中包含：
+请先阅读本目录下的 `CLAUDE.md`。它现在只负责入口路由，具体身份规则已经拆到：
 
-- 三个角色（售前 / 架构师 / 市场部）的识别规则和回答框架
-- 产品文件夹结构和文档定位方法
-- 铁律（不编造、先读后答、答不上来记日志等）
-- 竞品对比、跨产品问题、术语问题的处理规则
+- `skills/common-rules.md`
+- `skills/presales.md`
+- `skills/architect.md`
+- `skills/market-pr.md`
 
-本文件的存在是为了让不识别 `CLAUDE.md` 的其他 AI Agent（Cursor、Copilot、Gemini CLI、Windsurf 等）也能找到项目指令。
+工作方式：
+
+1. 根据用户问题判断身份：售前、技术方案、市场 PR。
+2. 先读 `_index/folder-routing.md`，判断应该进入哪个文件夹。
+3. 再读 `skills/common-rules.md`。
+4. 再读对应身份 skill。
+5. 最后按 skill 要求读取产品目录下的 brief。
+
+注意：`skills/` 只写回答流程，不是产品事实来源。产品事实必须来自产品目录、`shared/`、`0-产品全景/` 或 `原始文档/`。
