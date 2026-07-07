@@ -58,7 +58,10 @@ async def lifespan(app: FastAPI):
     _log("INFO", "=" * 50)
     _log("INFO", "Backend starting...")
     _log("INFO", f"Python {sys.version}")
-    _log("INFO", f"MongoDB URI: {settings.MONGODB_URI.split('@')[-1] if '@' in settings.MONGODB_URI else settings.MONGODB_URI}")
+    _log(
+        "INFO",
+        f"MongoDB URI: {settings.MONGODB_URI.split('@')[-1] if '@' in settings.MONGODB_URI else settings.MONGODB_URI}",
+    )
     _log("INFO", f"MCP WeWe URL: {settings.MCP_WEWE_URL}")
     _log("INFO", f"MCP Crawl URL: {settings.MCP_CRAWL_URL}")
     _log("INFO", f"DeepSeek model: {settings.DEEPSEEK_MODEL}")
@@ -68,6 +71,7 @@ async def lifespan(app: FastAPI):
     # MongoDB
     try:
         from db.mongo import MongoDB
+
         await MongoDB.connect(
             uri=settings.MONGODB_URI,
             db_name=settings.MONGODB_DB,
@@ -98,7 +102,10 @@ async def lifespan(app: FastAPI):
         knowledge_loader = KnowledgeLoader(docs_dir=settings.KNOWLEDGE_BASE_DIR)
         await knowledge_loader.load()
         app.state.knowledge_loader = knowledge_loader
-        _log("INFO", f"Knowledge loaded: {len(knowledge_loader._cache.source_files) if knowledge_loader._cache else 0} files from {settings.KNOWLEDGE_BASE_DIR}")
+        _log(
+            "INFO",
+            f"Knowledge loaded: {len(knowledge_loader._cache.source_files) if knowledge_loader._cache else 0} files from {settings.KNOWLEDGE_BASE_DIR}",
+        )
 
         llm = ChatOpenAI(
             model=settings.DEEPSEEK_MODEL,
@@ -113,6 +120,7 @@ async def lifespan(app: FastAPI):
 
         # V2 6分类 Agent
         from agent.classifier_v2 import ClassifierV2
+
         classifier_v2 = ClassifierV2(llm=llm)
         app.state.classifier_v2 = classifier_v2
         _log("INFO", "ClassifierV2 initialized")
@@ -138,8 +146,11 @@ async def lifespan(app: FastAPI):
         _log("INFO", "Pipeline V2 initialized (classify_v2 -> score_v2 -> draft)")
 
         pipeline_manager = PipelineManager(
-            tools=tools, scorer=scorer, reporter=reporter,
-            knowledge=knowledge_loader, db=app.state.db,
+            tools=tools,
+            scorer=scorer,
+            reporter=reporter,
+            knowledge=knowledge_loader,
+            db=app.state.db,
         )
         app.state.pipeline_manager = pipeline_manager
         _log("INFO", "Agent pipeline initialized (V1)")
@@ -154,6 +165,7 @@ async def lifespan(app: FastAPI):
     _log("INFO", "Shutting down backend...")
     try:
         from db.mongo import MongoDB
+
         await MongoDB.disconnect()
     except Exception:
         pass
@@ -182,6 +194,7 @@ app.add_middleware(
 
 # ── Request logging middleware ──────────────────────────
 
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Log every HTTP request with method, path, status, and duration."""
@@ -198,6 +211,7 @@ async def log_requests(request: Request, call_next):
 # ── Routers ─────────────────────────────────────────────
 
 from api.accounts import router as accounts_router
+from api.chat import router as chat_router
 from api.crawl_config import router as crawl_config_router
 from api.dashboard import router as dashboard_router
 from api.logs import router as logs_router
@@ -208,6 +222,7 @@ from api.reports import router as reports_router
 app.include_router(pipeline_router)
 app.include_router(dashboard_router)
 app.include_router(reports_router)
+app.include_router(chat_router)
 app.include_router(accounts_router)
 app.include_router(logs_router)
 app.include_router(crawl_config_router)
@@ -216,17 +231,21 @@ app.include_router(overseas_router)
 
 # ── System endpoints ────────────────────────────────────
 
+
 @app.get("/api/health", tags=["System"])
 async def health():
     mongo_health = {"status": "not_configured"}
     try:
         from db.mongo import MongoDB
+
         if MongoDB.is_connected():
             mongo_health = await MongoDB.health_check()
     except Exception as e:
         mongo_health = {"status": "error", "error": str(e)}
     return {
-        "ok": True, "status": "healthy", "version": "0.1.0",
+        "ok": True,
+        "status": "healthy",
+        "version": "0.1.0",
         "mongodb": mongo_health,
         "mcp_wewe": settings.MCP_WEWE_URL,
         "mcp_crawl": settings.MCP_CRAWL_URL,
