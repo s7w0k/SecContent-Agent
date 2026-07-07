@@ -38,7 +38,7 @@ docker compose up -d
 ### V2 智能 PR 流水线
 
 ```
-文章入库 → 6分类 → 双维度打分 → PR 草稿生成
+文章入库 → 6分类 → 双维度打分 → PR 草稿生成 → 对话改稿
 ```
 
 | 阶段 | 说明 | 产品知识库 |
@@ -47,6 +47,7 @@ docker compose up -d
 | **筛选** | 仅前 3 类（PR 候选）进入后续流程 | — |
 | **双维度打分** | 产品能力相关度 + 事件影响面与传播力（各 0-100） | ✅ 读取 `agent-security-briefs/` |
 | **PR 草稿** | 综合分 ≥ 80 → 4 篇草稿（2 套模板 × 2 个角度） | ✅ |
+| **对话改稿** | 问答模式咨询 + 改稿模式修订，支持修订记录和应用 | ✅ |
 
 ### 数据源
 
@@ -54,6 +55,17 @@ docker compose up -d
 |------|------|------|
 | 海外安全新闻 | RSS Feed（5 站点，无需 API Key） | ✅ |
 | 微信公众号 | WeWe RSS | 可选 |
+
+### 对话改稿工作台
+
+浏览器打开 http://localhost:8000，点击左侧菜单"对话改稿"进入工作台：
+
+1. **选择文章和草稿** — 左栏选择有 PR 草稿的文章，切换查看 4 篇草稿
+2. **问答模式** — 输入问题，AI 基于文章和草稿上下文回答（如"这个标题够不够吸引人？"）
+3. **改稿模式** — 输入修改意见，AI 生成修订稿并自动保存（如"标题更有冲击力，减少技术细节"）
+4. **修订记录** — 左栏底部显示历史修订记录，可点击查看任意版本
+5. **应用修订** — 选择满意的修订稿，点击"应用为当前稿"将其设为主稿
+6. **复制/下载** — 修订稿支持复制到剪贴板和下载 `.md` 文件
 
 ---
 
@@ -75,6 +87,7 @@ services/backend/agent/
 ├── scorer_v2.py        # 双维度打分（产品相关度 + 事件影响力）
 ├── pr_templates.py     # 6 套 PR 模板（3 类 × 2 套）
 ├── draft_generator.py  # 草稿生成器（每文 4 稿）
+├── draft_chat.py       # 对话改稿 Agent（问答 + 改稿）
 ├── pipeline_v2.py      # LangGraph 流水线编排
 └── knowledge.py        # 产品知识库加载器（V2 多文件 + CLAUDE.md 市场角色）
 ```
@@ -128,6 +141,10 @@ make lint                             # 代码检查
 | `POST /api/pipeline/score-v2/{hash}` | V2 单篇打分 |
 | `POST /api/pipeline/crawl-overseas` | 爬取海外新闻 |
 | `GET /api/articles` | 文章列表 |
+| `GET /api/articles/{url_hash}` | 文章详情 |
+| `POST /api/chat/ask` | 对话问答（文章/草稿上下文） |
+| `POST /api/articles/{url_hash}/drafts/{draft_index}/revise` | 改稿（生成修订稿） |
+| `POST /api/articles/{url_hash}/drafts/{draft_index}/revisions/{revision_id}/apply` | 应用修订为当前稿 |
 | `GET /api/health` | 健康检查 |
 
 ---
