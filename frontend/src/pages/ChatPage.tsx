@@ -1,17 +1,19 @@
 /**
  * 对话改稿工作台页面
  *
- * 左栏：文章选择 + 草稿选择 + 原稿/修订稿预览
+ * 左栏：文章选择 + 草稿选择 + 原稿/修订稿预览 + 修订记录列表
  * 右栏：消息列表 + 输入框 + 模式切换（问答/改稿）
  *
  * 问答模式：调用 /api/chat/ask
  * 改稿模式：调用 /api/articles/{hash}/drafts/{index}/revise
+ * 应用修订：调用 /api/articles/{hash}/drafts/{index}/revisions/{id}/apply
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Button,
+  Divider,
   Empty,
   Input,
   Layout,
@@ -26,9 +28,11 @@ import {
 import { CopyOutlined, DownloadOutlined, SendOutlined } from "@ant-design/icons";
 import ReactMarkdown from "react-markdown";
 import api, { chatApi } from "../api/client";
+import RevisionList from "../components/RevisionList";
 import type {
   Article,
   ChatMessage,
+  DraftRevision,
   DraftReviseResponse,
 } from "../types";
 
@@ -50,8 +54,12 @@ export default function ChatPage() {
   const [mode, setMode] = useState<ChatMode>("问答");
   const [sending, setSending] = useState(false);
 
-  // ── 修订稿 ───────────────────────────────────────────────
+  // ── 修订稿预览 ───────────────────────────────────────────
   const [revisionResult, setRevisionResult] = useState<DraftReviseResponse | null>(null);
+  const [viewingRevision, setViewingRevision] = useState<DraftRevision | null>(null);
+
+  // ── 应用修订 ─────────────────────────────────────────────
+  const [applying, setApplying] = useState(false);
 
   // ── 错误 ─────────────────────────────────────────────────
   const [error, setError] = useState<string | null>(null);
@@ -63,10 +71,9 @@ export default function ChatPage() {
     setArticlesLoading(true);
     try {
       const resp = await api.getArticles({ page: 1, page_size: 100 });
-      // 只保留有 pr_drafts 的文章
       const withDrafts = resp.items.filter((a) => a.pr_drafts && a.pr_drafts.length > 0);
       setArticles(withDrafts);
-    } catch (err) {
+    } catch {
       setError("加载文章列表失败");
     } finally {
       setArticlesLoading(false);
@@ -89,6 +96,7 @@ export default function ChatPage() {
     setDraftIndex(0);
     setMessages([]);
     setRevisionResult(null);
+    setViewingRevision(null);
     setError(null);
   };
 
@@ -96,6 +104,7 @@ export default function ChatPage() {
   const handleDraftChange = (index: number) => {
     setDraftIndex(index);
     setRevisionResult(null);
+    setViewingRevision(null);
   };
 
   // ── 发送消息 ─────────────────────────────────────────────
@@ -125,13 +134,13 @@ export default function ChatPage() {
         });
         setMessages([...newMessages, { role: "assistant", content: resp.answer }]);
       } else {
-        // 改稿模式
         const resp = await chatApi.reviseDraft(
           selectedArticle!.url_hash,
           draftIndex,
           { instruction: text, save: true },
         );
         setRevisionResult(resp);
+        setViewingRevision(null);
         setMessages([
           ...newMessages,
           {
@@ -140,6 +149,9 @@ export default function ChatPage() {
           },
         ]);
         message.success("修订稿已生成并保存");
+
+        // 刷新文章数据以获取最新 revisions
+        await refreshArticle();
       }
     } catch (err: any) {
       const errMsg = err?.response?.data?.detail || err?.message || "请求失败";
@@ -153,35 +165,91 @@ export default function ChatPage() {
     }
   };
 
+  // ── 刷新文章数据（获取最新 revisions）────────────────────
+  const refreshArticle = async () => {
+    if (!selectedArticle) return;
+    try {
+      const updated = await api.getArticle(selectedArticle.url_hash);
+      setSelectedArticle(updated);
+      // 同步更新 articles 列表中的数据
+      setArticles((prev) =>
+        prev.map((a) => (a.url_hash === updated.url_hash ? updated : a)),
+      );
+    } catch {
+      // 刷新失败不阻塞流程
+    }
+  };
+
+  // ── 选择查看某条修订记录 ──────────────────────────────────
+  const handleSelectRevision = (rev: DraftRevision) => {
+    setViewingRevision(rev);
+    setRevisionResult(null);
+  };
+
+  // ── 应用修订 ─────────────────────────────────────────────
+  const handleApplyRevision = async (rev: DraftRevision) => {
+    if (!selectedArticle) return;
+    setApplying(true);
+    try {
+      await chatApi.applyRevision(
+        selectedArticle.url_hash,
+        draftIndex,
+        rev.revision_id,
+      );
+      message.success("修订已应用为当前稿");
+      await refreshArticle();
+      setViewingRevision(null);
+      setRevisionResult(null);
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.detail || err?.message || "应用失败";
+      message.error(errMsg);
+    } finally {
+      setApplying(false);
+    }
+  };
+
   // ── 复制修订稿 ────────────────────────────────────────────
   const handleCopy = () => {
-    if (!revisionResult?.revised_content_md) return;
+    const content = viewingRevision?.content_md || revisionResult?.revised_content_md;
+    if (!content) return;
     navigator.clipboard
-      .writeText(revisionResult.revised_content_md)
+      .writeText(content)
       .then(() => message.success("已复制"))
       .catch(() => message.error("复制失败"));
   };
 
   // ── 下载修订稿 ────────────────────────────────────────────
   const handleDownload = () => {
-    if (!revisionResult?.revised_content_md) return;
-    const blob = new Blob([revisionResult.revised_content_md], {
-      type: "text/markdown",
-    });
+    const content = viewingRevision?.content_md || revisionResult?.revised_content_md;
+    const revId = viewingRevision?.revision_id || revisionResult?.revision_id || "revision";
+    if (!content) return;
+    const blob = new Blob([content], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `PR-revision-${revisionResult.revision_id.slice(0, 8)}.md`;
+    a.download = `PR-revision-${revId.slice(0, 8)}.md`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   // ── 当前草稿 ─────────────────────────────────────────────
   const currentDraft = selectedArticle?.pr_drafts?.[draftIndex];
+  const revisions: DraftRevision[] = currentDraft?.revisions || [];
+
+  // ── 预览内容 ─────────────────────────────────────────────
+  const previewContent = viewingRevision?.content_md
+    || revisionResult?.revised_content_md
+    || currentDraft?.content_md
+    || "";
+  const previewTitle = viewingRevision
+    ? "修订稿预览"
+    : revisionResult
+      ? "修订稿预览"
+      : "原稿预览";
 
   return (
     <Layout style={{ minHeight: "calc(100vh - 64px)" }}>
-      {/* ── 左栏：选择 + 预览 ── */}
+      {/* ── 左栏：选择 + 预览 + 修订记录 ── */}
       <Sider
         width={420}
         style={{
@@ -232,27 +300,25 @@ export default function ChatPage() {
             </Space>
 
             <Text strong style={{ display: "block", marginBottom: 4 }}>
-              {revisionResult ? "修订稿预览" : "原稿预览"}
+              {previewTitle}
             </Text>
             <div
               style={{
-                maxHeight: "calc(100vh - 380px)",
+                maxHeight: 300,
                 overflow: "auto",
                 padding: "8px",
                 background: "#fafafa",
                 borderRadius: 6,
               }}
             >
-              {revisionResult ? (
-                <ReactMarkdown>{revisionResult.revised_content_md}</ReactMarkdown>
-              ) : currentDraft.content_md ? (
-                <ReactMarkdown>{currentDraft.content_md}</ReactMarkdown>
+              {previewContent ? (
+                <ReactMarkdown>{previewContent}</ReactMarkdown>
               ) : (
                 <Empty description="草稿内容不可用" />
               )}
             </div>
 
-            {revisionResult && (
+            {(viewingRevision || revisionResult) && (
               <Space style={{ marginTop: 8 }}>
                 <Button size="small" icon={<CopyOutlined />} onClick={handleCopy}>
                   复制
@@ -264,8 +330,33 @@ export default function ChatPage() {
                 >
                   下载
                 </Button>
+                {viewingRevision && !viewingRevision.applied && (
+                  <Button
+                    size="small"
+                    type="primary"
+                    onClick={() => handleApplyRevision(viewingRevision)}
+                    loading={applying}
+                  >
+                    应用为当前稿
+                  </Button>
+                )}
               </Space>
             )}
+
+            {/* ── 修订记录列表 ── */}
+            <Divider style={{ margin: "16px 0 8px" }} />
+            <Text strong style={{ display: "block", marginBottom: 8 }}>
+              修订记录 ({revisions.length})
+            </Text>
+            <div style={{ maxHeight: 300, overflow: "auto" }}>
+              <RevisionList
+                revisions={revisions}
+                selectedRevisionId={viewingRevision?.revision_id || null}
+                onSelect={handleSelectRevision}
+                onApply={handleApplyRevision}
+                applying={applying}
+              />
+            </div>
           </>
         )}
 
@@ -335,11 +426,9 @@ export default function ChatPage() {
                     maxWidth: "80%",
                     padding: "8px 12px",
                     borderRadius: 8,
-                    background:
-                      msg.role === "user" ? "#1677ff" : "#fff",
+                    background: msg.role === "user" ? "#1677ff" : "#fff",
                     color: msg.role === "user" ? "#fff" : "#333",
-                    border:
-                      msg.role === "user" ? "none" : "1px solid #e8e8e8",
+                    border: msg.role === "user" ? "none" : "1px solid #e8e8e8",
                     textAlign: "left",
                     whiteSpace: "pre-wrap",
                   }}
