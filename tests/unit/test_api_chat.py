@@ -92,15 +92,30 @@ def sample_article_with_drafts():
 
 @pytest.fixture
 def mock_db(sample_article_with_drafts):
-    """Mock MongoDB"""
+    """Mock MongoDB — 支持 articles 和 chat_sessions 集合"""
     db = MagicMock()
     articles = MagicMock()
+    chat_sessions = MagicMock()
 
     # 默认返回带草稿的文章
     articles.find_one = AsyncMock(return_value=sample_article_with_drafts.copy())
     articles.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
 
-    db.__getitem__.side_effect = lambda key: articles if key == "articles" else MagicMock()
+    # chat_sessions 默认返回空（无历史）
+    chat_sessions.find_one = AsyncMock(return_value=None)
+    chat_sessions.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
+    chat_sessions.delete_one = AsyncMock(return_value=MagicMock(deleted_count=1))
+
+    def _get_collection(key):
+        if key == "articles":
+            return articles
+        if key == "chat_sessions":
+            return chat_sessions
+        return MagicMock()
+
+    db.__getitem__.side_effect = _get_collection
+    db._articles = articles
+    db._chat_sessions = chat_sessions
     return db
 
 
@@ -184,6 +199,160 @@ class TestChatAsk:
             )
 
         assert resp.status_code == 404
+
+
+# ═══════════════════════════════════════════════════════════════
+# 4. GET /api/articles/{url_hash}/drafts/{draft_index}/chat-history
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestGetChatHistory:
+    """获取对话历史端点测试"""
+
+    @pytest.mark.asyncio
+    async def test_get_history_empty(self, app):
+        """无历史记录返回空数组"""
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get(
+                "/api/articles/d41d8cd98f00b204e9800998ecf8427e/drafts/0/chat-history",
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["data"]["messages"] == []
+
+    @pytest.mark.asyncio
+    async def test_get_history_with_messages(self, app, mock_db):
+        """有历史记录返回消息列表"""
+        mock_db._chat_sessions.find_one = AsyncMock(return_value={
+            "article_url_hash": "d41d8cd98f00b204e9800998ecf8427e",
+            "draft_index": 0,
+            "messages": [
+                {"role": "user", "content": "问题1", "created_at": "2026-07-07T10:00:00"},
+                {"role": "assistant", "content": "回答1", "created_at": "2026-07-07T10:00:01"},
+            ],
+        })
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get(
+                "/api/articles/d41d8cd98f00b204e9800998ecf8427e/drafts/0/chat-history",
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        messages = data["data"]["messages"]
+        assert len(messages) == 2
+        assert messages[0]["role"] == "user"
+        assert messages[0]["content"] == "问题1"
+        assert messages[1]["role"] == "assistant"
+
+
+# ═══════════════════════════════════════════════════════════════
+# 5. DELETE /api/articles/{url_hash}/drafts/{draft_index}/chat-history
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestClearChatHistory:
+    """清空对话历史端点测试"""
+
+    @pytest.mark.asyncio
+    async def test_clear_history_success(self, app, mock_db):
+        """清空成功"""
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.delete(
+                "/api/articles/d41d8cd98f00b204e9800998ecf8427e/drafts/0/chat-history",
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["data"]["cleared"] is True
+        mock_db._chat_sessions.delete_one.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_clear_history_no_existing_session(self, app, mock_db):
+        """清空不存在的会话不报错"""
+        mock_db._chat_sessions.delete_one = AsyncMock(
+            return_value=MagicMock(deleted_count=0),
+        )
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.delete(
+                "/api/articles/d41d8cd98f00b204e9800998ecf8427e/drafts/0/chat-history",
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["data"]["cleared"] is True
+
+
+# ═══════════════════════════════════════════════════════════════
+# 6. 对话历史持久化验证
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestChatHistoryPersistence:
+    """验证 ask/revise 端点自动保存对话到 chat_sessions"""
+
+    @pytest.mark.asyncio
+    async def test_ask_saves_to_chat_sessions(self, app, mock_draft_gen, mock_db):
+        """问答后自动保存到 chat_sessions"""
+        from langchain_core.messages import AIMessage
+
+        mock_draft_gen.llm.ainvoke = AsyncMock(return_value=AIMessage(content="回答"))
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post(
+                "/api/chat/ask",
+                json={
+                    "message": "测试问题",
+                    "article_url_hash": "d41d8cd98f00b204e9800998ecf8427e",
+                    "draft_index": 0,
+                },
+            )
+
+        assert resp.status_code == 200
+        assert mock_db._chat_sessions.update_one.call_count >= 2
+
+    @pytest.mark.asyncio
+    async def test_revise_saves_to_chat_sessions(self, app, mock_draft_gen, mock_db):
+        """改稿后自动保存到 chat_sessions"""
+        from langchain_core.messages import AIMessage
+
+        mock_draft_gen.llm.ainvoke = AsyncMock(
+            return_value=AIMessage(content="## 修改摘要\n- 修改1\n\n## 修订稿\n# [新标题]\n正文"),
+        )
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post(
+                "/api/articles/d41d8cd98f00b204e9800998ecf8427e/drafts/0/revise",
+                json={"instruction": "改意见", "save": False},
+            )
+
+        assert resp.status_code == 200
+        assert mock_db._chat_sessions.update_one.call_count >= 2
+
+    @pytest.mark.asyncio
+    async def test_ask_without_article_does_not_save(self, app, mock_draft_gen, mock_db):
+        """无 article_url_hash 时不保存对话"""
+        from langchain_core.messages import AIMessage
+
+        mock_draft_gen.llm.ainvoke = AsyncMock(return_value=AIMessage(content="回答"))
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post("/api/chat/ask", json={"message": "问题"})
+
+        assert resp.status_code == 200
+        mock_db._chat_sessions.update_one.assert_not_called()
+
+
+# ═══════════════════════════════════════════════════════════════
+# 7. TestChatAsk 续（草稿不存在）
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestChatAskDraftNotFound:
+    """草稿不存在测试（从 TestChatAsk 分离）"""
 
     @pytest.mark.asyncio
     async def test_ask_draft_not_found_returns_404(self, app, mock_db, sample_article_with_drafts):
