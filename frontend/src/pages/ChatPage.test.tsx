@@ -95,7 +95,7 @@ describe("ChatPage", () => {
   it("shows empty state when no article selected", async () => {
     render(<ChatPage />);
     await waitFor(() => {
-      expect(screen.getByText("请选择文章")).toBeDefined();
+      expect(screen.getByText("请选择文章开始对话改稿")).toBeDefined();
     });
   });
 
