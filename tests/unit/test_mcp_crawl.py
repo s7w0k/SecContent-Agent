@@ -12,7 +12,7 @@ import json
 import os
 import sys
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -29,6 +29,7 @@ from crawler import NewsArticle, NewsCrawler
 # ═══════════════════════════════════════════════════════════
 # 1. NewsArticle 数据模型测试
 # ═══════════════════════════════════════════════════════════
+
 
 class TestNewsArticle:
     """NewsArticle 数据模型单元测试"""
@@ -98,6 +99,7 @@ class TestNewsArticle:
 # 2. ClassifiedArticle 数据模型测试
 # ═══════════════════════════════════════════════════════════
 
+
 class TestClassifiedArticle:
     """ClassifiedArticle 数据模型测试"""
 
@@ -154,9 +156,15 @@ class TestClassifiedArticle:
 
     def test_to_dict(self):
         ca = ClassifiedArticle(
-            title="T", url="https://x.com", url_hash="h", source="S",
-            is_ai_security=True, category="提示注入", ai_relevance_score=75,
-            summary_cn="摘要", classified_at="2026-06-29 12:00:00",
+            title="T",
+            url="https://x.com",
+            url_hash="h",
+            source="S",
+            is_ai_security=True,
+            category="提示注入",
+            ai_relevance_score=75,
+            summary_cn="摘要",
+            classified_at="2026-06-29 12:00:00",
         )
         d = ca.to_dict()
         assert d["is_ai_security"] is True
@@ -175,6 +183,7 @@ class TestClassifiedArticle:
 # 3. ArticleCategory 枚举测试
 # ═══════════════════════════════════════════════════════════
 
+
 class TestArticleCategory:
     """分类标签枚举测试"""
 
@@ -192,6 +201,7 @@ class TestArticleCategory:
 # ═══════════════════════════════════════════════════════════
 # 4. NewsCrawler 单元测试
 # ═══════════════════════════════════════════════════════════
+
 
 class TestNewsCrawler:
     """NewsCrawler 单元测试（不实际调用 API）"""
@@ -212,7 +222,10 @@ class TestNewsCrawler:
         assert len(crawler.SITES) == 5
         assert "The Hacker News" in crawler.SITES
         assert "feed" in crawler.SITES["The Hacker News"]
-        assert crawler.SITES["The Hacker News"]["feed"] == "https://feeds.feedburner.com/TheHackersNews"
+        assert (
+            crawler.SITES["The Hacker News"]["feed"]
+            == "https://feeds.feedburner.com/TheHackersNews"
+        )
 
     def test_parse_date_iso(self):
         result = NewsCrawler._parse_date("2026-06-29T12:00:00")
@@ -242,6 +255,7 @@ class TestNewsCrawler:
 # ═══════════════════════════════════════════════════════════
 # 5. AISecurityClassifier 单元测试
 # ═══════════════════════════════════════════════════════════
+
 
 class TestAISecurityClassifier:
     """AISecurityClassifier 单元测试"""
@@ -296,6 +310,7 @@ class TestAISecurityClassifier:
 # ═══════════════════════════════════════════════════════════
 # 6. MCP Server 协议测试
 # ═══════════════════════════════════════════════════════════
+
 
 class TestMCPServerProtocol:
     """MCP Server JSON-RPC 协议测试（不需要 API key）"""
@@ -361,7 +376,9 @@ class TestMCPServerProtocol:
 
     def test_unknown_tool_error(self):
         msg = {
-            "jsonrpc": "2.0", "id": 5, "method": "tools/call",
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "tools/call",
             "params": {"name": "nonexistent_tool", "arguments": {}},
         }
         resp = self.server.handle_message(msg)
@@ -370,8 +387,6 @@ class TestMCPServerProtocol:
 
     def test_tools_call_crawl_news(self):
         """调用 crawl_news 应返回正常结果（mock RSS 爬取）"""
-        from unittest.mock import patch, AsyncMock
-
         mock_article = NewsArticle(
             title="Test Article",
             url="https://example.com/test",
@@ -381,7 +396,9 @@ class TestMCPServerProtocol:
             NewsCrawler, "crawl", new_callable=AsyncMock, return_value=[mock_article]
         ):
             msg = {
-                "jsonrpc": "2.0", "id": 6, "method": "tools/call",
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "tools/call",
                 "params": {"name": "crawl_news", "arguments": {"days": 1}},
             }
             resp = self.server.handle_message(msg)
@@ -392,7 +409,9 @@ class TestMCPServerProtocol:
 
     def test_get_stats_empty_cache(self):
         msg = {
-            "jsonrpc": "2.0", "id": 7, "method": "tools/call",
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "tools/call",
             "params": {"name": "get_stats", "arguments": {}},
         }
         resp = self.server.handle_message(msg)
@@ -403,7 +422,9 @@ class TestMCPServerProtocol:
 
     def test_query_database_empty(self):
         msg = {
-            "jsonrpc": "2.0", "id": 8, "method": "tools/call",
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "tools/call",
             "params": {"name": "query_database", "arguments": {"keyword": "test"}},
         }
         resp = self.server.handle_message(msg)
@@ -414,7 +435,9 @@ class TestMCPServerProtocol:
 
     def test_export_csv_empty(self):
         msg = {
-            "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
             "params": {"name": "export_csv", "arguments": {}},
         }
         resp = self.server.handle_message(msg)
@@ -428,16 +451,19 @@ class TestMCPServerProtocol:
 # 7. HTTP Bridge 测试
 # ═══════════════════════════════════════════════════════════
 
+
 class TestHTTPBridge:
     """http_bridge 模块结构测试"""
 
     def test_app_exists(self):
         import http_bridge
+
         assert http_bridge.app is not None
         assert http_bridge.app.title == "MCP-Crawl HTTP Bridge"
 
     def test_app_has_routes(self):
         import http_bridge
+
         routes = [r.path for r in http_bridge.app.routes]
         assert "/health" in routes
         assert "/tools" in routes
@@ -451,12 +477,14 @@ class TestHTTPBridge:
 
     def test_mcp_server_path(self):
         import http_bridge
+
         assert http_bridge.MCP_SERVER_PATH.endswith("server.py")
 
 
 # ═══════════════════════════════════════════════════════════
 # 8. 集成场景测试（用 mock 数据模拟端到端流程）
 # ═══════════════════════════════════════════════════════════
+
 
 class TestIntegrationScenarios:
     """模拟端到端使用场景"""
@@ -466,13 +494,16 @@ class TestIntegrationScenarios:
         os.environ["TAVILY_API_KEY"] = "test-key"
         os.environ["DEEPSEEK_API_KEY"] = "test-key"
         import server as srv
+
         self.server = srv
         yield
         self.server._article_cache.clear()
 
     def _call_tool(self, name: str, args: dict) -> dict:
         msg = {
-            "jsonrpc": "2.0", "id": 100, "method": "tools/call",
+            "jsonrpc": "2.0",
+            "id": 100,
+            "method": "tools/call",
             "params": {"name": name, "arguments": args},
         }
         resp = self.server.handle_message(msg)
