@@ -12,8 +12,13 @@
 import axios, { type AxiosInstance } from "axios";
 import type {
   AccountStatusResult,
+  ApplyRevisionResponse,
   Article,
   ArticleQuery,
+  ChatAskRequest,
+  ChatAskResponse,
+  DraftReviseRequest,
+  DraftReviseResponse,
   KnowledgeSummary,
   PaginatedResponse,
   PipelineResult,
@@ -316,6 +321,43 @@ export const accountsApi = {
 };
 
 // ═══════════════════════════════════════════════════════════
+// Chat API（对话改稿）
+// ═══════════════════════════════════════════════════════════
+
+export const chatApi = {
+  /** 对话问答 */
+  async ask(request: ChatAskRequest): Promise<ChatAskResponse> {
+    const { data } = await client.post("/chat/ask", request);
+    return data.data;
+  },
+
+  /** 生成修订稿 */
+  async reviseDraft(
+    urlHash: string,
+    draftIndex: number,
+    request: DraftReviseRequest,
+  ): Promise<DraftReviseResponse> {
+    const { data } = await client.post(
+      `/articles/${urlHash}/drafts/${draftIndex}/revise`,
+      request,
+    );
+    return data.data;
+  },
+
+  /** 应用修订稿 */
+  async applyRevision(
+    urlHash: string,
+    draftIndex: number,
+    revisionId: string,
+  ): Promise<ApplyRevisionResponse> {
+    const { data } = await client.post(
+      `/articles/${urlHash}/drafts/${draftIndex}/revisions/${revisionId}/apply`,
+    );
+    return data.data;
+  },
+};
+
+// ═══════════════════════════════════════════════════════════
 // 统一导出
 // ═══════════════════════════════════════════════════════════
 
@@ -324,6 +366,7 @@ const api = {
   ...pipelineApi,
   ...reportsApi,
   ...accountsApi,
+  ...chatApi,
 };
 
 export default api;

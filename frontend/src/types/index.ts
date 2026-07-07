@@ -226,3 +226,60 @@ export interface PollLoginResult {
   name?: string;
   message?: string;
 }
+
+// ═══════════════════════════════════════════════════════════
+// Chat（对话改稿）
+// ═══════════════════════════════════════════════════════════
+
+export type ChatRole = "user" | "assistant";
+
+export interface ChatMessage {
+  role: ChatRole;
+  content: string;
+}
+
+export interface ChatAskRequest {
+  message: string;
+  article_url_hash?: string;
+  draft_index?: number;
+  revision_id?: string;
+  history?: ChatMessage[];
+}
+
+export interface ChatAskResponse {
+  answer: string;
+  references: string[];
+}
+
+// ═══════════════════════════════════════════════════════════
+// Draft Revision（草稿修订）
+// ═══════════════════════════════════════════════════════════
+
+export interface DraftRevision {
+  revision_id: string;
+  instruction: string;
+  content_md: string;
+  change_summary: string[];
+  created_at: string;
+  created_by: string;
+  applied: boolean;
+}
+
+export interface DraftReviseRequest {
+  instruction: string;
+  save?: boolean;
+}
+
+export interface DraftReviseResponse {
+  revision_id: string;
+  revised_content_md: string;
+  change_summary: string[];
+  saved: boolean;
+}
+
+export interface ApplyRevisionResponse {
+  article_url_hash: string;
+  draft_index: number;
+  revision_id: string;
+  applied: boolean;
+}
