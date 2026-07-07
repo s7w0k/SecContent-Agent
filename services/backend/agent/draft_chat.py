@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import AsyncIterator
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -228,6 +229,58 @@ class DraftChatAgent:
         )
 
         return {"answer": answer, "references": references}
+
+    # ── 流式问答 ─────────────────────────────────────────────
+
+    async def stream_answer(
+        self,
+        message: str,
+        article: dict | None = None,
+        draft: dict | None = None,
+        revision: dict | None = None,
+        history: list[dict] | None = None,
+    ) -> AsyncIterator[str]:
+        """流式问答模式：逐 chunk 产出回答文本。
+
+        用法:
+            async for chunk in agent.stream_answer(message=...):
+                print(chunk, end="", flush=True)
+
+        Yields:
+            str: LLM 产出的文本片段
+
+        Raises:
+            LLMError: LLM 调用失败时抛出
+        """
+        knowledge_context = self._get_knowledge_prompt()
+        system_prompt = ANSWER_SYSTEM_PROMPT.format(
+            knowledge_context=knowledge_context,
+        )
+
+        article_context = self._build_article_context(article) if article else ""
+        draft_context = self._build_draft_context(draft, revision)
+        history_context = self._build_history_context(history)
+
+        user_prompt = ANSWER_USER_PROMPT.format(
+            message=message,
+            article_context=article_context,
+            draft_context=draft_context,
+            history_context=history_context,
+        )
+
+        try:
+            async for chunk in self.llm.astream(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_prompt),
+                ]
+            ):
+                text = chunk.content if hasattr(chunk, "content") else str(chunk)
+                if text:
+                    yield text
+        except Exception as e:
+            logger.error("LLM stream_answer failed: %s", e)
+            raise LLMError(f"LLM 流式调用失败: {e}") from e
 
     # ── 改稿 ──────────────────────────────────────────────────
 

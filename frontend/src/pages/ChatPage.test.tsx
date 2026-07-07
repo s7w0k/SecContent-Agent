@@ -17,6 +17,7 @@ vi.mock("../api/client", () => ({
   },
   chatApi: {
     ask: vi.fn(),
+    askStream: vi.fn(),
     reviseDraft: vi.fn(),
     applyRevision: vi.fn(),
     getChatHistory: vi.fn().mockResolvedValue([]),
@@ -113,11 +114,14 @@ describe("ChatPage", () => {
 
   // ── 问答发送 ──
 
-  it("sends question in 问答 mode", async () => {
-    vi.mocked(chatApi.ask).mockResolvedValue({
-      answer: "这是一个回答。",
-      references: ["knowledge"],
-    });
+  it("sends question in 问答 mode via stream", async () => {
+    vi.mocked(chatApi.askStream).mockImplementation(
+      async (_req, onChunk, onDone) => {
+        onChunk("这是一个");
+        onChunk("回答。");
+        onDone?.("这是一个回答。");
+      },
+    );
 
     render(<ChatPage />);
     await waitFor(() => {
@@ -133,8 +137,11 @@ describe("ChatPage", () => {
     fireEvent.click(sendButton);
 
     await waitFor(() => {
-      expect(chatApi.ask).toHaveBeenCalledWith(
+      expect(chatApi.askStream).toHaveBeenCalledWith(
         expect.objectContaining({ message: "测试问题" }),
+        expect.any(Function),
+        expect.any(Function),
+        expect.any(Function),
       );
     });
   });
@@ -159,11 +166,8 @@ describe("ChatPage", () => {
   // ── loading 和 error 状态 ──
 
   it("shows loading when sending", async () => {
-    vi.mocked(chatApi.ask).mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve({
-        answer: "延迟回答",
-        references: [],
-      }), 100)),
+    vi.mocked(chatApi.askStream).mockImplementation(
+      () => new Promise((resolve) => setTimeout(resolve, 100)),
     );
 
     render(<ChatPage />);
@@ -179,11 +183,12 @@ describe("ChatPage", () => {
     });
   });
 
-  it("shows error on API failure", async () => {
-    vi.mocked(chatApi.ask).mockRejectedValue({
-      response: { data: { detail: "API错误" } },
-      message: "API错误",
-    });
+  it("shows error on stream API failure", async () => {
+    vi.mocked(chatApi.askStream).mockImplementation(
+      async (_req, _onChunk, _onDone, onError) => {
+        onError?.("流式请求失败");
+      },
+    );
 
     render(<ChatPage />);
     await waitFor(() => expect(api.getArticles).toHaveBeenCalled());
@@ -193,7 +198,7 @@ describe("ChatPage", () => {
     fireEvent.click(screen.getByText("发送"));
 
     await waitFor(() => {
-      expect(chatApi.ask).toHaveBeenCalled();
+      expect(chatApi.askStream).toHaveBeenCalled();
     });
   });
 

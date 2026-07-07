@@ -11,10 +11,12 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api", tags=["Chat"])
@@ -227,6 +229,89 @@ async def chat_ask(request: Request, body: ChatAskRequest):
         )
 
     return {"ok": True, "data": result}
+
+
+@router.post("/chat/ask_stream", summary="流式对话问答（SSE）")
+async def chat_ask_stream(request: Request, body: ChatAskRequest):
+    """流式问答模式：通过 SSE 逐 chunk 返回回答。
+
+    SSE 事件格式:
+        data: {"chunk": "文本片段"}\\n\\n
+        data: {"done": true, "answer": "完整回答"}\\n\\n
+        data: {"error": "错误信息"}\\n\\n
+    """
+    db = _get_db(request)
+    agent = _get_draft_chat_agent(request)
+
+    article = None
+    draft = None
+    revision = None
+
+    # 读取文章上下文
+    if body.article_url_hash:
+        article = await db["articles"].find_one({"url_hash": body.article_url_hash})
+        if article is None:
+            raise HTTPException(status_code=404, detail="Article not found")
+        article["_id"] = str(article["_id"])
+
+        if body.draft_index is not None:
+            drafts = article.get("pr_drafts", [])
+            if body.draft_index < 0 or body.draft_index >= len(drafts):
+                raise HTTPException(status_code=404, detail="Draft not found")
+            draft = drafts[body.draft_index]
+
+            if body.revision_id:
+                revisions = draft.get("revisions", [])
+                revision = next(
+                    (r for r in revisions if r.get("revision_id") == body.revision_id),
+                    None,
+                )
+                if revision is None:
+                    raise HTTPException(status_code=404, detail="Revision not found")
+
+    from agent.draft_chat import LLMError
+
+    async def event_stream():
+        """SSE 事件生成器"""
+        full_answer = []
+        try:
+            async for chunk in agent.stream_answer(
+                message=body.message,
+                article=article,
+                draft=draft,
+                revision=revision,
+                history=[m.model_dump() for m in body.history] if body.history else None,
+            ):
+                full_answer.append(chunk)
+                yield f"data: {json.dumps({'chunk': chunk}, ensure_ascii=False)}\n\n"
+
+            answer_text = "".join(full_answer)
+
+            # 保存对话记录
+            if body.article_url_hash and body.draft_index is not None:
+                await _save_chat_message(
+                    db, body.article_url_hash, body.draft_index, "user", body.message
+                )
+                await _save_chat_message(
+                    db, body.article_url_hash, body.draft_index, "assistant", answer_text
+                )
+
+            yield f"data: {json.dumps({'done': True, 'answer': answer_text}, ensure_ascii=False)}\n\n"
+
+        except LLMError as e:
+            yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': f'服务器错误: {e}'}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post(

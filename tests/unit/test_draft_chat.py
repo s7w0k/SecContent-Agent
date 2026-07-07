@@ -331,3 +331,65 @@ class TestLLMErrorHandling:
         with pytest.raises(LLMError) as exc_info:
             await agent.answer(message="问题")
         assert exc_info.value.__cause__ is original
+
+
+# ═══════════════════════════════════════════════════════════════
+# 6. 流式问答测试
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestStreamAnswer:
+    """stream_answer() 方法测试"""
+
+    @pytest.fixture
+    def mock_llm_stream(self):
+        """Mock LLM 的 astream 方法，返回多个 chunk"""
+        llm = MagicMock()
+        llm.temperature = None
+
+        async def _fake_astream(messages):
+            for chunk_text in ["你好", "，这是", "流式", "回答。"]:
+                yield AIMessage(content=chunk_text)
+
+        llm.astream = _fake_astream
+        return llm
+
+    @pytest.mark.asyncio
+    async def test_stream_yields_chunks(self, mock_llm_stream, knowledge_loader):
+        """stream_answer 逐 chunk 产出文本"""
+        agent = DraftChatAgent(llm=mock_llm_stream, knowledge_loader=knowledge_loader)
+        chunks = []
+        async for chunk in agent.stream_answer(message="你好"):
+            chunks.append(chunk)
+
+        assert chunks == ["你好", "，这是", "流式", "回答。"]
+        assert "".join(chunks) == "你好，这是流式回答。"
+
+    @pytest.mark.asyncio
+    async def test_stream_with_article_context(
+        self, mock_llm_stream, knowledge_loader, sample_article
+    ):
+        """stream_answer 支持文章上下文"""
+        agent = DraftChatAgent(llm=mock_llm_stream, knowledge_loader=knowledge_loader)
+        chunks = []
+        async for chunk in agent.stream_answer(message="问题", article=sample_article):
+            chunks.append(chunk)
+
+        assert len(chunks) > 0
+
+    @pytest.mark.asyncio
+    async def test_stream_raises_llm_error(self, knowledge_loader):
+        """stream_answer LLM 失败时抛出 LLMError"""
+        llm = MagicMock()
+        llm.temperature = None
+
+        async def _fake_astream_error(messages):
+            raise RuntimeError("stream API timeout")
+            yield  # noqa: unreachable — 使函数成为 async generator
+
+        llm.astream = _fake_astream_error
+        agent = DraftChatAgent(llm=llm, knowledge_loader=knowledge_loader)
+
+        with pytest.raises(LLMError, match="LLM 流式调用失败"):
+            async for _ in agent.stream_answer(message="问题"):
+                pass

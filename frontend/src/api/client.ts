@@ -332,6 +332,83 @@ export const chatApi = {
     return data.data;
   },
 
+  /**
+   * 流式对话问答（SSE）
+   *
+   * 通过 fetch + ReadableStream 接收 SSE 事件，逐 chunk 回调。
+   *
+   * @param request 问答请求
+   * @param onChunk  每收到一个文本片段时的回调
+   * @param onDone   流结束时的回调（收到完整回答）
+   * @param onError  出错时的回调
+   */
+  async askStream(
+    request: ChatAskRequest,
+    onChunk: (chunk: string) => void,
+    onDone?: (fullAnswer: string) => void,
+    onError?: (error: string) => void,
+  ): Promise<void> {
+    const url = `${BASE_URL}/chat/ask_stream`;
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        onError?.(errorText || `HTTP ${response.status}`);
+        return;
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        onError?.("无法读取响应流");
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // 按 SSE 事件分割（双换行）
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.chunk) {
+              onChunk(event.chunk);
+            } else if (event.done && event.answer !== undefined) {
+              onDone?.(event.answer);
+              return;
+            } else if (event.error) {
+              onError?.(event.error);
+              return;
+            }
+          } catch {
+            // JSON 解析失败，跳过
+          }
+        }
+      }
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "网络错误");
+    }
+  },
+
   /** 生成修订稿 */
   async reviseDraft(
     urlHash: string,

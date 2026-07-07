@@ -162,13 +162,50 @@ export default function ChatPage() {
 
     try {
       if (mode === "问答") {
-        const resp = await chatApi.ask({
-          message: text,
-          article_url_hash: selectedArticle?.url_hash,
-          draft_index: selectedArticle ? draftIndex : undefined,
-          history: messages.length > 0 ? messages : undefined,
-        });
-        setMessages([...newMessages, { role: "assistant", content: resp.answer }]);
+        // 流式问答：先插入空 assistant 消息，逐 chunk 更新
+        const assistantIdx = newMessages.length;
+        setMessages([...newMessages, { role: "assistant", content: "" }]);
+
+        let firstChunk = true;
+        await chatApi.askStream(
+          {
+            message: text,
+            article_url_hash: selectedArticle?.url_hash,
+            draft_index: selectedArticle ? draftIndex : undefined,
+            history: messages.length > 0 ? messages : undefined,
+          },
+          (chunk) => {
+            if (firstChunk) {
+              firstChunk = false;
+            }
+            setMessages((prev) => {
+              const updated = [...prev];
+              if (updated[assistantIdx]) {
+                updated[assistantIdx] = {
+                  ...updated[assistantIdx],
+                  content: updated[assistantIdx].content + chunk,
+                };
+              }
+              return updated;
+            });
+          },
+          (_fullAnswer) => {
+            // 流结束，answer 已通过 chunk 逐步拼接
+          },
+          (errMsg) => {
+            setError(errMsg);
+            setMessages((prev) => {
+              const updated = [...prev];
+              if (updated[assistantIdx]) {
+                updated[assistantIdx] = {
+                  ...updated[assistantIdx],
+                  content: updated[assistantIdx].content || `错误：${errMsg}`,
+                };
+              }
+              return updated;
+            });
+          },
+        );
       } else {
         const resp = await chatApi.reviseDraft(
           selectedArticle!.url_hash,
@@ -473,7 +510,7 @@ export default function ChatPage() {
                 <ChatBubble key={i} message={msg} index={i} />
               ))
             )}
-            {sending && (
+            {sending && !(messages.length > 0 && messages[messages.length - 1]?.role === "assistant" && messages[messages.length - 1]?.content) && (
               <div className={styles.loadingIndicator}>
                 <Spin size="small" />
                 <span>{mode === "问答" ? "思考中..." : "生成修订稿中..."}</span>

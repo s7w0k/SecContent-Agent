@@ -214,6 +214,49 @@ describe("Chat API", () => {
     expect(result.references).toEqual(["knowledge"]);
   });
 
+  it("askStream calls POST /chat/ask_stream and processes SSE events", async () => {
+    // Mock fetch for SSE streaming
+    const encoder = new TextEncoder();
+    const sseData = [
+      encoder.encode('data: {"chunk":"你好"}\n\n'),
+      encoder.encode('data: {"chunk":"世界"}\n\n'),
+      encoder.encode('data: {"done":true,"answer":"你好世界"}\n\n'),
+    ];
+
+    const mockReader = {
+      read: vi.fn(),
+    };
+    let readIndex = 0;
+    mockReader.read.mockImplementation(() => {
+      if (readIndex < sseData.length) {
+        return Promise.resolve({ done: false, value: sseData[readIndex++] });
+      }
+      return Promise.resolve({ done: true, value: undefined });
+    });
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: { getReader: () => mockReader },
+    }) as unknown as typeof fetch;
+
+    const { chatApi } = await import("./client");
+    const chunks: string[] = [];
+    let doneAnswer = "";
+
+    await chatApi.askStream(
+      { message: "问题" },
+      (chunk) => chunks.push(chunk),
+      (answer) => { doneAnswer = answer; },
+    );
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/chat/ask_stream"),
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(chunks).toEqual(["你好", "世界"]);
+    expect(doneAnswer).toBe("你好世界");
+  });
+
   it("reviseDraft calls POST /articles/:hash/drafts/:index/revise", async () => {
     const mockResponse = {
       ok: true,
