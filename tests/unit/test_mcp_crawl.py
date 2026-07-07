@@ -196,22 +196,23 @@ class TestArticleCategory:
 class TestNewsCrawler:
     """NewsCrawler 单元测试（不实际调用 API）"""
 
-    def test_init_requires_api_key(self):
-        with pytest.raises(ValueError, match="TAVILY_API_KEY"):
-            NewsCrawler(tavily_api_key="")
+    def test_init_without_api_key(self):
+        """RSS-only 模式下不需要 API key"""
+        crawler = NewsCrawler()
+        assert crawler is not None
 
     def test_init_accepts_api_key(self):
-        with patch("tavily.TavilyClient"):
-            crawler = NewsCrawler(tavily_api_key="tvly-test-key")
-            assert crawler is not None
+        """传入 API key 也能正常创建（向后兼容）"""
+        crawler = NewsCrawler(tavily_api_key="tvly-test-key")
+        assert crawler is not None
 
     def test_sites_configuration(self):
-        with patch("tavily.TavilyClient"):
-            crawler = NewsCrawler(tavily_api_key="tvly-test")
-            assert len(crawler.SITES) == 4
-            assert "The Hacker News" in crawler.SITES
-            assert crawler.SITES["The Hacker News"]["method"] == "curl_cffi"
-            assert crawler.SITES["BleepingComputer"]["method"] == "tavily"
+        """站点配置包含 5 个 RSS 源"""
+        crawler = NewsCrawler()
+        assert len(crawler.SITES) == 5
+        assert "The Hacker News" in crawler.SITES
+        assert "feed" in crawler.SITES["The Hacker News"]
+        assert crawler.SITES["The Hacker News"]["feed"] == "https://feeds.feedburner.com/TheHackersNews"
 
     def test_parse_date_iso(self):
         result = NewsCrawler._parse_date("2026-06-29T12:00:00")
@@ -367,11 +368,18 @@ class TestMCPServerProtocol:
         assert resp["id"] == 5
         assert "未知工具" in resp["result"]["content"][0]["text"]
 
-    def test_tools_call_without_api_key(self):
-        """调用 crawl_news 时 API key 缺失应报错"""
-        # 临时删除环境变量
-        old_key = os.environ.pop("TAVILY_API_KEY", "")
-        try:
+    def test_tools_call_crawl_news(self):
+        """调用 crawl_news 应返回正常结果（mock RSS 爬取）"""
+        from unittest.mock import patch, AsyncMock
+
+        mock_article = NewsArticle(
+            title="Test Article",
+            url="https://example.com/test",
+            source="TestSource",
+        )
+        with patch.object(
+            NewsCrawler, "crawl", new_callable=AsyncMock, return_value=[mock_article]
+        ):
             msg = {
                 "jsonrpc": "2.0", "id": 6, "method": "tools/call",
                 "params": {"name": "crawl_news", "arguments": {"days": 1}},
@@ -379,10 +387,8 @@ class TestMCPServerProtocol:
             resp = self.server.handle_message(msg)
             text = resp["result"]["content"][0]["text"]
             data = json.loads(text)
-            assert data["ok"] is False
-            assert "TAVILY_API_KEY" in data["error"]
-        finally:
-            os.environ["TAVILY_API_KEY"] = old_key
+            assert data["ok"] is True
+            assert data["data"]["count"] == 1
 
     def test_get_stats_empty_cache(self):
         msg = {
