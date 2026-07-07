@@ -121,6 +121,7 @@ def _make_post_tool(
     description: str,
     base_url: str,
     path: str,
+    timeout: float = DEFAULT_TIMEOUT,
 ) -> Callable:
     """创建 POST 类 Tool（参数透传）"""
 
@@ -134,7 +135,7 @@ def _make_post_tool(
         if payload is None:
             payload = {}
         url = f"{base_url.rstrip('/')}{path}"
-        return await _http_call("POST", url, json_data=payload)
+        return await _http_call("POST", url, json_data=payload, timeout=timeout)
 
     return _tool
 
@@ -207,6 +208,7 @@ def create_mcp_toolset(
         ),
         base_url=crawl_url,
         path="/crawl-news",
+        timeout=300.0,
     )
 
     tools["classify_articles"] = _make_post_tool(
@@ -235,8 +237,7 @@ def create_mcp_toolset(
     tools["get_crawl_stats"] = _make_get_tool(
         name="get_crawl_stats",
         description=(
-            "获取爬取统计信息：总文章数、来源分布、分类分布、评分分布。"
-            "返回: 统计数据字典。"
+            "获取爬取统计信息：总文章数、来源分布、分类分布、评分分布。返回: 统计数据字典。"
         ),
         base_url=crawl_url,
         path="/stats",

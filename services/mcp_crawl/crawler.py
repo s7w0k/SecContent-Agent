@@ -270,7 +270,7 @@ class NewsCrawler:
         try:
             import httpx
 
-            with httpx.Client(timeout=20, headers=headers, follow_redirects=True) as http_client:
+            with httpx.Client(timeout=15, headers=headers, follow_redirects=True) as http_client:
                 for i, feed_url in enumerate(feed_urls):
                     tag = "primary" if i == 0 else "fallback"
                     try:
