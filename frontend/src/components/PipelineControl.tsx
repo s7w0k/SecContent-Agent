@@ -129,18 +129,30 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
   const handleRunFull = useCallback(() => trigger("run", "全流程", 1), [trigger]);
   const handleCrawl = useCallback(() => trigger("crawl", "爬取+分类", 1), [trigger]);
   const handleCrawlOverseas = useCallback(async () => {
+    setRunning(true);
+    message.loading({ content: "海外新闻爬取中，预计 1-2 分钟...", key: "overseas", duration: 0 });
     try {
       const res = await api.crawlOverseas(1);
-      message.success(`海外新闻: ${res.saved} 篇入库`);
+      message.success({ content: `海外新闻: ${res.saved} 篇入库 (共 ${res.total || 0} 篇)`, key: "overseas", duration: 4 });
       onComplete();
-    } catch (e: any) { message.error("海外爬取失败"); }
+    } catch (e: any) {
+      message.error({ content: `海外爬取失败: ${e?.message || ""}`, key: "overseas" });
+    } finally {
+      setRunning(false);
+    }
   }, [onComplete]);
   const handleCrawlWewe = useCallback(async () => {
+    setRunning(true);
+    message.loading({ content: "公众号爬取中...", key: "wewe", duration: 0 });
     try {
       const res = await api.crawlWewe();
-      message.success(`公众号: ${res.saved} 篇入库`);
+      message.success({ content: `公众号: ${res.saved} 篇入库`, key: "wewe", duration: 4 });
       onComplete();
-    } catch (e: any) { message.error("公众号爬取失败"); }
+    } catch (e: any) {
+      message.error({ content: `公众号爬取失败: ${e?.message || ""}`, key: "wewe" });
+    } finally {
+      setRunning(false);
+    }
   }, [onComplete]);
   const handleScoreV2 = useCallback(async () => {
     try {
@@ -252,10 +264,10 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
         >
           爬取+分类
         </Button>
-        <Button onClick={handleCrawlOverseas} disabled={running}>
+        <Button onClick={handleCrawlOverseas} disabled={running} loading={running}>
           海外新闻
         </Button>
-        <Button onClick={handleCrawlWewe} disabled={running}>
+        <Button onClick={handleCrawlWewe} disabled={running} loading={running}>
           公众号
         </Button>
         <Button
