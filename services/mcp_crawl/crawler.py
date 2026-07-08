@@ -132,10 +132,12 @@ class NewsCrawler:
     """
 
     SITES = {
+        # ── 海外安全新闻（需网络可达，部分站点可能需要代理） ──
         "The Hacker News": {
             "domain": "thehackernews.com",
             "feed": "https://thehackernews.com/feeds/posts/default",
             "fallback": "https://thehackernews.com/rss.xml",
+            "rsshub": "/thehackernews",
         },
         "BleepingComputer": {
             "domain": "bleepingcomputer.com",
@@ -156,6 +158,20 @@ class NewsCrawler:
             "domain": "darkreading.com",
             "feed": "https://www.darkreading.com/rss.xml",
             "fallback": "https://www.darkreading.com/rss/simple.xml",
+        },
+        # ── 国内安全新闻（无需代理，RSS 直接可达） ──
+        "FreeBuf": {
+            "domain": "freebuf.com",
+            "feed": "https://www.freebuf.com/feed",
+            "fallback": "https://rss.feedspot.com/folder/Lu7DjgV4nOQ=/",
+        },
+        "安全客": {
+            "domain": "aqker.com",
+            "feed": "https://api.anquanke.com/data/v1/posts/rss",
+        },
+        "奇安信": {
+            "domain": "qianxin.com",
+            "feed": "https://ti.qianxin.com/rss",
         },
     }
 
@@ -366,6 +382,42 @@ class NewsCrawler:
             except Exception as e:
                 logger.warning("  RSS fetch error (%s): %s", source, e)
                 return [], {}
+
+        # ── RSSHub fallback：通过自建 RSSHub 实例获取（可绕过 Cloudflare JS 挑战） ──
+        if feed is None and cfg.get("rsshub"):
+            rsshub_url = os.environ.get("RSSHUB_URL", "")
+            if rsshub_url:
+                rsshub_feed_url = f"{rsshub_url.rstrip('/')}{cfg['rsshub']}"
+                tag = "rsshub"
+                try:
+                    import httpx
+
+                    with httpx.Client(timeout=30, follow_redirects=True) as http_client:
+                        resp = http_client.get(rsshub_feed_url)
+                        if resp.status_code == 200:
+                            parsed = _fp.parse(resp.content)
+                            if parsed.entries:
+                                feed = parsed
+                                logger.info(
+                                    "  RSS: %s (%s) -> %d entries",
+                                    source,
+                                    tag,
+                                    len(parsed.entries),
+                                )
+                            else:
+                                logger.warning("  RSS: %s (%s) -> 0 entries", source, tag)
+                        else:
+                            logger.warning(
+                                "  RSS: %s (%s) -> HTTP %d",
+                                source,
+                                tag,
+                                resp.status_code,
+                            )
+                except Exception as e:
+                    logger.warning("  RSS: %s (%s) -> %s", source, tag, e)
+
+        if feed is None:
+            return [], {}
 
         if feed.bozo and not feed.entries:
             logger.warning("  RSS: %s (bozo=%s)", source, feed.bozo_exception)

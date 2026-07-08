@@ -79,6 +79,27 @@ services:
       start_period: 15s
 
   # ──────────────────────────────────────────────────────────
+  # RSSHub — RSS 源生成器（带 Chromium，可绕过 Cloudflare JS 挑战）
+  # ──────────────────────────────────────────────────────────
+  rsshub:
+    image: diygod/rsshub:chromium-bundled
+    container_name: pr-agent-rsshub
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: memory
+      CACHE_EXPIRE: "300"
+      ACCESS_CONTROL: "0"
+    networks:
+      - agent-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:1200/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ──────────────────────────────────────────────────────────
   # MCP-Crawl — 海外安全新闻爬虫 MCP HTTP 桥接
   # ──────────────────────────────────────────────────────────
   mcp-crawl:
@@ -96,6 +117,7 @@ services:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
+      RSSHUB_URL: http://rsshub:1200
     networks:
       - agent-net
     # 不暴露端口到宿主机（仅内部网络可达）
