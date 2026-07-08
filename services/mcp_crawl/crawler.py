@@ -262,6 +262,19 @@ class NewsCrawler:
         if cfg.get("fallback"):
             feed_urls.append(cfg["fallback"])
 
+        # 代理支持：从环境变量读取 HTTP_PROXY / HTTPS_PROXY
+        import os
+
+        proxy = (
+            os.environ.get("HTTPS_PROXY")
+            or os.environ.get("HTTP_PROXY")
+            or os.environ.get("https_proxy")
+            or os.environ.get("http_proxy")
+        )
+        proxies = {"https": proxy, "http": proxy} if proxy else None
+        if proxy:
+            logger.info("  Using proxy: %s", proxy)
+
         try:
             from curl_cffi import requests as cffi_requests
 
@@ -272,6 +285,7 @@ class NewsCrawler:
                         feed_url,
                         impersonate="chrome124",
                         timeout=15,
+                        proxies=proxies,
                         headers={
                             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                             "Accept-Language": "en-US,en;q=0.9",
@@ -314,7 +328,7 @@ class NewsCrawler:
             }
             try:
                 with httpx.Client(
-                    timeout=15, headers=headers, follow_redirects=True
+                    timeout=15, headers=headers, follow_redirects=True, proxy=proxy
                 ) as http_client:
                     for i, feed_url in enumerate(feed_urls):
                         tag = "primary" if i == 0 else "fallback"

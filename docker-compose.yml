@@ -94,6 +94,8 @@ services:
     environment:
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
     networks:
       - agent-net
     # 不暴露端口到宿主机（仅内部网络可达）
