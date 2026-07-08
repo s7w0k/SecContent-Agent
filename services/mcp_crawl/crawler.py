@@ -134,28 +134,28 @@ class NewsCrawler:
     SITES = {
         "The Hacker News": {
             "domain": "thehackernews.com",
-            "feed": "https://feeds.feedburner.com/TheHackersNews",
-            "fallback": "https://news.google.com/rss/search?q=site:thehackernews.com+(AI+OR+agent+OR+security+OR+vulnerability)&hl=en-US&gl=US&ceid=US:en",
+            "feed": "https://thehackernews.com/feeds/posts/default",
+            "fallback": "https://thehackernews.com/rss.xml",
         },
         "BleepingComputer": {
             "domain": "bleepingcomputer.com",
             "feed": "https://www.bleepingcomputer.com/feed/",
-            "fallback": "https://news.google.com/rss/search?q=site:bleepingcomputer.com+(AI+OR+agent+OR+security+OR+vulnerability)&hl=en-US&gl=US&ceid=US:en",
+            "fallback": "https://feeds.feedburner.com/BleepingComputer",
         },
         "SecurityWeek": {
             "domain": "securityweek.com",
             "feed": "https://www.securityweek.com/feed/",
-            "fallback": "https://news.google.com/rss/search?q=site:securityweek.com+(AI+OR+agent+OR+security+OR+vulnerability)&hl=en-US&gl=US&ceid=US:en",
+            "fallback": "https://feeds.feedburner.com/securityweek",
         },
         "Help Net Security": {
             "domain": "helpnetsecurity.com",
-            "feed": "https://www.helpnetsecurity.com/feed/",
-            "fallback": "https://news.google.com/rss/search?q=site:helpnetsecurity.com+(AI+OR+agent+OR+security+OR+vulnerability)&hl=en-US&gl=US&ceid=US:en",
+            "feed": "https://www.helpnetsecurity.com/rss.xml",
+            "fallback": "https://www.helpnetsecurity.com/feed/",
         },
         "Dark Reading": {
             "domain": "darkreading.com",
             "feed": "https://www.darkreading.com/rss.xml",
-            "fallback": "https://news.google.com/rss/search?q=site:darkreading.com+(AI+OR+agent+OR+security+OR+vulnerability)&hl=en-US&gl=US&ceid=US:en",
+            "fallback": "https://www.darkreading.com/rss/simple.xml",
         },
     }
 
@@ -272,6 +272,11 @@ class NewsCrawler:
                         feed_url,
                         impersonate="chrome124",
                         timeout=15,
+                        headers={
+                            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                            "Accept-Language": "en-US,en;q=0.9",
+                            "Cache-Control": "no-cache",
+                        },
                     )
                     if resp.status_code == 200:
                         parsed = _fp.parse(resp.content)
