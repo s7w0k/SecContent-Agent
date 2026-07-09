@@ -114,7 +114,13 @@ async def lifespan(app: FastAPI):
             base_url=settings.DEEPSEEK_BASE_URL,
             temperature=0.1,
         )
+        app.state.llm = llm
         _log("INFO", f"LLM initialized: model={settings.DEEPSEEK_MODEL}")
+
+        from agent.style_profiler import StyleProfiler
+
+        app.state.style_profiler = StyleProfiler(llm=llm, db=app.state.db)
+        _log("INFO", "StyleProfiler initialized")
 
         scorer = ScoringAgent(llm=llm, knowledge=knowledge_loader._cache)
         reporter = ReportAgent(llm=llm, knowledge=knowledge_loader._cache, db=app.state.db)
@@ -159,6 +165,8 @@ async def lifespan(app: FastAPI):
         _log("WARNING", f"Agent init skipped: {e}")
         app.state.pipeline_manager = None
         app.state.knowledge_loader = None
+        app.state.llm = None
+        app.state.style_profiler = None
 
     yield
 
@@ -220,6 +228,7 @@ from api.feedback import router as feedback_router
 from api.logs import router as logs_router
 from api.overseas_crawl import router as overseas_router
 from api.pipeline import router as pipeline_router
+from api.profile import router as profile_router
 from api.reports import router as reports_router
 
 app.include_router(pipeline_router)
@@ -228,6 +237,7 @@ app.include_router(reports_router)
 app.include_router(chat_router)
 app.include_router(feedback_router)
 app.include_router(activity_router)
+app.include_router(profile_router)
 app.include_router(accounts_router)
 app.include_router(logs_router)
 app.include_router(crawl_config_router)
