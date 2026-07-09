@@ -127,7 +127,7 @@ export const pipelineApi = {
   },
 
   /** 仅爬取海外新闻 */
-  async crawlOverseas(days: number = 1): Promise<{ ok: boolean; saved: number }> {
+  async crawlOverseas(days: number = 1): Promise<{ ok: boolean; saved: number; total?: number; per_site?: Record<string, number>; errors?: Record<string, string> }> {
     const { data } = await client.post("/pipeline/crawl-overseas", null, { params: { days } });
     return data;
   },

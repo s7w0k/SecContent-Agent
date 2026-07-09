@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════
-# PR Agent Demo — Docker Compose 编排
+# PR Agent Demo - Docker Compose 编排
 # 用法:
 #   启动:  docker compose up -d
 #   停止:  docker compose down -v
@@ -18,7 +18,7 @@ x-common-security: &common-security
 
 services:
   # ──────────────────────────────────────────────────────────
-  # MongoDB 7 — 数据持久化
+  # MongoDB 7 - 数据持久化
   # ──────────────────────────────────────────────────────────
   mongodb:
     image: mongo:7
@@ -49,7 +49,7 @@ services:
       start_period: 30s
 
   # ──────────────────────────────────────────────────────────
-  # MCP-WeWe — 微信公众号 RSS MCP HTTP 桥接
+  # MCP-WeWe - 微信公众号 RSS MCP HTTP 桥接
   # ──────────────────────────────────────────────────────────
   mcp-wewe:
     build:
@@ -79,28 +79,7 @@ services:
       start_period: 15s
 
   # ──────────────────────────────────────────────────────────
-  # RSSHub — RSS 源生成器（带 Chromium，可绕过 Cloudflare JS 挑战）
-  # ──────────────────────────────────────────────────────────
-  rsshub:
-    image: diygod/rsshub:chromium-bundled
-    container_name: pr-agent-rsshub
-    restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      CACHE_TYPE: memory
-      CACHE_EXPIRE: "300"
-      ACCESS_CONTROL: "0"
-    networks:
-      - agent-net
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:1200/healthz"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-
-  # ──────────────────────────────────────────────────────────
-  # MCP-Crawl — 海外安全新闻爬虫 MCP HTTP 桥接
+  # MCP-Crawl - 海外安全新闻爬虫 MCP HTTP 桥接
   # ──────────────────────────────────────────────────────────
   mcp-crawl:
     build:
@@ -135,7 +114,7 @@ services:
       start_period: 15s
 
   # ──────────────────────────────────────────────────────────
-  # Backend — 核心后端服务（API 网关 + Agent 流水线）
+  # Backend - 核心后端服务（API 网关 + Agent 流水线）
   # ──────────────────────────────────────────────────────────
   backend:
     build:

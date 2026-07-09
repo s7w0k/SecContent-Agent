@@ -446,7 +446,7 @@ async def classify_v2(body: ClassifyV2Request, request: Request):
                 query["category_v2"] = {"$in": ["", None]}
 
         cursor = db["articles"].find(query)
-        articles = await cursor.to_list(length=100)
+        articles = await cursor.to_list(length=500)
         log.info(f"[classify-v2] Found {len(articles)} articles to classify")
 
         if not articles:
@@ -610,8 +610,11 @@ async def score_v2_all(request: Request):
     log = logging.getLogger("backend.api.pipeline")
 
     try:
-        cursor = db["articles"].find({"is_pr_eligible": True})
-        articles = await cursor.to_list(length=50)
+        cursor = db["articles"].find({
+            "is_pr_eligible": True,
+            "pr_total_score": None,
+        })
+        articles = await cursor.to_list(length=500)
 
         if not articles:
             return {"ok": True, "total": 0, "scored": 0}

@@ -43,7 +43,7 @@ const PHASE_STEPS = [
 
 interface PipelineControlProps {
   onComplete: () => void;
-  onRefresh: () => void;
+  onRefresh: () => void | Promise<void>;
 }
 
 export default function PipelineControl({ onComplete, onRefresh }: PipelineControlProps) {
@@ -133,7 +133,17 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
     message.loading({ content: "海外新闻爬取中，预计 1-2 分钟...", key: "overseas", duration: 0 });
     try {
       const res = await api.crawlOverseas(1);
-      message.success({ content: `海外新闻: ${res.saved} 篇入库 (共 ${res.total || 0} 篇)`, key: "overseas", duration: 4 });
+      const siteDetail = res.per_site
+        ? Object.entries(res.per_site)
+            .filter(([, count]) => count > 0)
+            .map(([name, count]) => `${name}: ${count}`)
+            .join("  ")
+        : "";
+      message.success({
+        content: `海外新闻: ${res.saved} 篇入库 (共 ${res.total || 0} 篇)${siteDetail ? `  |  ${siteDetail}` : ""}`,
+        key: "overseas",
+        duration: 6,
+      });
       onComplete();
     } catch (e: any) {
       message.error({ content: `海外爬取失败: ${e?.message || ""}`, key: "overseas" });
@@ -163,14 +173,13 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
         content: `V2打分: ${res.scored} 篇 (${res.candidates} 篇达标≥80)`,
         key: "scoreV2", duration: 4,
       });
-      onComplete();
-      onRefresh();
+      await onRefresh();
     } catch (e: unknown) {
       message.error({ content: `V2打分失败`, key: "scoreV2" });
     } finally {
       setRunning(false);
     }
-  }, [onComplete, onRefresh]);
+  }, [onRefresh]);
   const handleReport = useCallback(() => trigger("report", "报道"), [trigger]);
   const handleClassifyV2 = useCallback(async () => {
     try {

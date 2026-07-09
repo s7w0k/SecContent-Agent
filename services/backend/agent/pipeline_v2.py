@@ -100,7 +100,7 @@ async def classify_v2_node(state: dict, classifier: Any, db: Any) -> dict:
             ],
         }
         cursor = db["articles"].find(query)
-        articles = await cursor.to_list(length=100)
+        articles = await cursor.to_list(length=500)
 
         if not articles:
             logger.info("[classify_v2] No articles to classify")
@@ -156,8 +156,11 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
 
         await knowledge.load()
 
-        cursor = db["articles"].find({"is_pr_eligible": True})
-        articles = await cursor.to_list(length=50)
+        cursor = db["articles"].find({
+            "is_pr_eligible": True,
+            "pr_total_score": None,
+        })
+        articles = await cursor.to_list(length=500)
 
         if not articles:
             logger.info("[score_v2] No PR-eligible articles")
