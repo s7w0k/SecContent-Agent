@@ -30,8 +30,8 @@ describe("PipelineControl", () => {
   it("renders trigger buttons", () => {
     render(<PipelineControl {...defaultProps} />);
     expect(screen.getByText("全流程")).toBeDefined();
-    expect(screen.getByText("仅爬取")).toBeDefined();
-    expect(screen.getByText("仅打分")).toBeDefined();
+    expect(screen.getByText("爬取+分类")).toBeDefined();
+    expect(screen.getByText("V2打分")).toBeDefined();
     expect(screen.getByText("仅报道")).toBeDefined();
   });
 

@@ -79,6 +79,7 @@ async def lifespan(app: FastAPI):
             min_pool_size=settings.MONGODB_MIN_POOL_SIZE,
         )
         app.state.db = MongoDB.get_db()
+        await MongoDB.ensure_indexes()
         _log("INFO", f"MongoDB connected: {settings.MONGODB_DB}")
     except Exception as e:
         _log("ERROR", f"MongoDB connection failed: {e}")

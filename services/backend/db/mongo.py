@@ -18,6 +18,7 @@ from motor.motor_asyncio import (
     AsyncIOMotorCollection,
     AsyncIOMotorDatabase,
 )
+from pymongo import ASCENDING, DESCENDING, IndexModel
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 
 logger = logging.getLogger("backend.db.mongo")
@@ -117,6 +118,83 @@ class MongoDB:
             name: 集合名 (articles / reports / knowledge_base)
         """
         return cls.get_db()[name]
+
+    @classmethod
+    async def ensure_indexes(cls) -> dict[str, list[str]]:
+        """幂等创建阶段六所需的 MongoDB 索引。
+
+        Returns:
+            按集合名分组的索引名称。
+        """
+        index_specs = {
+            "feedbacks": [
+                IndexModel(
+                    [("feedback_id", ASCENDING)],
+                    unique=True,
+                    name="idx_feedback_id",
+                ),
+                IndexModel(
+                    [
+                        ("user_id", ASCENDING),
+                        ("target_type", ASCENDING),
+                        ("target_ref.article_url_hash", ASCENDING),
+                    ],
+                    name="idx_feedback_user_target_article",
+                ),
+                IndexModel(
+                    [("created_at", DESCENDING)],
+                    name="idx_feedback_created_at",
+                ),
+                IndexModel(
+                    [
+                        ("target_ref.article_url_hash", ASCENDING),
+                        ("target_ref.draft_index", ASCENDING),
+                    ],
+                    name="idx_feedback_article_draft",
+                ),
+            ],
+            "user_activities": [
+                IndexModel(
+                    [("activity_id", ASCENDING)],
+                    unique=True,
+                    name="idx_activity_id",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_activity_user_created",
+                ),
+                IndexModel(
+                    [("action", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_activity_action_created",
+                ),
+                IndexModel(
+                    [("target.article_url_hash", ASCENDING)],
+                    name="idx_activity_article",
+                ),
+            ],
+            "user_profiles": [
+                IndexModel(
+                    [("user_id", ASCENDING)],
+                    unique=True,
+                    name="idx_profile_user_id",
+                ),
+                IndexModel(
+                    [("updated_at", DESCENDING)],
+                    name="idx_profile_updated_at",
+                ),
+            ],
+        }
+
+        created: dict[str, list[str]] = {}
+        for collection_name, indexes in index_specs.items():
+            index_names = await cls.get_collection(collection_name).create_indexes(indexes)
+            created[collection_name] = index_names
+            logger.info(
+                "MongoDB indexes ensured: collection=%s, indexes=%s",
+                collection_name,
+                ", ".join(index_names),
+            )
+        return created
 
     @classmethod
     def is_connected(cls) -> bool:
