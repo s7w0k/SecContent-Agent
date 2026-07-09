@@ -212,6 +212,7 @@ async def log_requests(request: Request, call_next):
 # ── Routers ─────────────────────────────────────────────
 
 from api.accounts import router as accounts_router
+from api.activity import router as activity_router
 from api.chat import router as chat_router
 from api.crawl_config import router as crawl_config_router
 from api.dashboard import router as dashboard_router
@@ -226,6 +227,7 @@ app.include_router(dashboard_router)
 app.include_router(reports_router)
 app.include_router(chat_router)
 app.include_router(feedback_router)
+app.include_router(activity_router)
 app.include_router(accounts_router)
 app.include_router(logs_router)
 app.include_router(crawl_config_router)

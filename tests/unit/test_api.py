@@ -46,13 +46,14 @@ def mock_db():
     # 稳定 getitem
     articles_mock = MagicMock()
     reports_mock = MagicMock()
+    user_activities_mock = MagicMock()
 
     def _getitem(key):
-        if key == "articles":
-            return articles_mock
-        elif key == "reports":
-            return reports_mock
-        return MagicMock()
+        return {
+            "articles": articles_mock,
+            "reports": reports_mock,
+            "user_activities": user_activities_mock,
+        }.get(key, MagicMock())
 
     db.__getitem__.side_effect = _getitem
 
@@ -74,6 +75,8 @@ def mock_db():
     reports_mock.count_documents = AsyncMock(return_value=0)
     reports_mock.find_one = AsyncMock(return_value=None)
     reports_mock.find = MagicMock(return_value=mock_cursor)
+    user_activities_mock.insert_one = AsyncMock(return_value=MagicMock(inserted_id="activity-id"))
+    db._user_activities = user_activities_mock
 
     return db
 
@@ -168,12 +171,15 @@ class TestPipelineAPI:
     """流水线 API 测试"""
 
     @pytest.mark.asyncio
-    async def test_run_full(self, app):
+    async def test_run_full(self, app, mock_db):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post("/api/pipeline/run", json={"crawl_days": 1})
             assert resp.status_code == 200
             data = resp.json()
             assert data["status"] == "completed"
+            activity = mock_db._user_activities.insert_one.await_args.args[0]
+            assert activity["action"] == "pipeline_run"
+            assert activity["target"]["pipeline_id"] == "test-123"
 
     @pytest.mark.asyncio
     async def test_run_crawl(self, app):

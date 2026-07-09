@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Literal
 
+from api.activity import log_activity
 from fastapi import APIRouter, HTTPException, Query, Request
 from models.feedback import (
     Feedback,
@@ -12,7 +13,6 @@ from models.feedback import (
     FeedbackStatus,
     FeedbackUpdate,
     TargetType,
-    UserActivity,
 )
 
 router = APIRouter(prefix="/api/feedback", tags=["Feedback"])
@@ -116,26 +116,25 @@ async def _log_feedback_activity(
     draft: dict | None,
 ) -> None:
     """写入 feedback_submit 操作记录。"""
-    activity = UserActivity(
-        action="feedback_submit",
-        target={
+    await log_activity(
+        db,
+        LOCAL_USER_ID,
+        "feedback_submit",
+        {
             "article_url_hash": feedback.target_ref.article_url_hash,
             "draft_index": feedback.target_ref.draft_index,
             "template": draft.get("template") if draft else None,
             "perspective": draft.get("perspective") if draft else None,
             "revision_id": feedback.target_ref.revision_id,
         },
-        context={
+        {
             "article_title": article.get("title", ""),
             "category_v2": article.get("category_v2", ""),
             "pr_total_score": article.get("pr_total_score", 0),
             "target_type": feedback.target_type,
             "rating": feedback.rating,
         },
-        metadata={"feedback_id": feedback.feedback_id},
-    )
-    await db["user_activities"].insert_one(
-        activity.model_dump(exclude={"id"}, mode="python"),
+        {"feedback_id": feedback.feedback_id},
     )
 
 

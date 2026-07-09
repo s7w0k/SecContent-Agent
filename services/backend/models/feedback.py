@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Annotated, Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 UrlHash = Annotated[str, Field(pattern=r"^[a-fA-F0-9]{32}$")]
 RatingValue = Annotated[int, Field(ge=1, le=5)]
@@ -79,11 +79,12 @@ class FeedbackTargetRef(BaseModel):
 class ActivityTarget(BaseModel):
     """操作记录的目标对象。"""
 
-    article_url_hash: UrlHash
+    article_url_hash: UrlHash | None = None
     draft_index: int | None = Field(default=None, ge=0)
     template: str | None = Field(default=None, max_length=100)
     perspective: str | None = Field(default=None, max_length=200)
     revision_id: str | None = Field(default=None, min_length=1, max_length=100)
+    pipeline_id: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class FeedbackCreate(BaseModel):
@@ -127,6 +128,13 @@ class UserActivityCreate(BaseModel):
     target: ActivityTarget
     context: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_target(self) -> UserActivityCreate:
+        """非流水线操作必须关联文章。"""
+        if self.action != ActionType.PIPELINE_RUN and not self.target.article_url_hash:
+            raise ValueError("article_url_hash is required for this action")
+        return self
 
 
 class UserActivity(UserActivityCreate):

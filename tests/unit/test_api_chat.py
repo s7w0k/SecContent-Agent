@@ -96,6 +96,7 @@ def mock_db(sample_article_with_drafts):
     db = MagicMock()
     articles = MagicMock()
     chat_sessions = MagicMock()
+    user_activities = MagicMock()
 
     # 默认返回带草稿的文章
     articles.find_one = AsyncMock(return_value=sample_article_with_drafts.copy())
@@ -105,17 +106,21 @@ def mock_db(sample_article_with_drafts):
     chat_sessions.find_one = AsyncMock(return_value=None)
     chat_sessions.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
     chat_sessions.delete_one = AsyncMock(return_value=MagicMock(deleted_count=1))
+    user_activities.insert_one = AsyncMock(return_value=MagicMock(inserted_id="activity-id"))
 
     def _get_collection(key):
         if key == "articles":
             return articles
         if key == "chat_sessions":
             return chat_sessions
+        if key == "user_activities":
+            return user_activities
         return MagicMock()
 
     db.__getitem__.side_effect = _get_collection
     db._articles = articles
     db._chat_sessions = chat_sessions
+    db._user_activities = user_activities
     return db
 
 
@@ -427,6 +432,9 @@ class TestReviseDraft:
         mock_db["articles"].update_one.assert_called_once()
         call_args = mock_db["articles"].update_one.call_args
         assert call_args[0][0]["url_hash"] == "d41d8cd98f00b204e9800998ecf8427e"
+        activity = mock_db._user_activities.insert_one.await_args.args[0]
+        assert activity["action"] == "draft_revise"
+        assert activity["target"]["article_url_hash"] == "d41d8cd98f00b204e9800998ecf8427e"
 
     @pytest.mark.asyncio
     async def test_revise_article_not_found(self, app, mock_db):
@@ -505,6 +513,9 @@ class TestApplyRevision:
         assert data["ok"] is True
         assert data["data"]["applied"] is True
         assert data["data"]["revision_id"] == "rev-001"
+        activity = mock_db._user_activities.insert_one.await_args.args[0]
+        assert activity["action"] == "revision_apply"
+        assert activity["target"]["revision_id"] == "rev-001"
         # 验证写入 DB
         mock_db["articles"].update_one.assert_called_once()
 

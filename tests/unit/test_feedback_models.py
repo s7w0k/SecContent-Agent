@@ -151,6 +151,26 @@ class TestActivityAndProfileModels:
                 target={"article_url_hash": ARTICLE_HASH},
             )
 
+    def test_pipeline_activity_allows_pipeline_target(self):
+        from models.feedback import UserActivityCreate
+
+        activity = UserActivityCreate(
+            action="pipeline_run",
+            target={"pipeline_id": "pipeline-1"},
+        )
+
+        assert activity.target.article_url_hash is None
+        assert activity.target.pipeline_id == "pipeline-1"
+
+    def test_non_pipeline_activity_requires_article(self):
+        from models.feedback import UserActivityCreate
+
+        with pytest.raises(ValidationError):
+            UserActivityCreate(
+                action="draft_download",
+                target={},
+            )
+
     def test_style_profile_defaults(self):
         from models.feedback import StyleProfile
 

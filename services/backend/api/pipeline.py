@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 
 import httpx
+from api.activity import log_activity
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -72,6 +73,13 @@ async def pipeline_run(body: PipelineRunRequest, request: Request):
     """执行全流程：crawl → classify → score → report"""
     manager = _get_manager(request)
     result = await manager.run_full(crawl_days=body.crawl_days)
+    await log_activity(
+        getattr(request.app.state, "db", None),
+        "local-user",
+        "pipeline_run",
+        {"pipeline_id": result.get("pipeline_id") if isinstance(result, dict) else None},
+        {"crawl_days": body.crawl_days, "version": "v1"},
+    )
     return result
 
 
@@ -82,6 +90,13 @@ async def pipeline_run_v2(body: PipelineRunRequest, request: Request):
     if manager_v2 is None:
         raise HTTPException(status_code=503, detail="Pipeline V2 not initialized")
     result = await manager_v2.run_full(crawl_days=body.crawl_days)
+    await log_activity(
+        getattr(request.app.state, "db", None),
+        "local-user",
+        "pipeline_run",
+        {"pipeline_id": result.get("pipeline_id") if isinstance(result, dict) else None},
+        {"crawl_days": body.crawl_days, "version": "v2"},
+    )
     return result
 
 

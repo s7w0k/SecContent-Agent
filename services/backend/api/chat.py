@@ -15,6 +15,7 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from api.activity import log_activity
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -392,6 +393,22 @@ async def revise_draft(
     )
     await _save_chat_message(db, url_hash, draft_index, "user", body.instruction)
     await _save_chat_message(db, url_hash, draft_index, "assistant", assistant_content)
+    await log_activity(
+        db,
+        "local-user",
+        "draft_revise",
+        {
+            "article_url_hash": url_hash,
+            "draft_index": draft_index,
+            "template": draft.get("template"),
+            "perspective": draft.get("perspective"),
+            "revision_id": revision_id if saved else None,
+        },
+        {
+            "instruction": body.instruction,
+            "saved": saved,
+        },
+    )
 
     return {
         "ok": True,
@@ -482,6 +499,23 @@ async def revise_draft_stream(
             )
             await _save_chat_message(db, url_hash, draft_index, "user", body.instruction)
             await _save_chat_message(db, url_hash, draft_index, "assistant", assistant_content)
+            await log_activity(
+                db,
+                "local-user",
+                "draft_revise",
+                {
+                    "article_url_hash": url_hash,
+                    "draft_index": draft_index,
+                    "template": draft.get("template"),
+                    "perspective": draft.get("perspective"),
+                    "revision_id": revision_id if saved else None,
+                },
+                {
+                    "instruction": body.instruction,
+                    "saved": saved,
+                    "stream": True,
+                },
+            )
 
             yield f"data: {json.dumps({'done': True, 'revision_id': revision_id, 'revised_content_md': revised_content, 'change_summary': change_summary, 'saved': saved}, ensure_ascii=False)}\n\n"
 
@@ -538,6 +572,18 @@ async def apply_revision(
     await db["articles"].update_one(
         {"url_hash": url_hash},
         {"$set": {"pr_drafts": drafts}},
+    )
+    await log_activity(
+        db,
+        "local-user",
+        "revision_apply",
+        {
+            "article_url_hash": url_hash,
+            "draft_index": draft_index,
+            "template": drafts[draft_index].get("template"),
+            "perspective": drafts[draft_index].get("perspective"),
+            "revision_id": revision_id,
+        },
     )
 
     return {
