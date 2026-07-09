@@ -58,7 +58,7 @@ describe("ReportViewer", () => {
     render(
       <ReportViewer reportId="rpt-1" article={mockArticle} onClose={vi.fn()} />,
     );
-    expect(screen.getByText("PR 报道")).toBeDefined();
+    expect(screen.getByText(/PR 报道/)).toBeDefined();
   });
 
   it("shows copy and download buttons in footer", () => {

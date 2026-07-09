@@ -17,6 +17,10 @@ const mockArticle: Article = {
   is_ai_security: true,
   is_agent_security: true,
   category: "MCP协议漏洞",
+  category_v2: "爆点事件",
+  product_relevance: 92,
+  event_impact: 78,
+  pr_total_score: 170,
   ai_relevance_score: 92,
   reportability_score: 78,
   total_score: 170,
@@ -46,7 +50,7 @@ describe("ArticleTable", () => {
 
   it("renders category tag", () => {
     render(<ArticleTable {...defaultProps} />);
-    expect(screen.getByText("MCP协议漏洞")).toBeDefined();
+    expect(screen.getByText("爆点事件")).toBeDefined();
   });
 
   it("renders score values", () => {
@@ -68,6 +72,6 @@ describe("ArticleTable", () => {
 
   it("shows empty state when no articles", () => {
     render(<ArticleTable {...defaultProps} articles={[]} total={0} />);
-    expect(screen.getByText("暂无文章数据")).toBeDefined();
+    expect(screen.getByText("no data")).toBeDefined();
   });
 });

@@ -127,6 +127,7 @@ export interface DraftItem {
   content_md: string;
   title: string;
   index: number;
+  revisions?: DraftRevision[];
 }
 
 // ═══════════════════════════════════════════════════════════
