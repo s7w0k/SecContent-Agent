@@ -85,13 +85,16 @@ def mock_db():
     # 确保 db["articles"] 始终返回同一个 mock
     articles_mock = MagicMock()
     reports_mock = MagicMock()
+    user_profiles_mock = MagicMock()
+
+    collections = {
+        "articles": articles_mock,
+        "reports": reports_mock,
+        "user_profiles": user_profiles_mock,
+    }
 
     def _getitem(key):
-        if key == "articles":
-            return articles_mock
-        elif key == "reports":
-            return reports_mock
-        return MagicMock()
+        return collections.get(key, MagicMock())
 
     db.__getitem__.side_effect = _getitem
 
@@ -107,6 +110,7 @@ def mock_db():
     reports_mock.insert_one = AsyncMock(return_value=MagicMock(inserted_id="rid-123"))
     reports_mock.find = MagicMock(return_value=MagicMock())
     reports_mock.find.return_value.to_list = AsyncMock(return_value=[])
+    user_profiles_mock.find_one = AsyncMock(return_value=None)
 
     return db
 
@@ -382,6 +386,47 @@ class TestReportNode:
         result = await report_node(state, mock_tools, mock_reporter, mock_knowledge, mock_db)
         # 85+75=160 >= 140 → should generate
         assert result["report_count"] == 1
+        assert mock_reporter.generate_report.await_args.kwargs["style_hints"] is None
+
+    @pytest.mark.asyncio
+    async def test_report_node_injects_current_user_style(
+        self,
+        mock_tools,
+        mock_reporter,
+        mock_knowledge,
+        mock_db,
+    ):
+        from agent.pipeline import create_state, report_node
+
+        mock_cursor = MagicMock()
+        mock_cursor.to_list = AsyncMock(
+            return_value=[
+                {
+                    "_id": "1",
+                    "title": "High",
+                    "ai_relevance_score": 85,
+                    "reportability_score": 75,
+                },
+            ],
+        )
+        mock_db["articles"].find = MagicMock(return_value=mock_cursor)
+        mock_db["user_profiles"].find_one = AsyncMock(
+            return_value={
+                "user_id": "user-a",
+                "style_hints": {"preferred_templates": ["爆点A"]},
+            },
+        )
+
+        await report_node(
+            create_state(user_id="user-a"),
+            mock_tools,
+            mock_reporter,
+            mock_knowledge,
+            mock_db,
+        )
+
+        style_hints = mock_reporter.generate_report.await_args.kwargs["style_hints"]
+        assert "爆点A" in style_hints
 
     @pytest.mark.asyncio
     async def test_report_node_below_threshold(self, mock_tools, mock_reporter, mock_knowledge, mock_db):

@@ -15,6 +15,7 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from agent.style_profiler import load_style_hints
 from api.activity import log_activity
 from auth.deps import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -186,6 +187,7 @@ async def chat_ask(
     """
     db = _get_db(request)
     agent = _get_draft_chat_agent(request)
+    style_hints = await load_style_hints(db, user_id)
 
     article = None
     draft = None
@@ -225,6 +227,7 @@ async def chat_ask(
             draft=draft,
             revision=revision,
             history=[m.model_dump() for m in body.history] if body.history else None,
+            style_hints=style_hints,
         )
     except LLMError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
@@ -266,6 +269,7 @@ async def chat_ask_stream(
     """
     db = _get_db(request)
     agent = _get_draft_chat_agent(request)
+    style_hints = await load_style_hints(db, user_id)
 
     article = None
     draft = None
@@ -305,6 +309,7 @@ async def chat_ask_stream(
                 draft=draft,
                 revision=revision,
                 history=[m.model_dump() for m in body.history] if body.history else None,
+                style_hints=style_hints,
             ):
                 full_answer.append(chunk)
                 yield f"data: {json.dumps({'chunk': chunk}, ensure_ascii=False)}\n\n"
@@ -369,6 +374,7 @@ async def revise_draft(
     """
     db = _get_db(request)
     agent = _get_draft_chat_agent(request)
+    style_hints = await load_style_hints(db, user_id)
 
     # 查询文章
     article = await db["articles"].find_one({"url_hash": url_hash})
@@ -391,6 +397,7 @@ async def revise_draft(
             instruction=body.instruction,
             article=article,
             draft=draft,
+            style_hints=style_hints,
         )
     except LLMError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
@@ -482,6 +489,7 @@ async def revise_draft_stream(
     """
     db = _get_db(request)
     agent = _get_draft_chat_agent(request)
+    style_hints = await load_style_hints(db, user_id)
 
     # 查询文章
     article = await db["articles"].find_one({"url_hash": url_hash})
@@ -505,6 +513,7 @@ async def revise_draft_stream(
                 instruction=body.instruction,
                 article=article,
                 draft=draft,
+                style_hints=style_hints,
             ):
                 full_text.append(chunk)
                 yield f"data: {json.dumps({'chunk': chunk}, ensure_ascii=False)}\n\n"

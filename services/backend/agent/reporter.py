@@ -49,6 +49,8 @@ SYSTEM_PROMPT_TEMPLATE = """你是一个智能体安全行业的技术 PR 撰稿
 ## 产品背景
 {knowledge_context}
 
+{style_hints}
+
 ## 报道模板要求
 请按以下 Markdown 模板生成报道（使用中文）：
 
@@ -137,6 +139,7 @@ class ReportAgent:
         self,
         article: dict | Any,
         scores: dict | None = None,
+        style_hints: str | None = None,
     ) -> dict:
         """为单篇高分文章生成 PR 报道。
 
@@ -162,7 +165,7 @@ class ReportAgent:
         for attempt in range(MAX_RETRIES + 1):
             try:
                 response = await self.llm.ainvoke([
-                    SystemMessage(content=self.system_prompt),
+                    SystemMessage(content=self._build_system_prompt(style_hints)),
                     HumanMessage(content=user_prompt),
                 ])
                 raw_text = response.content if hasattr(response, "content") else str(response)
@@ -193,11 +196,14 @@ class ReportAgent:
 
     # ── Prompt 构建 ──────────────────────────────────────────
 
-    def _build_system_prompt(self) -> str:
+    def _build_system_prompt(self, style_hints: str | None = None) -> str:
         knowledge_context = self.knowledge.as_system_prompt()
         if not knowledge_context:
             knowledge_context = "（知识库未加载，使用通用产品背景）"
-        return SYSTEM_PROMPT_TEMPLATE.format(knowledge_context=knowledge_context)
+        return SYSTEM_PROMPT_TEMPLATE.format(
+            knowledge_context=knowledge_context,
+            style_hints=style_hints.strip() if style_hints and style_hints.strip() else "",
+        )
 
     @staticmethod
     def _build_user_prompt(

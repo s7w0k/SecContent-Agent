@@ -396,6 +396,15 @@ async def report_node(
 
         await knowledge.load()
 
+        from agent.style_profiler import load_style_hints
+
+        style_hints = await load_style_hints(db, state["user_id"])
+        logger.info(
+            "[report] style_hints injected=%s user_id=%s",
+            bool(style_hints),
+            state["user_id"],
+        )
+
         # 读取高分文章（pipeline 内计算 total_score）
         cursor = db["articles"].find({"pipeline_status": "scored"})
         raw_articles = await cursor.to_list(length=30)
@@ -420,7 +429,11 @@ async def report_node(
                 "total_score": art.get("_total_score", 0),
                 "score_reason": art.get("score_reason", ""),
             }
-            result = await reporter.generate_report(art, scores)
+            result = await reporter.generate_report(
+                art,
+                scores,
+                style_hints=style_hints,
+            )
             if result["ok"]:
                 report_count += 1
 

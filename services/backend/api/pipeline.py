@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 
 import httpx
+from agent.style_profiler import load_style_hints
 from api.activity import log_activity
 from auth.deps import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -586,7 +587,17 @@ async def run_v2_single(url_hash: str, request: Request, user_id: str = Depends(
                 if scores.get("is_pr_candidate"):
                     draft_gen = getattr(request.app.state, "draft_gen", None)
                     if draft_gen:
-                        drafts = await draft_gen.generate(dict(article), scores)
+                        style_hints = await load_style_hints(db, user_id)
+                        log.info(
+                            "[run-v2-single] style_hints injected=%s user_id=%s",
+                            bool(style_hints),
+                            user_id,
+                        )
+                        drafts = await draft_gen.generate(
+                            dict(article),
+                            scores,
+                            style_hints=style_hints,
+                        )
                         if drafts["ok"]:
                             from datetime import UTC, datetime
 

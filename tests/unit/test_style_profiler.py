@@ -8,7 +8,12 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from agent.style_profiler import StyleProfiler, _parse_json_object, _response_text
+from agent.style_profiler import (
+    StyleProfiler,
+    _parse_json_object,
+    _response_text,
+    load_style_hints,
+)
 from langchain_core.messages import AIMessage
 from models.feedback import StyleProfile
 
@@ -62,6 +67,44 @@ class FakeDatabase:
 
     def __getitem__(self, name: str):
         return self.collections.setdefault(name, FakeCollection())
+
+
+class TestLoadStyleHints:
+    @pytest.mark.asyncio
+    async def test_returns_current_user_prompt_and_logs_injection(self, caplog):
+        db = FakeDatabase(
+            user_profiles=[
+                {
+                    "user_id": "user-a",
+                    "version": 3,
+                    "style_hints": {
+                        "preferred_templates": ["爆点A"],
+                        "preferred_tone": "executive",
+                    },
+                },
+                {
+                    "user_id": "user-b",
+                    "style_hints": {"preferred_templates": ["竞品分析"]},
+                },
+            ],
+        )
+
+        with caplog.at_level("INFO", logger="backend.agent.style_profiler"):
+            prompt = await load_style_hints(db, "user-a")
+
+        assert "爆点A" in prompt
+        assert "竞品分析" not in prompt
+        assert "Style hints injected: user_id=user-a" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_returns_none_without_profile(self, caplog):
+        db = FakeDatabase(user_profiles=[])
+
+        with caplog.at_level("INFO", logger="backend.agent.style_profiler"):
+            prompt = await load_style_hints(db, "first-time-user")
+
+        assert prompt is None
+        assert "Style hints not available: user_id=first-time-user" in caplog.text
 
 
 @pytest.fixture

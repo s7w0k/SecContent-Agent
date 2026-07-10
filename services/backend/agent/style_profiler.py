@@ -396,3 +396,22 @@ class StyleProfiler:
                 "请在生成时参考以上偏好，但不要牺牲事实准确性。",
             ],
         )
+
+
+async def load_style_hints(db: Any, user_id: str) -> str | None:
+    """读取指定用户画像并转换成可注入 Prompt 的风格提示。"""
+    try:
+        profile = await db["user_profiles"].find_one({"user_id": user_id})
+        if not profile:
+            logger.info("Style hints not available: user_id=%s", user_id)
+            return None
+        hints = StyleProfiler(llm=None, db=db).get_style_hints(profile)
+        logger.info(
+            "Style hints injected: user_id=%s, profile_version=%s",
+            user_id,
+            profile.get("version", 1),
+        )
+        return hints
+    except Exception as exc:
+        logger.warning("Failed to load style hints for user_id=%s: %s", user_id, exc)
+        return None

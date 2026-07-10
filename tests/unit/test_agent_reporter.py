@@ -135,6 +135,14 @@ class TestPromptBuilding:
     def test_system_prompt_contains_knowledge(self, reporter):
         assert "MCP协议安全防护" in reporter.system_prompt
 
+    def test_system_prompt_injects_optional_style_hints(self, reporter):
+        prompt = reporter._build_system_prompt(
+            "## 用户风格偏好\n- 偏好语气：executive",
+        )
+
+        assert "用户风格偏好" in prompt
+        assert "executive" in prompt
+
     def test_user_prompt_contains_article(self, article, scores):
         from agent.reporter import ReportAgent
 

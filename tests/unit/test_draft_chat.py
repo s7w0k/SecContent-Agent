@@ -393,3 +393,72 @@ class TestStreamAnswer:
         with pytest.raises(LLMError, match="LLM 流式调用失败"):
             async for _ in agent.stream_answer(message="问题"):
                 pass
+
+
+class TestStyleHintsInjection:
+    style_hints = "## 用户风格偏好\n- 偏好语气：executive"
+
+    @pytest.mark.asyncio
+    async def test_answer_system_prompt_contains_style_hints(
+        self,
+        agent,
+        mock_llm_answer,
+    ):
+        await agent.answer(message="测试问题", style_hints=self.style_hints)
+
+        messages = mock_llm_answer.ainvoke.await_args.args[0]
+        assert self.style_hints in messages[0].content
+
+    @pytest.mark.asyncio
+    async def test_revise_system_prompt_contains_style_hints(
+        self,
+        mock_llm_revise,
+        knowledge_loader,
+        sample_article,
+        sample_draft,
+    ):
+        agent = DraftChatAgent(llm=mock_llm_revise, knowledge_loader=knowledge_loader)
+        await agent.revise(
+            instruction="压缩篇幅",
+            article=sample_article,
+            draft=sample_draft,
+            style_hints=self.style_hints,
+        )
+
+        messages = mock_llm_revise.ainvoke.await_args.args[0]
+        assert self.style_hints in messages[0].content
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method_name", ["stream_answer", "stream_revise"])
+    async def test_stream_system_prompt_contains_style_hints(
+        self,
+        method_name,
+        knowledge_loader,
+        sample_article,
+        sample_draft,
+    ):
+        captured_messages = []
+        llm = MagicMock()
+        llm.temperature = None
+
+        async def _fake_astream(messages):
+            captured_messages.extend(messages)
+            yield AIMessage(content="完成")
+
+        llm.astream = _fake_astream
+        agent = DraftChatAgent(llm=llm, knowledge_loader=knowledge_loader)
+        if method_name == "stream_answer":
+            stream = agent.stream_answer(
+                message="测试问题",
+                style_hints=self.style_hints,
+            )
+        else:
+            stream = agent.stream_revise(
+                instruction="压缩篇幅",
+                article=sample_article,
+                draft=sample_draft,
+                style_hints=self.style_hints,
+            )
+
+        assert [chunk async for chunk in stream] == ["完成"]
+        assert self.style_hints in captured_messages[0].content

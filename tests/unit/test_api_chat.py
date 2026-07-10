@@ -103,6 +103,7 @@ def mock_db(sample_article_with_drafts):
     articles = MagicMock()
     chat_sessions = MagicMock()
     user_drafts = MagicMock()
+    user_profiles = MagicMock()
     user_activities = MagicMock()
 
     # 默认返回带草稿的文章
@@ -116,6 +117,7 @@ def mock_db(sample_article_with_drafts):
         }
     )
     user_drafts.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
+    user_profiles.find_one = AsyncMock(return_value=None)
 
     # chat_sessions 默认返回空（无历史）
     chat_sessions.find_one = AsyncMock(return_value=None)
@@ -130,6 +132,8 @@ def mock_db(sample_article_with_drafts):
             return chat_sessions
         if key == "user_drafts":
             return user_drafts
+        if key == "user_profiles":
+            return user_profiles
         if key == "user_activities":
             return user_activities
         return MagicMock()
@@ -138,6 +142,7 @@ def mock_db(sample_article_with_drafts):
     db._articles = articles
     db._chat_sessions = chat_sessions
     db._user_drafts = user_drafts
+    db._user_profiles = user_profiles
     db._user_activities = user_activities
     return db
 

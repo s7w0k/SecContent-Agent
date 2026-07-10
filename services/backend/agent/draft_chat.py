@@ -83,6 +83,8 @@ ANSWER_SYSTEM_PROMPT = """你是一个智能体安全行业的 PR 情报分析�
 
 ## 产品知识库
 {knowledge_context}
+
+{style_hints}
 """
 
 ANSWER_USER_PROMPT = """请回答以下问题：
@@ -108,6 +110,8 @@ REVISE_SYSTEM_PROMPT = """你是一个智能体安全行业的 PR 改稿专家�
 
 ## 产品知识库
 {knowledge_context}
+
+{style_hints}
 
 ## 输出格式（严格遵守）
 ```markdown
@@ -174,6 +178,7 @@ class DraftChatAgent:
         draft: dict | None = None,
         revision: dict | None = None,
         history: list[dict] | None = None,
+        style_hints: str | None = None,
     ) -> dict:
         """问答模式：基于上下文回答用户问题。
 
@@ -193,6 +198,7 @@ class DraftChatAgent:
         knowledge_context = self._get_knowledge_prompt()
         system_prompt = ANSWER_SYSTEM_PROMPT.format(
             knowledge_context=knowledge_context,
+            style_hints=self._style_hints_section(style_hints),
         )
 
         article_context = self._build_article_context(article) if article else ""
@@ -239,6 +245,7 @@ class DraftChatAgent:
         draft: dict | None = None,
         revision: dict | None = None,
         history: list[dict] | None = None,
+        style_hints: str | None = None,
     ) -> AsyncIterator[str]:
         """流式问答模式：逐 chunk 产出回答文本。
 
@@ -255,6 +262,7 @@ class DraftChatAgent:
         knowledge_context = self._get_knowledge_prompt()
         system_prompt = ANSWER_SYSTEM_PROMPT.format(
             knowledge_context=knowledge_context,
+            style_hints=self._style_hints_section(style_hints),
         )
 
         article_context = self._build_article_context(article) if article else ""
@@ -289,6 +297,7 @@ class DraftChatAgent:
         instruction: str,
         article: dict,
         draft: dict,
+        style_hints: str | None = None,
     ) -> dict:
         """改稿模式：根据修改意见改写 PR 初稿。
 
@@ -306,6 +315,7 @@ class DraftChatAgent:
         knowledge_context = self._get_knowledge_prompt()
         system_prompt = REVISE_SYSTEM_PROMPT.format(
             knowledge_context=knowledge_context,
+            style_hints=self._style_hints_section(style_hints),
         )
 
         original_content = draft.get("content_md", "")[:MAX_CONTENT_LENGTH]
@@ -353,6 +363,7 @@ class DraftChatAgent:
         instruction: str,
         article: dict,
         draft: dict,
+        style_hints: str | None = None,
     ) -> AsyncIterator[str]:
         """流式改稿模式：逐 chunk 产出改稿文本。
 
@@ -368,6 +379,7 @@ class DraftChatAgent:
         knowledge_context = self._get_knowledge_prompt()
         system_prompt = REVISE_SYSTEM_PROMPT.format(
             knowledge_context=knowledge_context,
+            style_hints=self._style_hints_section(style_hints),
         )
 
         original_content = draft.get("content_md", "")[:MAX_CONTENT_LENGTH]
@@ -406,6 +418,11 @@ class DraftChatAgent:
             prompt = knowledge.as_system_prompt()
             return prompt if prompt else "（知识库未加载）"
         return "（知识库未加载）"
+
+    @staticmethod
+    def _style_hints_section(style_hints: str | None) -> str:
+        """规范化可选风格提示，未配置时不改变默认 Prompt。"""
+        return style_hints.strip() if style_hints and style_hints.strip() else ""
 
     @staticmethod
     def _build_article_context(article: dict) -> str:

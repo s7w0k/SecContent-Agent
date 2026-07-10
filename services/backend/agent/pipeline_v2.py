@@ -301,16 +301,9 @@ async def draft_node(state: dict, draft_gen: Any, knowledge: Any, db: Any) -> di
 
 async def _load_style_hints(db: Any, user_id: str) -> str | None:
     """读取用户画像并转换为草稿生成可注入的风格提示。"""
-    try:
-        profile = await db["user_profiles"].find_one({"user_id": user_id})
-        if not profile:
-            return None
-        from agent.style_profiler import StyleProfiler
+    from agent.style_profiler import load_style_hints
 
-        return StyleProfiler(llm=None, db=db).get_style_hints(profile)
-    except Exception as exc:
-        logger.warning("[draft] Failed to load style hints: %s", exc)
-        return None
+    return await load_style_hints(db, user_id)
 
 
 # ═══════════════════════════════════════════════════════════════
