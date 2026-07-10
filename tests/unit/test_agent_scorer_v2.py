@@ -72,12 +72,18 @@ def mock_llm_high():
     """Mock LLM 返回高分"""
     llm = MagicMock()
     llm.temperature = None
-    llm.ainvoke = AsyncMock(return_value=AIMessage(content=json.dumps({
-        "product_relevance": 85,
-        "event_impact": 72,
-        "reason": "MCP协议漏洞直接涉及产品核心能力，安全圈热传",
-        "tags": ["MCP协议", "RCE漏洞", "身份安全"],
-    })))
+    llm.ainvoke = AsyncMock(
+        return_value=AIMessage(
+            content=json.dumps(
+                {
+                    "product_relevance": 85,
+                    "event_impact": 72,
+                    "reason": "MCP协议漏洞直接涉及产品核心能力，安全圈热传",
+                    "tags": ["MCP协议", "RCE漏洞", "身份安全"],
+                }
+            )
+        )
+    )
     return llm
 
 
@@ -86,12 +92,18 @@ def mock_llm_low():
     """Mock LLM 返回低分（不达 PR 候选阈值）"""
     llm = MagicMock()
     llm.temperature = None
-    llm.ainvoke = AsyncMock(return_value=AIMessage(content=json.dumps({
-        "product_relevance": 25,
-        "event_impact": 30,
-        "reason": "与产品弱关联",
-        "tags": [],
-    })))
+    llm.ainvoke = AsyncMock(
+        return_value=AIMessage(
+            content=json.dumps(
+                {
+                    "product_relevance": 25,
+                    "event_impact": 30,
+                    "reason": "与产品弱关联",
+                    "tags": [],
+                }
+            )
+        )
+    )
     return llm
 
 
@@ -99,6 +111,7 @@ def mock_llm_low():
 def scorer(mock_llm_high, knowledge):
     """测试用 ScoringAgentV2"""
     from agent.scorer_v2 import ScoringAgentV2
+
     return ScoringAgentV2(llm=mock_llm_high, knowledge=knowledge)
 
 
@@ -125,10 +138,10 @@ class TestPromptBuilding:
 
     def test_system_prompt_has_output_format(self, scorer):
         prompt = scorer.system_prompt
-        assert 'product_relevance' in prompt
-        assert 'event_impact' in prompt
-        assert 'reason' in prompt
-        assert 'tags' in prompt
+        assert "product_relevance" in prompt
+        assert "event_impact" in prompt
+        assert "reason" in prompt
+        assert "tags" in prompt
 
     def test_user_prompt_contains_v2_category(self, sample_article):
         from agent.scorer_v2 import ScoringAgentV2
@@ -234,8 +247,12 @@ class TestScoreValidation:
     def test_tags_truncated_to_5(self):
         from agent.scorer_v2 import ScoringAgentV2
 
-        parsed = {"product_relevance": 50, "event_impact": 50, "reason": "x",
-                  "tags": ["a", "b", "c", "d", "e", "f", "g"]}
+        parsed = {
+            "product_relevance": 50,
+            "event_impact": 50,
+            "reason": "x",
+            "tags": ["a", "b", "c", "d", "e", "f", "g"],
+        }
         result = ScoringAgentV2._validate_and_fix(parsed)
         assert len(result["tags"]) <= 5
 
@@ -268,10 +285,24 @@ class TestScoringFlow:
         assert result["pr_total_score"] == 55  # 25 + 30
 
     @pytest.mark.asyncio
+    async def test_score_single_uses_adjusted_threshold(
+        self, mock_llm_low, knowledge, sample_article
+    ):
+        from agent.scorer_v2 import ScoringAgentV2
+
+        scorer_low = ScoringAgentV2(llm=mock_llm_low, knowledge=knowledge)
+        scorer_low.pr_threshold = 50
+        scorer_low.threshold_adjustment = -30
+        result = await scorer_low.score_single(sample_article)
+        assert result["pr_total_score"] == 55
+        assert result["is_pr_candidate"] is True
+        assert result["pr_threshold"] == 50
+        assert result["threshold_adjustment"] == -30
+
+    @pytest.mark.asyncio
     async def test_score_batch(self, scorer):
         articles = [
-            {"title": f"Article {i}", "source": "S",
-             "category_v2": "爆点事件", "summary": ""}
+            {"title": f"Article {i}", "source": "S", "category_v2": "爆点事件", "summary": ""}
             for i in range(5)
         ]
         results = await scorer.score_batch(articles)
@@ -301,15 +332,21 @@ class TestScoringFlow:
     async def test_retry_then_succeed(self, mock_llm_high, knowledge, sample_article):
         from agent.scorer_v2 import ScoringAgentV2
 
-        mock_llm_high.ainvoke = AsyncMock(side_effect=[
-            Exception("Temporary error"),
-            AIMessage(content=json.dumps({
-                "product_relevance": 88,
-                "event_impact": 66,
-                "reason": "恢复后打分",
-                "tags": ["测试"],
-            })),
-        ])
+        mock_llm_high.ainvoke = AsyncMock(
+            side_effect=[
+                Exception("Temporary error"),
+                AIMessage(
+                    content=json.dumps(
+                        {
+                            "product_relevance": 88,
+                            "event_impact": 66,
+                            "reason": "恢复后打分",
+                            "tags": ["测试"],
+                        }
+                    )
+                ),
+            ]
+        )
         scorer_retry = ScoringAgentV2(llm=mock_llm_high, knowledge=knowledge)
         result = await scorer_retry.score_single(sample_article)
         assert result["_fallback"] is False
@@ -353,7 +390,74 @@ class TestScoringFlow:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 5. 常量/配置测试
+# 5. 阈值微调测试
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestThresholdAdjustment:
+    def test_calculate_threshold_increases_for_too_high_feedback(self):
+        from agent.scorer_v2 import ScoringAgentV2
+
+        feedbacks = [
+            {"comment": "这篇文章打分偏高", "tags": []},
+            {"comment": "", "tags": ["分数高"]},
+        ]
+        adjustment, directional_count = ScoringAgentV2.calculate_threshold_adjustment(feedbacks)
+        assert adjustment == 4
+        assert directional_count == 2
+
+    def test_calculate_threshold_decreases_for_too_low_feedback(self):
+        from agent.scorer_v2 import ScoringAgentV2
+
+        feedbacks = [
+            {"comment": "这个打分偏低，应该入选", "tags": []},
+            {"comment": "", "tags": ["too_low"]},
+        ]
+        adjustment, directional_count = ScoringAgentV2.calculate_threshold_adjustment(feedbacks)
+        assert adjustment == -4
+        assert directional_count == 2
+
+    def test_calculate_threshold_caps_to_ten_points(self):
+        from agent.scorer_v2 import ScoringAgentV2
+
+        feedbacks = [{"comment": "偏高", "tags": []} for _ in range(20)]
+        adjustment, directional_count = ScoringAgentV2.calculate_threshold_adjustment(feedbacks)
+        assert adjustment == 10
+        assert directional_count == 20
+
+    @pytest.mark.asyncio
+    async def test_adjust_threshold_reads_feedbacks_from_db(self, scorer):
+        class Cursor:
+            async def to_list(self, length=None):
+                return [
+                    {"target_type": "article_score", "comment": "评分偏高", "tags": []},
+                    {"target_type": "article_score", "comment": "", "tags": ["偏高"]},
+                    {"target_type": "article_score", "comment": "不错", "tags": []},
+                ]
+
+        collection = MagicMock()
+        collection.find.return_value = Cursor()
+        db = {"feedbacks": collection}
+
+        result = await scorer.adjust_threshold(db=db)
+        assert result["threshold"] == 84
+        assert result["adjustment"] == 4
+        assert result["feedback_count"] == 3
+        assert scorer.pr_threshold == 84
+
+    @pytest.mark.asyncio
+    async def test_adjust_threshold_without_db_resets_default(self, scorer):
+        scorer.pr_threshold = 90
+        scorer.threshold_adjustment = 10
+
+        result = await scorer.adjust_threshold(db=None)
+        assert result["threshold"] == 80
+        assert result["adjustment"] == 0
+        assert scorer.pr_threshold == 80
+
+
+# ═══════════════════════════════════════════════════════════════
+# 6. 常量/配置测试
 # ═══════════════════════════════════════════════════════════════
 
 
@@ -362,17 +466,21 @@ class TestConstants:
 
     def test_pr_threshold_is_80(self):
         from agent.scorer_v2 import PR_THRESHOLD
+
         assert PR_THRESHOLD == 80
 
     def test_score_bounds(self):
         from agent.scorer_v2 import SCORE_MAX, SCORE_MIN
+
         assert SCORE_MIN == 0
         assert SCORE_MAX == 100
 
     def test_default_temperature(self):
         from agent.scorer_v2 import DEFAULT_TEMPERATURE
+
         assert DEFAULT_TEMPERATURE == 0.1
 
     def test_max_retries(self):
         from agent.scorer_v2 import MAX_RETRIES
+
         assert MAX_RETRIES >= 1

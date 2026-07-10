@@ -49,8 +49,13 @@ DEFAULT_CONCURRENCY = 20
 SCORE_MIN = 0
 SCORE_MAX = 100
 PR_THRESHOLD = 80  # V2: 综合分 ≥ 80 进入 PR 草稿
+MAX_THRESHOLD_ADJUSTMENT = 10
+THRESHOLD_STEP_PER_SIGNAL = 2
 DEFAULT_TEMPERATURE = 0.1
 MAX_RETRIES = 1
+
+_TOO_HIGH_KEYWORDS = ("偏高", "过高", "打分高", "分数高", "too_high", "high")
+_TOO_LOW_KEYWORDS = ("偏低", "过低", "打分低", "分数低", "too_low", "low")
 
 SYSTEM_PROMPT_TEMPLATE = """你是一个智能体安全领域的技术情报分析师。
 请根据产品知识库和文章内容，从以下两个维度对文章评分。
@@ -115,18 +120,24 @@ class ScoringAgentV2:
         llm: BaseChatModel,
         knowledge: Any,  # ProductKnowledge or KnowledgeLoader
         temperature: float = DEFAULT_TEMPERATURE,
+        db: Any = None,
     ):
         self.llm = llm
         self.llm.temperature = temperature
         self.knowledge = knowledge
+        self.db = db
+        self.pr_threshold = PR_THRESHOLD
+        self.threshold_adjustment = 0
         self.system_prompt = self._build_system_prompt()
 
     # ── 公开接口 ──────────────────────────────────────────────
 
     async def score_single(self, article: dict | Any) -> dict:
         """单篇打分，返回包含 product_relevance / event_impact / pr_total_score 的 dict。"""
-        art = article if isinstance(article, dict) else (
-            article.model_dump() if hasattr(article, "model_dump") else article
+        art = (
+            article
+            if isinstance(article, dict)
+            else (article.model_dump() if hasattr(article, "model_dump") else article)
         )
         return await self._score_with_llm(art)
 
@@ -152,8 +163,10 @@ class ScoringAgentV2:
 
         async def _score_one(art: dict) -> dict:
             async with sem:
-                d = art if isinstance(art, dict) else (
-                    art.model_dump() if hasattr(art, "model_dump") else art
+                d = (
+                    art
+                    if isinstance(art, dict)
+                    else (art.model_dump() if hasattr(art, "model_dump") else art)
                 )
                 return await self._score_with_llm(d)
 
@@ -161,8 +174,88 @@ class ScoringAgentV2:
         rlist = list(results)
         ok = sum(1 for r in rlist if not r.get("_fallback"))
         pr = sum(1 for r in rlist if r.get("is_pr_candidate"))
-        logger.info("V2 Scored: %d/%d ok, %d PR candidates (≥%d)", ok, len(rlist), pr, PR_THRESHOLD)
+        logger.info(
+            "V2 Scored: %d/%d ok, %d PR candidates (≥%d)",
+            ok,
+            len(rlist),
+            pr,
+            self.pr_threshold,
+        )
         return rlist
+
+    async def adjust_threshold(self, db: Any | None = None, user_id: str = "local-user") -> dict:
+        """根据文章打分反馈微调 PR 入选阈值。
+
+        偏高反馈会提高阈值，偏低反馈会降低阈值；调整幅度限制在 ±10 分。
+        """
+        active_db = db if db is not None else self.db
+        if active_db is None:
+            self.pr_threshold = PR_THRESHOLD
+            self.threshold_adjustment = 0
+            return self._threshold_result(feedback_count=0, directional_count=0)
+
+        try:
+            cursor = active_db["feedbacks"].find(
+                {
+                    "user_id": user_id,
+                    "status": "active",
+                    "target_type": "article_score",
+                }
+            )
+            feedbacks = await cursor.to_list(length=500)
+        except Exception as exc:
+            logger.warning("Failed to load score feedbacks for threshold adjustment: %s", exc)
+            self.pr_threshold = PR_THRESHOLD
+            self.threshold_adjustment = 0
+            return self._threshold_result(feedback_count=0, directional_count=0)
+
+        adjustment, directional_count = self.calculate_threshold_adjustment(feedbacks)
+        self.threshold_adjustment = adjustment
+        self.pr_threshold = PR_THRESHOLD + adjustment
+        return self._threshold_result(len(feedbacks), directional_count)
+
+    def _threshold_result(self, feedback_count: int, directional_count: int) -> dict:
+        return {
+            "base_threshold": PR_THRESHOLD,
+            "adjustment": self.threshold_adjustment,
+            "threshold": self.pr_threshold,
+            "feedback_count": feedback_count,
+            "directional_count": directional_count,
+        }
+
+    @classmethod
+    def calculate_threshold_adjustment(cls, feedbacks: list[dict]) -> tuple[int, int]:
+        """从打分反馈中计算阈值偏移量。"""
+        signal = 0
+        directional_count = 0
+        for feedback in feedbacks:
+            direction = cls._score_feedback_direction(feedback)
+            if direction:
+                signal += direction
+                directional_count += 1
+
+        adjustment = signal * THRESHOLD_STEP_PER_SIGNAL
+        adjustment = max(-MAX_THRESHOLD_ADJUSTMENT, min(MAX_THRESHOLD_ADJUSTMENT, adjustment))
+        return adjustment, directional_count
+
+    @staticmethod
+    def _score_feedback_direction(feedback: dict) -> int:
+        text_parts = [
+            str(feedback.get("comment", "")),
+            " ".join(str(tag) for tag in feedback.get("tags", [])),
+        ]
+        dimensions = feedback.get("rating_dimensions") or {}
+        if isinstance(dimensions, dict):
+            text_parts.extend(f"{key}:{value}" for key, value in dimensions.items())
+        text = " ".join(text_parts).lower()
+
+        has_too_high = any(keyword in text for keyword in _TOO_HIGH_KEYWORDS)
+        has_too_low = any(keyword in text for keyword in _TOO_LOW_KEYWORDS)
+        if has_too_high and not has_too_low:
+            return 1
+        if has_too_low and not has_too_high:
+            return -1
+        return 0
 
     # ── Prompt 构建 ──────────────────────────────────────────
 
@@ -182,16 +275,8 @@ class ScoringAgentV2:
     def _build_user_prompt(article: dict) -> str:
         """构建 User Prompt（含 V2 分类标签）。"""
         category_v2 = article.get("category_v2", "") or "未分类"
-        summary = (
-            article.get("summary_cn", "")
-            or article.get("summary", "")
-            or "无"
-        )
-        content = (
-            article.get("content_md", "")
-            or article.get("summary", "")
-            or ""
-        )[:800]
+        summary = article.get("summary_cn", "") or article.get("summary", "") or "无"
+        content = (article.get("content_md", "") or article.get("summary", "") or "")[:800]
 
         return USER_PROMPT_TEMPLATE.format(
             title=article.get("title", ""),
@@ -209,12 +294,18 @@ class ScoringAgentV2:
 
         for attempt in range(MAX_RETRIES + 1):
             try:
-                response = await self.llm.ainvoke([
-                    SystemMessage(content=self.system_prompt),
-                    HumanMessage(content=user_prompt),
-                ])
+                response = await self.llm.ainvoke(
+                    [
+                        SystemMessage(content=self.system_prompt),
+                        HumanMessage(content=user_prompt),
+                    ]
+                )
                 raw = response.content if hasattr(response, "content") else str(response)
-                return self._enrich_result(self._validate_and_fix(self._parse_response(raw)))
+                return self._enrich_result(
+                    self._validate_and_fix(self._parse_response(raw)),
+                    threshold=self.pr_threshold,
+                    threshold_adjustment=self.threshold_adjustment,
+                )
             except Exception as e:
                 if attempt == MAX_RETRIES:
                     return self._fallback_score(str(e))
@@ -263,9 +354,7 @@ class ScoringAgentV2:
         result["product_relevance"] = max(
             SCORE_MIN, min(SCORE_MAX, int(parsed.get("product_relevance", 0)))
         )
-        result["event_impact"] = max(
-            SCORE_MIN, min(SCORE_MAX, int(parsed.get("event_impact", 0)))
-        )
+        result["event_impact"] = max(SCORE_MIN, min(SCORE_MAX, int(parsed.get("event_impact", 0))))
         result["score_reason"] = str(parsed.get("reason", ""))[:200]
 
         tags = parsed.get("tags", [])
@@ -276,12 +365,16 @@ class ScoringAgentV2:
         return result
 
     @staticmethod
-    def _enrich_result(validated: dict) -> dict:
+    def _enrich_result(
+        validated: dict,
+        threshold: int = PR_THRESHOLD,
+        threshold_adjustment: int = 0,
+    ) -> dict:
         """补充计算字段：pr_total_score, is_pr_candidate。"""
-        validated["pr_total_score"] = (
-            validated["product_relevance"] + validated["event_impact"]
-        )
-        validated["is_pr_candidate"] = validated["pr_total_score"] >= PR_THRESHOLD
+        validated["pr_total_score"] = validated["product_relevance"] + validated["event_impact"]
+        validated["is_pr_candidate"] = validated["pr_total_score"] >= threshold
+        validated["pr_threshold"] = threshold
+        validated["threshold_adjustment"] = threshold_adjustment
         validated["_fallback"] = False
         return validated
 
@@ -295,5 +388,7 @@ class ScoringAgentV2:
             "tags": [],
             "pr_total_score": 0,
             "is_pr_candidate": False,
+            "pr_threshold": PR_THRESHOLD,
+            "threshold_adjustment": 0,
             "_fallback": True,
         }

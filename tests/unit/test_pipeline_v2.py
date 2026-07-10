@@ -45,10 +45,12 @@ def mock_classifier():
     from agent.classifier_v2 import ClassifyResultV2
 
     classifier = MagicMock()
-    classifier.classify_batch = AsyncMock(return_value=[
-        ClassifyResultV2(category="爆点事件", confidence=90, reason="重大漏洞"),
-        ClassifyResultV2(category="国内外竞品信息", confidence=80, reason="友商动态"),
-    ])
+    classifier.classify_batch = AsyncMock(
+        return_value=[
+            ClassifyResultV2(category="爆点事件", confidence=90, reason="重大漏洞"),
+            ClassifyResultV2(category="国内外竞品信息", confidence=80, reason="友商动态"),
+        ]
+    )
     return classifier
 
 
@@ -56,10 +58,33 @@ def mock_classifier():
 def mock_scorer():
     """Mock ScoringAgentV2"""
     scorer = MagicMock()
-    scorer.score_batch = AsyncMock(return_value=[
-        {"product_relevance": 85, "event_impact": 72, "pr_total_score": 157, "is_pr_candidate": True, "_fallback": False},
-        {"product_relevance": 25, "event_impact": 30, "pr_total_score": 55, "is_pr_candidate": False, "_fallback": False},
-    ])
+    scorer.adjust_threshold = AsyncMock(
+        return_value={
+            "base_threshold": 80,
+            "adjustment": 0,
+            "threshold": 80,
+            "feedback_count": 0,
+            "directional_count": 0,
+        }
+    )
+    scorer.score_batch = AsyncMock(
+        return_value=[
+            {
+                "product_relevance": 85,
+                "event_impact": 72,
+                "pr_total_score": 157,
+                "is_pr_candidate": True,
+                "_fallback": False,
+            },
+            {
+                "product_relevance": 25,
+                "event_impact": 30,
+                "pr_total_score": 55,
+                "is_pr_candidate": False,
+                "_fallback": False,
+            },
+        ]
+    )
     return scorer
 
 
@@ -67,13 +92,21 @@ def mock_scorer():
 def mock_draft_gen():
     """Mock DraftGenerator"""
     gen = MagicMock()
-    gen.generate = AsyncMock(return_value={
-        "ok": True,
-        "drafts": [
-            {"template": "爆点A", "perspective": "角度1", "content_md": "# Draft", "title": "T", "index": 1},
-        ],
-        "error": None,
-    })
+    gen.generate = AsyncMock(
+        return_value={
+            "ok": True,
+            "drafts": [
+                {
+                    "template": "爆点A",
+                    "perspective": "角度1",
+                    "content_md": "# Draft",
+                    "title": "T",
+                    "index": 1,
+                },
+            ],
+            "error": None,
+        }
+    )
     return gen
 
 
@@ -105,6 +138,7 @@ def mock_db():
 @pytest.fixture
 def manager(mock_tools, mock_classifier, mock_scorer, mock_draft_gen, mock_knowledge, mock_db):
     from agent.pipeline_v2 import PipelineManagerV2
+
     return PipelineManagerV2(
         tools=mock_tools,
         classifier_v2=mock_classifier,
@@ -123,6 +157,7 @@ def manager(mock_tools, mock_classifier, mock_scorer, mock_draft_gen, mock_knowl
 class TestCreateStateV2:
     def test_default_state(self):
         from agent.pipeline_v2 import create_state_v2
+
         state = create_state_v2()
         assert len(state["phases"]) == 4
         assert "crawl" in state["phases"]
@@ -160,7 +195,9 @@ class TestPipelineManagerV2:
         assert len(result["pipeline_id"]) == 8
 
     @pytest.mark.asyncio
-    async def test_pipeline_without_db(self, mock_tools, mock_classifier, mock_scorer, mock_draft_gen, mock_knowledge):
+    async def test_pipeline_without_db(
+        self, mock_tools, mock_classifier, mock_scorer, mock_draft_gen, mock_knowledge
+    ):
         from agent.pipeline_v2 import PipelineManagerV2
 
         mgr = PipelineManagerV2(
@@ -201,10 +238,12 @@ class TestClassifyV2Node:
     async def test_classify_v2_with_articles(self, mock_classifier, mock_db):
         from agent.pipeline_v2 import classify_v2_node, create_state_v2
 
-        mock_db["articles"].find.return_value.to_list = AsyncMock(return_value=[
-            {"_id": "a1", "title": "Test", "pipeline_status": "crawled", "category_v2": ""},
-            {"_id": "a2", "title": "Test2", "pipeline_status": "crawled", "category_v2": ""},
-        ])
+        mock_db["articles"].find.return_value.to_list = AsyncMock(
+            return_value=[
+                {"_id": "a1", "title": "Test", "pipeline_status": "crawled", "category_v2": ""},
+                {"_id": "a2", "title": "Test2", "pipeline_status": "crawled", "category_v2": ""},
+            ]
+        )
 
         state = create_state_v2()
         result = await classify_v2_node(state, mock_classifier, mock_db)
@@ -233,14 +272,43 @@ class TestScoreV2Node:
     async def test_score_v2_with_articles(self, mock_scorer, mock_knowledge, mock_db):
         from agent.pipeline_v2 import create_state_v2, score_v2_node
 
-        mock_db["articles"].find.return_value.to_list = AsyncMock(return_value=[
-            {"_id": "a1", "title": "Test", "is_pr_eligible": True},
-            {"_id": "a2", "title": "Test2", "is_pr_eligible": True},
-        ])
+        mock_db["articles"].find.return_value.to_list = AsyncMock(
+            return_value=[
+                {"_id": "a1", "title": "Test", "is_pr_eligible": True},
+                {"_id": "a2", "title": "Test2", "is_pr_eligible": True},
+            ]
+        )
 
         state = create_state_v2()
         result = await score_v2_node(state, mock_scorer, mock_knowledge, mock_db)
         assert result["scored_v2_count"] == 2
+        mock_scorer.adjust_threshold.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_score_v2_uses_adjusted_threshold_state(
+        self, mock_scorer, mock_knowledge, mock_db
+    ):
+        from agent.pipeline_v2 import create_state_v2, score_v2_node
+
+        mock_scorer.adjust_threshold = AsyncMock(
+            return_value={
+                "base_threshold": 80,
+                "adjustment": 6,
+                "threshold": 86,
+                "feedback_count": 4,
+                "directional_count": 3,
+            }
+        )
+        mock_db["articles"].find.return_value.to_list = AsyncMock(
+            return_value=[
+                {"_id": "a1", "title": "Test", "is_pr_eligible": True},
+            ]
+        )
+
+        state = create_state_v2()
+        result = await score_v2_node(state, mock_scorer, mock_knowledge, mock_db)
+        assert result["score_threshold"] == 86
+        assert result["threshold_adjustment"] == 6
 
 
 class TestDraftNode:
@@ -264,13 +332,66 @@ class TestDraftNode:
     async def test_draft_with_high_score_articles(self, mock_draft_gen, mock_knowledge, mock_db):
         from agent.pipeline_v2 import create_state_v2, draft_node
 
-        mock_db["articles"].find.return_value.to_list = AsyncMock(return_value=[
-            {"_id": "a1", "title": "Test", "pr_total_score": 157, "product_relevance": 85, "event_impact": 72},
-        ])
+        mock_db["articles"].find.return_value.to_list = AsyncMock(
+            return_value=[
+                {
+                    "_id": "a1",
+                    "title": "Test",
+                    "pr_total_score": 157,
+                    "product_relevance": 85,
+                    "event_impact": 72,
+                },
+            ]
+        )
 
         state = create_state_v2()
         result = await draft_node(state, mock_draft_gen, mock_knowledge, mock_db)
         assert result["draft_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_draft_injects_style_hints_when_profile_exists(
+        self, mock_draft_gen, mock_knowledge
+    ):
+        from agent.pipeline_v2 import create_state_v2, draft_node
+
+        article_collection = MagicMock()
+        article_collection.find.return_value.to_list = AsyncMock(
+            return_value=[
+                {
+                    "_id": "a1",
+                    "title": "Test",
+                    "pr_total_score": 157,
+                    "product_relevance": 85,
+                    "event_impact": 72,
+                },
+            ]
+        )
+        article_collection.update_one = AsyncMock()
+        profile_collection = MagicMock()
+        profile_collection.find_one = AsyncMock(
+            return_value={
+                "user_id": "local-user",
+                "style_hints": {
+                    "preferred_templates": ["爆点A"],
+                    "preferred_perspectives": ["市场传播视角"],
+                    "preferred_tone": "market_oriented",
+                    "preferred_length": "medium",
+                    "common_revise_directions": ["增强传播性"],
+                    "avoid_patterns": [],
+                },
+            }
+        )
+        db = {
+            "articles": article_collection,
+            "user_profiles": profile_collection,
+        }
+
+        state = create_state_v2()
+        result = await draft_node(state, mock_draft_gen, mock_knowledge, db)
+        assert result["draft_count"] == 1
+        call = mock_draft_gen.generate.await_args
+        assert "用户风格偏好" in call.kwargs["style_hints"]
+        assert "爆点A" in call.kwargs["style_hints"]
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -311,8 +432,13 @@ class TestPipelineV2E2E:
 
     @pytest.mark.asyncio
     async def test_full_v2_pipeline_e2e(
-        self, mock_tools, mock_classifier, mock_scorer, mock_draft_gen,
-        mock_knowledge, e2e_db,
+        self,
+        mock_tools,
+        mock_classifier,
+        mock_scorer,
+        mock_draft_gen,
+        mock_knowledge,
+        e2e_db,
     ):
         """验证 V2 流水线 4 阶段完整通过"""
         from agent.pipeline_v2 import PipelineManagerV2
@@ -320,12 +446,22 @@ class TestPipelineV2E2E:
         db, store = e2e_db
 
         # 初始化数据：2 篇 crawled 文章
-        store.extend([
-            {"_id": "a1", "title": "MCP RCE Vulnerability",
-             "pipeline_status": "crawled", "category_v2": ""},
-            {"_id": "a2", "title": "New AI Regulation",
-             "pipeline_status": "crawled", "category_v2": ""},
-        ])
+        store.extend(
+            [
+                {
+                    "_id": "a1",
+                    "title": "MCP RCE Vulnerability",
+                    "pipeline_status": "crawled",
+                    "category_v2": "",
+                },
+                {
+                    "_id": "a2",
+                    "title": "New AI Regulation",
+                    "pipeline_status": "crawled",
+                    "category_v2": "",
+                },
+            ]
+        )
 
         manager = PipelineManagerV2(
             tools=mock_tools,
@@ -344,24 +480,33 @@ class TestPipelineV2E2E:
 
     @pytest.mark.asyncio
     async def test_no_pr_eligible_articles_skips_scoring(
-        self, mock_tools, mock_knowledge, e2e_db,
+        self,
+        mock_tools,
+        mock_knowledge,
+        e2e_db,
     ):
         """没有 PR 候选文章时，score 和 draft 跳过"""
         from agent.pipeline_v2 import PipelineManagerV2
 
         db, store = e2e_db
         store.append(
-            {"_id": "a1", "title": "Competitor News",
-             "pipeline_status": "crawled", "category_v2": ""},
+            {
+                "_id": "a1",
+                "title": "Competitor News",
+                "pipeline_status": "crawled",
+                "category_v2": "",
+            },
         )
 
         # Mock classifier 返回非 PR 类别
         from agent.classifier_v2 import ClassifyResultV2
 
         classifier = MagicMock()
-        classifier.classify_batch = AsyncMock(return_value=[
-            ClassifyResultV2(category="国内外竞品信息", confidence=80, reason="友商动态"),
-        ])
+        classifier.classify_batch = AsyncMock(
+            return_value=[
+                ClassifyResultV2(category="国内外竞品信息", confidence=80, reason="友商动态"),
+            ]
+        )
 
         scorer = MagicMock()
         scorer.score_batch = AsyncMock(return_value=[])

@@ -155,6 +155,7 @@ def mock_llm():
 @pytest.fixture
 def generator(mock_llm, knowledge):
     from agent.draft_generator import DraftGenerator
+
     return DraftGenerator(llm=mock_llm, knowledge=knowledge)
 
 
@@ -228,7 +229,7 @@ class TestDraftGenerator:
     async def test_clean_draft_removes_code_fence(self):
         from agent.draft_generator import DraftGenerator
 
-        text = '```markdown\n# Title\n\nContent\n```'
+        text = "```markdown\n# Title\n\nContent\n```"
         cleaned = DraftGenerator._clean_draft(text, "Original Title")
         assert "```" not in cleaned
 
@@ -250,6 +251,27 @@ class TestDraftGenerator:
         assert "157/200" in prompt
         assert "爆点事件" in prompt
 
+    def test_system_prompt_injects_style_hints(self, generator):
+        from agent.pr_templates import PR_TEMPLATES
+
+        tpl = PR_TEMPLATES["爆点事件"][0]
+        prompt = generator._build_system_prompt(
+            tpl,
+            "市场传播视角",
+            "## 用户风格偏好\n- 偏好语气：market_oriented",
+        )
+        assert "## 用户风格偏好" in prompt
+        assert "market_oriented" in prompt
+        assert "不要牺牲事实准确性" not in prompt
+
+    def test_system_prompt_without_style_keeps_legacy_shape(self, generator):
+        from agent.pr_templates import PR_TEMPLATES
+
+        tpl = PR_TEMPLATES["爆点事件"][0]
+        prompt = generator._build_system_prompt(tpl, "市场传播视角")
+        assert "用户风格偏好" not in prompt
+        assert "## 写作要求" in prompt
+
     @pytest.mark.asyncio
     async def test_fallback_draft_has_skeleton(self, sample_article):
         from agent.draft_generator import DraftGenerator
@@ -257,7 +279,11 @@ class TestDraftGenerator:
 
         tpl = PR_TEMPLATES["爆点事件"][0]
         draft = DraftGenerator._fallback_draft(
-            sample_article, tpl, "测试角度", 1, "Test error",
+            sample_article,
+            tpl,
+            "测试角度",
+            1,
+            "Test error",
         )
         assert "待完善" in draft["content_md"]
         assert "Test error" in draft["content_md"]
@@ -276,11 +302,14 @@ class TestDraftGenerator:
             "category_v2": "AI技术重大进展",
             "summary": "Anthropic releases Claude 4...",
         }
-        result = await generator_ai.generate(article, {
-            "product_relevance": 70,
-            "event_impact": 80,
-            "pr_total_score": 150,
-        })
+        result = await generator_ai.generate(
+            article,
+            {
+                "product_relevance": 70,
+                "event_impact": 80,
+                "pr_total_score": 150,
+            },
+        )
         assert result["ok"] is True
         assert len(result["drafts"]) == 4
         template_names = {d["template"] for d in result["drafts"]}
@@ -298,11 +327,14 @@ class TestDraftGenerator:
             "category_v2": "法律法规/监管动态",
             "summary": "EU passes new AI regulation...",
         }
-        result = await generator_law.generate(article, {
-            "product_relevance": 65,
-            "event_impact": 60,
-            "pr_total_score": 125,
-        })
+        result = await generator_law.generate(
+            article,
+            {
+                "product_relevance": 65,
+                "event_impact": 60,
+                "pr_total_score": 125,
+            },
+        )
         assert result["ok"] is True
         template_names = {d["template"] for d in result["drafts"]}
         assert "法规A" in template_names

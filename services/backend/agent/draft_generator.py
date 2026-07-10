@@ -52,7 +52,7 @@ SYSTEM_PROMPT_TEMPLATE = """你是一个智能体安全行业的技术 PR 撰稿
 {knowledge_context}
 
 {template_spec}
-
+{style_hints}
 ## 写作要求
 1. 使用中文撰写，专业但易懂
 2. 严格按章节结构输出 Markdown
@@ -108,12 +108,14 @@ class DraftGenerator:
         self,
         article: dict | Any,
         v2_scores: dict | None = None,
+        style_hints: str | None = None,
     ) -> dict:
         """为单篇文章生成 4 篇 PR 草稿。
 
         Args:
             article: 文章数据（dict 或 Pydantic model）
             v2_scores: V2 打分结果（含 product_relevance / event_impact / pr_total_score）
+            style_hints: 用户风格偏好提示词（可选）
 
         Returns:
             {
@@ -122,8 +124,10 @@ class DraftGenerator:
                 "error": str | None,
             }
         """
-        art = article if isinstance(article, dict) else (
-            article.model_dump() if hasattr(article, "model_dump") else article
+        art = (
+            article
+            if isinstance(article, dict)
+            else (article.model_dump() if hasattr(article, "model_dump") else article)
         )
         scores = v2_scores or {}
 
@@ -142,7 +146,9 @@ class DraftGenerator:
         tasks = []
         for tpl in templates:
             for i, perspective in enumerate(tpl.perspectives):
-                tasks.append(self._generate_draft(art, scores, tpl, perspective, i + 1))
+                tasks.append(
+                    self._generate_draft(art, scores, tpl, perspective, i + 1, style_hints),
+                )
 
         results = await asyncio.gather(*tasks)
         drafts = []
@@ -153,7 +159,9 @@ class DraftGenerator:
         ok = len(drafts) > 0
         logger.info(
             "Generated %d/%d drafts for: %s",
-            len(drafts), DRAFTS_PER_ARTICLE, art.get("title", "")[:40],
+            len(drafts),
+            DRAFTS_PER_ARTICLE,
+            art.get("title", "")[:40],
         )
 
         return {
@@ -171,17 +179,20 @@ class DraftGenerator:
         template: PRTemplate,
         perspective: str,
         index: int,
+        style_hints: str | None = None,
     ) -> dict | None:
         """生成单篇草稿（含重试）。"""
-        system_prompt = self._build_system_prompt(template, perspective)
+        system_prompt = self._build_system_prompt(template, perspective, style_hints)
         user_prompt = self._build_user_prompt(article, scores)
 
         for attempt in range(MAX_RETRIES + 1):
             try:
-                response = await self.llm.ainvoke([
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=user_prompt),
-                ])
+                response = await self.llm.ainvoke(
+                    [
+                        SystemMessage(content=system_prompt),
+                        HumanMessage(content=user_prompt),
+                    ]
+                )
                 raw = response.content if hasattr(response, "content") else str(response)
                 content = self._clean_draft(raw, article.get("title", ""))
 
@@ -195,7 +206,10 @@ class DraftGenerator:
             except Exception as e:
                 if attempt == MAX_RETRIES:
                     logger.warning(
-                        "Draft %s/%d failed: %s", template.name, index, e,
+                        "Draft %s/%d failed: %s",
+                        template.name,
+                        index,
+                        e,
                     )
                     return self._fallback_draft(article, template, perspective, index, str(e))
 
@@ -203,14 +217,23 @@ class DraftGenerator:
 
     # ── Prompt 构建 ──────────────────────────────────────────
 
-    def _build_system_prompt(self, template: PRTemplate, perspective: str) -> str:
+    def _build_system_prompt(
+        self,
+        template: PRTemplate,
+        perspective: str,
+        style_hints: str | None = None,
+    ) -> str:
         knowledge_context = self.knowledge.as_system_prompt()
         if not knowledge_context:
             knowledge_context = "（知识库未加载）"
         template_spec = template.build_system_prompt(perspective)
+        style_section = (
+            f"\n{style_hints.strip()}\n" if style_hints and style_hints.strip() else "\n"
+        )
         return SYSTEM_PROMPT_TEMPLATE.format(
             knowledge_context=knowledge_context,
             template_spec=template_spec,
+            style_hints=style_section,
         )
 
     @staticmethod
@@ -253,6 +276,7 @@ class DraftGenerator:
 
         # 移除尾部常见废话
         import re
+
         cut_patterns = [
             r"\n*---+\n*.*$",
             r"\n*以上是[^#]*$",

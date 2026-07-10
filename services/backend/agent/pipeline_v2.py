@@ -21,6 +21,7 @@ V2 流水线:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
@@ -61,6 +62,8 @@ def create_state_v2(crawl_days: int = 1) -> dict:
         "pr_eligible_count": 0,
         "scored_v2_count": 0,
         "draft_count": 0,
+        "score_threshold": 80,
+        "threshold_adjustment": 0,
         "errors": [],
         "status": PipelineStatusV2.IDLE.value,
         "current_phase": "",
@@ -114,13 +117,15 @@ async def classify_v2_node(state: dict, classifier: Any, db: Any) -> dict:
             try:
                 await db["articles"].update_one(
                     {"_id": art["_id"]},
-                    {"$set": {
-                        "category_v2": result.category,
-                        "category_v2_confidence": result.confidence,
-                        "category_v2_reason": result.reason,
-                        "category_v2_fallback": result.is_fallback,
-                        "is_pr_eligible": result.is_pr_eligible,
-                    }},
+                    {
+                        "$set": {
+                            "category_v2": result.category,
+                            "category_v2_confidence": result.confidence,
+                            "category_v2_reason": result.reason,
+                            "category_v2_fallback": result.is_fallback,
+                            "is_pr_eligible": result.is_pr_eligible,
+                        }
+                    },
                 )
                 updated += 1
                 if result.is_pr_eligible:
@@ -132,7 +137,9 @@ async def classify_v2_node(state: dict, classifier: Any, db: Any) -> dict:
         state["pr_eligible_count"] = pr_eligible
         logger.info(
             "[classify_v2] Done: %d/%d classified, %d PR-eligible",
-            updated, len(articles), pr_eligible,
+            updated,
+            len(articles),
+            pr_eligible,
         )
         log_pipeline(db, "INFO", "classify_v2", f"classified {updated}, {pr_eligible} PR-eligible")
 
@@ -155,11 +162,24 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
             return state
 
         await knowledge.load()
+        adjust_threshold = getattr(scorer, "adjust_threshold", None)
+        if inspect.iscoroutinefunction(adjust_threshold):
+            threshold_info = await adjust_threshold(db=db)
+            state["score_threshold"] = threshold_info["threshold"]
+            state["threshold_adjustment"] = threshold_info["adjustment"]
+            logger.info(
+                "[score_v2] Threshold adjusted: %d (%+d, %d directional feedbacks)",
+                threshold_info["threshold"],
+                threshold_info["adjustment"],
+                threshold_info["directional_count"],
+            )
 
-        cursor = db["articles"].find({
-            "is_pr_eligible": True,
-            "pr_total_score": None,
-        })
+        cursor = db["articles"].find(
+            {
+                "is_pr_eligible": True,
+                "pr_total_score": None,
+            }
+        )
         articles = await cursor.to_list(length=500)
 
         if not articles:
@@ -173,12 +193,19 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
             if not result.get("_fallback", True):
                 await db["articles"].update_one(
                     {"_id": art["_id"]},
-                    {"$set": {
-                        "product_relevance": result["product_relevance"],
-                        "event_impact": result["event_impact"],
-                        "pr_total_score": result["pr_total_score"],
-                        "score_reason": result.get("score_reason", ""),
-                    }},
+                    {
+                        "$set": {
+                            "product_relevance": result["product_relevance"],
+                            "event_impact": result["event_impact"],
+                            "pr_total_score": result["pr_total_score"],
+                            "score_reason": result.get("score_reason", ""),
+                            "pr_threshold": result.get("pr_threshold", state["score_threshold"]),
+                            "threshold_adjustment": result.get(
+                                "threshold_adjustment",
+                                state["threshold_adjustment"],
+                            ),
+                        }
+                    },
                 )
                 scored_count += 1
                 if result.get("is_pr_candidate"):
@@ -186,10 +213,15 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
 
         state["scored_v2_count"] = scored_count
         logger.info(
-            "[score_v2] Scored: %d/%d, %d PR candidates (>=80)",
-            scored_count, len(articles), candidates,
+            "[score_v2] Scored: %d/%d, %d PR candidates (>=%d)",
+            scored_count,
+            len(articles),
+            candidates,
+            state["score_threshold"],
         )
-        log_pipeline(db, "INFO", "score_v2", f"scored {scored_count}/{len(articles)}, {candidates} drafted")
+        log_pipeline(
+            db, "INFO", "score_v2", f"scored {scored_count}/{len(articles)}, {candidates} drafted"
+        )
 
     except Exception as e:
         logger.error("[score_v2] Phase failed: %s", e)
@@ -209,12 +241,14 @@ async def draft_node(state: dict, draft_gen: Any, knowledge: Any, db: Any) -> di
             return state
 
         await knowledge.load()
+        score_threshold = int(state.get("score_threshold", 80))
+        style_hints = await _load_style_hints(db)
 
-        cursor = db["articles"].find({"pr_total_score": {"$gte": 80}})
+        cursor = db["articles"].find({"pr_total_score": {"$gte": score_threshold}})
         articles = await cursor.to_list(length=30)
 
         if not articles:
-            logger.info("[draft] No articles scored >= 80")
+            logger.info("[draft] No articles scored >= %d", score_threshold)
             return state
 
         draft_count = 0
@@ -225,14 +259,18 @@ async def draft_node(state: dict, draft_gen: Any, knowledge: Any, db: Any) -> di
                 "pr_total_score": art.get("pr_total_score", 0),
                 "score_reason": art.get("score_reason", ""),
             }
-            result = await draft_gen.generate(art, v2_scores)
+            result = await draft_gen.generate(art, v2_scores, style_hints=style_hints)
             if result["ok"] and result["drafts"]:
                 await db["articles"].update_one(
                     {"_id": art["_id"]},
-                    {"$set": {
-                        "pr_drafts": result["drafts"],
-                        "pr_template_used": result["drafts"][0]["template"] if result["drafts"] else "",
-                    }},
+                    {
+                        "$set": {
+                            "pr_drafts": result["drafts"],
+                            "pr_template_used": result["drafts"][0]["template"]
+                            if result["drafts"]
+                            else "",
+                        }
+                    },
                 )
                 draft_count += 1
 
@@ -244,6 +282,20 @@ async def draft_node(state: dict, draft_gen: Any, knowledge: Any, db: Any) -> di
         state["errors"].append(f"draft: {e}")
 
     return state
+
+
+async def _load_style_hints(db: Any, user_id: str = "local-user") -> str | None:
+    """读取用户画像并转换为草稿生成可注入的风格提示。"""
+    try:
+        profile = await db["user_profiles"].find_one({"user_id": user_id})
+        if not profile:
+            return None
+        from agent.style_profiler import StyleProfiler
+
+        return StyleProfiler(llm=None, db=db).get_style_hints(profile)
+    except Exception as exc:
+        logger.warning("[draft] Failed to load style hints: %s", exc)
+        return None
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -261,11 +313,11 @@ class PipelineManagerV2:
     def __init__(
         self,
         tools: dict,
-        classifier_v2: Any,   # ClassifierV2
-        scorer_v2: Any,       # ScoringAgentV2
-        draft_gen: Any,       # DraftGenerator
-        knowledge: Any,       # KnowledgeLoader
-        db: Any = None,       # AsyncIOMotorDatabase
+        classifier_v2: Any,  # ClassifierV2
+        scorer_v2: Any,  # ScoringAgentV2
+        draft_gen: Any,  # DraftGenerator
+        knowledge: Any,  # KnowledgeLoader
+        db: Any = None,  # AsyncIOMotorDatabase
     ):
         self.tools = tools
         self.classifier_v2 = classifier_v2
@@ -286,7 +338,12 @@ class PipelineManagerV2:
 
     def get_status(self) -> dict:
         if self._state is None:
-            return {"status": PipelineStatusV2.IDLE.value, "current_phase": "", "state": {}, "errors": []}
+            return {
+                "status": PipelineStatusV2.IDLE.value,
+                "current_phase": "",
+                "state": {},
+                "errors": [],
+            }
         return {
             "status": self._state["status"],
             "current_phase": self._state["current_phase"],
@@ -342,7 +399,11 @@ class PipelineManagerV2:
         pipeline_id = str(uuid.uuid4())[:8]
 
         if self._state and self._state["status"] == PipelineStatusV2.RUNNING.value:
-            return {"pipeline_id": pipeline_id, "status": "rejected", "error": "Pipeline is already running"}
+            return {
+                "pipeline_id": pipeline_id,
+                "status": "rejected",
+                "error": "Pipeline is already running",
+            }
 
         self._state = create_state_v2(crawl_days=crawl_days)
         self._state["status"] = PipelineStatusV2.RUNNING.value
@@ -372,7 +433,11 @@ class PipelineManagerV2:
             self._state["draft_count"],
         )
 
-        return {"pipeline_id": pipeline_id, "status": self._state["status"], "state": dict(self._state)}
+        return {
+            "pipeline_id": pipeline_id,
+            "status": self._state["status"],
+            "state": dict(self._state),
+        }
 
 
 def _now_iso() -> str:
