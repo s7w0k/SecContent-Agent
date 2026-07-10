@@ -9,9 +9,14 @@
  *   const articles = await api.getArticles({ page: 1 });
  */
 
-import axios, { type AxiosInstance } from "axios";
+import axios, { type AxiosInstance } from 'axios';
 import type {
   AccountStatusResult,
+  ActivityBatchLogResponse,
+  ActivityListResponse,
+  ActivityLogResponse,
+  ActivityQuery,
+  ActivityStats,
   ApplyRevisionResponse,
   Article,
   ArticleQuery,
@@ -20,45 +25,54 @@ import type {
   ChatMessage,
   DraftReviseRequest,
   DraftReviseResponse,
+  FeedbackCreate,
+  FeedbackCreateResponse,
+  FeedbackDeleteResponse,
+  FeedbackListResponse,
+  FeedbackQuery,
+  FeedbackStats,
+  FeedbackUpdate,
+  FeedbackUpdateResponse,
   KnowledgeSummary,
   PaginatedResponse,
   PipelineResult,
   PipelineStatusResponse,
   PollLoginResult,
+  ProfileRebuildResponse,
   QRCodeResult,
   Report,
   StatsData,
-} from "../types";
+  StyleProfile,
+  UserActivityCreate,
+} from '../types';
 
 // ═══════════════════════════════════════════════════════════
 // Axios 实例
 // ═══════════════════════════════════════════════════════════
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const client: AxiosInstance = axios.create({
   baseURL: BASE_URL,
   timeout: 300000,
   headers: {
-    "Content-Type": "application/json",
+    'Content-Type': 'application/json',
   },
 });
 
 // 请求拦截器：记录日志
 client.interceptors.request.use((config) => {
-  console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`, config.params || config.data || "");
   return config;
 });
 
 // 响应拦截器：统一提取 data + 记录日志
 client.interceptors.response.use(
   (response) => {
-    console.log(`[API] ${response.status} ${response.config.url} (${response.data?.total ?? "ok"})`);
     return response;
   },
   (error) => {
-    const message = error.response?.data?.detail || error.message || "Network error";
-    console.error(`[API] ERROR ${error.response?.status || ""} ${error.config?.url}: ${message}`);
+    const message = error.response?.data?.detail || error.message || 'Network error';
+    console.error(`[API] ERROR ${error.response?.status || ''} ${error.config?.url}: ${message}`);
     return Promise.reject(error);
   },
 );
@@ -69,10 +83,8 @@ client.interceptors.response.use(
 
 export const dashboardApi = {
   /** 文章列表（分页+筛选+排序） */
-  async getArticles(
-    query: ArticleQuery = {},
-  ): Promise<PaginatedResponse<Article>> {
-    const { data } = await client.get("/articles", { params: query });
+  async getArticles(query: ArticleQuery = {}): Promise<PaginatedResponse<Article>> {
+    const { data } = await client.get('/articles', { params: query });
     return data;
   },
 
@@ -102,7 +114,7 @@ export const dashboardApi = {
 
   /** 统计概览 */
   async getStats(): Promise<StatsData> {
-    const { data } = await client.get("/stats");
+    const { data } = await client.get('/stats');
     return data;
   },
 };
@@ -113,71 +125,80 @@ export const dashboardApi = {
 
 export const pipelineApi = {
   /** 触发完整流水线 */
-  async run(crawlDays: number = 1): Promise<PipelineResult> {
-    const { data } = await client.post("/pipeline/run", {
+  async run(crawlDays = 1): Promise<PipelineResult> {
+    const { data } = await client.post('/pipeline/run', {
       crawl_days: crawlDays,
     });
     return data;
   },
 
   /** 爬取+分类 */
-  async crawl(crawlDays: number = 1): Promise<PipelineResult> {
-    const { data } = await client.post("/pipeline/crawl", { crawl_days: crawlDays });
+  async crawl(crawlDays = 1): Promise<PipelineResult> {
+    const { data } = await client.post('/pipeline/crawl', { crawl_days: crawlDays });
     return data;
   },
 
   /** 仅爬取海外新闻 */
-  async crawlOverseas(days: number = 1): Promise<{ ok: boolean; saved: number; total?: number; per_site?: Record<string, number>; errors?: Record<string, string> }> {
-    const { data } = await client.post("/pipeline/crawl-overseas", null, { params: { days } });
+  async crawlOverseas(days = 1): Promise<{
+    ok: boolean;
+    saved: number;
+    total?: number;
+    per_site?: Record<string, number>;
+    errors?: Record<string, string>;
+  }> {
+    const { data } = await client.post('/pipeline/crawl-overseas', null, { params: { days } });
     return data;
   },
 
   /** 仅爬取公众号 */
   async crawlWewe(): Promise<{ ok: boolean; saved: number }> {
-    const { data } = await client.post("/pipeline/crawl-wewe");
+    const { data } = await client.post('/pipeline/crawl-wewe');
     return data;
   },
 
   /** 仅打分 */
   async score(): Promise<PipelineResult> {
-    const { data } = await client.post("/pipeline/score", {});
+    const { data } = await client.post('/pipeline/score', {});
     return data;
   },
 
   /** 仅生成报道 */
   async report(): Promise<PipelineResult> {
-    const { data } = await client.post("/pipeline/report", {});
+    const { data } = await client.post('/pipeline/report', {});
     return data;
   },
 
   /** 查询流水线状态 */
   async getStatus(): Promise<PipelineStatusResponse> {
-    const { data } = await client.get("/pipeline/status");
+    const { data } = await client.get('/pipeline/status');
     return data;
   },
 
   /** 导入 WeWe RSS 全部文章 */
   async importWewe(): Promise<{ ok: boolean; saved: number; total_in_rss: number }> {
-    const { data } = await client.post("/pipeline/import-wewe");
+    const { data } = await client.post('/pipeline/import-wewe');
     return data;
   },
 
   /** API 抓取公众号文章 (Just One API) */
-  async crawlApi(days: number = 1): Promise<{ ok: boolean; saved: number; total: number }> {
-    const { data } = await client.post("/pipeline/crawl-api", { days });
+  async crawlApi(days = 1): Promise<{ ok: boolean; saved: number; total: number }> {
+    const { data } = await client.post('/pipeline/crawl-api', { days });
     return data;
   },
 
   /** V2 双维度打分（批量） */
   async scoreV2(): Promise<{ ok: boolean; total: number; scored: number; candidates: number }> {
-    const { data } = await client.post("/pipeline/score-v2");
+    const { data } = await client.post('/pipeline/score-v2');
     return data;
   },
 
   /** V2 双维度打分（单篇） */
   async scoreV2Single(urlHash: string): Promise<{
-    ok: boolean; product_relevance: number; event_impact: number;
-    pr_total_score: number; is_pr_candidate: boolean;
+    ok: boolean;
+    product_relevance: number;
+    event_impact: number;
+    pr_total_score: number;
+    is_pr_candidate: boolean;
   }> {
     const { data } = await client.post(`/pipeline/score-v2/${urlHash}`);
     return data;
@@ -202,21 +223,21 @@ export const pipelineApi = {
   },
 
   /** V2 智能 PR 流水线（全量） */
-  async runV2(crawlDays: number = 1): Promise<PipelineResult> {
-    const { data } = await client.post("/pipeline/run-v2", { crawl_days: crawlDays });
+  async runV2(crawlDays = 1): Promise<PipelineResult> {
+    const { data } = await client.post('/pipeline/run-v2', { crawl_days: crawlDays });
     return data;
   },
 
   /** V2 流水线状态 */
   async getStatusV2(): Promise<PipelineStatusResponse> {
-    const { data } = await client.get("/pipeline/status-v2");
+    const { data } = await client.get('/pipeline/status-v2');
     return data;
   },
 
   /** V2 6分类 */
   async classifyV2(
     urlHashes?: string[],
-    force: boolean = false,
+    force = false,
   ): Promise<{
     ok: boolean;
     total: number;
@@ -230,7 +251,7 @@ export const pipelineApi = {
       is_pr_eligible: boolean;
     }>;
   }> {
-    const { data } = await client.post("/pipeline/classify-v2", {
+    const { data } = await client.post('/pipeline/classify-v2', {
       url_hashes: urlHashes || null,
       force,
     });
@@ -244,11 +265,8 @@ export const pipelineApi = {
 
 export const reportsApi = {
   /** 报道列表 */
-  async getReports(
-    page: number = 1,
-    pageSize: number = 10,
-  ): Promise<PaginatedResponse<Report>> {
-    const { data } = await client.get("/reports", {
+  async getReports(page = 1, pageSize = 10): Promise<PaginatedResponse<Report>> {
+    const { data } = await client.get('/reports', {
       params: { page, page_size: pageSize },
     });
     return data;
@@ -262,7 +280,7 @@ export const reportsApi = {
 
   /** 知识库摘要 */
   async getKnowledge(): Promise<KnowledgeSummary> {
-    const { data } = await client.get("/knowledge");
+    const { data } = await client.get('/knowledge');
     return data;
   },
 };
@@ -274,19 +292,19 @@ export const reportsApi = {
 export const accountsApi = {
   /** 查询所有账号状态 */
   async getAccountStatus(): Promise<AccountStatusResult> {
-    const { data } = await client.get("/accounts/status");
+    const { data } = await client.get('/accounts/status');
     return data;
   },
 
   /** 创建登录二维码 */
   async createQRCode(): Promise<QRCodeResult> {
-    const { data } = await client.post("/accounts/qrcode");
+    const { data } = await client.post('/accounts/qrcode');
     return data;
   },
 
   /** 轮询扫码结果 */
-  async pollLogin(uuid: string, timeout: number = 120): Promise<PollLoginResult> {
-    const { data } = await client.post("/accounts/poll-login", null, {
+  async pollLogin(uuid: string, timeout = 120): Promise<PollLoginResult> {
+    const { data } = await client.post('/accounts/poll-login', null, {
       params: { uuid, timeout_seconds: timeout },
     });
     return data;
@@ -294,7 +312,7 @@ export const accountsApi = {
 
   /** 保存账号到 WeWe RSS */
   async saveAccount(vid: string, token: string, name: string): Promise<{ ok: boolean }> {
-    const { data } = await client.post("/accounts/save", null, {
+    const { data } = await client.post('/accounts/save', null, {
       params: { vid, token, name },
     });
     return data;
@@ -302,7 +320,7 @@ export const accountsApi = {
 
   /** 启用/停用账号 */
   async toggleAccount(accountId: string, status: number): Promise<{ ok: boolean }> {
-    const { data } = await client.post("/accounts/toggle", null, {
+    const { data } = await client.post('/accounts/toggle', null, {
       params: { account_id: accountId, status },
     });
     return data;
@@ -310,7 +328,7 @@ export const accountsApi = {
 
   /** 更新全部最新文章 */
   async refreshArticles(): Promise<{ ok: boolean; saved: number; total: number }> {
-    const { data } = await client.post("/accounts/refresh");
+    const { data } = await client.post('/accounts/refresh');
     return data;
   },
 
@@ -328,7 +346,7 @@ export const accountsApi = {
 export const chatApi = {
   /** 对话问答 */
   async ask(request: ChatAskRequest): Promise<ChatAskResponse> {
-    const { data } = await client.post("/chat/ask", request);
+    const { data } = await client.post('/chat/ask', request);
     return data.data;
   },
 
@@ -352,8 +370,8 @@ export const chatApi = {
 
     try {
       const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
       });
 
@@ -365,12 +383,12 @@ export const chatApi = {
 
       const reader = response.body?.getReader();
       if (!reader) {
-        onError?.("无法读取响应流");
+        onError?.('无法读取响应流');
         return;
       }
 
       const decoder = new TextDecoder();
-      let buffer = "";
+      let buffer = '';
 
       // eslint-disable-next-line no-constant-condition
       while (true) {
@@ -380,11 +398,11 @@ export const chatApi = {
         buffer += decoder.decode(value, { stream: true });
 
         // 按 SSE 事件分割（双换行）
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || "";
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
 
         for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
+          if (!line.startsWith('data: ')) continue;
           const jsonStr = line.slice(6).trim();
           if (!jsonStr) continue;
 
@@ -405,7 +423,7 @@ export const chatApi = {
         }
       }
     } catch (err) {
-      onError?.(err instanceof Error ? err.message : "网络错误");
+      onError?.(err instanceof Error ? err.message : '网络错误');
     }
   },
 
@@ -415,10 +433,7 @@ export const chatApi = {
     draftIndex: number,
     request: DraftReviseRequest,
   ): Promise<DraftReviseResponse> {
-    const { data } = await client.post(
-      `/articles/${urlHash}/drafts/${draftIndex}/revise`,
-      request,
-    );
+    const { data } = await client.post(`/articles/${urlHash}/drafts/${draftIndex}/revise`, request);
     return data.data;
   },
 
@@ -441,8 +456,8 @@ export const chatApi = {
 
     try {
       const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
       });
 
@@ -454,12 +469,12 @@ export const chatApi = {
 
       const reader = response.body?.getReader();
       if (!reader) {
-        onError?.("无法读取响应流");
+        onError?.('无法读取响应流');
         return;
       }
 
       const decoder = new TextDecoder();
-      let buffer = "";
+      let buffer = '';
 
       // eslint-disable-next-line no-constant-condition
       while (true) {
@@ -468,11 +483,11 @@ export const chatApi = {
 
         buffer += decoder.decode(value, { stream: true });
 
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || "";
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
 
         for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
+          if (!line.startsWith('data: ')) continue;
           const jsonStr = line.slice(6).trim();
           if (!jsonStr) continue;
 
@@ -498,7 +513,7 @@ export const chatApi = {
         }
       }
     } catch (err) {
-      onError?.(err instanceof Error ? err.message : "网络错误");
+      onError?.(err instanceof Error ? err.message : '网络错误');
     }
   },
 
@@ -515,24 +530,100 @@ export const chatApi = {
   },
 
   /** 获取对话历史 */
-  async getChatHistory(
-    urlHash: string,
-    draftIndex: number,
-  ): Promise<ChatMessage[]> {
-    const { data } = await client.get(
-      `/articles/${urlHash}/drafts/${draftIndex}/chat-history`,
-    );
+  async getChatHistory(urlHash: string, draftIndex: number): Promise<ChatMessage[]> {
+    const { data } = await client.get(`/articles/${urlHash}/drafts/${draftIndex}/chat-history`);
     return data.data.messages;
   },
 
   /** 清空对话历史 */
-  async clearChatHistory(
-    urlHash: string,
-    draftIndex: number,
-  ): Promise<{ cleared: boolean }> {
-    const { data } = await client.delete(
-      `/articles/${urlHash}/drafts/${draftIndex}/chat-history`,
-    );
+  async clearChatHistory(urlHash: string, draftIndex: number): Promise<{ cleared: boolean }> {
+    const { data } = await client.delete(`/articles/${urlHash}/drafts/${draftIndex}/chat-history`);
+    return data.data;
+  },
+};
+
+// ═══════════════════════════════════════════════════════════
+// Feedback API（用户反馈）
+// ═══════════════════════════════════════════════════════════
+
+export const feedbackApi = {
+  /** 提交反馈 */
+  async create(payload: FeedbackCreate): Promise<FeedbackCreateResponse> {
+    const { data } = await client.post('/feedback', payload);
+    return data.data;
+  },
+
+  /** 查询反馈 */
+  async list(query: FeedbackQuery = {}): Promise<FeedbackListResponse> {
+    const { data } = await client.get('/feedback', { params: query });
+    return data.data;
+  },
+
+  /** 反馈统计 */
+  async stats(groupBy: 'template' | 'perspective' = 'template'): Promise<FeedbackStats> {
+    const { data } = await client.get('/feedback/stats', {
+      params: { group_by: groupBy },
+    });
+    return data.data;
+  },
+
+  /** 更新反馈 */
+  async update(feedbackId: string, payload: FeedbackUpdate): Promise<FeedbackUpdateResponse> {
+    const { data } = await client.put(`/feedback/${feedbackId}`, payload);
+    return data.data;
+  },
+
+  /** 删除反馈 */
+  async remove(feedbackId: string): Promise<FeedbackDeleteResponse> {
+    const { data } = await client.delete(`/feedback/${feedbackId}`);
+    return data.data;
+  },
+};
+
+// ═══════════════════════════════════════════════════════════
+// Activity API（用户操作记录）
+// ═══════════════════════════════════════════════════════════
+
+export const activityApi = {
+  /** 记录单条操作 */
+  async log(payload: UserActivityCreate): Promise<ActivityLogResponse> {
+    const { data } = await client.post('/activities/log', payload);
+    return data.data;
+  },
+
+  /** 批量记录操作 */
+  async batchLog(activities: UserActivityCreate[]): Promise<ActivityBatchLogResponse> {
+    const { data } = await client.post('/activities/batch-log', { activities });
+    return data.data;
+  },
+
+  /** 查询操作记录 */
+  async list(query: ActivityQuery = {}): Promise<ActivityListResponse> {
+    const { data } = await client.get('/activities', { params: query });
+    return data.data;
+  },
+
+  /** 操作统计 */
+  async stats(days = 30): Promise<ActivityStats> {
+    const { data } = await client.get('/activities/stats', { params: { days } });
+    return data.data;
+  },
+};
+
+// ═══════════════════════════════════════════════════════════
+// Profile API（用户风格画像）
+// ═══════════════════════════════════════════════════════════
+
+export const profileApi = {
+  /** 获取用户风格画像 */
+  async getStyle(): Promise<StyleProfile> {
+    const { data } = await client.get('/profile/style');
+    return data.data;
+  },
+
+  /** 重建用户风格画像 */
+  async rebuild(): Promise<ProfileRebuildResponse> {
+    const { data } = await client.post('/profile/rebuild');
     return data.data;
   },
 };
@@ -547,6 +638,9 @@ const api = {
   ...reportsApi,
   ...accountsApi,
   ...chatApi,
+  ...feedbackApi,
+  ...activityApi,
+  ...profileApi,
 };
 
 export default api;

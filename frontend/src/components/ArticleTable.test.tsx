@@ -1,23 +1,23 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-import ArticleTable from "./ArticleTable";
-import type { Article } from "../types";
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import type { Article } from '../types';
+import ArticleTable from './ArticleTable';
 
 const mockArticle: Article = {
-  _id: "1",
-  url_hash: "abc123",
-  title: "Critical MCP Vulnerability Found",
-  url: "https://example.com/mcp",
-  source: "The Hacker News",
-  source_type: "overseas_news",
-  published_at: "2026-06-29",
-  added_at: "2026-06-29T12:00:00",
-  summary: "A critical vulnerability...",
-  summary_cn: "MCP严重漏洞",
+  _id: '1',
+  url_hash: 'abc123',
+  title: 'Critical MCP Vulnerability Found',
+  url: 'https://example.com/mcp',
+  source: 'The Hacker News',
+  source_type: 'overseas_news',
+  published_at: '2026-06-29',
+  added_at: '2026-06-29T12:00:00',
+  summary: 'A critical vulnerability...',
+  summary_cn: 'MCP严重漏洞',
   is_ai_security: true,
   is_agent_security: true,
-  category: "MCP协议漏洞",
-  category_v2: "爆点事件",
+  category: 'MCP协议漏洞',
+  category_v2: '爆点事件',
   product_relevance: 92,
   event_impact: 78,
   pr_total_score: 170,
@@ -26,10 +26,10 @@ const mockArticle: Article = {
   total_score: 170,
   is_high_value: true,
   has_report: true,
-  report_id: "rpt-1",
+  report_id: 'rpt-1',
 };
 
-describe("ArticleTable", () => {
+describe('ArticleTable', () => {
   const defaultProps = {
     articles: [mockArticle],
     total: 1,
@@ -40,38 +40,42 @@ describe("ArticleTable", () => {
     onSortChange: vi.fn(),
     onViewReport: vi.fn(),
     onViewDetail: vi.fn(),
+    onViewDrafts: vi.fn(),
+    onRunV2Single: vi.fn(),
+    onScoreV2Single: vi.fn(),
+    onRefresh: vi.fn(),
   };
 
-  it("renders article title as link", () => {
+  it('renders article title as link', () => {
     render(<ArticleTable {...defaultProps} />);
-    const link = screen.getByText("Critical MCP Vulnerability Found");
+    const link = screen.getByText('Critical MCP Vulnerability Found');
     expect(link).toBeDefined();
   });
 
-  it("renders category tag", () => {
+  it('renders category tag', () => {
     render(<ArticleTable {...defaultProps} />);
-    expect(screen.getByText("爆点事件")).toBeDefined();
+    expect(screen.getByText('爆点事件')).toBeDefined();
   });
 
-  it("renders score values", () => {
+  it('renders score values', () => {
     render(<ArticleTable {...defaultProps} />);
-    expect(screen.getByText("92")).toBeDefined();
-    expect(screen.getByText("78")).toBeDefined();
-    expect(screen.getByText("170")).toBeDefined();
+    expect(screen.getByText('92')).toBeDefined();
+    expect(screen.getByText('78')).toBeDefined();
+    expect(screen.getByText('170')).toBeDefined();
   });
 
-  it("shows report button when has_report is true", () => {
+  it('shows report button when has_report is true', () => {
     render(<ArticleTable {...defaultProps} />);
-    expect(screen.getByText("报道")).toBeDefined();
+    expect(screen.getByText('报道')).toBeDefined();
   });
 
-  it("shows detail button", () => {
+  it('shows detail button', () => {
     render(<ArticleTable {...defaultProps} />);
-    expect(screen.getByText("详情")).toBeDefined();
+    expect(screen.getByText('详情')).toBeDefined();
   });
 
-  it("shows empty state when no articles", () => {
+  it('shows empty state when no articles', () => {
     render(<ArticleTable {...defaultProps} articles={[]} total={0} />);
-    expect(screen.getByText("no data")).toBeDefined();
+    expect(screen.getByText('no data')).toBeDefined();
   });
 });

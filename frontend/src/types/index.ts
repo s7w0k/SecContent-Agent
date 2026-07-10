@@ -8,16 +8,11 @@
 // 基础类型
 // ═══════════════════════════════════════════════════════════
 
-export type SourceType = "overseas_news" | "wechat_mp" | "paper";
+export type SourceType = 'overseas_news' | 'wechat_mp' | 'paper';
 
-export type PipelinePhase = "crawl" | "classify" | "score" | "report";
+export type PipelinePhase = 'crawl' | 'classify' | 'score' | 'report';
 
-export type PipelineStatus =
-  | "idle"
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled";
+export type PipelineStatus = 'idle' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 // ═══════════════════════════════════════════════════════════
 // Article（文章）
@@ -72,7 +67,7 @@ export interface ArticleQuery {
   is_high_value?: boolean;
   keyword?: string;
   sort_by?: string;
-  order?: "asc" | "desc";
+  order?: 'asc' | 'desc';
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -141,6 +136,12 @@ export interface PipelineState {
   classified_count: number;
   scored_count: number;
   report_count: number;
+  classified_v2_count?: number;
+  pr_eligible_count?: number;
+  scored_v2_count?: number;
+  draft_count?: number;
+  score_threshold?: number;
+  threshold_adjustment?: number;
   errors: string[];
   status: PipelineStatus;
   current_phase: string;
@@ -196,7 +197,7 @@ export interface FilterValues {
 export interface WeWeAccount {
   id: string;
   name: string;
-  status: string;        // active / expired / disabled
+  status: string; // active / expired / disabled
   vid?: string;
   token?: string;
   last_login?: string;
@@ -213,15 +214,15 @@ export interface AccountStatusResult {
 export interface QRCodeResult {
   ok: boolean;
   uuid?: string;
-  qr_base64?: string;    // base64 PNG (from backend)
-  qrcode_img?: string;   // alias
+  qr_base64?: string; // base64 PNG (from backend)
+  qrcode_img?: string; // alias
   scan_url?: string;
   message?: string;
 }
 
 export interface PollLoginResult {
   ok: boolean;
-  status?: string;        // waiting / scanned / confirmed / expired
+  status?: string; // waiting / scanned / confirmed / expired
   vid?: string;
   token?: string;
   name?: string;
@@ -232,7 +233,7 @@ export interface PollLoginResult {
 // Chat（对话改稿）
 // ═══════════════════════════════════════════════════════════
 
-export type ChatRole = "user" | "assistant";
+export type ChatRole = 'user' | 'assistant';
 
 export interface ChatMessage {
   role: ChatRole;
@@ -284,4 +285,232 @@ export interface ApplyRevisionResponse {
   draft_index: number;
   revision_id: string;
   applied: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Feedback（用户反馈）
+// ═══════════════════════════════════════════════════════════
+
+export type TargetType = 'draft' | 'revision' | 'article_score' | 'pipeline';
+
+export type FeedbackStatus = 'active' | 'archived';
+
+export interface FeedbackTargetRef {
+  article_url_hash: string;
+  draft_index?: number;
+  revision_id?: string;
+  pipeline_id?: string;
+}
+
+export interface Feedback {
+  feedback_id: string;
+  user_id: string;
+  target_type: TargetType;
+  target_ref: FeedbackTargetRef;
+  rating: number;
+  rating_dimensions?: Record<string, number> | null;
+  comment: string;
+  tags: string[];
+  status: FeedbackStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FeedbackCreate {
+  target_type: TargetType;
+  target_ref: FeedbackTargetRef;
+  rating: number;
+  rating_dimensions?: Record<string, number>;
+  comment?: string;
+  tags?: string[];
+}
+
+export interface FeedbackUpdate {
+  rating?: number;
+  rating_dimensions?: Record<string, number>;
+  comment?: string;
+  tags?: string[];
+  status?: FeedbackStatus;
+}
+
+export interface FeedbackQuery {
+  target_type?: TargetType;
+  article_url_hash?: string;
+  draft_index?: number;
+  status?: FeedbackStatus;
+  page?: number;
+  page_size?: number;
+}
+
+export interface FeedbackListResponse {
+  items: Feedback[];
+  total: number;
+  avg_rating: number;
+  page: number;
+  page_size: number;
+}
+
+export interface FeedbackStats {
+  groups: Array<{ key: string; count: number; avg_rating: number }>;
+  total: number;
+  overall_avg: number;
+}
+
+export interface FeedbackCreateResponse {
+  feedback_id: string;
+  created_at: string;
+}
+
+export interface FeedbackUpdateResponse {
+  feedback_id: string;
+  updated: boolean;
+  updated_at: string;
+}
+
+export interface FeedbackDeleteResponse {
+  feedback_id: string;
+  deleted: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Activity（用户操作记录）
+// ═══════════════════════════════════════════════════════════
+
+export type ActionType =
+  | 'draft_view'
+  | 'draft_download'
+  | 'draft_revise'
+  | 'revision_apply'
+  | 'feedback_submit'
+  | 'pipeline_run';
+
+export interface ActivityTarget {
+  article_url_hash?: string;
+  draft_index?: number;
+  template?: string;
+  perspective?: string;
+  revision_id?: string;
+  pipeline_id?: string;
+}
+
+export interface UserActivity {
+  activity_id: string;
+  user_id: string;
+  action: ActionType;
+  target: ActivityTarget;
+  context: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface UserActivityCreate {
+  action: ActionType;
+  target: ActivityTarget;
+  context?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ActivityQuery {
+  action?: ActionType;
+  article_url_hash?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export interface ActivityListResponse {
+  items: UserActivity[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface ActivityStats {
+  total: number;
+  by_action: Partial<Record<ActionType, number>>;
+  by_template: Record<string, number>;
+  daily_trend: Array<{ date: string; count: number }>;
+}
+
+export interface ActivityLogResponse {
+  activity_id: string;
+  created_at: string;
+}
+
+export interface ActivityBatchLogResponse {
+  activity_ids: string[];
+  recorded: number;
+  failed: number;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Style Profile（用户风格画像）
+// ═══════════════════════════════════════════════════════════
+
+export type PreferredLength = 'short' | 'medium' | 'long';
+
+export type PreferredTone = 'market_oriented' | 'technical' | 'executive';
+
+export interface StyleHints {
+  preferred_templates: string[];
+  preferred_perspectives: string[];
+  preferred_length: PreferredLength;
+  preferred_tone: PreferredTone;
+  common_revise_directions: string[];
+  avoid_patterns: string[];
+}
+
+export interface PreferenceMetric {
+  count: number;
+  avg_rating: number;
+  download_count: number;
+  apply_count: number;
+  revise_count: number;
+}
+
+export interface PreferenceScores {
+  template_scores: Record<string, PreferenceMetric>;
+  perspective_scores: Record<string, PreferenceMetric>;
+}
+
+export interface ProfileFeedbackSummary {
+  total_feedbacks: number;
+  avg_rating: number;
+  positive_count: number;
+  negative_count: number;
+  neutral_count: number;
+  top_tags: string[];
+}
+
+export interface ProfileActivitySummary {
+  total_downloads: number;
+  total_applies: number;
+  total_revises: number;
+  total_feedbacks: number;
+  last_active_at?: string | null;
+}
+
+export interface ReviseInstructionPattern {
+  pattern: string;
+  count: number;
+}
+
+export interface StyleProfile {
+  user_id: string;
+  style_hints: StyleHints;
+  preference_scores: PreferenceScores;
+  feedback_summary: ProfileFeedbackSummary;
+  activity_summary: ProfileActivitySummary;
+  revise_instruction_patterns: ReviseInstructionPattern[];
+  llm_analysis: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProfileRebuildResponse {
+  rebuilt: boolean;
+  feedback_count: number;
+  activity_count: number;
+  version: number;
+  updated_at: string;
 }
