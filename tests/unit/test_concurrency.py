@@ -17,12 +17,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services
 
 import api.pipeline as pipeline_api
 from api.pipeline import (
-    PipelinePhaseRequest,
+    _execute_crawl_pipeline,
+    _run_v2_single_workflow,
     acquire_pipeline_lock,
     classify_v2_single,
-    pipeline_crawl,
     release_pipeline_lock,
-    run_v2_single,
     score_v2_single,
     wait_for_pipeline_lock,
 )
@@ -173,11 +172,11 @@ async def test_concurrent_crawl_runs_once_and_second_request_reuses(
     request = _request(db, pipeline_manager=manager)
 
     first = asyncio.create_task(
-        pipeline_crawl(PipelinePhaseRequest(crawl_days=1), request, user_id="user-a"),
+        _execute_crawl_pipeline(request.app, crawl_days=1, user_id="user-a"),
     )
     await started.wait()
     second = asyncio.create_task(
-        pipeline_crawl(PipelinePhaseRequest(crawl_days=1), request, user_id="user-b"),
+        _execute_crawl_pipeline(request.app, crawl_days=1, user_id="user-b"),
     )
     await asyncio.sleep(0)
     finish.set()
@@ -309,8 +308,8 @@ async def test_concurrent_drafts_are_upserted_per_user():
     )
 
     await asyncio.gather(
-        run_v2_single(ARTICLE_HASH, request, user_id="user-a"),
-        run_v2_single(ARTICLE_HASH, request, user_id="user-b"),
+        _run_v2_single_workflow(request.app, ARTICLE_HASH, user_id="user-a"),
+        _run_v2_single_workflow(request.app, ARTICLE_HASH, user_id="user-b"),
     )
 
     queries = [call[0] for call in user_drafts.update_calls]

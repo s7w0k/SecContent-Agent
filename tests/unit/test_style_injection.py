@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "backend"))
 
-from api.pipeline import run_v2_single
+from api.pipeline import _run_v2_single_workflow
 
 ARTICLE_HASH = "d41d8cd98f00b204e9800998ecf8427e"
 
@@ -98,7 +98,7 @@ async def test_run_v2_single_injects_current_user_style_and_saves_drafts(caplog)
     )
 
     with caplog.at_level("INFO"):
-        result = await run_v2_single(ARTICLE_HASH, request, user_id="user-a")
+        result = await _run_v2_single_workflow(request.app, ARTICLE_HASH, user_id="user-a")
 
     assert result["ok"] is True
     collections["user_profiles"].find_one.assert_awaited_once_with({"user_id": "user-a"})
@@ -116,7 +116,11 @@ async def test_run_v2_single_injects_current_user_style_and_saves_drafts(caplog)
 async def test_run_v2_single_uses_default_prompt_without_profile():
     request, collections, draft_gen = _build_request(None)
 
-    result = await run_v2_single(ARTICLE_HASH, request, user_id="first-time-user")
+    result = await _run_v2_single_workflow(
+        request.app,
+        ARTICLE_HASH,
+        user_id="first-time-user",
+    )
 
     assert result["ok"] is True
     assert draft_gen.generate.await_args.kwargs["style_hints"] is None

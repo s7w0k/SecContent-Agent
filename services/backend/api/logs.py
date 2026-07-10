@@ -3,7 +3,8 @@
 import contextlib
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Query, Request
+from auth.deps import get_current_user
+from fastapi import APIRouter, Depends, Query, Request
 from models.feedback import PipelineLog
 
 router = APIRouter(prefix="/api/logs", tags=["Logs"])
@@ -64,12 +65,15 @@ def log_pipeline(
 
 
 @router.get("/dates")
-async def list_dates(request: Request):
-    """List all dates that have logs."""
+async def list_dates(
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
+    """List dates that have logs for the current user."""
     db = getattr(request.app.state, "db", None)
     if db is None:
         return {"dates": []}
-    dates = await db[LOG_COLLECTION].distinct("date")
+    dates = await db[LOG_COLLECTION].distinct("date", {"user_id": user_id})
     return {"dates": sorted(dates, reverse=True)}
 
 
@@ -79,13 +83,14 @@ async def get_logs_by_date(
     request: Request,
     phase: str = Query(default="", description="Filter by phase"),
     limit: int = Query(default=200, le=500),
+    user_id: str = Depends(get_current_user),
 ):
     """Get logs for a specific date, optionally filtered by phase."""
     db = getattr(request.app.state, "db", None)
     if db is None:
         return {"date": date, "logs": [], "phases": []}
 
-    query = {"date": date}
+    query = {"user_id": user_id, "date": date}
     if phase:
         query["phase"] = phase
 
@@ -96,6 +101,9 @@ async def get_logs_by_date(
         logs.append(doc)
     logs.reverse()
 
-    phases = await db[LOG_COLLECTION].distinct("phase", {"date": date})
+    phases = await db[LOG_COLLECTION].distinct(
+        "phase",
+        {"user_id": user_id, "date": date},
+    )
 
     return {"date": date, "logs": logs, "phases": sorted(phases)}

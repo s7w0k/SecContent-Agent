@@ -7,6 +7,7 @@ REST API 端点 — 单元测试
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from unittest.mock import AsyncMock, MagicMock
@@ -54,6 +55,7 @@ def mock_db():
     reports_mock = MagicMock()
     user_activities_mock = MagicMock()
     pipeline_locks_mock = MagicMock()
+    pipeline_tasks_mock = MagicMock()
 
     def _getitem(key):
         return {
@@ -61,6 +63,7 @@ def mock_db():
             "reports": reports_mock,
             "user_activities": user_activities_mock,
             "pipeline_locks": pipeline_locks_mock,
+            "pipeline_tasks": pipeline_tasks_mock,
         }.get(key, MagicMock())
 
     db.__getitem__.side_effect = _getitem
@@ -88,6 +91,8 @@ def mock_db():
     pipeline_locks_mock.insert_one = AsyncMock(return_value=MagicMock(inserted_id="lock-id"))
     pipeline_locks_mock.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
     pipeline_locks_mock.find_one = AsyncMock(return_value=None)
+    pipeline_tasks_mock.insert_one = AsyncMock(return_value=MagicMock(inserted_id="task-id"))
+    pipeline_tasks_mock.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
     db._user_activities = user_activities_mock
 
     return db
@@ -202,6 +207,8 @@ class TestPipelineAPI:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post("/api/pipeline/crawl", json={"crawl_days": 2})
             assert resp.status_code == 200
+            assert resp.json()["data"]["task_id"].startswith("task-")
+        await asyncio.gather(*app.state.pipeline_background_tasks)
 
     @pytest.mark.asyncio
     async def test_run_score(self, app):

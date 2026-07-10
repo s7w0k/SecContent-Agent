@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Coroutine
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -20,7 +21,8 @@ import httpx
 from agent.style_profiler import load_style_hints
 from api.activity import log_activity
 from auth.deps import get_current_user
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from models.feedback import PipelineTask
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
@@ -158,6 +160,213 @@ def _pipeline_timeout_error() -> HTTPException:
     )
 
 
+async def _create_pipeline_task(
+    db: Any,
+    user_id: str,
+    task_type: str,
+    article_url_hash: str | None = None,
+) -> dict:
+    """创建一小时后自动清理的流水线任务文档。"""
+    task = PipelineTask(
+        user_id=user_id,
+        task_type=task_type,
+        article_url_hash=article_url_hash,
+        progress={"phase": "pending", "message": "排队中..."},
+    )
+    document = task.model_dump(exclude={"id"}, mode="python")
+    await db["pipeline_tasks"].insert_one(document)
+    return document
+
+
+async def _update_pipeline_task(
+    db: Any,
+    task_id: str,
+    user_id: str,
+    *,
+    status: str | None = None,
+    phase: str | None = None,
+    current: int = 0,
+    total: int = 0,
+    message: str = "",
+    result: dict | None = None,
+    error: str | None = None,
+) -> None:
+    """更新指定用户任务状态及进度。"""
+    fields: dict[str, Any] = {"updated_at": datetime.now(UTC)}
+    if status is not None:
+        fields["status"] = status
+    if phase is not None:
+        fields["progress"] = {
+            "phase": phase,
+            "current": current,
+            "total": total,
+            "message": message,
+        }
+    if result is not None:
+        fields["result"] = result
+    if error is not None:
+        fields["error"] = error[:2000]
+    await db["pipeline_tasks"].update_one(
+        {"task_id": task_id, "user_id": user_id},
+        {"$set": fields},
+    )
+
+
+def _schedule_pipeline_task(app: Any, coroutine: Coroutine[Any, Any, None]) -> None:
+    """调度后台协程，并在 app.state 中持有引用直至任务结束。"""
+    tasks = getattr(app.state, "pipeline_background_tasks", None)
+    if tasks is None:
+        tasks = set()
+        app.state.pipeline_background_tasks = tasks
+    task = asyncio.create_task(coroutine)
+    tasks.add(task)
+    task.add_done_callback(tasks.discard)
+
+
+async def _run_manager_with_progress(
+    db: Any,
+    task_id: str,
+    user_id: str,
+    manager: Any,
+    operation: Coroutine[Any, Any, dict],
+    phase_map: dict[str, tuple[str, int, str]],
+) -> dict:
+    """执行现有 PipelineManager，同时将其 current_phase 镜像到任务进度。"""
+    runner = asyncio.create_task(operation)
+    last_phase = ""
+    try:
+        while not runner.done():
+            manager_status = manager.get_status()
+            raw_phase = manager_status.get("current_phase", "")
+            if raw_phase in phase_map and raw_phase != last_phase:
+                phase, current, message = phase_map[raw_phase]
+                await _update_pipeline_task(
+                    db,
+                    task_id,
+                    user_id,
+                    status="running",
+                    phase=phase,
+                    current=current,
+                    total=len(phase_map),
+                    message=message,
+                )
+                last_phase = raw_phase
+            await asyncio.sleep(0.2)
+        return await runner
+    finally:
+        if not runner.done():
+            runner.cancel()
+
+
+async def _execute_pipeline_task(
+    app: Any,
+    task_id: str,
+    user_id: str,
+    task_type: str,
+    *,
+    crawl_days: int = 1,
+    article_url_hash: str | None = None,
+) -> None:
+    """后台执行流水线任务并持久化阶段进度、结果或错误。"""
+    db = app.state.db
+    try:
+        await _update_pipeline_task(
+            db,
+            task_id,
+            user_id,
+            status="running",
+            phase="crawl" if not article_url_hash else "classify",
+            current=0,
+            total=4 if task_type == "run-v2" else 2,
+            message="正在启动流水线...",
+        )
+
+        if task_type == "run-v2" and article_url_hash:
+            result = await _run_v2_single_workflow(
+                app,
+                article_url_hash,
+                user_id,
+                task_id=task_id,
+            )
+        elif task_type == "run-v2":
+            manager = app.state.pipeline_v2
+            result = await _run_manager_with_progress(
+                db,
+                task_id,
+                user_id,
+                manager,
+                manager.run_full(crawl_days=crawl_days, user_id=user_id),
+                {
+                    "crawl": ("crawl", 0, "正在爬取文章..."),
+                    "classify_v2": ("classify", 1, "正在分类文章..."),
+                    "score_v2": ("score", 2, "正在评估文章..."),
+                    "draft": ("draft", 3, "正在生成草稿..."),
+                },
+            )
+        elif task_type == "crawl":
+            manager = app.state.pipeline_manager
+            result = await _run_manager_with_progress(
+                db,
+                task_id,
+                user_id,
+                manager,
+                _execute_crawl_pipeline(app, crawl_days, user_id),
+                {
+                    "crawl": ("crawl", 0, "正在爬取文章..."),
+                    "classify": ("classify", 1, "正在分类文章..."),
+                },
+            )
+        else:
+            raise ValueError(f"Unsupported pipeline task type: {task_type}")
+
+        if result.get("status") in {"failed", "cancelled", "rejected"}:
+            raise RuntimeError(result.get("error") or f"Pipeline {result['status']}")
+        await _update_pipeline_task(
+            db,
+            task_id,
+            user_id,
+            status="completed",
+            phase="completed",
+            current=4 if task_type == "run-v2" else 2,
+            total=4 if task_type == "run-v2" else 2,
+            message="任务完成",
+            result=result,
+        )
+        await log_activity(
+            db,
+            user_id,
+            "pipeline_run",
+            {"task_id": task_id, "article_url_hash": article_url_hash},
+            {"crawl_days": crawl_days, "version": "v2" if task_type == "run-v2" else "v1"},
+        )
+    except asyncio.CancelledError:
+        await _update_pipeline_task(
+            db,
+            task_id,
+            user_id,
+            status="failed",
+            phase="failed",
+            message="任务已取消",
+            error="Pipeline task cancelled",
+        )
+        raise
+    except Exception as exc:
+        logging.getLogger("backend.api.pipeline").exception(
+            "Pipeline task failed: task_id=%s user_id=%s",
+            task_id,
+            user_id,
+        )
+        await _update_pipeline_task(
+            db,
+            task_id,
+            user_id,
+            status="failed",
+            phase="failed",
+            message="任务执行失败",
+            error=str(exc),
+        )
+
+
 # ═══════════════════════════════════════════════════════════════
 # 端点
 # ═══════════════════════════════════════════════════════════════
@@ -180,39 +389,39 @@ async def pipeline_run(body: PipelineRunRequest, request: Request, user_id: str 
 
 @router.post("/run-v2", summary="触发 V2 智能 PR 流水线")
 async def pipeline_run_v2(body: PipelineRunRequest, request: Request, user_id: str = Depends(get_current_user)):
-    """执行 V2 全流程：crawl → classify_v2 → score_v2 → draft"""
+    """创建 V2 全流程后台任务并立即返回 task_id。"""
     manager_v2 = getattr(request.app.state, "pipeline_v2", None)
     if manager_v2 is None:
         raise HTTPException(status_code=503, detail="Pipeline V2 not initialized")
-    result = await manager_v2.run_full(crawl_days=body.crawl_days, user_id=user_id)
-    await log_activity(
-        getattr(request.app.state, "db", None),
-        user_id,
-        "pipeline_run",
-        {"pipeline_id": result.get("pipeline_id") if isinstance(result, dict) else None},
-        {"crawl_days": body.crawl_days, "version": "v2"},
-    )
-    return result
-
-
-@router.get("/status-v2", summary="查询 V2 流水线状态")
-async def pipeline_status_v2(request: Request, _user_id: str = Depends(get_current_user)):
-    """返回 V2 流水线的运行状态"""
-    manager_v2 = getattr(request.app.state, "pipeline_v2", None)
-    if manager_v2 is None:
-        raise HTTPException(status_code=503, detail="Pipeline V2 not initialized")
-    return manager_v2.get_status()
-
-
-@router.post("/crawl", summary="爬取+分类")
-async def pipeline_crawl(body: PipelinePhaseRequest, request: Request, user_id: str = Depends(get_current_user)):
-    """爬取文章并分类（crawl → classify）"""
-    manager = _get_manager(request)
     db = getattr(request.app.state, "db", None)
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
 
-    lock_key = f"crawl-{datetime.now(UTC):%Y-%m-%d}-days-{body.crawl_days}"
+    task = await _create_pipeline_task(db, user_id, "run-v2")
+    _schedule_pipeline_task(
+        request.app,
+        _execute_pipeline_task(
+            request.app,
+            task["task_id"],
+            user_id,
+            "run-v2",
+            crawl_days=body.crawl_days,
+        ),
+    )
+    return {
+        "ok": True,
+        "data": {
+            "task_id": task["task_id"],
+            "message": "任务已创建，请轮询状态",
+        },
+    }
+
+
+async def _execute_crawl_pipeline(app: Any, crawl_days: int, user_id: str) -> dict:
+    """执行带共享锁的爬取和分类，供后台任务复用。"""
+    manager = app.state.pipeline_manager
+    db = app.state.db
+    lock_key = f"crawl-{datetime.now(UTC):%Y-%m-%d}-days-{crawl_days}"
     acquired = await acquire_pipeline_lock(db, lock_key, user_id)
     retry_count = 0
     while not acquired:
@@ -234,18 +443,52 @@ async def pipeline_crawl(body: PipelinePhaseRequest, request: Request, user_id: 
     try:
         result = await manager.run_phase(
             "classify",
-            crawl_days=body.crawl_days,
+            crawl_days=crawl_days,
             user_id=user_id,
         )
-    except Exception as exc:
+    except Exception:
         await release_pipeline_lock(db, lock_key, success=False)
-        raise HTTPException(
-            status_code=500,
-            detail={"code": "CRAWL_FAILED", "message": f"爬取失败: {exc}"},
-        ) from exc
+        raise
 
     await release_pipeline_lock(db, lock_key, success=True)
     return result
+
+
+@router.get("/status-v2", summary="查询 V2 流水线状态")
+async def pipeline_status_v2(request: Request, _user_id: str = Depends(get_current_user)):
+    """返回 V2 流水线的运行状态"""
+    manager_v2 = getattr(request.app.state, "pipeline_v2", None)
+    if manager_v2 is None:
+        raise HTTPException(status_code=503, detail="Pipeline V2 not initialized")
+    return manager_v2.get_status()
+
+
+@router.post("/crawl", summary="爬取+分类")
+async def pipeline_crawl(body: PipelinePhaseRequest, request: Request, user_id: str = Depends(get_current_user)):
+    """创建爬取后台任务并立即返回 task_id。"""
+    _get_manager(request)
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    task = await _create_pipeline_task(db, user_id, "crawl")
+    _schedule_pipeline_task(
+        request.app,
+        _execute_pipeline_task(
+            request.app,
+            task["task_id"],
+            user_id,
+            "crawl",
+            crawl_days=body.crawl_days,
+        ),
+    )
+    return {
+        "ok": True,
+        "data": {
+            "task_id": task["task_id"],
+            "message": "任务已创建，请轮询状态",
+        },
+    }
 
 
 @router.post("/crawl-overseas", summary="仅爬取海外安全新闻")
@@ -732,57 +975,115 @@ async def classify_v2(body: ClassifyV2Request, request: Request, _user_id: str =
 
 @router.post("/run-v2/{url_hash}", summary="单文章 V2 智能 PR 流水线")
 async def run_v2_single(url_hash: str, request: Request, user_id: str = Depends(get_current_user)):
-    """对单篇文章执行 V2 全流程：classify_v2 → score_v2 → draft。
-
-    仅操作指定的单篇文章，避免批量调用 LLM。
-    """
+    """创建单篇文章 V2 后台任务并立即返回 task_id。"""
     db = getattr(request.app.state, "db", None)
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
-
-    classifier = getattr(request.app.state, "classifier_v2", None)
-    if classifier is None:
+    if getattr(request.app.state, "classifier_v2", None) is None:
         raise HTTPException(status_code=503, detail="ClassifierV2 not initialized")
+    if await db["articles"].find_one({"url_hash": url_hash}) is None:
+        raise HTTPException(status_code=404, detail="Article not found")
 
+    task = await _create_pipeline_task(db, user_id, "run-v2", url_hash)
+    _schedule_pipeline_task(
+        request.app,
+        _execute_pipeline_task(
+            request.app,
+            task["task_id"],
+            user_id,
+            "run-v2",
+            article_url_hash=url_hash,
+        ),
+    )
+    return {
+        "ok": True,
+        "data": {
+            "task_id": task["task_id"],
+            "message": "任务已创建，请轮询状态",
+        },
+    }
+
+
+async def _run_v2_single_workflow(
+    app: Any,
+    url_hash: str,
+    user_id: str,
+    *,
+    task_id: str | None = None,
+) -> dict:
+    """执行单篇分类、评分和个性化草稿生成，由后台任务调用。"""
+    db = app.state.db
+    classifier = app.state.classifier_v2
     log = logging.getLogger("backend.api.pipeline")
 
-    try:
-        # 1. 获取文章
-        article = await db["articles"].find_one({"url_hash": url_hash})
-        if article is None:
-            raise HTTPException(status_code=404, detail="Article not found")
+    async def update_progress(phase: str, current: int, message: str) -> None:
+        if task_id:
+            await _update_pipeline_task(
+                db,
+                task_id,
+                user_id,
+                status="running",
+                phase=phase,
+                current=current,
+                total=4,
+                message=message,
+            )
 
-        result = {
-            "url_hash": url_hash,
-            "title": article.get("title", ""),
-            "steps": [],
-        }
+    article = await db["articles"].find_one({"url_hash": url_hash})
+    if article is None:
+        raise HTTPException(status_code=404, detail="Article not found")
+    result = {"url_hash": url_hash, "title": article.get("title", ""), "steps": []}
 
-        # 2. V2 6分类
+    await update_progress("classify", 0, "正在分类文章...")
+    if article.get("category_v2"):
+        category = article["category_v2"]
+        confidence = article.get("category_v2_confidence", 0)
+        is_pr_eligible = article.get("is_pr_eligible", False)
+        classification_skipped = True
+    else:
         classify_result = await classifier.classify_single(dict(article))
+        category = classify_result.category
+        confidence = classify_result.confidence
+        is_pr_eligible = classify_result.is_pr_eligible
+        classification_skipped = False
         await db["articles"].update_one(
             {"url_hash": url_hash},
             {"$set": {
-                "category_v2": classify_result.category,
-                "category_v2_confidence": classify_result.confidence,
+                "category_v2": category,
+                "category_v2_confidence": confidence,
                 "category_v2_reason": classify_result.reason,
                 "category_v2_fallback": classify_result.is_fallback,
-                "is_pr_eligible": classify_result.is_pr_eligible,
+                "is_pr_eligible": is_pr_eligible,
             }},
         )
-        result["steps"].append({
-            "phase": "classify_v2",
-            "category": classify_result.category,
-            "confidence": classify_result.confidence,
-            "is_pr_eligible": classify_result.is_pr_eligible,
-        })
-        log.info(f"[run-v2-single] Classify: {classify_result.category} (PR={classify_result.is_pr_eligible})")
+    result["steps"].append({
+        "phase": "classify_v2",
+        "category": category,
+        "confidence": confidence,
+        "is_pr_eligible": is_pr_eligible,
+        "skipped": classification_skipped,
+    })
+    log.info("[run-v2-single] Classify: %s (PR=%s)", category, is_pr_eligible)
 
-        # 3. 仅对 PR 候选文章打分
-        if classify_result.is_pr_eligible:
-            scorer = getattr(request.app.state, "scorer_v2", None)
-            if scorer:
+    if is_pr_eligible:
+        await update_progress("score", 1, "正在评估文章...")
+        scorer = getattr(app.state, "scorer_v2", None)
+        if scorer:
+            if article.get("pr_total_score") is not None:
+                scores = {
+                    "product_relevance": article.get("product_relevance", 0),
+                    "event_impact": article.get("event_impact", 0),
+                    "pr_total_score": article["pr_total_score"],
+                    "score_reason": article.get("score_reason", ""),
+                    "is_pr_candidate": article.get(
+                        "is_pr_candidate",
+                        article["pr_total_score"] >= 80,
+                    ),
+                }
+                score_skipped = True
+            else:
                 scores = await scorer.score_single(dict(article))
+                score_skipped = False
                 await db["articles"].update_one(
                     {"url_hash": url_hash},
                     {"$set": {
@@ -792,60 +1093,54 @@ async def run_v2_single(url_hash: str, request: Request, user_id: str = Depends(
                         "score_reason": scores.get("score_reason", ""),
                     }},
                 )
-                result["steps"].append({
-                    "phase": "score_v2",
-                    "product_relevance": scores["product_relevance"],
-                    "event_impact": scores["event_impact"],
-                    "pr_total_score": scores["pr_total_score"],
-                    "is_pr_candidate": scores.get("is_pr_candidate", False),
-                })
-                log.info(f"[run-v2-single] Score: {scores['pr_total_score']} (candidate={scores.get('is_pr_candidate')})")
+            result["steps"].append({
+                "phase": "score_v2",
+                "product_relevance": scores["product_relevance"],
+                "event_impact": scores["event_impact"],
+                "pr_total_score": scores["pr_total_score"],
+                "is_pr_candidate": scores.get("is_pr_candidate", False),
+                "skipped": score_skipped,
+            })
+            log.info(
+                "[run-v2-single] Score: %s (candidate=%s)",
+                scores["pr_total_score"],
+                scores.get("is_pr_candidate"),
+            )
 
-                # 4. 高分文章生成草稿
-                if scores.get("is_pr_candidate"):
-                    draft_gen = getattr(request.app.state, "draft_gen", None)
-                    if draft_gen:
-                        style_hints = await load_style_hints(db, user_id)
-                        log.info(
-                            "[run-v2-single] style_hints injected=%s user_id=%s",
-                            bool(style_hints),
-                            user_id,
+            if scores.get("is_pr_candidate"):
+                await update_progress("draft", 2, "正在生成个性化草稿...")
+                draft_gen = getattr(app.state, "draft_gen", None)
+                if draft_gen:
+                    style_hints = await load_style_hints(db, user_id)
+                    log.info(
+                        "[run-v2-single] style_hints injected=%s user_id=%s",
+                        bool(style_hints),
+                        user_id,
+                    )
+                    drafts = await draft_gen.generate(
+                        dict(article),
+                        scores,
+                        style_hints=style_hints,
+                    )
+                    if drafts["ok"]:
+                        now = datetime.now(UTC)
+                        await db["user_drafts"].update_one(
+                            {"user_id": user_id, "article_url_hash": url_hash},
+                            {
+                                "$set": {"drafts": drafts["drafts"], "updated_at": now},
+                                "$setOnInsert": {"created_at": now},
+                            },
+                            upsert=True,
                         )
-                        drafts = await draft_gen.generate(
-                            dict(article),
-                            scores,
-                            style_hints=style_hints,
-                        )
-                        if drafts["ok"]:
-                            from datetime import UTC, datetime
+                    result["steps"].append({
+                        "phase": "draft",
+                        "draft_count": len(drafts["drafts"]),
+                        "templates": list({draft["template"] for draft in drafts["drafts"]}),
+                    })
+                    log.info("[run-v2-single] Drafts: %s generated", len(drafts["drafts"]))
 
-                            now = datetime.now(UTC)
-                            await db["user_drafts"].update_one(
-                                {"user_id": user_id, "article_url_hash": url_hash},
-                                {
-                                    "$set": {
-                                        "drafts": drafts["drafts"],
-                                        "updated_at": now,
-                                    },
-                                    "$setOnInsert": {"created_at": now},
-                                },
-                                upsert=True,
-                            )
-                        result["steps"].append({
-                            "phase": "draft",
-                            "draft_count": len(drafts["drafts"]),
-                            "templates": list({d["template"] for d in drafts["drafts"]}),
-                        })
-                        log.info(f"[run-v2-single] Drafts: {len(drafts['drafts'])} generated")
-
-        result["ok"] = True
-        return result
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.error(f"[run-v2-single] Failed: {e}")
-        raise HTTPException(status_code=502, detail=str(e)) from e
+    result["ok"] = True
+    return result
 
 
 @router.post("/score-v2", summary="V2 双维度打分（批量）")
@@ -989,3 +1284,62 @@ async def score_v2_single(
         scored["pr_total_score"],
     )
     return _score_payload(scored, skipped=False)
+
+
+def _serialize_pipeline_task(document: dict) -> dict:
+    """将 MongoDB 任务文档转换为可 JSON 序列化的响应。"""
+    result = dict(document)
+    object_id = result.pop("_id", None)
+    if object_id is not None:
+        result["id"] = str(object_id)
+    return result
+
+
+@router.get("/tasks/{task_id}", summary="查询流水线任务状态")
+async def get_pipeline_task(
+    task_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
+    """按任务 ID 查询状态；访问其他用户任务返回 403。"""
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    task = await db["pipeline_tasks"].find_one({"task_id": task_id})
+    if task is None:
+        raise HTTPException(status_code=404, detail="Pipeline task not found")
+    if task.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Cannot access another user's task")
+    return {"ok": True, "data": _serialize_pipeline_task(task)}
+
+
+@router.get("/tasks", summary="查询当前用户流水线任务列表")
+async def list_pipeline_tasks(
+    request: Request,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    user_id: str = Depends(get_current_user),
+):
+    """分页返回当前用户的任务，按创建时间倒序排列。"""
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    query = {"user_id": user_id}
+    total = await db["pipeline_tasks"].count_documents(query)
+    cursor = (
+        db["pipeline_tasks"]
+        .find(query)
+        .sort("created_at", -1)
+        .skip((page - 1) * page_size)
+        .limit(page_size)
+    )
+    tasks = await cursor.to_list(length=page_size)
+    return {
+        "ok": True,
+        "data": {
+            "items": [_serialize_pipeline_task(task) for task in tasks],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        },
+    }

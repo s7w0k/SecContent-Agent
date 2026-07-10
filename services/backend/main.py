@@ -11,6 +11,7 @@ FastAPI app:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 import time
@@ -56,6 +57,7 @@ def _log(level: str, msg: str):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: connect MongoDB + init Agent components. Shutdown: cleanup."""
+    app.state.pipeline_background_tasks = set()
     settings = get_settings()
     _log("INFO", "=" * 50)
     _log("INFO", "Backend starting...")
@@ -174,6 +176,11 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     _log("INFO", "Shutting down backend...")
+    background_tasks = list(app.state.pipeline_background_tasks)
+    for task in background_tasks:
+        task.cancel()
+    if background_tasks:
+        await asyncio.gather(*background_tasks, return_exceptions=True)
     try:
         from db.mongo import MongoDB
 
