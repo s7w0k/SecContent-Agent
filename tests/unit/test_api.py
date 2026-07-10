@@ -53,12 +53,14 @@ def mock_db():
     articles_mock = MagicMock()
     reports_mock = MagicMock()
     user_activities_mock = MagicMock()
+    pipeline_locks_mock = MagicMock()
 
     def _getitem(key):
         return {
             "articles": articles_mock,
             "reports": reports_mock,
             "user_activities": user_activities_mock,
+            "pipeline_locks": pipeline_locks_mock,
         }.get(key, MagicMock())
 
     db.__getitem__.side_effect = _getitem
@@ -82,6 +84,10 @@ def mock_db():
     reports_mock.find_one = AsyncMock(return_value=None)
     reports_mock.find = MagicMock(return_value=mock_cursor)
     user_activities_mock.insert_one = AsyncMock(return_value=MagicMock(inserted_id="activity-id"))
+    pipeline_locks_mock.delete_one = AsyncMock(return_value=MagicMock(deleted_count=0))
+    pipeline_locks_mock.insert_one = AsyncMock(return_value=MagicMock(inserted_id="lock-id"))
+    pipeline_locks_mock.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
+    pipeline_locks_mock.find_one = AsyncMock(return_value=None)
     db._user_activities = user_activities_mock
 
     return db

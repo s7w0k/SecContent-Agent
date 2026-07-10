@@ -11,7 +11,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 from agent.style_profiler import load_style_hints
@@ -19,6 +22,7 @@ from api.activity import log_activity
 from auth.deps import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from pymongo.errors import DuplicateKeyError
 
 router = APIRouter(prefix="/api/pipeline", tags=["Pipeline"])
 
@@ -63,6 +67,95 @@ def _get_manager(request: Request):
     if manager is None:
         raise HTTPException(status_code=503, detail="Pipeline not initialized")
     return manager
+
+
+PIPELINE_LOCK_TTL_SECONDS = 300
+PIPELINE_LOCK_POLL_SECONDS = 3.0
+
+
+async def acquire_pipeline_lock(
+    db: Any,
+    lock_key: str,
+    user_id: str,
+    ttl_seconds: int = PIPELINE_LOCK_TTL_SECONDS,
+    *,
+    lock_type: str = "crawl",
+) -> bool:
+    """原子获取短期流水线锁；唯一索引冲突表示锁已被持有。"""
+    now = datetime.now(UTC)
+    collection = db["pipeline_locks"]
+    await collection.delete_one(
+        {"lock_key": lock_key, "expires_at": {"$lte": now}},
+    )
+    try:
+        await collection.insert_one(
+            {
+                "lock_key": lock_key,
+                "lock_type": lock_type,
+                "status": "running",
+                "user_id": user_id,
+                "created_at": now,
+                "expires_at": now + timedelta(seconds=ttl_seconds),
+            },
+        )
+        return True
+    except DuplicateKeyError:
+        return False
+
+
+async def release_pipeline_lock(
+    db: Any,
+    lock_key: str,
+    success: bool = True,
+) -> None:
+    """成功时保留完成标记供等待者复用；失败时删除锁以允许重试。"""
+    collection = db["pipeline_locks"]
+    if success:
+        await collection.update_one(
+            {"lock_key": lock_key},
+            {"$set": {"status": "completed", "completed_at": datetime.now(UTC)}},
+        )
+        return
+    await collection.delete_one({"lock_key": lock_key})
+
+
+async def wait_for_pipeline_lock(
+    db: Any,
+    lock_key: str,
+    timeout: int = PIPELINE_LOCK_TTL_SECONDS,
+    *,
+    poll_interval: float = PIPELINE_LOCK_POLL_SECONDS,
+) -> str:
+    """等待已有流水线锁结束，返回 completed、failed 或 timeout。"""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    collection = db["pipeline_locks"]
+    while loop.time() < deadline:
+        lock = await collection.find_one({"lock_key": lock_key})
+        if not lock:
+            return "failed"
+        if lock.get("status") == "completed":
+            return "completed"
+        expires_at = lock.get("expires_at")
+        if isinstance(expires_at, datetime) and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if isinstance(expires_at, datetime) and expires_at <= datetime.now(UTC):
+            await collection.delete_one(
+                {"lock_key": lock_key, "expires_at": {"$lte": datetime.now(UTC)}},
+            )
+            return "failed"
+        await asyncio.sleep(poll_interval)
+    return "timeout"
+
+
+def _pipeline_timeout_error() -> HTTPException:
+    return HTTPException(
+        status_code=408,
+        detail={
+            "code": "PIPELINE_TIMEOUT",
+            "message": "流水线等待超时，请稍后重试",
+        },
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -115,7 +208,43 @@ async def pipeline_status_v2(request: Request, _user_id: str = Depends(get_curre
 async def pipeline_crawl(body: PipelinePhaseRequest, request: Request, user_id: str = Depends(get_current_user)):
     """爬取文章并分类（crawl → classify）"""
     manager = _get_manager(request)
-    result = await manager.run_phase("classify", crawl_days=body.crawl_days, user_id=user_id)
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    lock_key = f"crawl-{datetime.now(UTC):%Y-%m-%d}-days-{body.crawl_days}"
+    acquired = await acquire_pipeline_lock(db, lock_key, user_id)
+    retry_count = 0
+    while not acquired:
+        status = await wait_for_pipeline_lock(db, lock_key)
+        if status == "completed":
+            return {
+                "ok": True,
+                "skipped": True,
+                "data": {
+                    "message": "爬取已由其他用户完成，复用结果",
+                    "skipped": True,
+                },
+            }
+        if status == "timeout" or retry_count >= 1:
+            raise _pipeline_timeout_error()
+        retry_count += 1
+        acquired = await acquire_pipeline_lock(db, lock_key, user_id)
+
+    try:
+        result = await manager.run_phase(
+            "classify",
+            crawl_days=body.crawl_days,
+            user_id=user_id,
+        )
+    except Exception as exc:
+        await release_pipeline_lock(db, lock_key, success=False)
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "CRAWL_FAILED", "message": f"爬取失败: {exc}"},
+        ) from exc
+
+    await release_pipeline_lock(db, lock_key, success=True)
     return result
 
 
@@ -435,6 +564,95 @@ class ClassifyV2Request(BaseModel):
     )
 
 
+def _classification_payload(article: dict, *, skipped: bool) -> dict:
+    return {
+        "ok": True,
+        "category": article.get("category_v2", ""),
+        "confidence": article.get("category_v2_confidence", 0),
+        "is_pr_eligible": article.get("is_pr_eligible", False),
+        "skipped": skipped,
+    }
+
+
+@router.post("/classify-v2/{url_hash}", summary="单篇文章 V2 6分类")
+async def classify_v2_single(
+    url_hash: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
+    """幂等分类单篇文章，并用文章级短期锁避免并发重复调用 LLM。"""
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    classifier = getattr(request.app.state, "classifier_v2", None)
+    if classifier is None:
+        raise HTTPException(status_code=503, detail="ClassifierV2 not initialized")
+
+    article = await db["articles"].find_one({"url_hash": url_hash})
+    if article is None:
+        raise HTTPException(status_code=404, detail="Article not found")
+    if article.get("category_v2"):
+        return _classification_payload(article, skipped=True)
+
+    lock_key = f"classify-v2:{url_hash}"
+    acquired = await acquire_pipeline_lock(
+        db,
+        lock_key,
+        user_id,
+        lock_type="classify",
+    )
+    if not acquired:
+        status = await wait_for_pipeline_lock(db, lock_key)
+        if status == "timeout":
+            raise _pipeline_timeout_error()
+        article = await db["articles"].find_one({"url_hash": url_hash})
+        if article and article.get("category_v2"):
+            return _classification_payload(article, skipped=True)
+        acquired = await acquire_pipeline_lock(
+            db,
+            lock_key,
+            user_id,
+            lock_type="classify",
+        )
+        if not acquired:
+            raise _pipeline_timeout_error()
+
+    try:
+        article = await db["articles"].find_one({"url_hash": url_hash})
+        if article and article.get("category_v2"):
+            await release_pipeline_lock(db, lock_key, success=True)
+            return _classification_payload(article, skipped=True)
+
+        result = await classifier.classify_single(dict(article))
+        classified = {
+            "category_v2": result.category,
+            "category_v2_confidence": result.confidence,
+            "category_v2_reason": result.reason,
+            "category_v2_fallback": result.is_fallback,
+            "is_pr_eligible": result.is_pr_eligible,
+        }
+        await db["articles"].update_one(
+            {
+                "url_hash": url_hash,
+                "$or": [
+                    {"category_v2": {"$exists": False}},
+                    {"category_v2": {"$in": ["", None]}},
+                ],
+            },
+            {"$set": classified},
+        )
+    except Exception as exc:
+        await release_pipeline_lock(db, lock_key, success=False)
+        logging.getLogger("backend.api.pipeline").error(
+            "[classify-v2-single] Failed: %s",
+            exc,
+        )
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    await release_pipeline_lock(db, lock_key, success=True)
+    return _classification_payload(classified, skipped=False)
+
+
 @router.post("/classify-v2", summary="V2 6分类")
 async def classify_v2(body: ClassifyV2Request, request: Request, _user_id: str = Depends(get_current_user)):
     """对文章执行6分类（爆点事件/法律法规/AI进展/竞品/行业/学术）。
@@ -679,9 +897,28 @@ async def score_v2_all(request: Request, _user_id: str = Depends(get_current_use
         raise HTTPException(status_code=502, detail=str(e)) from e
 
 
+def _score_payload(article: dict, *, skipped: bool) -> dict:
+    total = article.get("pr_total_score")
+    is_candidate = article.get("is_pr_candidate")
+    if is_candidate is None:
+        is_candidate = isinstance(total, (int, float)) and total >= 80
+    return {
+        "ok": True,
+        "product_relevance": article.get("product_relevance", 0),
+        "event_impact": article.get("event_impact", 0),
+        "pr_total_score": total,
+        "is_pr_candidate": is_candidate,
+        "skipped": skipped,
+    }
+
+
 @router.post("/score-v2/{url_hash}", summary="V2 双维度打分（单篇）")
-async def score_v2_single(url_hash: str, request: Request, _user_id: str = Depends(get_current_user)):
-    """对单篇文章进行 V2 双维度打分。"""
+async def score_v2_single(
+    url_hash: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
+    """幂等打分单篇文章，并用文章级短期锁避免并发重复调用 LLM。"""
     db = getattr(request.app.state, "db", None)
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -692,29 +929,63 @@ async def score_v2_single(url_hash: str, request: Request, _user_id: str = Depen
 
     log = logging.getLogger("backend.api.pipeline")
 
+    article = await db["articles"].find_one({"url_hash": url_hash})
+    if article is None:
+        raise HTTPException(status_code=404, detail="Article not found")
+    if article.get("pr_total_score") is not None:
+        return _score_payload(article, skipped=True)
+
+    lock_key = f"score-v2:{url_hash}"
+    acquired = await acquire_pipeline_lock(
+        db,
+        lock_key,
+        user_id,
+        lock_type="score",
+    )
+    if not acquired:
+        status = await wait_for_pipeline_lock(db, lock_key)
+        if status == "timeout":
+            raise _pipeline_timeout_error()
+        article = await db["articles"].find_one({"url_hash": url_hash})
+        if article and article.get("pr_total_score") is not None:
+            return _score_payload(article, skipped=True)
+        acquired = await acquire_pipeline_lock(
+            db,
+            lock_key,
+            user_id,
+            lock_type="score",
+        )
+        if not acquired:
+            raise _pipeline_timeout_error()
+
     try:
         article = await db["articles"].find_one({"url_hash": url_hash})
-        if article is None:
-            raise HTTPException(status_code=404, detail="Article not found")
+        if article and article.get("pr_total_score") is not None:
+            await release_pipeline_lock(db, lock_key, success=True)
+            return _score_payload(article, skipped=True)
 
         scores = await scorer.score_single(dict(article))
+        scored = {
+            "product_relevance": scores["product_relevance"],
+            "event_impact": scores["event_impact"],
+            "pr_total_score": scores["pr_total_score"],
+            "score_reason": scores.get("score_reason", ""),
+            "is_pr_candidate": scores.get("is_pr_candidate", False),
+        }
         await db["articles"].update_one(
-            {"url_hash": url_hash},
-            {"$set": {
-                "product_relevance": scores["product_relevance"],
-                "event_impact": scores["event_impact"],
-                "pr_total_score": scores["pr_total_score"],
-                "score_reason": scores.get("score_reason", ""),
-            }},
+            {"url_hash": url_hash, "pr_total_score": None},
+            {"$set": scored},
         )
+    except Exception as exc:
+        await release_pipeline_lock(db, lock_key, success=False)
+        log.error("[score-v2-single] Failed: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-        log.info(f"[score-v2-single] {scores['product_relevance']}+{scores['event_impact']}={scores['pr_total_score']}")
-        return {"ok": True, "product_relevance": scores["product_relevance"],
-                "event_impact": scores["event_impact"], "pr_total_score": scores["pr_total_score"],
-                "is_pr_candidate": scores.get("is_pr_candidate", False)}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.error(f"[score-v2-single] Failed: {e}")
-        raise HTTPException(status_code=502, detail=str(e)) from e
+    await release_pipeline_lock(db, lock_key, success=True)
+    log.info(
+        "[score-v2-single] %s+%s=%s",
+        scored["product_relevance"],
+        scored["event_impact"],
+        scored["pr_total_score"],
+    )
+    return _score_payload(scored, skipped=False)

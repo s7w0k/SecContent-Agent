@@ -119,3 +119,17 @@ async def test_dashboard_attaches_only_current_users_drafts():
     user_drafts.find_one.assert_awaited_once_with(
         {"user_id": "user-b", "article_url_hash": "a" * 32}
     )
+
+
+@pytest.mark.asyncio
+async def test_dashboard_allows_generation_when_current_user_has_no_drafts():
+    db = MagicMock()
+    user_drafts = MagicMock()
+    user_drafts.find_one = AsyncMock(return_value=None)
+    db.__getitem__.return_value = user_drafts
+    article = {"url_hash": "a" * 32, "pr_drafts": [{"title": "legacy"}]}
+
+    result = await _attach_user_drafts(db, article, "new-user")
+
+    assert result["pr_drafts"] == []
+    assert result["can_generate"] is True
