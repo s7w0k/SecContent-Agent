@@ -251,6 +251,13 @@ class TestGetChatHistory:
         assert messages[0]["role"] == "user"
         assert messages[0]["content"] == "问题1"
         assert messages[1]["role"] == "assistant"
+        mock_db._chat_sessions.find_one.assert_awaited_once_with(
+            {
+                "user_id": "local-user",
+                "article_url_hash": "d41d8cd98f00b204e9800998ecf8427e",
+                "draft_index": 0,
+            }
+        )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -273,7 +280,13 @@ class TestClearChatHistory:
         data = resp.json()
         assert data["ok"] is True
         assert data["data"]["cleared"] is True
-        mock_db._chat_sessions.delete_one.assert_called_once()
+        mock_db._chat_sessions.delete_one.assert_awaited_once_with(
+            {
+                "user_id": "local-user",
+                "article_url_hash": "d41d8cd98f00b204e9800998ecf8427e",
+                "draft_index": 0,
+            }
+        )
 
     @pytest.mark.asyncio
     async def test_clear_history_no_existing_session(self, app, mock_db):
@@ -318,6 +331,8 @@ class TestChatHistoryPersistence:
 
         assert resp.status_code == 200
         assert mock_db._chat_sessions.update_one.call_count >= 2
+        query = mock_db._chat_sessions.update_one.await_args_list[0].args[0]
+        assert query["user_id"] == "local-user"
 
     @pytest.mark.asyncio
     async def test_revise_saves_to_chat_sessions(self, app, mock_draft_gen, mock_db):

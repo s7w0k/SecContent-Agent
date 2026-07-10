@@ -137,6 +137,7 @@ def sample_db():
         ],
         chat_sessions=[
             {
+                "user_id": "local-user",
                 "messages": [
                     {"role": "user", "content": "减少技术细节"},
                     {"role": "assistant", "content": "已修改"},
@@ -145,6 +146,7 @@ def sample_db():
                 ],
             },
             {
+                "user_id": "local-user",
                 "messages": [
                     {"role": "user", "content": "补充客户案例"},
                     {"role": "user", "content": "   "},
@@ -235,6 +237,25 @@ class TestAggregation:
 
         assert result["summary"]["last_active_at"] is None
         assert instructions == []
+
+    @pytest.mark.asyncio
+    async def test_revise_instructions_are_isolated_by_user(self):
+        db = FakeDatabase(
+            chat_sessions=[
+                {
+                    "user_id": "user-a",
+                    "messages": [{"role": "user", "content": "用户 A 指令"}],
+                },
+                {
+                    "user_id": "user-b",
+                    "messages": [{"role": "user", "content": "用户 B 指令"}],
+                },
+            ]
+        )
+
+        instructions = await StyleProfiler(None, db).aggregate_revise_instructions("user-a")
+
+        assert instructions == ["用户 A 指令"]
 
 
 class TestPreferenceRules:
@@ -390,6 +411,7 @@ class TestProfileBuild:
     def test_get_style_hints_from_dict_and_model(self, sample_db, llm):
         profiler = StyleProfiler(llm, sample_db)
         profile = StyleProfile(
+            user_id="local-user",
             style_hints={
                 "preferred_templates": ["爆点A"],
                 "preferred_perspectives": ["市场传播视角"],

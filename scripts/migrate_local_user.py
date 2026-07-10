@@ -11,6 +11,7 @@ import asyncio
 import logging
 import os
 import sys
+from datetime import UTC, datetime
 from typing import Any
 
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "services", "backend"))
@@ -58,6 +59,42 @@ async def migrate(target_user_id: str, db: Any | None = None) -> dict[str, int]:
             {"$set": {"user_id": target_user_id}},
         )
         results["chat_sessions"] = chat_result.modified_count
+
+        log_result = await db["pipeline_logs"].update_many(
+            {
+                "$or": [
+                    {"user_id": "local-user"},
+                    {"user_id": {"$exists": False}},
+                ]
+            },
+            {"$set": {"user_id": target_user_id}},
+        )
+        results["pipeline_logs"] = log_result.modified_count
+
+        migrated_drafts = 0
+        cursor = db["articles"].find(
+            {"pr_drafts": {"$exists": True, "$ne": []}},
+            {"url_hash": 1, "pr_drafts": 1, "draft_owner_id": 1},
+        )
+        async for article in cursor:
+            article_hash = article.get("url_hash")
+            drafts = article.get("pr_drafts") or []
+            if not article_hash or not drafts:
+                continue
+            owner_id = article.get("draft_owner_id")
+            if not owner_id or owner_id == "local-user":
+                owner_id = target_user_id
+            now = datetime.now(UTC)
+            await db["user_drafts"].update_one(
+                {"user_id": owner_id, "article_url_hash": article_hash},
+                {
+                    "$set": {"drafts": drafts, "updated_at": now},
+                    "$setOnInsert": {"created_at": now},
+                },
+                upsert=True,
+            )
+            migrated_drafts += 1
+        results["user_drafts"] = migrated_drafts
         return results
     finally:
         if owns_connection:

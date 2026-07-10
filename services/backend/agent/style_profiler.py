@@ -143,8 +143,8 @@ class StyleProfiler:
         self,
         user_id: str = "local-user",
     ) -> list[str]:
-        """从本地用户的对话会话中提取并去重改稿指令。"""
-        query = {} if user_id == "local-user" else {"user_id": user_id}
+        """从指定用户的对话会话中提取并去重改稿指令。"""
+        query = {"user_id": user_id}
         sessions = await self._find_all("chat_sessions", query)
         instructions = [
             str(message.get("content", "")).strip()

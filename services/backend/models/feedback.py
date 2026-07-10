@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Any
 from uuid import uuid4
@@ -22,6 +22,19 @@ def _utc_now() -> datetime:
 def _uuid() -> str:
     """生成适合 MongoDB 文档存储的 UUID 字符串。"""
     return str(uuid4())
+
+
+def _expires_in_five_minutes() -> datetime:
+    return _utc_now() + timedelta(minutes=5)
+
+
+def _expires_in_one_hour() -> datetime:
+    return _utc_now() + timedelta(hours=1)
+
+
+def _task_id() -> str:
+    date_part = _utc_now().strftime("%Y%m%d")
+    return f"task-{date_part}-{uuid4().hex[:6]}"
 
 
 class TargetType(StrEnum):
@@ -113,7 +126,7 @@ class Feedback(FeedbackCreate):
 
     id: str | None = Field(default=None, alias="_id")
     feedback_id: str = Field(default_factory=_uuid)
-    user_id: str = Field(default="local-user", min_length=1, max_length=100)
+    user_id: str = Field(..., min_length=1, max_length=100)
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
     status: FeedbackStatus = FeedbackStatus.ACTIVE
@@ -142,7 +155,7 @@ class UserActivity(UserActivityCreate):
 
     id: str | None = Field(default=None, alias="_id")
     activity_id: str = Field(default_factory=_uuid)
-    user_id: str = Field(default="local-user", min_length=1, max_length=100)
+    user_id: str = Field(..., min_length=1, max_length=100)
     created_at: datetime = Field(default_factory=_utc_now)
 
     model_config = {"populate_by_name": True}
@@ -208,7 +221,7 @@ class StyleProfile(BaseModel):
     """MongoDB 中的用户个性化风格画像。"""
 
     id: str | None = Field(default=None, alias="_id")
-    user_id: str = Field(default="local-user", min_length=1, max_length=100)
+    user_id: str = Field(..., min_length=1, max_length=100)
     style_hints: StyleHints = Field(default_factory=StyleHints)
     preference_scores: PreferenceScores = Field(default_factory=PreferenceScores)
     feedback_summary: FeedbackSummary = Field(default_factory=FeedbackSummary)
@@ -218,5 +231,114 @@ class StyleProfile(BaseModel):
     version: int = Field(default=1, ge=1)
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
+
+    model_config = {"populate_by_name": True}
+
+
+class ChatSession(BaseModel):
+    """按用户隔离的草稿对话会话。"""
+
+    id: str | None = Field(default=None, alias="_id")
+    user_id: str = Field(..., min_length=1, max_length=100)
+    article_url_hash: UrlHash
+    draft_index: int = Field(ge=0)
+    messages: list[dict[str, Any]] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=_utc_now)
+    updated_at: datetime = Field(default_factory=_utc_now)
+
+    model_config = {"populate_by_name": True}
+
+
+class UserDraft(BaseModel):
+    """单个用户对一篇共享文章生成的独立草稿集合。"""
+
+    id: str | None = Field(default=None, alias="_id")
+    user_id: str = Field(..., min_length=1, max_length=100)
+    article_url_hash: UrlHash
+    drafts: list[dict[str, Any]] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=_utc_now)
+    updated_at: datetime = Field(default_factory=_utc_now)
+
+    model_config = {"populate_by_name": True}
+
+
+class PipelineLockType(StrEnum):
+    CRAWL = "crawl"
+    CLASSIFY = "classify"
+    SCORE = "score"
+
+
+class PipelineLockStatus(StrEnum):
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class PipelineLock(BaseModel):
+    """用于共享流水线阶段互斥的短期锁。"""
+
+    id: str | None = Field(default=None, alias="_id")
+    lock_key: str = Field(..., min_length=1, max_length=200)
+    lock_type: PipelineLockType
+    status: PipelineLockStatus = PipelineLockStatus.RUNNING
+    user_id: str = Field(..., min_length=1, max_length=100)
+    created_at: datetime = Field(default_factory=_utc_now)
+    expires_at: datetime = Field(default_factory=_expires_in_five_minutes)
+
+    model_config = {"populate_by_name": True}
+
+
+class PipelineTaskType(StrEnum):
+    CRAWL = "crawl"
+    CLASSIFY = "classify"
+    SCORE = "score"
+    RUN_V2 = "run-v2"
+    REPORT = "report"
+
+
+class PipelineTaskStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class PipelineTaskProgress(BaseModel):
+    phase: str = Field(default="pending", min_length=1, max_length=100)
+    current: int = Field(default=0, ge=0)
+    total: int = Field(default=0, ge=0)
+    message: str = Field(default="", max_length=500)
+
+
+class PipelineTask(BaseModel):
+    """异步流水线任务状态，默认一小时后由 TTL 清理。"""
+
+    id: str | None = Field(default=None, alias="_id")
+    task_id: str = Field(default_factory=_task_id)
+    user_id: str = Field(..., min_length=1, max_length=100)
+    task_type: PipelineTaskType
+    article_url_hash: UrlHash | None = None
+    status: PipelineTaskStatus = PipelineTaskStatus.PENDING
+    progress: PipelineTaskProgress = Field(default_factory=PipelineTaskProgress)
+    result: dict[str, Any] | None = None
+    error: str | None = Field(default=None, max_length=2000)
+    created_at: datetime = Field(default_factory=_utc_now)
+    updated_at: datetime = Field(default_factory=_utc_now)
+    expires_at: datetime = Field(default_factory=_expires_in_one_hour)
+
+    model_config = {"populate_by_name": True}
+
+
+class PipelineLog(BaseModel):
+    """按用户隔离的流水线日志文档。"""
+
+    id: str | None = Field(default=None, alias="_id")
+    user_id: str = Field(..., min_length=1, max_length=100)
+    level: str = Field(..., min_length=1, max_length=20)
+    phase: str = Field(..., min_length=1, max_length=100)
+    message: str = Field(..., min_length=1, max_length=5000)
+    detail: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=_utc_now)
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
 
     model_config = {"populate_by_name": True}

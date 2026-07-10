@@ -24,6 +24,7 @@ router = APIRouter(prefix="/api", tags=["Chat"])
 
 # 东八区时区
 _TZ_CN = timezone(timedelta(hours=8))
+LEGACY_USER_ID = "local-user"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -37,6 +38,11 @@ def _get_db(request: Request):
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
     return db
+
+
+def _get_user_id(request: Request) -> str:
+    """任务 7.3 强制认证前，兼容阶段六的本地用户数据。"""
+    return getattr(request.state, "user_id", None) or LEGACY_USER_ID
 
 
 def _get_draft_chat_agent(request: Request):
@@ -71,6 +77,7 @@ def _now_cn() -> str:
 
 async def _save_chat_message(
     db,
+    user_id: str,
     url_hash: str,
     draft_index: int,
     role: str,
@@ -78,7 +85,7 @@ async def _save_chat_message(
 ) -> None:
     """将一条消息追加到 chat_sessions 集合。
 
-    使用 (article_url_hash, draft_index) 作为复合唯一键，
+    使用 (user_id, article_url_hash, draft_index) 作为复合唯一键，
     不存在则创建，存在则追加到 messages 数组。
     """
     msg = {
@@ -88,11 +95,15 @@ async def _save_chat_message(
     }
 
     await db["chat_sessions"].update_one(
-        {"article_url_hash": url_hash, "draft_index": draft_index},
+        {
+            "user_id": user_id,
+            "article_url_hash": url_hash,
+            "draft_index": draft_index,
+        },
         {
             "$push": {"messages": msg},
             "$set": {"updated_at": _now_cn()},
-            "$setOnInsert": {"created_at": _now_cn()},
+            "$setOnInsert": {"user_id": user_id, "created_at": _now_cn()},
         },
         upsert=True,
     )
@@ -168,6 +179,7 @@ async def chat_ask(request: Request, body: ChatAskRequest):
     - 自动保存对话记录到 chat_sessions 集合
     """
     db = _get_db(request)
+    user_id = _get_user_id(request)
     agent = _get_draft_chat_agent(request)
 
     article = None
@@ -216,6 +228,7 @@ async def chat_ask(request: Request, body: ChatAskRequest):
     if body.article_url_hash and body.draft_index is not None:
         await _save_chat_message(
             db,
+            user_id,
             body.article_url_hash,
             body.draft_index,
             "user",
@@ -223,6 +236,7 @@ async def chat_ask(request: Request, body: ChatAskRequest):
         )
         await _save_chat_message(
             db,
+            user_id,
             body.article_url_hash,
             body.draft_index,
             "assistant",
@@ -242,6 +256,7 @@ async def chat_ask_stream(request: Request, body: ChatAskRequest):
         data: {"error": "错误信息"}\\n\\n
     """
     db = _get_db(request)
+    user_id = _get_user_id(request)
     agent = _get_draft_chat_agent(request)
 
     article = None
@@ -291,10 +306,20 @@ async def chat_ask_stream(request: Request, body: ChatAskRequest):
             # 保存对话记录
             if body.article_url_hash and body.draft_index is not None:
                 await _save_chat_message(
-                    db, body.article_url_hash, body.draft_index, "user", body.message
+                    db,
+                    user_id,
+                    body.article_url_hash,
+                    body.draft_index,
+                    "user",
+                    body.message,
                 )
                 await _save_chat_message(
-                    db, body.article_url_hash, body.draft_index, "assistant", answer_text
+                    db,
+                    user_id,
+                    body.article_url_hash,
+                    body.draft_index,
+                    "assistant",
+                    answer_text,
                 )
 
             yield f"data: {json.dumps({'done': True, 'answer': answer_text}, ensure_ascii=False)}\n\n"
@@ -334,6 +359,7 @@ async def revise_draft(
     - 自动保存对话记录到 chat_sessions 集合
     """
     db = _get_db(request)
+    user_id = _get_user_id(request)
     agent = _get_draft_chat_agent(request)
 
     # 查询文章
@@ -374,7 +400,7 @@ async def revise_draft(
             "content_md": revised_content,
             "change_summary": change_summary,
             "created_at": _now_cn(),
-            "created_by": "local-user",
+            "created_by": user_id,
             "applied": False,
         }
 
@@ -391,11 +417,18 @@ async def revise_draft(
     assistant_content = "已生成修订稿。\n\n修改摘要：\n" + "\n".join(
         f"- {s}" for s in change_summary
     )
-    await _save_chat_message(db, url_hash, draft_index, "user", body.instruction)
-    await _save_chat_message(db, url_hash, draft_index, "assistant", assistant_content)
+    await _save_chat_message(db, user_id, url_hash, draft_index, "user", body.instruction)
+    await _save_chat_message(
+        db,
+        user_id,
+        url_hash,
+        draft_index,
+        "assistant",
+        assistant_content,
+    )
     await log_activity(
         db,
-        "local-user",
+        user_id,
         "draft_revise",
         {
             "article_url_hash": url_hash,
@@ -439,6 +472,7 @@ async def revise_draft_stream(
         data: {"error": "错误信息"}\\n\\n
     """
     db = _get_db(request)
+    user_id = _get_user_id(request)
     agent = _get_draft_chat_agent(request)
 
     # 查询文章
@@ -480,7 +514,7 @@ async def revise_draft_stream(
                     "content_md": revised_content,
                     "change_summary": change_summary,
                     "created_at": _now_cn(),
-                    "created_by": "local-user",
+                    "created_by": user_id,
                     "applied": False,
                 }
 
@@ -497,11 +531,25 @@ async def revise_draft_stream(
             assistant_content = "已生成修订稿。\n\n修改摘要：\n" + "\n".join(
                 f"- {s}" for s in change_summary
             )
-            await _save_chat_message(db, url_hash, draft_index, "user", body.instruction)
-            await _save_chat_message(db, url_hash, draft_index, "assistant", assistant_content)
+            await _save_chat_message(
+                db,
+                user_id,
+                url_hash,
+                draft_index,
+                "user",
+                body.instruction,
+            )
+            await _save_chat_message(
+                db,
+                user_id,
+                url_hash,
+                draft_index,
+                "assistant",
+                assistant_content,
+            )
             await log_activity(
                 db,
-                "local-user",
+                user_id,
                 "draft_revise",
                 {
                     "article_url_hash": url_hash,
@@ -547,6 +595,7 @@ async def apply_revision(
 ):
     """应用修订：将修订稿写回草稿主稿 content_md，并标记 applied=true。"""
     db = _get_db(request)
+    user_id = _get_user_id(request)
 
     article = await db["articles"].find_one({"url_hash": url_hash})
     if article is None:
@@ -575,7 +624,7 @@ async def apply_revision(
     )
     await log_activity(
         db,
-        "local-user",
+        user_id,
         "revision_apply",
         {
             "article_url_hash": url_hash,
@@ -611,9 +660,14 @@ async def get_chat_history(
     返回 chat_sessions 集合中存储的 messages 数组。
     """
     db = _get_db(request)
+    user_id = _get_user_id(request)
 
     session = await db["chat_sessions"].find_one(
-        {"article_url_hash": url_hash, "draft_index": draft_index},
+        {
+            "user_id": user_id,
+            "article_url_hash": url_hash,
+            "draft_index": draft_index,
+        },
     )
 
     if session is None:
@@ -638,9 +692,14 @@ async def clear_chat_history(
 ):
     """清空指定文章+草稿的对话历史记录。"""
     db = _get_db(request)
+    user_id = _get_user_id(request)
 
     await db["chat_sessions"].delete_one(
-        {"article_url_hash": url_hash, "draft_index": draft_index},
+        {
+            "user_id": user_id,
+            "article_url_hash": url_hash,
+            "draft_index": draft_index,
+        },
     )
 
     return {"ok": True, "data": {"cleared": True}}

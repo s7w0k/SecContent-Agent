@@ -19,7 +19,7 @@ from motor.motor_asyncio import (
     AsyncIOMotorDatabase,
 )
 from pymongo import ASCENDING, DESCENDING, IndexModel
-from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
+from pymongo.errors import ConnectionFailure, OperationFailure, ServerSelectionTimeoutError
 
 logger = logging.getLogger("backend.db.mongo")
 
@@ -200,7 +200,70 @@ class MongoDB:
                     name="idx_profile_updated_at",
                 ),
             ],
+            "chat_sessions": [
+                IndexModel(
+                    [
+                        ("user_id", ASCENDING),
+                        ("article_url_hash", ASCENDING),
+                        ("draft_index", ASCENDING),
+                    ],
+                    unique=True,
+                    name="idx_chat_user_article_draft",
+                ),
+            ],
+            "user_drafts": [
+                IndexModel(
+                    [("user_id", ASCENDING), ("article_url_hash", ASCENDING)],
+                    unique=True,
+                    name="idx_user_draft_user_article",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("updated_at", DESCENDING)],
+                    name="idx_user_draft_user_updated",
+                ),
+            ],
+            "pipeline_locks": [
+                IndexModel(
+                    [("lock_key", ASCENDING)],
+                    unique=True,
+                    name="idx_pipeline_lock_key",
+                ),
+                IndexModel(
+                    [("expires_at", ASCENDING)],
+                    expireAfterSeconds=0,
+                    name="idx_pipeline_lock_expires",
+                ),
+            ],
+            "pipeline_tasks": [
+                IndexModel(
+                    [("task_id", ASCENDING)],
+                    unique=True,
+                    name="idx_pipeline_task_id",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_pipeline_task_user_created",
+                ),
+                IndexModel(
+                    [("expires_at", ASCENDING)],
+                    expireAfterSeconds=0,
+                    name="idx_pipeline_task_expires",
+                ),
+            ],
+            "pipeline_logs": [
+                IndexModel(
+                    [("user_id", ASCENDING), ("date", DESCENDING)],
+                    name="idx_pipeline_log_user_date",
+                ),
+            ],
         }
+
+        try:
+            await cls.get_collection("chat_sessions").drop_index("article_url_hash_1_draft_index_1")
+            logger.info("Dropped legacy chat_sessions index")
+        except OperationFailure as exc:
+            if exc.code != 27:  # IndexNotFound
+                raise
 
         created: dict[str, list[str]] = {}
         for collection_name, indexes in index_specs.items():
@@ -238,4 +301,5 @@ class MongoDB:
     def _mask_uri(uri: str) -> str:
         """隐藏 URI 中的密码部分，用于日志输出"""
         import re
+
         return re.sub(r"://([^:]+):([^@]+)@", r"://\1:****@", uri)

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
+from pymongo.errors import OperationFailure
 
 ARTICLE_HASH = "d41d8cd98f00b204e9800998ecf8427e"
 
@@ -71,9 +72,7 @@ class TestFeedbackModels:
         from models.feedback import FeedbackCreate
 
         with pytest.raises(ValidationError):
-            FeedbackCreate(
-                **_feedback_payload(rating_dimensions={"readability": rating})
-            )
+            FeedbackCreate(**_feedback_payload(rating_dimensions={"readability": rating}))
 
     def test_feedback_invalid_target_type(self):
         from models.feedback import FeedbackCreate
@@ -85,17 +84,19 @@ class TestFeedbackModels:
         from models.feedback import FeedbackCreate
 
         with pytest.raises(ValidationError):
-            FeedbackCreate(
-                **_feedback_payload(target_ref={"article_url_hash": "invalid"})
-            )
+            FeedbackCreate(**_feedback_payload(target_ref={"article_url_hash": "invalid"}))
 
     def test_feedback_defaults_and_alias(self):
         from models.feedback import Feedback
 
-        feedback = Feedback(_id="mongo-id", **_feedback_payload())
+        feedback = Feedback(
+            _id="mongo-id",
+            user_id="test-user",
+            **_feedback_payload(),
+        )
 
         assert feedback.id == "mongo-id"
-        assert feedback.user_id == "local-user"
+        assert feedback.user_id == "test-user"
         assert feedback.status == "active"
         assert feedback.feedback_id
         assert feedback.created_at.tzinfo is UTC
@@ -104,8 +105,8 @@ class TestFeedbackModels:
     def test_feedback_ids_are_unique(self):
         from models.feedback import Feedback
 
-        first = Feedback(**_feedback_payload())
-        second = Feedback(**_feedback_payload())
+        first = Feedback(user_id="test-user", **_feedback_payload())
+        second = Feedback(user_id="test-user", **_feedback_payload())
 
         assert first.feedback_id != second.feedback_id
 
@@ -126,6 +127,7 @@ class TestActivityAndProfileModels:
         from models.feedback import UserActivity
 
         activity = UserActivity(
+            user_id="test-user",
             action="draft_download",
             target={
                 "article_url_hash": ARTICLE_HASH,
@@ -136,7 +138,7 @@ class TestActivityAndProfileModels:
         )
 
         assert activity.action == "draft_download"
-        assert activity.user_id == "local-user"
+        assert activity.user_id == "test-user"
         assert activity.activity_id
         assert activity.context == {}
         assert activity.metadata == {"file_format": "md"}
@@ -174,9 +176,9 @@ class TestActivityAndProfileModels:
     def test_style_profile_defaults(self):
         from models.feedback import StyleProfile
 
-        profile = StyleProfile()
+        profile = StyleProfile(user_id="test-user")
 
-        assert profile.user_id == "local-user"
+        assert profile.user_id == "test-user"
         assert profile.style_hints.preferred_length == "medium"
         assert profile.style_hints.preferred_tone == "market_oriented"
         assert profile.preference_scores.template_scores == {}
@@ -188,6 +190,7 @@ class TestActivityAndProfileModels:
         from models.feedback import StyleProfile
 
         profile = StyleProfile(
+            user_id="test-user",
             preference_scores={
                 "template_scores": {
                     "爆点A": {
@@ -196,7 +199,7 @@ class TestActivityAndProfileModels:
                         "download_count": 2,
                     }
                 }
-            }
+            },
         )
 
         metric = profile.preference_scores.template_scores["爆点A"]
@@ -208,7 +211,77 @@ class TestActivityAndProfileModels:
         from models.feedback import StyleProfile
 
         with pytest.raises(ValidationError):
-            StyleProfile(feedback_summary={"avg_rating": 6})
+            StyleProfile(user_id="test-user", feedback_summary={"avg_rating": 6})
+
+    @pytest.mark.parametrize("model_name", ["Feedback", "UserActivity", "StyleProfile"])
+    def test_user_id_is_required(self, model_name):
+        from models import feedback as feedback_models
+
+        model = getattr(feedback_models, model_name)
+        payload = {
+            "Feedback": _feedback_payload(),
+            "UserActivity": {
+                "action": "draft_download",
+                "target": {"article_url_hash": ARTICLE_HASH},
+            },
+            "StyleProfile": {},
+        }[model_name]
+        with pytest.raises(ValidationError):
+            model(**payload)
+
+
+class TestMultiTenantModels:
+    def test_chat_session_and_user_draft(self):
+        from models.feedback import ChatSession, UserDraft
+
+        session = ChatSession(
+            user_id="user-a",
+            article_url_hash=ARTICLE_HASH,
+            draft_index=0,
+        )
+        user_draft = UserDraft(
+            user_id="user-a",
+            article_url_hash=ARTICLE_HASH,
+            drafts=[{"title": "草稿"}],
+        )
+
+        assert session.messages == []
+        assert session.created_at.tzinfo is UTC
+        assert user_draft.drafts[0]["title"] == "草稿"
+        assert user_draft.updated_at.tzinfo is UTC
+
+    def test_pipeline_lock_defaults_to_five_minutes(self):
+        from models.feedback import PipelineLock
+
+        lock = PipelineLock(
+            lock_key="crawl-wewe-2026-07-10",
+            lock_type="crawl",
+            user_id="user-a",
+        )
+
+        assert lock.status == "running"
+        assert 295 <= (lock.expires_at - lock.created_at).total_seconds() <= 305
+
+    def test_pipeline_task_defaults_to_one_hour(self):
+        from models.feedback import PipelineTask
+
+        task = PipelineTask(user_id="user-a", task_type="run-v2")
+
+        assert task.task_id.startswith("task-")
+        assert task.status == "pending"
+        assert task.progress.current == 0
+        assert 3595 <= (task.expires_at - task.created_at).total_seconds() <= 3605
+
+    def test_pipeline_log_requires_user(self):
+        from models.feedback import PipelineLog
+
+        with pytest.raises(ValidationError):
+            PipelineLog(
+                level="INFO",
+                phase="crawl",
+                message="started",
+                date="2026-07-10",
+            )
 
 
 class TestMongoDBIndexes:
@@ -221,6 +294,8 @@ class TestMongoDBIndexes:
         collections: dict[str, MagicMock] = {}
 
         def get_collection(name):
+            if name in collections:
+                return collections[name]
             collection = MagicMock()
 
             async def create_indexes(indexes):
@@ -228,17 +303,33 @@ class TestMongoDBIndexes:
                 return [index.document["name"] for index in indexes]
 
             collection.create_indexes = AsyncMock(side_effect=create_indexes)
+            collection.drop_index = AsyncMock()
             collections[name] = collection
             return collection
 
         with patch.object(MongoDB, "get_collection", side_effect=get_collection):
             result = await MongoDB.ensure_indexes()
 
-        assert set(result) == {"users", "feedbacks", "user_activities", "user_profiles"}
+        assert set(result) == {
+            "users",
+            "feedbacks",
+            "user_activities",
+            "user_profiles",
+            "chat_sessions",
+            "user_drafts",
+            "pipeline_locks",
+            "pipeline_tasks",
+            "pipeline_logs",
+        }
         assert len(result["users"]) == 3
         assert len(result["feedbacks"]) == 4
         assert len(result["user_activities"]) == 4
         assert len(result["user_profiles"]) == 2
+        assert len(result["chat_sessions"]) == 1
+        assert len(result["user_drafts"]) == 2
+        assert len(result["pipeline_locks"]) == 2
+        assert len(result["pipeline_tasks"]) == 3
+        assert len(result["pipeline_logs"]) == 1
 
         feedback_indexes = {
             index.document["name"]: index.document
@@ -264,16 +355,41 @@ class TestMongoDBIndexes:
         assert user_indexes["idx_user_username"]["unique"] is True
         assert user_indexes["idx_user_email"]["sparse"] is True
 
+        chat_indexes = {
+            index.document["name"]: index.document
+            for index in collections["chat_sessions"].received_indexes
+        }
+        assert chat_indexes["idx_chat_user_article_draft"]["unique"] is True
+        collections["chat_sessions"].drop_index.assert_awaited_once_with(
+            "article_url_hash_1_draft_index_1"
+        )
+
+        lock_indexes = {
+            index.document["name"]: index.document
+            for index in collections["pipeline_locks"].received_indexes
+        }
+        assert lock_indexes["idx_pipeline_lock_key"]["unique"] is True
+        assert lock_indexes["idx_pipeline_lock_expires"]["expireAfterSeconds"] == 0
+
+        task_indexes = {
+            index.document["name"]: index.document
+            for index in collections["pipeline_tasks"].received_indexes
+        }
+        assert task_indexes["idx_pipeline_task_id"]["unique"] is True
+        assert task_indexes["idx_pipeline_task_expires"]["expireAfterSeconds"] == 0
+
     @pytest.mark.asyncio
     async def test_ensure_indexes_is_repeatable(self):
         from db.mongo import MongoDB
 
         collection = MagicMock()
         collection.create_indexes = AsyncMock(return_value=["existing-index"])
+        collection.drop_index = AsyncMock(side_effect=OperationFailure("index not found", code=27))
 
         with patch.object(MongoDB, "get_collection", return_value=collection):
             first = await MongoDB.ensure_indexes()
             second = await MongoDB.ensure_indexes()
 
         assert first == second
-        assert collection.create_indexes.await_count == 8
+        assert collection.create_indexes.await_count == 18
+        assert collection.drop_index.await_count == 2
