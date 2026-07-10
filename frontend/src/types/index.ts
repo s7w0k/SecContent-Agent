@@ -123,6 +123,11 @@ export interface DraftItem {
   title: string;
   index: number;
   revisions?: DraftRevision[];
+  feedback_summary?: {
+    avg_rating: number;
+    count: number;
+    last_rating?: number | null;
+  };
 }
 
 // ═══════════════════════════════════════════════════════════

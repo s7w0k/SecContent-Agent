@@ -9,7 +9,9 @@ import { CopyOutlined, DownloadOutlined } from '@ant-design/icons';
 import { Button, Descriptions, Divider, Modal, Radio, Space, Tag, Typography, message } from 'antd';
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import api from '../api/client';
 import type { Article, DraftItem } from '../types';
+import DraftFeedback from './DraftFeedback';
 
 const { Paragraph } = Typography;
 
@@ -44,6 +46,22 @@ export default function DraftViewer({ article, onClose }: DraftViewerProps) {
     a.download = `PR-${current.template}-${current.index}.md`;
     a.click();
     URL.revokeObjectURL(url);
+    void api
+      .log({
+        action: 'draft_download',
+        target: {
+          article_url_hash: article.url_hash,
+          draft_index: index,
+          template: current.template,
+          perspective: current.perspective,
+        },
+        context: {
+          article_title: article.title,
+          category_v2: article.category_v2,
+          pr_total_score: article.pr_total_score,
+        },
+      })
+      .catch(() => undefined);
   };
 
   return (
@@ -107,6 +125,13 @@ export default function DraftViewer({ article, onClose }: DraftViewerProps) {
           <Paragraph type="secondary">草稿内容不可用</Paragraph>
         )}
       </div>
+      <DraftFeedback
+        articleUrlHash={article.url_hash}
+        draftIndex={index}
+        template={current.template}
+        perspective={current.perspective}
+        initialRating={current.feedback_summary?.last_rating}
+      />
     </Modal>
   );
 }

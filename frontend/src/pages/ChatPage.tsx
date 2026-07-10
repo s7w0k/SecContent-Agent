@@ -5,7 +5,14 @@
  * 右栏：消息列表 + 输入框 + 模式切换（问答/改稿）
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ClearOutlined,
+  CopyOutlined,
+  DownloadOutlined,
+  EditOutlined,
+  QuestionCircleOutlined,
+  SendOutlined,
+} from '@ant-design/icons';
 import {
   Alert,
   Button,
@@ -13,43 +20,32 @@ import {
   Empty,
   Input,
   Layout,
-  message,
   Radio,
   Select,
   Space,
   Spin,
   Tag,
   Typography,
-} from "antd";
-import {
-  CopyOutlined,
-  DownloadOutlined,
-  QuestionCircleOutlined,
-  EditOutlined,
-  SendOutlined,
-  ClearOutlined,
-} from "@ant-design/icons";
-import ReactMarkdown from "react-markdown";
-import api, { chatApi } from "../api/client";
-import ChatBubble from "../components/ChatBubble";
-import RevisionList from "../components/RevisionList";
-import styles from "./ChatPage.module.css";
-import type {
-  Article,
-  ChatMessage,
-  DraftRevision,
-  DraftReviseResponse,
-} from "../types";
+  message,
+} from 'antd';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import api, { chatApi } from '../api/client';
+import ChatBubble from '../components/ChatBubble';
+import DraftFeedback from '../components/DraftFeedback';
+import RevisionList from '../components/RevisionList';
+import type { Article, ChatMessage, DraftReviseResponse, DraftRevision } from '../types';
+import styles from './ChatPage.module.css';
 
 const { Sider, Content } = Layout;
 const { Text } = Typography;
 const { TextArea } = Input;
 
-type ChatMode = "问答" | "改稿";
+type ChatMode = '问答' | '改稿';
 
 const modeOptions = [
-  { value: "问答", label: "问答", icon: <QuestionCircleOutlined /> },
-  { value: "改稿", label: "改稿", icon: <EditOutlined /> },
+  { value: '问答', label: '问答', icon: <QuestionCircleOutlined /> },
+  { value: '改稿', label: '改稿', icon: <EditOutlined /> },
 ];
 
 export default function ChatPage() {
@@ -61,8 +57,8 @@ export default function ChatPage() {
 
   // ── 对话 ─────────────────────────────────────────────────
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [mode, setMode] = useState<ChatMode>("问答");
+  const [input, setInput] = useState('');
+  const [mode, setMode] = useState<ChatMode>('问答');
   const [sending, setSending] = useState(false);
 
   // ── 修订稿预览 ───────────────────────────────────────────
@@ -89,7 +85,7 @@ export default function ChatPage() {
       const withDrafts = resp.items.filter((a) => a.pr_drafts && a.pr_drafts.length > 0);
       setArticles(withDrafts);
     } catch {
-      setError("加载文章列表失败");
+      setError('加载文章列表失败');
     } finally {
       setArticlesLoading(false);
     }
@@ -152,23 +148,23 @@ export default function ChatPage() {
     const text = input.trim();
     if (!text) return;
 
-    if (mode === "改稿" && !selectedArticle) {
-      message.warning("改稿模式需要先选择文章和草稿");
+    if (mode === '改稿' && !selectedArticle) {
+      message.warning('改稿模式需要先选择文章和草稿');
       return;
     }
 
-    const userMsg: ChatMessage = { role: "user", content: text };
+    const userMsg: ChatMessage = { role: 'user', content: text };
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
-    setInput("");
+    setInput('');
     setSending(true);
     setError(null);
 
     try {
-      if (mode === "问答") {
+      if (mode === '问答') {
         // 流式问答：先插入空 assistant 消息，逐 chunk 更新
         const assistantIdx = newMessages.length;
-        setMessages([...newMessages, { role: "assistant", content: "" }]);
+        setMessages([...newMessages, { role: 'assistant', content: '' }]);
 
         let firstChunk = true;
         await chatApi.askStream(
@@ -213,10 +209,13 @@ export default function ChatPage() {
       } else {
         // 流式改稿：先插入空 assistant 消息，逐 chunk 更新
         const assistantIdx = newMessages.length;
-        setMessages([...newMessages, { role: "assistant", content: "" }]);
+        setMessages([...newMessages, { role: 'assistant', content: '' }]);
+
+        const articleForRevise = selectedArticle;
+        if (!articleForRevise) return;
 
         await chatApi.reviseDraftStream(
-          selectedArticle!.url_hash,
+          articleForRevise.url_hash,
           draftIndex,
           { instruction: text, save: true },
           (chunk) => {
@@ -234,7 +233,7 @@ export default function ChatPage() {
           (result) => {
             setRevisionResult(result);
             setViewingRevision(null);
-            message.success("修订稿已生成并保存");
+            message.success('修订稿已生成并保存');
             refreshArticle();
           },
           (errMsg) => {
@@ -253,12 +252,9 @@ export default function ChatPage() {
         );
       }
     } catch (err: any) {
-      const errMsg = err?.response?.data?.detail || err?.message || "请求失败";
+      const errMsg = err?.response?.data?.detail || err?.message || '请求失败';
       setError(errMsg);
-      setMessages([
-        ...newMessages,
-        { role: "assistant", content: `错误：${errMsg}` },
-      ]);
+      setMessages([...newMessages, { role: 'assistant', content: `错误：${errMsg}` }]);
     } finally {
       setSending(false);
     }
@@ -270,9 +266,7 @@ export default function ChatPage() {
     try {
       const updated = await api.getArticle(selectedArticle.url_hash);
       setSelectedArticle(updated);
-      setArticles((prev) =>
-        prev.map((a) => (a.url_hash === updated.url_hash ? updated : a)),
-      );
+      setArticles((prev) => prev.map((a) => (a.url_hash === updated.url_hash ? updated : a)));
     } catch {
       // 刷新失败不阻塞流程
     }
@@ -289,17 +283,13 @@ export default function ChatPage() {
     if (!selectedArticle) return;
     setApplying(true);
     try {
-      await chatApi.applyRevision(
-        selectedArticle.url_hash,
-        draftIndex,
-        rev.revision_id,
-      );
-      message.success("修订已应用为当前稿");
+      await chatApi.applyRevision(selectedArticle.url_hash, draftIndex, rev.revision_id);
+      message.success('修订已应用为当前稿');
       await refreshArticle();
       setViewingRevision(null);
       setRevisionResult(null);
     } catch (err: any) {
-      const errMsg = err?.response?.data?.detail || err?.message || "应用失败";
+      const errMsg = err?.response?.data?.detail || err?.message || '应用失败';
       message.error(errMsg);
     } finally {
       setApplying(false);
@@ -312,22 +302,42 @@ export default function ChatPage() {
     if (!content) return;
     navigator.clipboard
       .writeText(content)
-      .then(() => message.success("已复制"))
-      .catch(() => message.error("复制失败"));
+      .then(() => message.success('已复制'))
+      .catch(() => message.error('复制失败'));
   };
 
   // ── 下载修订稿 ────────────────────────────────────────────
   const handleDownload = () => {
     const content = viewingRevision?.content_md || revisionResult?.revised_content_md;
-    const revId = viewingRevision?.revision_id || revisionResult?.revision_id || "revision";
+    const revId = viewingRevision?.revision_id || revisionResult?.revision_id || 'revision';
     if (!content) return;
-    const blob = new Blob([content], { type: "text/markdown" });
+    const blob = new Blob([content], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
+    const a = document.createElement('a');
     a.href = url;
     a.download = `PR-revision-${revId.slice(0, 8)}.md`;
     a.click();
     URL.revokeObjectURL(url);
+    if (selectedArticle && currentDraft) {
+      void api
+        .log({
+          action: 'draft_download',
+          target: {
+            article_url_hash: selectedArticle.url_hash,
+            draft_index: draftIndex,
+            template: currentDraft.template,
+            perspective: currentDraft.perspective,
+            revision_id: viewingRevision?.revision_id || revisionResult?.revision_id,
+          },
+          context: {
+            article_title: selectedArticle.title,
+            category_v2: selectedArticle.category_v2,
+            pr_total_score: selectedArticle.pr_total_score,
+            source: 'chat_revision_preview',
+          },
+        })
+        .catch(() => undefined);
+    }
   };
 
   // ── 清空对话历史 ──────────────────────────────────────────
@@ -336,9 +346,9 @@ export default function ChatPage() {
     try {
       await chatApi.clearChatHistory(selectedArticle.url_hash, draftIndex);
       setMessages([]);
-      message.success("对话历史已清空");
+      message.success('对话历史已清空');
     } catch {
-      message.error("清空失败");
+      message.error('清空失败');
     }
   };
 
@@ -347,15 +357,16 @@ export default function ChatPage() {
   const revisions: DraftRevision[] = currentDraft?.revisions || [];
 
   // ── 预览内容 ─────────────────────────────────────────────
-  const previewContent = viewingRevision?.content_md
-    || revisionResult?.revised_content_md
-    || currentDraft?.content_md
-    || "";
-  const previewTitle = viewingRevision
-    ? "修订稿预览"
-    : revisionResult
-      ? "修订稿预览"
-      : "原稿预览";
+  const previewContent =
+    viewingRevision?.content_md ||
+    revisionResult?.revised_content_md ||
+    currentDraft?.content_md ||
+    '';
+  const previewTitle = viewingRevision ? '修订稿预览' : revisionResult ? '修订稿预览' : '原稿预览';
+
+  const feedbackRevisionId =
+    viewingRevision?.revision_id ||
+    (revisionResult?.saved ? revisionResult.revision_id : undefined);
 
   return (
     <Layout className={styles.layout}>
@@ -363,7 +374,13 @@ export default function ChatPage() {
       <Sider width={420} className={styles.sider}>
         {/* 文章选择 */}
         <Card className={styles.card} size="small">
-          <Card.Meta title={<Text strong className={styles.cardHeader}>文章选择</Text>} />
+          <Card.Meta
+            title={
+              <Text strong className={styles.cardHeader}>
+                文章选择
+              </Text>
+            }
+          />
           {articlesLoading ? (
             <div className={styles.loadingIndicator}>
               <Spin size="small" />
@@ -373,7 +390,7 @@ export default function ChatPage() {
             <Select
               showSearch
               placeholder="选择有草稿的文章"
-              style={{ width: "100%" }}
+              style={{ width: '100%' }}
               value={selectedArticle?.url_hash}
               onChange={handleArticleChange}
               options={articles.map((a) => ({
@@ -390,9 +407,15 @@ export default function ChatPage() {
           <>
             {/* 草稿信息 */}
             <Card className={styles.card} size="small">
-              <Card.Meta title={<Text strong className={styles.cardHeader}>草稿选择</Text>} />
+              <Card.Meta
+                title={
+                  <Text strong className={styles.cardHeader}>
+                    草稿选择
+                  </Text>
+                }
+              />
               <Select
-                style={{ width: "100%", marginBottom: 8 }}
+                style={{ width: '100%', marginBottom: 8 }}
                 value={draftIndex}
                 onChange={handleDraftChange}
                 options={selectedArticle.pr_drafts?.map((d, i) => ({
@@ -409,7 +432,13 @@ export default function ChatPage() {
 
             {/* 草稿预览 */}
             <Card className={styles.card} size="small">
-              <Card.Meta title={<Text strong className={styles.cardHeader}>{previewTitle}</Text>} />
+              <Card.Meta
+                title={
+                  <Text strong className={styles.cardHeader}>
+                    {previewTitle}
+                  </Text>
+                }
+              />
               <div className={styles.previewArea}>
                 {previewContent ? (
                   <div className={styles.markdownContent}>
@@ -424,11 +453,7 @@ export default function ChatPage() {
                   <Button size="small" icon={<CopyOutlined />} onClick={handleCopy}>
                     复制
                   </Button>
-                  <Button
-                    size="small"
-                    icon={<DownloadOutlined />}
-                    onClick={handleDownload}
-                  >
+                  <Button size="small" icon={<DownloadOutlined />} onClick={handleDownload}>
                     下载
                   </Button>
                   {viewingRevision && !viewingRevision.applied && (
@@ -442,6 +467,19 @@ export default function ChatPage() {
                     </Button>
                   )}
                 </Space>
+              )}
+              {feedbackRevisionId && (
+                <DraftFeedback
+                  articleUrlHash={selectedArticle.url_hash}
+                  draftIndex={draftIndex}
+                  template={currentDraft.template}
+                  perspective={currentDraft.perspective}
+                  revisionId={feedbackRevisionId}
+                  compact
+                  onSubmitted={() => {
+                    void refreshArticle();
+                  }}
+                />
               )}
             </Card>
 
@@ -486,11 +524,9 @@ export default function ChatPage() {
             buttonStyle="solid"
             size="large"
           />
-          {mode === "改稿" && (
+          {mode === '改稿' && (
             <Text type="secondary" style={{ marginLeft: 12 }}>
-              {selectedArticle
-                ? `将对草稿 ${draftIndex + 1} 进行改稿`
-                : "请先选择文章和草稿"}
+              {selectedArticle ? `将对草稿 ${draftIndex + 1} 进行改稿` : '请先选择文章和草稿'}
             </Text>
           )}
           {messages.length > 0 && selectedArticle && (
@@ -498,7 +534,7 @@ export default function ChatPage() {
               size="small"
               icon={<ClearOutlined />}
               onClick={handleClearHistory}
-              style={{ marginLeft: "auto" }}
+              style={{ marginLeft: 'auto' }}
             >
               清空对话
             </Button>
@@ -528,22 +564,23 @@ export default function ChatPage() {
               <div className={styles.emptyState}>
                 <div className={styles.emptyIcon}>💬</div>
                 <div className={styles.emptyText}>
-                  {mode === "问答"
-                    ? "输入问题开始对话"
-                    : "输入修改意见生成修订稿"}
+                  {mode === '问答' ? '输入问题开始对话' : '输入修改意见生成修订稿'}
                 </div>
               </div>
             ) : (
-              messages.map((msg, i) => (
-                <ChatBubble key={i} message={msg} index={i} />
-              ))
+              messages.map((msg, i) => <ChatBubble key={i} message={msg} index={i} />)
             )}
-            {sending && !(messages.length > 0 && messages[messages.length - 1]?.role === "assistant" && messages[messages.length - 1]?.content) && (
-              <div className={styles.loadingIndicator}>
-                <Spin size="small" />
-                <span>{mode === "问答" ? "思考中..." : "生成修订稿中..."}</span>
-              </div>
-            )}
+            {sending &&
+              !(
+                messages.length > 0 &&
+                messages[messages.length - 1]?.role === 'assistant' &&
+                messages[messages.length - 1]?.content
+              ) && (
+                <div className={styles.loadingIndicator}>
+                  <Spin size="small" />
+                  <span>{mode === '问答' ? '思考中...' : '生成修订稿中...'}</span>
+                </div>
+              )}
             <div ref={messagesEndRef} />
           </div>
         </div>
@@ -556,9 +593,9 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={
-                mode === "问答"
-                  ? "输入问题..."
-                  : "输入修改意见，如：标题更有冲击力，减少技术细节..."
+                mode === '问答'
+                  ? '输入问题...'
+                  : '输入修改意见，如：标题更有冲击力，减少技术细节...'
               }
               autoSize={{ minRows: 2, maxRows: 4 }}
               onPressEnter={(e) => {
@@ -582,9 +619,7 @@ export default function ChatPage() {
               发送
             </Button>
           </div>
-          <div className={styles.hintText}>
-            Shift + Enter 换行，Enter 发送
-          </div>
+          <div className={styles.hintText}>Shift + Enter 换行，Enter 发送</div>
         </div>
       </Content>
     </Layout>

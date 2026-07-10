@@ -10,26 +10,23 @@
  *   onClose: () => void
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { CopyOutlined, DownloadOutlined, LinkOutlined } from '@ant-design/icons';
 import {
   Button,
   Descriptions,
   Divider,
-  message,
   Modal,
   Skeleton,
   Space,
   Tag,
   Typography,
-} from "antd";
-import {
-  CopyOutlined,
-  DownloadOutlined,
-  LinkOutlined,
-} from "@ant-design/icons";
-import ReactMarkdown from "react-markdown";
-import api from "../api/client";
-import type { Article, Report } from "../types";
+  message,
+} from 'antd';
+import { useCallback, useEffect, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import api from '../api/client';
+import type { Article, Report } from '../types';
+import DraftFeedback from './DraftFeedback';
 
 const { Text, Paragraph } = Typography;
 
@@ -39,11 +36,7 @@ interface ReportViewerProps {
   onClose: () => void;
 }
 
-export default function ReportViewer({
-  reportId,
-  article,
-  onClose,
-}: ReportViewerProps) {
+export default function ReportViewer({ reportId, article, onClose }: ReportViewerProps) {
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -57,7 +50,7 @@ export default function ReportViewer({
     api
       .getReport(reportId)
       .then(setReport)
-      .catch(() => message.error("加载报道失败"))
+      .catch(() => message.error('加载报道失败'))
       .finally(() => setLoading(false));
   }, [reportId]);
 
@@ -67,23 +60,35 @@ export default function ReportViewer({
     if (!report?.content_md) return;
     navigator.clipboard
       .writeText(report.content_md)
-      .then(() => message.success("已复制到剪贴板"))
-      .catch(() => message.error("复制失败"));
+      .then(() => message.success('已复制到剪贴板'))
+      .catch(() => message.error('复制失败'));
   }, [report]);
 
   // ── 下载 ──────────────────────────────────────────────────
 
   const handleDownload = useCallback(() => {
     if (!report?.content_md) return;
-    const blob = new Blob([report.content_md], { type: "text/markdown" });
+    const blob = new Blob([report.content_md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
+    const a = document.createElement('a');
     a.href = url;
-    a.download = `${report.title?.slice(0, 30) || "report"}.md`;
+    a.download = `${report.title?.slice(0, 30) || 'report'}.md`;
     a.click();
     URL.revokeObjectURL(url);
-    message.success("下载完成");
+    message.success('下载完成');
   }, [report]);
+
+  const matchingDraftIndex = article?.pr_drafts?.findIndex(
+    (draft) => draft.template === report?.template,
+  );
+  const feedbackDraftIndex =
+    matchingDraftIndex !== undefined && matchingDraftIndex >= 0
+      ? matchingDraftIndex
+      : article?.pr_drafts?.length
+        ? 0
+        : -1;
+  const feedbackDraft =
+    feedbackDraftIndex >= 0 ? article?.pr_drafts?.[feedbackDraftIndex] : undefined;
 
   if (!reportId) return null;
 
@@ -92,9 +97,7 @@ export default function ReportViewer({
       title={
         <Space>
           <span>📄 PR 报道</span>
-          {report?.title && (
-            <Text type="secondary">— {report.title}</Text>
-          )}
+          {report?.title && <Text type="secondary">— {report.title}</Text>}
         </Space>
       }
       open={!!reportId}
@@ -121,11 +124,7 @@ export default function ReportViewer({
             <>
               <Descriptions size="small" column={2} bordered>
                 <Descriptions.Item label="源文章">
-                  <a
-                    href={article.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
+                  <a href={article.url} target="_blank" rel="noopener noreferrer">
                     <LinkOutlined /> {article.title}
                   </a>
                 </Descriptions.Item>
@@ -133,7 +132,7 @@ export default function ReportViewer({
                   <Tag color="blue">{article.source}</Tag>
                 </Descriptions.Item>
                 <Descriptions.Item label="综合分">
-                  <Tag color={article.total_score >= 140 ? "red" : "default"}>
+                  <Tag color={article.total_score >= 140 ? 'red' : 'default'}>
                     {article.total_score}
                   </Tag>
                 </Descriptions.Item>
@@ -149,13 +148,24 @@ export default function ReportViewer({
           <div
             className="report-content"
             style={{
-              maxHeight: "60vh",
-              overflow: "auto",
-              padding: "8px 0",
+              maxHeight: '60vh',
+              overflow: 'auto',
+              padding: '8px 0',
             }}
           >
             <ReactMarkdown>{report.content_md}</ReactMarkdown>
           </div>
+
+          {article && feedbackDraft && (
+            <DraftFeedback
+              articleUrlHash={article.url_hash}
+              draftIndex={feedbackDraftIndex}
+              template={feedbackDraft.template}
+              perspective={feedbackDraft.perspective}
+              initialRating={feedbackDraft.feedback_summary?.last_rating}
+              compact
+            />
+          )}
         </>
       ) : (
         <Paragraph type="secondary">报道数据不可用</Paragraph>
