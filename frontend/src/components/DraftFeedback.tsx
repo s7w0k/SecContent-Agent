@@ -131,6 +131,7 @@ export default function DraftFeedback({
             {template} / {perspective}
           </Text>
           <Button
+            data-testid="draft-feedback-submit"
             type="primary"
             icon={<SendOutlined />}
             loading={submitting}

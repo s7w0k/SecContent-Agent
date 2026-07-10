@@ -301,7 +301,9 @@ export default function ProfilePage() {
       )}
 
       {loading ? (
-        <Skeleton active paragraph={{ rows: 10 }} />
+        <div data-testid="profile-loading">
+          <Skeleton active paragraph={{ rows: 10 }} />
+        </div>
       ) : !profile ? (
         <ProfileEmptyState onRebuild={handleRebuild} rebuilding={rebuilding} />
       ) : (
