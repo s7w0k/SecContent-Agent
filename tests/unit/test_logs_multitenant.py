@@ -20,8 +20,8 @@ async def test_log_to_db_persists_user_id_and_datetime():
         "INFO",
         "crawl",
         "crawl started",
-        {"days": 1},
         "user-a",
+        {"days": 1},
     )
 
     document = collection.insert_one.await_args.args[0]

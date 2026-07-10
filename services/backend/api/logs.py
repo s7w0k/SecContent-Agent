@@ -9,7 +9,6 @@ from models.feedback import PipelineLog
 router = APIRouter(prefix="/api/logs", tags=["Logs"])
 
 LOG_COLLECTION = "pipeline_logs"
-LEGACY_USER_ID = "local-user"
 
 
 def _tz():
@@ -21,8 +20,8 @@ async def _log_to_db(
     level: str,
     phase: str,
     message: str,
+    user_id: str,
     detail: dict | None = None,
-    user_id: str = LEGACY_USER_ID,
 ):
     """Write a log entry to MongoDB."""
     if db is None:
@@ -47,7 +46,7 @@ def log_pipeline(
     phase: str,
     message: str,
     *,
-    user_id: str = LEGACY_USER_ID,
+    user_id: str,
     **detail,
 ):
     """Helper to log pipeline events (non-blocking)."""
@@ -56,7 +55,7 @@ def log_pipeline(
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            asyncio.create_task(_log_to_db(db, level, phase, message, detail, user_id))
+            asyncio.create_task(_log_to_db(db, level, phase, message, user_id, detail))
     except Exception:
         pass
 

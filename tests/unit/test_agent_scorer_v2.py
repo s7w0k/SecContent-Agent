@@ -439,7 +439,7 @@ class TestThresholdAdjustment:
         collection.find.return_value = Cursor()
         db = {"feedbacks": collection}
 
-        result = await scorer.adjust_threshold(db=db)
+        result = await scorer.adjust_threshold(db=db, user_id="local-user")
         assert result["threshold"] == 84
         assert result["adjustment"] == 4
         assert result["feedback_count"] == 3
@@ -450,7 +450,7 @@ class TestThresholdAdjustment:
         scorer.pr_threshold = 90
         scorer.threshold_adjustment = 10
 
-        result = await scorer.adjust_threshold(db=None)
+        result = await scorer.adjust_threshold(db=None, user_id="local-user")
         assert result["threshold"] == 80
         assert result["adjustment"] == 0
         assert scorer.pr_threshold == 80
@@ -464,7 +464,9 @@ class TestThresholdAdjustment:
         scorer.pr_threshold = 90
         scorer.threshold_adjustment = 10
 
-        result = await scorer.adjust_threshold(db={"feedbacks": BrokenCollection()})
+        result = await scorer.adjust_threshold(
+            db={"feedbacks": BrokenCollection()}, user_id="local-user"
+        )
 
         assert result["threshold"] == 80
         assert result["adjustment"] == 0

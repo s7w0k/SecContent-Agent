@@ -76,9 +76,14 @@ def db():
 @pytest.fixture
 def app(db):
     from api.activity import router
+    from auth.deps import get_current_user
+
+    async def override_current_user():
+        return "local-user"
 
     test_app = FastAPI()
     test_app.include_router(router)
+    test_app.dependency_overrides[get_current_user] = override_current_user
     test_app.state.db = db
     return test_app
 
@@ -323,9 +328,14 @@ async def test_log_activity_is_best_effort(db):
 @pytest.mark.asyncio
 async def test_database_unavailable():
     from api.activity import router
+    from auth.deps import get_current_user
+
+    async def override_current_user():
+        return "local-user"
 
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[get_current_user] = override_current_user
     app.state.db = None
 
     response = await _request(app, "GET", "/api/activities")

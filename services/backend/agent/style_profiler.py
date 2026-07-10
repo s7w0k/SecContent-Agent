@@ -80,7 +80,7 @@ class StyleProfiler:
         cursor = self.db[collection].find(query)
         return await cursor.to_list(length=None)
 
-    async def aggregate_feedbacks(self, user_id: str = "local-user") -> dict:
+    async def aggregate_feedbacks(self, user_id: str) -> dict:
         """聚合有效反馈，并补齐反馈对应草稿的模板和视角。"""
         feedbacks = await self._find_all(
             "feedbacks",
@@ -119,7 +119,7 @@ class StyleProfiler:
             },
         }
 
-    async def aggregate_activities(self, user_id: str = "local-user") -> dict:
+    async def aggregate_activities(self, user_id: str) -> dict:
         """聚合用户关键操作及最近活跃时间。"""
         activities = await self._find_all("user_activities", {"user_id": user_id})
         actions = Counter(str(item.get("action", "")) for item in activities)
@@ -141,7 +141,7 @@ class StyleProfiler:
 
     async def aggregate_revise_instructions(
         self,
-        user_id: str = "local-user",
+        user_id: str,
     ) -> list[str]:
         """从指定用户的对话会话中提取并去重改稿指令。"""
         query = {"user_id": user_id}
@@ -321,7 +321,7 @@ class StyleProfiler:
                 )
             return list(dict.fromkeys(fallback))[:5]
 
-    async def build_profile(self, user_id: str = "local-user") -> dict:
+    async def build_profile(self, user_id: str) -> dict:
         """构建完整画像并幂等写入 user_profiles 集合。"""
         feedback_data = await self.aggregate_feedbacks(user_id)
         activity_data = await self.aggregate_activities(user_id)

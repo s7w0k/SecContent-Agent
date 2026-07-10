@@ -86,6 +86,15 @@ class FakeDatabase:
     def __init__(self, article: dict):
         self.collections = {
             "articles": FakeCollection([article]),
+            "user_drafts": FakeCollection(
+                [
+                    {
+                        "user_id": "local-user",
+                        "article_url_hash": article["url_hash"],
+                        "drafts": article.get("pr_drafts", []),
+                    }
+                ]
+            ),
             "feedbacks": FakeCollection(),
             "user_activities": FakeCollection(),
         }
@@ -136,9 +145,14 @@ def db(article):
 @pytest.fixture
 def app(db):
     from api.feedback import router
+    from auth.deps import get_current_user
+
+    async def override_current_user():
+        return "local-user"
 
     test_app = FastAPI()
     test_app.include_router(router)
+    test_app.dependency_overrides[get_current_user] = override_current_user
     test_app.state.db = db
     return test_app
 
@@ -186,8 +200,8 @@ class TestCreateFeedback:
         assert len(db["user_activities"].documents) == 1
         assert db["user_activities"].documents[0]["action"] == "feedback_submit"
 
-        article = db["articles"].documents[0]
-        assert article["pr_drafts"][0]["feedback_summary"] == {
+        user_draft = db["user_drafts"].documents[0]
+        assert user_draft["drafts"][0]["feedback_summary"] == {
             "avg_rating": 5.0,
             "count": 1,
             "last_rating": 5,
@@ -232,7 +246,7 @@ class TestCreateFeedback:
         assert feedback["target_type"] == "article_score"
         assert len(db["user_activities"].documents) == 1
         assert db["user_activities"].documents[0]["target"]["template"] is None
-        assert "feedback_summary" not in db["articles"].documents[0]["pr_drafts"][0]
+        assert "feedback_summary" not in db["user_drafts"].documents[0]["drafts"][0]
 
     @pytest.mark.asyncio
     async def test_create_rejects_invalid_rating(self, app):
@@ -505,7 +519,7 @@ class TestUpdateAndDelete:
         updated = await db["feedbacks"].find_one({"feedback_id": "feedback-1"})
         assert updated["rating"] == 1
         assert updated["comment"] == "更新后"
-        assert db["articles"].documents[0]["pr_drafts"][0]["feedback_summary"] == {
+        assert db["user_drafts"].documents[0]["drafts"][0]["feedback_summary"] == {
             "avg_rating": 2.0,
             "count": 2,
             "last_rating": 1,
@@ -522,7 +536,7 @@ class TestUpdateAndDelete:
         assert response.status_code == 200
         assert response.json()["data"]["deleted"] is True
         assert len(db["feedbacks"].documents) == 1
-        assert db["articles"].documents[0]["pr_drafts"][0]["feedback_summary"] == {
+        assert db["user_drafts"].documents[0]["drafts"][0]["feedback_summary"] == {
             "avg_rating": 3.0,
             "count": 1,
             "last_rating": 3,
@@ -546,9 +560,14 @@ class TestUpdateAndDelete:
 @pytest.mark.asyncio
 async def test_database_unavailable():
     from api.feedback import router
+    from auth.deps import get_current_user
+
+    async def override_current_user():
+        return "local-user"
 
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[get_current_user] = override_current_user
     app.state.db = None
 
     response = await _request(app, "GET", "/api/feedback")

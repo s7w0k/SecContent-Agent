@@ -55,10 +55,12 @@ class PipelineStatus(StrEnum):
 def create_state(
     crawl_days: int = 1,
     phases: list[str] | None = None,
+    user_id: str = "",
 ) -> dict:
     """创建流水线初始状态（普通 dict，兼容 LangGraph）"""
     return {
         "crawl_days": crawl_days,
+        "user_id": user_id,
         "phases": phases or [p.value for p in PipelinePhase],
         "crawled_count": 0,
         "classified_count": 0,
@@ -91,7 +93,13 @@ async def crawl_node(state: dict, tools: dict, db: Any) -> dict:
     from api.logs import log_pipeline
     state["current_phase"] = PipelinePhase.CRAWL.value
     logger.info("[crawl] Starting crawl phase (days=%d, batch=%s)", state["crawl_days"], batch_id)
-    log_pipeline(db, "INFO", "crawl", f"start crawl (days={state['crawl_days']})")
+    log_pipeline(
+        db,
+        "INFO",
+        "crawl",
+        f"start crawl (days={state['crawl_days']})",
+        user_id=state["user_id"],
+    )
 
     if PipelinePhase.CRAWL.value not in state["phases"]:
         logger.info("[crawl] Skipped (not in selected phases)")
@@ -201,7 +209,13 @@ async def crawl_node(state: dict, tools: dict, db: Any) -> dict:
             state["crawled_count"] = saved_count
             logger.info("[crawl] Saved %d new, skipped %d duplicates (of %d total)",
                         saved_count, skipped, len(articles))
-            log_pipeline(db, "INFO", "crawl", f"saved {saved_count} new, skipped {skipped} dupes")
+            log_pipeline(
+                db,
+                "INFO",
+                "crawl",
+                f"saved {saved_count} new, skipped {skipped} dupes",
+                user_id=state["user_id"],
+            )
         else:
             state["crawled_count"] = len(articles)
             logger.info("[crawl] %d articles crawled (no DB, not saved)", len(articles))
@@ -276,7 +290,13 @@ async def classify_node(state: dict, tools: dict, db: Any) -> dict:
         classified_count = sum(1 for r in results if r)
         state["classified_count"] = classified_count
         logger.info("[classify] Parallel classified %d/%d articles", classified_count, len(raw_articles))
-        log_pipeline(db, "INFO", "classify", f"parallel classified {classified_count}/{len(raw_articles)}")
+        log_pipeline(
+            db,
+            "INFO",
+            "classify",
+            f"parallel classified {classified_count}/{len(raw_articles)}",
+            user_id=state["user_id"],
+        )
 
     except Exception as e:
         logger.error("[classify] Phase failed: %s", e)
@@ -336,7 +356,13 @@ async def score_node(
                 scored_count += 1
         state["scored_count"] = scored_count
         logger.info("[score] LLM scored %d/%d articles", scored_count, len(raw_articles))
-        log_pipeline(db, "INFO", "score", f"scored {scored_count}/{len(raw_articles)} articles")
+        log_pipeline(
+            db,
+            "INFO",
+            "score",
+            f"scored {scored_count}/{len(raw_articles)} articles",
+            user_id=state["user_id"],
+        )
 
     except Exception as e:
         logger.error("[score] Phase failed: %s", e)
@@ -440,7 +466,7 @@ class PipelineManager:
 
     # ── 公开接口 ──────────────────────────────────────────────
 
-    async def run_full(self, crawl_days: int = 1) -> dict:
+    async def run_full(self, crawl_days: int = 1, user_id: str = "") -> dict:
         """执行全流程流水线。
 
         Args:
@@ -450,12 +476,13 @@ class PipelineManager:
             {"pipeline_id": str, "status": str, "state": dict}
         """
         phases = [p.value for p in PipelinePhase]
-        return await self._run(crawl_days, phases)
+        return await self._run(crawl_days, phases, user_id)
 
     async def run_phase(
         self,
         phase: str,
         crawl_days: int = 1,
+        user_id: str = "",
     ) -> dict:
         """执行单个阶段（及其前置依赖）。
 
@@ -472,7 +499,7 @@ class PipelineManager:
 
         idx = phase_order.index(phase)
         phases = phase_order[: idx + 1]  # 包含该阶段及之前所有阶段
-        return await self._run(crawl_days, phases)
+        return await self._run(crawl_days, phases, user_id)
 
     def get_status(self) -> dict:
         """获取流水线当前状态。
@@ -544,6 +571,7 @@ class PipelineManager:
         self,
         crawl_days: int,
         phases: list[str],
+        user_id: str,
     ) -> dict:
         """内部执行逻辑"""
         import uuid
@@ -558,7 +586,7 @@ class PipelineManager:
                 "error": "Pipeline is already running",
             }
 
-        self._state = create_state(crawl_days=crawl_days, phases=phases)
+        self._state = create_state(crawl_days=crawl_days, phases=phases, user_id=user_id)
         self._state["status"] = PipelineStatus.RUNNING.value
         self._state["started_at"] = _now_iso()
 

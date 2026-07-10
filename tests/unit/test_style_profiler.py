@@ -180,7 +180,7 @@ class TestAggregation:
     @pytest.mark.asyncio
     async def test_aggregate_feedbacks(self, sample_db, llm):
         profiler = StyleProfiler(llm, sample_db)
-        result = await profiler.aggregate_feedbacks()
+        result = await profiler.aggregate_feedbacks("local-user")
 
         assert result["summary"] == {
             "total_feedbacks": 2,
@@ -209,7 +209,7 @@ class TestAggregation:
             ],
             articles=[],
         )
-        result = await StyleProfiler(None, db).aggregate_feedbacks()
+        result = await StyleProfiler(None, db).aggregate_feedbacks("local-user")
 
         assert result["summary"]["avg_rating"] == 0
         assert "template" not in result["items"][0]
@@ -217,8 +217,8 @@ class TestAggregation:
     @pytest.mark.asyncio
     async def test_aggregate_activities_and_instructions(self, sample_db, llm):
         profiler = StyleProfiler(llm, sample_db)
-        activities = await profiler.aggregate_activities()
-        instructions = await profiler.aggregate_revise_instructions()
+        activities = await profiler.aggregate_activities("local-user")
+        instructions = await profiler.aggregate_revise_instructions("local-user")
 
         assert activities["summary"]["total_downloads"] == 1
         assert activities["summary"]["total_applies"] == 1
@@ -275,8 +275,8 @@ class TestPreferenceRules:
     @pytest.mark.asyncio
     async def test_calculate_scores_and_rank(self, sample_db, llm):
         profiler = StyleProfiler(llm, sample_db)
-        feedbacks = (await profiler.aggregate_feedbacks())["items"]
-        activities = (await profiler.aggregate_activities())["items"]
+        feedbacks = (await profiler.aggregate_feedbacks("local-user"))["items"]
+        activities = (await profiler.aggregate_activities("local-user"))["items"]
         scores = profiler.calculate_preference_scores(feedbacks, activities)
 
         assert scores["template_scores"]["爆点A"]["avg_rating"] == 5
@@ -374,7 +374,7 @@ class TestProfileBuild:
     @pytest.mark.asyncio
     async def test_build_profile_and_persist(self, sample_db, llm):
         profiler = StyleProfiler(llm, sample_db)
-        profile = await profiler.build_profile()
+        profile = await profiler.build_profile("local-user")
 
         assert profile["style_hints"]["preferred_templates"][0] == "爆点A"
         assert profile["style_hints"]["preferred_perspectives"][0] == "市场传播视角"
@@ -402,7 +402,7 @@ class TestProfileBuild:
             },
         )
 
-        profile = await StyleProfiler(llm, sample_db).build_profile()
+        profile = await StyleProfiler(llm, sample_db).build_profile("local-user")
 
         assert profile["version"] == 5
         assert datetime.fromisoformat(profile["created_at"]) == created_at

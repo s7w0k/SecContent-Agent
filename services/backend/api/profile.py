@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 
 from agent.style_profiler import StyleProfiler
-from fastapi import APIRouter, HTTPException, Request
+from auth.deps import get_current_user
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 router = APIRouter(prefix="/api/profile", tags=["Profile"])
-LOCAL_USER_ID = "local-user"
 
 
 def _get_db(request: Request):
@@ -39,21 +39,27 @@ def _serialize(document: dict) -> dict:
 
 
 @router.get("/style", summary="获取用户风格画像")
-async def get_style_profile(request: Request):
+async def get_style_profile(
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
     db = _get_db(request)
-    profile = await db["user_profiles"].find_one({"user_id": LOCAL_USER_ID})
+    profile = await db["user_profiles"].find_one({"user_id": user_id})
     if profile is None:
         raise HTTPException(status_code=404, detail="Profile not found")
     return {"ok": True, "data": _serialize(profile)}
 
 
 @router.post("/rebuild", summary="重建用户风格画像")
-async def rebuild_style_profile(request: Request):
+async def rebuild_style_profile(
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
     db = _get_db(request)
     profiler = _get_profiler(request)
-    profile = await profiler.build_profile(LOCAL_USER_ID)
+    profile = await profiler.build_profile(user_id)
     activity_count = await db["user_activities"].count_documents(
-        {"user_id": LOCAL_USER_ID},
+        {"user_id": user_id},
     )
     return {
         "ok": True,

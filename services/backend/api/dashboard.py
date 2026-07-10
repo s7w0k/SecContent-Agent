@@ -9,7 +9,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from auth.deps import get_current_user
+from config import get_settings
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 router = APIRouter(prefix="/api", tags=["Dashboard"])
 
@@ -25,6 +27,18 @@ def _get_db(request: Request):
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
     return db
+
+
+async def _attach_user_drafts(db, article: dict, user_id: str) -> dict:
+    """用当前用户的独立草稿替换文章中的旧共享草稿。"""
+    user_draft = await db["user_drafts"].find_one(
+        {"user_id": user_id, "article_url_hash": article["url_hash"]}
+    )
+    drafts = user_draft.get("drafts", []) if user_draft else []
+    article.pop("pr_drafts", None)
+    article["pr_drafts"] = drafts
+    article["can_generate"] = not bool(drafts)
+    return article
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -45,6 +59,7 @@ async def list_articles(
     keyword: str | None = Query(default=None, description="标题/摘要关键词搜索"),
     sort_by: str = Query(default="added_at", description="排序字段"),
     order: str = Query(default="desc", description="排序方向: asc / desc"),
+    user_id: str = Depends(get_current_user),
 ):
     """分页查询文章列表，支持多条件筛选和排序。
 
@@ -80,6 +95,7 @@ async def list_articles(
     # 后过滤（MongoDB 不支持动态计算字段筛选）
     items = []
     for art in articles:
+        await _attach_user_drafts(db, art, user_id)
         art["_id"] = str(art["_id"])
         total_score = art.get("ai_relevance_score", 0) + art.get("reportability_score", 0)
         art["total_score"] = total_score
@@ -112,7 +128,11 @@ async def list_articles(
 
 
 @router.get("/articles/{url_hash}", summary="文章详情")
-async def get_article(url_hash: str, request: Request):
+async def get_article(
+    url_hash: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
     """获取单篇文章完整详情（含原文 Markdown 全文）"""
     db = _get_db(request)
 
@@ -120,6 +140,7 @@ async def get_article(url_hash: str, request: Request):
     if article is None:
         raise HTTPException(status_code=404, detail="Article not found")
 
+    await _attach_user_drafts(db, article, user_id)
     article["_id"] = str(article["_id"])
     total_score = article.get("ai_relevance_score", 0) + article.get("reportability_score", 0)
     article["total_score"] = total_score
@@ -129,7 +150,11 @@ async def get_article(url_hash: str, request: Request):
 
 
 @router.delete("/articles/{url_hash}", summary="删除文章")
-async def delete_article(url_hash: str, request: Request):
+async def delete_article(
+    url_hash: str,
+    request: Request,
+    _user_id: str = Depends(get_current_user),
+):
     """删除指定文章。"""
     db = _get_db(request)
     result = await db["articles"].delete_one({"url_hash": url_hash})
@@ -139,7 +164,11 @@ async def delete_article(url_hash: str, request: Request):
 
 
 @router.post("/articles/{url_hash}/fetch-content", summary="获取推文原文")
-async def fetch_article_content(url_hash: str, request: Request):
+async def fetch_article_content(
+    url_hash: str,
+    request: Request,
+    _user_id: str = Depends(get_current_user),
+):
     """抓取公众号推文原文并保存。"""
     import httpx as _httpx
     db = _get_db(request)
@@ -181,7 +210,11 @@ async def fetch_article_content(url_hash: str, request: Request):
 
 
 @router.post("/articles/{url_hash}/summarize", summary="生成摘要")
-async def summarize_article(url_hash: str, request: Request):
+async def summarize_article(
+    url_hash: str,
+    request: Request,
+    _user_id: str = Depends(get_current_user),
+):
     """用 DeepSeek 生成 150 字中文摘要并保存。"""
     db = _get_db(request)
     article = await db["articles"].find_one({"url_hash": url_hash})
@@ -193,12 +226,12 @@ async def summarize_article(url_hash: str, request: Request):
         raise HTTPException(status_code=400, detail="Content too short, fetch original first")
 
     try:
-        import os
-
         from openai import OpenAI
+
+        settings = get_settings()
         client = OpenAI(
-            api_key=os.getenv("DEEPSEEK_API_KEY", "sk-REDACTED"),
-            base_url="https://api.deepseek.com/v1",
+            api_key=settings.DEEPSEEK_API_KEY,
+            base_url=settings.DEEPSEEK_BASE_URL,
         )
         resp = client.chat.completions.create(
             model="deepseek-chat",
@@ -220,7 +253,10 @@ async def summarize_article(url_hash: str, request: Request):
 
 
 @router.get("/stats", summary="统计概览")
-async def get_stats(request: Request):
+async def get_stats(
+    request: Request,
+    _user_id: str = Depends(get_current_user),
+):
     """返回仪表盘统计数据：总数、分类分布、来源分布、评分分布"""
     db = _get_db(request)
 

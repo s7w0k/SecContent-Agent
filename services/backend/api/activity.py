@@ -5,15 +5,13 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from auth.deps import get_current_user
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from models.feedback import ActionType, UserActivity, UserActivityCreate
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/activities", tags=["Activity"])
 logger = logging.getLogger("backend.api.activity")
-
-LOCAL_USER_ID = "local-user"
-
 
 class ActivityBatchCreate(BaseModel):
     """批量操作记录请求。"""
@@ -73,12 +71,16 @@ async def log_activity(
 
 
 @router.post("/log", summary="记录单条操作")
-async def create_activity(request: Request, body: UserActivityCreate):
+async def create_activity(
+    request: Request,
+    body: UserActivityCreate,
+    user_id: str = Depends(get_current_user),
+):
     """写入一条前端异步埋点记录。"""
     db = _get_db(request)
     activity_id = await log_activity(
         db,
-        LOCAL_USER_ID,
+        user_id,
         body.action,
         body.target.model_dump(mode="python"),
         body.context,
@@ -96,14 +98,18 @@ async def create_activity(request: Request, body: UserActivityCreate):
 
 
 @router.post("/batch-log", summary="批量记录操作")
-async def create_activity_batch(request: Request, body: ActivityBatchCreate):
+async def create_activity_batch(
+    request: Request,
+    body: ActivityBatchCreate,
+    user_id: str = Depends(get_current_user),
+):
     """一次写入多条前端操作记录。"""
     db = _get_db(request)
     activity_ids: list[str] = []
     for item in body.activities:
         activity_id = await log_activity(
             db,
-            LOCAL_USER_ID,
+            user_id,
             item.action,
             item.target.model_dump(mode="python"),
             item.context,
@@ -131,10 +137,11 @@ async def list_activities(
     article_url_hash: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    user_id: str = Depends(get_current_user),
 ):
     """按操作类型和文章筛选操作记录并分页。"""
     db = _get_db(request)
-    query: dict = {"user_id": LOCAL_USER_ID}
+    query: dict = {"user_id": user_id}
     if action is not None:
         query["action"] = action
     if article_url_hash:
@@ -160,6 +167,7 @@ async def list_activities(
 async def activity_stats(
     request: Request,
     days: int = Query(default=30, ge=1, le=365),
+    user_id: str = Depends(get_current_user),
 ):
     """统计指定时间范围内的操作类型、模板和每日趋势。"""
     db = _get_db(request)
@@ -167,7 +175,7 @@ async def activity_stats(
     documents = await _activity_documents(
         db,
         {
-            "user_id": LOCAL_USER_ID,
+            "user_id": user_id,
             "created_at": {"$gte": start_at},
         },
     )

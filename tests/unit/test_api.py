@@ -24,7 +24,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services
 
 def _make_app(pipeline_manager=None, db=None, knowledge_loader=None):
     """创建测试用 FastAPI app，注入 mock 依赖"""
+    from auth.deps import get_current_user
     from main import app as _app
+
+    async def override_current_user():
+        return "local-user"
+
+    _app.dependency_overrides[get_current_user] = override_current_user
 
     # 深拷贝避免修改原始 app
     # 使用 app.state 注入 mock
@@ -177,6 +183,10 @@ class TestPipelineAPI:
             assert resp.status_code == 200
             data = resp.json()
             assert data["status"] == "completed"
+            app.state.pipeline_manager.run_full.assert_awaited_once_with(
+                crawl_days=1,
+                user_id="local-user",
+            )
             activity = mock_db._user_activities.insert_one.await_args.args[0]
             assert activity["action"] == "pipeline_run"
             assert activity["target"]["pipeline_id"] == "test-123"

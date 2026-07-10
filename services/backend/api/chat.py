@@ -16,7 +16,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from api.activity import log_activity
-from fastapi import APIRouter, HTTPException, Request
+from auth.deps import get_current_user
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -24,7 +25,6 @@ router = APIRouter(prefix="/api", tags=["Chat"])
 
 # 东八区时区
 _TZ_CN = timezone(timedelta(hours=8))
-LEGACY_USER_ID = "local-user"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -40,9 +40,11 @@ def _get_db(request: Request):
     return db
 
 
-def _get_user_id(request: Request) -> str:
-    """任务 7.3 强制认证前，兼容阶段六的本地用户数据。"""
-    return getattr(request.state, "user_id", None) or LEGACY_USER_ID
+async def _load_user_drafts(db, user_id: str, url_hash: str) -> list[dict]:
+    user_draft = await db["user_drafts"].find_one(
+        {"user_id": user_id, "article_url_hash": url_hash}
+    )
+    return user_draft.get("drafts", []) if user_draft else []
 
 
 def _get_draft_chat_agent(request: Request):
@@ -169,7 +171,11 @@ class ApplyRevisionResponse(BaseModel):
 
 
 @router.post("/chat/ask", summary="对话问答")
-async def chat_ask(request: Request, body: ChatAskRequest):
+async def chat_ask(
+    request: Request,
+    body: ChatAskRequest,
+    user_id: str = Depends(get_current_user),
+):
     """问答模式：基于文章/草稿/知识库回答用户问题。
 
     - 如果传入 article_url_hash，读取文章上下文
@@ -179,7 +185,6 @@ async def chat_ask(request: Request, body: ChatAskRequest):
     - 自动保存对话记录到 chat_sessions 集合
     """
     db = _get_db(request)
-    user_id = _get_user_id(request)
     agent = _get_draft_chat_agent(request)
 
     article = None
@@ -195,7 +200,7 @@ async def chat_ask(request: Request, body: ChatAskRequest):
 
         # 读取草稿
         if body.draft_index is not None:
-            drafts = article.get("pr_drafts", [])
+            drafts = await _load_user_drafts(db, user_id, body.article_url_hash)
             if body.draft_index < 0 or body.draft_index >= len(drafts):
                 raise HTTPException(status_code=404, detail="Draft not found")
             draft = drafts[body.draft_index]
@@ -247,7 +252,11 @@ async def chat_ask(request: Request, body: ChatAskRequest):
 
 
 @router.post("/chat/ask_stream", summary="流式对话问答（SSE）")
-async def chat_ask_stream(request: Request, body: ChatAskRequest):
+async def chat_ask_stream(
+    request: Request,
+    body: ChatAskRequest,
+    user_id: str = Depends(get_current_user),
+):
     """流式问答模式：通过 SSE 逐 chunk 返回回答。
 
     SSE 事件格式:
@@ -256,7 +265,6 @@ async def chat_ask_stream(request: Request, body: ChatAskRequest):
         data: {"error": "错误信息"}\\n\\n
     """
     db = _get_db(request)
-    user_id = _get_user_id(request)
     agent = _get_draft_chat_agent(request)
 
     article = None
@@ -271,7 +279,7 @@ async def chat_ask_stream(request: Request, body: ChatAskRequest):
         article["_id"] = str(article["_id"])
 
         if body.draft_index is not None:
-            drafts = article.get("pr_drafts", [])
+            drafts = await _load_user_drafts(db, user_id, body.article_url_hash)
             if body.draft_index < 0 or body.draft_index >= len(drafts):
                 raise HTTPException(status_code=404, detail="Draft not found")
             draft = drafts[body.draft_index]
@@ -349,6 +357,7 @@ async def revise_draft(
     url_hash: str,
     draft_index: int,
     body: DraftReviseRequest,
+    user_id: str = Depends(get_current_user),
 ):
     """改稿模式：根据修改意见改写指定 PR 初稿。
 
@@ -359,7 +368,6 @@ async def revise_draft(
     - 自动保存对话记录到 chat_sessions 集合
     """
     db = _get_db(request)
-    user_id = _get_user_id(request)
     agent = _get_draft_chat_agent(request)
 
     # 查询文章
@@ -368,7 +376,7 @@ async def revise_draft(
         raise HTTPException(status_code=404, detail="Article not found")
 
     # 定位草稿
-    drafts = article.get("pr_drafts", [])
+    drafts = await _load_user_drafts(db, user_id, url_hash)
     if draft_index < 0 or draft_index >= len(drafts):
         raise HTTPException(status_code=404, detail="Draft not found")
 
@@ -407,9 +415,9 @@ async def revise_draft(
         drafts[draft_index].setdefault("revisions", [])
         drafts[draft_index]["revisions"].append(revision_record)
 
-        await db["articles"].update_one(
-            {"url_hash": url_hash},
-            {"$set": {"pr_drafts": drafts}},
+        await db["user_drafts"].update_one(
+            {"user_id": user_id, "article_url_hash": url_hash},
+            {"$set": {"drafts": drafts, "updated_at": _now_cn()}},
         )
         saved = True
 
@@ -463,6 +471,7 @@ async def revise_draft_stream(
     url_hash: str,
     draft_index: int,
     body: DraftReviseRequest,
+    user_id: str = Depends(get_current_user),
 ):
     """流式改稿模式：通过 SSE 逐 chunk 返回改稿内容。
 
@@ -472,7 +481,6 @@ async def revise_draft_stream(
         data: {"error": "错误信息"}\\n\\n
     """
     db = _get_db(request)
-    user_id = _get_user_id(request)
     agent = _get_draft_chat_agent(request)
 
     # 查询文章
@@ -480,7 +488,7 @@ async def revise_draft_stream(
     if article is None:
         raise HTTPException(status_code=404, detail="Article not found")
 
-    drafts = article.get("pr_drafts", [])
+    drafts = await _load_user_drafts(db, user_id, url_hash)
     if draft_index < 0 or draft_index >= len(drafts):
         raise HTTPException(status_code=404, detail="Draft not found")
 
@@ -521,9 +529,9 @@ async def revise_draft_stream(
                 drafts[draft_index].setdefault("revisions", [])
                 drafts[draft_index]["revisions"].append(revision_record)
 
-                await db["articles"].update_one(
-                    {"url_hash": url_hash},
-                    {"$set": {"pr_drafts": drafts}},
+                await db["user_drafts"].update_one(
+                    {"user_id": user_id, "article_url_hash": url_hash},
+                    {"$set": {"drafts": drafts, "updated_at": _now_cn()}},
                 )
                 saved = True
 
@@ -592,16 +600,16 @@ async def apply_revision(
     url_hash: str,
     draft_index: int,
     revision_id: str,
+    user_id: str = Depends(get_current_user),
 ):
     """应用修订：将修订稿写回草稿主稿 content_md，并标记 applied=true。"""
     db = _get_db(request)
-    user_id = _get_user_id(request)
 
     article = await db["articles"].find_one({"url_hash": url_hash})
     if article is None:
         raise HTTPException(status_code=404, detail="Article not found")
 
-    drafts = article.get("pr_drafts", [])
+    drafts = await _load_user_drafts(db, user_id, url_hash)
     if draft_index < 0 or draft_index >= len(drafts):
         raise HTTPException(status_code=404, detail="Draft not found")
 
@@ -618,9 +626,9 @@ async def apply_revision(
     drafts[draft_index]["content_md"] = target_revision["content_md"]
     target_revision["applied"] = True
 
-    await db["articles"].update_one(
-        {"url_hash": url_hash},
-        {"$set": {"pr_drafts": drafts}},
+    await db["user_drafts"].update_one(
+        {"user_id": user_id, "article_url_hash": url_hash},
+        {"$set": {"drafts": drafts, "updated_at": _now_cn()}},
     )
     await log_activity(
         db,
@@ -654,13 +662,13 @@ async def get_chat_history(
     request: Request,
     url_hash: str,
     draft_index: int,
+    user_id: str = Depends(get_current_user),
 ):
     """获取指定文章+草稿的对话历史记录。
 
     返回 chat_sessions 集合中存储的 messages 数组。
     """
     db = _get_db(request)
-    user_id = _get_user_id(request)
 
     session = await db["chat_sessions"].find_one(
         {
@@ -689,10 +697,10 @@ async def clear_chat_history(
     request: Request,
     url_hash: str,
     draft_index: int,
+    user_id: str = Depends(get_current_user),
 ):
     """清空指定文章+草稿的对话历史记录。"""
     db = _get_db(request)
-    user_id = _get_user_id(request)
 
     await db["chat_sessions"].delete_one(
         {

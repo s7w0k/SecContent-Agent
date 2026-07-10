@@ -14,8 +14,14 @@ from httpx import ASGITransport, AsyncClient
 
 
 def _make_app(db, profiler=...):
+    from auth.deps import get_current_user
+
+    async def override_current_user():
+        return "local-user"
+
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[get_current_user] = override_current_user
     app.state.db = db
     if profiler is not ...:
         app.state.style_profiler = profiler

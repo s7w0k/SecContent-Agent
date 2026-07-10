@@ -183,7 +183,7 @@ class ScoringAgentV2:
         )
         return rlist
 
-    async def adjust_threshold(self, db: Any | None = None, user_id: str = "local-user") -> dict:
+    async def adjust_threshold(self, db: Any | None = None, *, user_id: str) -> dict:
         """根据文章打分反馈微调 PR 入选阈值。
 
         偏高反馈会提高阈值，偏低反馈会降低阈值；调整幅度限制在 ±10 分。

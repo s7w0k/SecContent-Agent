@@ -15,7 +15,8 @@ import logging
 
 import httpx
 from api.activity import log_activity
-from fastapi import APIRouter, HTTPException, Request
+from auth.deps import get_current_user
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/pipeline", tags=["Pipeline"])
@@ -69,13 +70,13 @@ def _get_manager(request: Request):
 
 
 @router.post("/run", summary="触发完整流水线 (V1)")
-async def pipeline_run(body: PipelineRunRequest, request: Request):
+async def pipeline_run(body: PipelineRunRequest, request: Request, user_id: str = Depends(get_current_user)):
     """执行全流程：crawl → classify → score → report"""
     manager = _get_manager(request)
-    result = await manager.run_full(crawl_days=body.crawl_days)
+    result = await manager.run_full(crawl_days=body.crawl_days, user_id=user_id)
     await log_activity(
         getattr(request.app.state, "db", None),
-        "local-user",
+        user_id,
         "pipeline_run",
         {"pipeline_id": result.get("pipeline_id") if isinstance(result, dict) else None},
         {"crawl_days": body.crawl_days, "version": "v1"},
@@ -84,15 +85,15 @@ async def pipeline_run(body: PipelineRunRequest, request: Request):
 
 
 @router.post("/run-v2", summary="触发 V2 智能 PR 流水线")
-async def pipeline_run_v2(body: PipelineRunRequest, request: Request):
+async def pipeline_run_v2(body: PipelineRunRequest, request: Request, user_id: str = Depends(get_current_user)):
     """执行 V2 全流程：crawl → classify_v2 → score_v2 → draft"""
     manager_v2 = getattr(request.app.state, "pipeline_v2", None)
     if manager_v2 is None:
         raise HTTPException(status_code=503, detail="Pipeline V2 not initialized")
-    result = await manager_v2.run_full(crawl_days=body.crawl_days)
+    result = await manager_v2.run_full(crawl_days=body.crawl_days, user_id=user_id)
     await log_activity(
         getattr(request.app.state, "db", None),
-        "local-user",
+        user_id,
         "pipeline_run",
         {"pipeline_id": result.get("pipeline_id") if isinstance(result, dict) else None},
         {"crawl_days": body.crawl_days, "version": "v2"},
@@ -101,7 +102,7 @@ async def pipeline_run_v2(body: PipelineRunRequest, request: Request):
 
 
 @router.get("/status-v2", summary="查询 V2 流水线状态")
-async def pipeline_status_v2(request: Request):
+async def pipeline_status_v2(request: Request, _user_id: str = Depends(get_current_user)):
     """返回 V2 流水线的运行状态"""
     manager_v2 = getattr(request.app.state, "pipeline_v2", None)
     if manager_v2 is None:
@@ -110,15 +111,15 @@ async def pipeline_status_v2(request: Request):
 
 
 @router.post("/crawl", summary="爬取+分类")
-async def pipeline_crawl(body: PipelinePhaseRequest, request: Request):
+async def pipeline_crawl(body: PipelinePhaseRequest, request: Request, user_id: str = Depends(get_current_user)):
     """爬取文章并分类（crawl → classify）"""
     manager = _get_manager(request)
-    result = await manager.run_phase("classify", crawl_days=body.crawl_days)
+    result = await manager.run_phase("classify", crawl_days=body.crawl_days, user_id=user_id)
     return result
 
 
 @router.post("/crawl-overseas", summary="仅爬取海外安全新闻")
-async def crawl_overseas_only(request: Request, days: int = 1):
+async def crawl_overseas_only(request: Request, days: int = 1, _user_id: str = Depends(get_current_user)):
     """仅调 mcp-crawl 爬取海外新闻 → 入库"""
     import hashlib
     from datetime import datetime, timedelta, timezone
@@ -165,7 +166,7 @@ async def crawl_overseas_only(request: Request, days: int = 1):
 
 
 @router.post("/crawl-wewe", summary="仅爬取公众号文章")
-async def crawl_wewe_only(request: Request):
+async def crawl_wewe_only(request: Request, _user_id: str = Depends(get_current_user)):
     """仅直连 WeWe RSS Atom feed 爬取公众号文章 → 入库"""
     import hashlib
     import xml.etree.ElementTree as ET
@@ -217,24 +218,24 @@ async def crawl_wewe_only(request: Request):
 
 
 @router.post("/score", summary="仅执行打分阶段")
-async def pipeline_score(body: ScoreRequest, request: Request):
+async def pipeline_score(body: ScoreRequest, request: Request, user_id: str = Depends(get_current_user)):
     """对已分类文章重新打分"""
     manager = _get_manager(request)
     # 仅执行 score 阶段（跳过 crawl 和 classify）
-    result = await manager.run_phase("score", crawl_days=0)
+    result = await manager.run_phase("score", crawl_days=0, user_id=user_id)
     return result
 
 
 @router.post("/report", summary="仅生成报道")
-async def pipeline_report(body: ReportRequest, request: Request):
+async def pipeline_report(body: ReportRequest, request: Request, user_id: str = Depends(get_current_user)):
     """对高分文章生成 PR 报道"""
     manager = _get_manager(request)
-    result = await manager.run_phase("report", crawl_days=0)
+    result = await manager.run_phase("report", crawl_days=0, user_id=user_id)
     return result
 
 
 @router.post("/crawl-api", summary="API 抓取公众号文章")
-async def crawl_via_api(request: Request, days: int = 1):
+async def crawl_via_api(request: Request, days: int = 1, _user_id: str = Depends(get_current_user)):
     """通过 Just One API 抓取指定公众号文章 → 逐篇抓取全文 → 入库。"""
     import hashlib
     import os
@@ -330,14 +331,14 @@ async def crawl_via_api(request: Request, days: int = 1):
 
 
 @router.get("/status", summary="查询流水线状态")
-async def pipeline_status(request: Request):
+async def pipeline_status(request: Request, _user_id: str = Depends(get_current_user)):
     """返回当前流水线的运行状态和进度"""
     manager = _get_manager(request)
     return manager.get_status()
 
 
 @router.post("/import-wewe", summary="导入 WeWe RSS 全部文章")
-async def import_wewe_articles(request: Request):
+async def import_wewe_articles(request: Request, _user_id: str = Depends(get_current_user)):
     """从 WeWe RSS 获取全部文章并入库（含公众号来源和中文日期）。"""
     import hashlib
     from datetime import datetime, timedelta, timezone
@@ -434,7 +435,7 @@ class ClassifyV2Request(BaseModel):
 
 
 @router.post("/classify-v2", summary="V2 6分类")
-async def classify_v2(body: ClassifyV2Request, request: Request):
+async def classify_v2(body: ClassifyV2Request, request: Request, _user_id: str = Depends(get_current_user)):
     """对文章执行6分类（爆点事件/法律法规/AI进展/竞品/行业/学术）。
 
     读取 pipeline_status 为 crawled 或 classified 的文章，
@@ -511,7 +512,7 @@ async def classify_v2(body: ClassifyV2Request, request: Request):
 
 
 @router.post("/run-v2/{url_hash}", summary="单文章 V2 智能 PR 流水线")
-async def run_v2_single(url_hash: str, request: Request):
+async def run_v2_single(url_hash: str, request: Request, user_id: str = Depends(get_current_user)):
     """对单篇文章执行 V2 全流程：classify_v2 → score_v2 → draft。
 
     仅操作指定的单篇文章，避免批量调用 LLM。
@@ -587,12 +588,19 @@ async def run_v2_single(url_hash: str, request: Request):
                     if draft_gen:
                         drafts = await draft_gen.generate(dict(article), scores)
                         if drafts["ok"]:
-                            await db["articles"].update_one(
-                                {"url_hash": url_hash},
-                                {"$set": {
-                                    "pr_drafts": drafts["drafts"],
-                                    "pr_template_used": drafts["drafts"][0]["template"] if drafts["drafts"] else "",
-                                }},
+                            from datetime import UTC, datetime
+
+                            now = datetime.now(UTC)
+                            await db["user_drafts"].update_one(
+                                {"user_id": user_id, "article_url_hash": url_hash},
+                                {
+                                    "$set": {
+                                        "drafts": drafts["drafts"],
+                                        "updated_at": now,
+                                    },
+                                    "$setOnInsert": {"created_at": now},
+                                },
+                                upsert=True,
                             )
                         result["steps"].append({
                             "phase": "draft",
@@ -612,7 +620,7 @@ async def run_v2_single(url_hash: str, request: Request):
 
 
 @router.post("/score-v2", summary="V2 双维度打分（批量）")
-async def score_v2_all(request: Request):
+async def score_v2_all(request: Request, _user_id: str = Depends(get_current_user)):
     """对所有 is_pr_eligible=True 的文章进行 V2 双维度打分。"""
     db = getattr(request.app.state, "db", None)
     if db is None:
@@ -661,7 +669,7 @@ async def score_v2_all(request: Request):
 
 
 @router.post("/score-v2/{url_hash}", summary="V2 双维度打分（单篇）")
-async def score_v2_single(url_hash: str, request: Request):
+async def score_v2_single(url_hash: str, request: Request, _user_id: str = Depends(get_current_user)):
     """对单篇文章进行 V2 双维度打分。"""
     db = getattr(request.app.state, "db", None)
     if db is None:

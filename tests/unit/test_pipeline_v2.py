@@ -336,6 +336,7 @@ class TestDraftNode:
             return_value=[
                 {
                     "_id": "a1",
+                    "url_hash": "a" * 32,
                     "title": "Test",
                     "pr_total_score": 157,
                     "product_relevance": 85,
@@ -359,6 +360,7 @@ class TestDraftNode:
             return_value=[
                 {
                     "_id": "a1",
+                    "url_hash": "a" * 32,
                     "title": "Test",
                     "pr_total_score": 157,
                     "product_relevance": 85,
@@ -381,17 +383,26 @@ class TestDraftNode:
                 },
             }
         )
+        user_drafts_collection = MagicMock()
+        user_drafts_collection.update_one = AsyncMock()
         db = {
             "articles": article_collection,
             "user_profiles": profile_collection,
+            "user_drafts": user_drafts_collection,
         }
 
-        state = create_state_v2()
+        state = create_state_v2(user_id="local-user")
         result = await draft_node(state, mock_draft_gen, mock_knowledge, db)
         assert result["draft_count"] == 1
         call = mock_draft_gen.generate.await_args
         assert "用户风格偏好" in call.kwargs["style_hints"]
         assert "爆点A" in call.kwargs["style_hints"]
+        user_drafts_collection.update_one.assert_awaited_once()
+        assert user_drafts_collection.update_one.await_args.args[0] == {
+            "user_id": "local-user",
+            "article_url_hash": "a" * 32,
+        }
+        assert user_drafts_collection.update_one.await_args.kwargs == {"upsert": True}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -450,12 +461,14 @@ class TestPipelineV2E2E:
             [
                 {
                     "_id": "a1",
+                    "url_hash": "a" * 32,
                     "title": "MCP RCE Vulnerability",
                     "pipeline_status": "crawled",
                     "category_v2": "",
                 },
                 {
                     "_id": "a2",
+                    "url_hash": "b" * 32,
                     "title": "New AI Regulation",
                     "pipeline_status": "crawled",
                     "category_v2": "",
@@ -492,6 +505,7 @@ class TestPipelineV2E2E:
         store.append(
             {
                 "_id": "a1",
+                "url_hash": "a" * 32,
                 "title": "Competitor News",
                 "pipeline_status": "crawled",
                 "category_v2": "",

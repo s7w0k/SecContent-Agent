@@ -2,19 +2,27 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from api.chat import _get_user_id, _save_chat_message
+from api.chat import _load_user_drafts, _save_chat_message
 
 ARTICLE_HASH = "d41d8cd98f00b204e9800998ecf8427e"
 
 
-def test_get_user_id_prefers_authenticated_user():
-    request = SimpleNamespace(state=SimpleNamespace(user_id="user-a"))
+@pytest.mark.asyncio
+async def test_load_user_drafts_filters_by_user():
+    db = MagicMock()
+    collection = MagicMock()
+    collection.find_one = AsyncMock(return_value={"drafts": [{"title": "A"}]})
+    db.__getitem__.return_value = collection
 
-    assert _get_user_id(request) == "user-a"
+    drafts = await _load_user_drafts(db, "user-a", ARTICLE_HASH)
+
+    assert drafts == [{"title": "A"}]
+    collection.find_one.assert_awaited_once_with(
+        {"user_id": "user-a", "article_url_hash": ARTICLE_HASH}
+    )
 
 
 @pytest.mark.asyncio

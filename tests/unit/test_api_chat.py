@@ -24,7 +24,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services
 
 def _make_app(db=None, knowledge_loader=None, draft_gen=None):
     """创建测试用 FastAPI app，注入 mock 依赖"""
+    from auth.deps import get_current_user
     from main import app as _app
+
+    async def override_current_user():
+        return "local-user"
+
+    _app.dependency_overrides[get_current_user] = override_current_user
 
     _app.state.db = db
     _app.state.knowledge_loader = knowledge_loader
@@ -96,11 +102,20 @@ def mock_db(sample_article_with_drafts):
     db = MagicMock()
     articles = MagicMock()
     chat_sessions = MagicMock()
+    user_drafts = MagicMock()
     user_activities = MagicMock()
 
     # 默认返回带草稿的文章
     articles.find_one = AsyncMock(return_value=sample_article_with_drafts.copy())
     articles.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
+    user_drafts.find_one = AsyncMock(
+        return_value={
+            "user_id": "local-user",
+            "article_url_hash": sample_article_with_drafts["url_hash"],
+            "drafts": sample_article_with_drafts["pr_drafts"],
+        }
+    )
+    user_drafts.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
 
     # chat_sessions 默认返回空（无历史）
     chat_sessions.find_one = AsyncMock(return_value=None)
@@ -113,6 +128,8 @@ def mock_db(sample_article_with_drafts):
             return articles
         if key == "chat_sessions":
             return chat_sessions
+        if key == "user_drafts":
+            return user_drafts
         if key == "user_activities":
             return user_activities
         return MagicMock()
@@ -120,6 +137,7 @@ def mock_db(sample_article_with_drafts):
     db.__getitem__.side_effect = _get_collection
     db._articles = articles
     db._chat_sessions = chat_sessions
+    db._user_drafts = user_drafts
     db._user_activities = user_activities
     return db
 
@@ -422,7 +440,7 @@ class TestReviseDraft:
         assert data["data"]["revised_content_md"].startswith("# [新标题]")
         assert data["data"]["change_summary"] == ["修改1"]
         # 验证未写入 DB
-        mock_db["articles"].update_one.assert_not_called()
+        mock_db["user_drafts"].update_one.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_revise_save_true(self, app, mock_draft_gen, mock_db):
@@ -444,9 +462,9 @@ class TestReviseDraft:
         assert data["data"]["saved"] is True
         assert data["data"]["revision_id"]  # uuid 已生成
         # 验证写入 DB
-        mock_db["articles"].update_one.assert_called_once()
-        call_args = mock_db["articles"].update_one.call_args
-        assert call_args[0][0]["url_hash"] == "d41d8cd98f00b204e9800998ecf8427e"
+        mock_db["user_drafts"].update_one.assert_called_once()
+        call_args = mock_db["user_drafts"].update_one.call_args
+        assert call_args[0][0]["article_url_hash"] == "d41d8cd98f00b204e9800998ecf8427e"
         activity = mock_db._user_activities.insert_one.await_args.args[0]
         assert activity["action"] == "draft_revise"
         assert activity["target"]["article_url_hash"] == "d41d8cd98f00b204e9800998ecf8427e"
@@ -517,6 +535,9 @@ class TestApplyRevision:
             ],
         }
         mock_db["articles"].find_one = AsyncMock(return_value=article)
+        mock_db["user_drafts"].find_one = AsyncMock(
+            return_value={"drafts": article["pr_drafts"]}
+        )
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post(
@@ -532,7 +553,7 @@ class TestApplyRevision:
         assert activity["action"] == "revision_apply"
         assert activity["target"]["revision_id"] == "rev-001"
         # 验证写入 DB
-        mock_db["articles"].update_one.assert_called_once()
+        mock_db["user_drafts"].update_one.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_apply_article_not_found(self, app, mock_db):
@@ -559,6 +580,9 @@ class TestApplyRevision:
             ],
         }
         mock_db["articles"].find_one = AsyncMock(return_value=article)
+        mock_db["user_drafts"].find_one = AsyncMock(
+            return_value={"drafts": article["pr_drafts"]}
+        )
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post(

@@ -6,7 +6,8 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from api.activity import log_activity
-from fastapi import APIRouter, HTTPException, Query, Request
+from auth.deps import get_current_user
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from models.feedback import (
     Feedback,
     FeedbackCreate,
@@ -16,8 +17,6 @@ from models.feedback import (
 )
 
 router = APIRouter(prefix="/api/feedback", tags=["Feedback"])
-
-LOCAL_USER_ID = "local-user"
 
 
 def _get_db(request: Request):
@@ -72,6 +71,7 @@ async def _feedback_documents(db, query: dict) -> list[dict]:
 
 async def _recalculate_draft_feedback_summary(
     db,
+    user_id: str,
     article_url_hash: str,
     draft_index: int | None,
 ) -> None:
@@ -79,17 +79,20 @@ async def _recalculate_draft_feedback_summary(
     if draft_index is None:
         return
 
-    article = await db["articles"].find_one({"url_hash": article_url_hash})
-    if article is None:
+    user_draft = await db["user_drafts"].find_one(
+        {"user_id": user_id, "article_url_hash": article_url_hash}
+    )
+    if user_draft is None:
         return
 
-    drafts = article.get("pr_drafts", [])
+    drafts = user_draft.get("drafts", [])
     if draft_index >= len(drafts):
         return
 
     feedbacks = await _feedback_documents(
         db,
         {
+            "user_id": user_id,
             "status": FeedbackStatus.ACTIVE,
             "target_type": {"$in": [TargetType.DRAFT, TargetType.REVISION]},
             "target_ref.article_url_hash": article_url_hash,
@@ -103,9 +106,9 @@ async def _recalculate_draft_feedback_summary(
         "count": len(ratings),
         "last_rating": ratings[0] if ratings else None,
     }
-    await db["articles"].update_one(
-        {"url_hash": article_url_hash},
-        {"$set": {"pr_drafts": drafts}},
+    await db["user_drafts"].update_one(
+        {"user_id": user_id, "article_url_hash": article_url_hash},
+        {"$set": {"drafts": drafts, "updated_at": datetime.now(UTC)}},
     )
 
 
@@ -118,7 +121,7 @@ async def _log_feedback_activity(
     """写入 feedback_submit 操作记录。"""
     await log_activity(
         db,
-        LOCAL_USER_ID,
+        feedback.user_id,
         "feedback_submit",
         {
             "article_url_hash": feedback.target_ref.article_url_hash,
@@ -139,7 +142,11 @@ async def _log_feedback_activity(
 
 
 @router.post("", summary="提交反馈")
-async def create_feedback(request: Request, body: FeedbackCreate):
+async def create_feedback(
+    request: Request,
+    body: FeedbackCreate,
+    user_id: str = Depends(get_current_user),
+):
     """提交反馈并同步草稿汇总与操作记录。"""
     db = _get_db(request)
     article = await db["articles"].find_one(
@@ -148,14 +155,19 @@ async def create_feedback(request: Request, body: FeedbackCreate):
     if article is None:
         raise HTTPException(status_code=404, detail="Article not found")
 
-    draft = _validate_feedback_target(body, article)
-    feedback = Feedback(**body.model_dump(), user_id=LOCAL_USER_ID)
+    user_draft = await db["user_drafts"].find_one(
+        {"user_id": user_id, "article_url_hash": body.target_ref.article_url_hash}
+    )
+    draft_source = {"pr_drafts": user_draft.get("drafts", []) if user_draft else []}
+    draft = _validate_feedback_target(body, draft_source)
+    feedback = Feedback(**body.model_dump(), user_id=user_id)
     await db["feedbacks"].insert_one(
         feedback.model_dump(exclude={"id"}, mode="python"),
     )
 
     await _recalculate_draft_feedback_summary(
         db,
+        user_id,
         feedback.target_ref.article_url_hash,
         feedback.target_ref.draft_index,
     )
@@ -179,10 +191,11 @@ async def list_feedback(
     status: FeedbackStatus = Query(default=FeedbackStatus.ACTIVE),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    user_id: str = Depends(get_current_user),
 ):
     """按反馈对象、文章和草稿筛选反馈。"""
     db = _get_db(request)
-    query: dict = {"user_id": LOCAL_USER_ID, "status": status}
+    query: dict = {"user_id": user_id, "status": status}
     if target_type is not None:
         query["target_type"] = target_type
     if article_url_hash:
@@ -213,19 +226,20 @@ async def list_feedback(
 async def feedback_stats(
     request: Request,
     group_by: Literal["template", "perspective"] = Query(default="template"),
+    user_id: str = Depends(get_current_user),
 ):
     """按草稿模板或视角统计反馈数量和平均分。"""
     db = _get_db(request)
     feedbacks = await _feedback_documents(
         db,
         {
-            "user_id": LOCAL_USER_ID,
+            "user_id": user_id,
             "status": FeedbackStatus.ACTIVE,
             "target_type": {"$in": [TargetType.DRAFT, TargetType.REVISION]},
         },
     )
 
-    article_cache: dict[str, dict | None] = {}
+    draft_cache: dict[str, dict | None] = {}
     grouped: dict[str, list[int]] = {}
     for feedback in feedbacks:
         target_ref = feedback.get("target_ref", {})
@@ -233,14 +247,14 @@ async def feedback_stats(
         draft_index = target_ref.get("draft_index")
         if not article_hash or draft_index is None:
             continue
-        if article_hash not in article_cache:
-            article_cache[article_hash] = await db["articles"].find_one(
-                {"url_hash": article_hash}
+        if article_hash not in draft_cache:
+            draft_cache[article_hash] = await db["user_drafts"].find_one(
+                {"user_id": user_id, "article_url_hash": article_hash}
             )
-        article = article_cache[article_hash]
-        if article is None:
+        user_draft = draft_cache[article_hash]
+        if user_draft is None:
             continue
-        drafts = article.get("pr_drafts", [])
+        drafts = user_draft.get("drafts", [])
         if draft_index < 0 or draft_index >= len(drafts):
             continue
         key = drafts[draft_index].get(group_by) or "未标注"
@@ -274,11 +288,12 @@ async def update_feedback(
     feedback_id: str,
     request: Request,
     body: FeedbackUpdate,
+    user_id: str = Depends(get_current_user),
 ):
     """更新反馈内容并重新计算草稿汇总。"""
     db = _get_db(request)
     current = await db["feedbacks"].find_one(
-        {"feedback_id": feedback_id, "user_id": LOCAL_USER_ID}
+        {"feedback_id": feedback_id, "user_id": user_id}
     )
     if current is None:
         raise HTTPException(status_code=404, detail="Feedback not found")
@@ -286,13 +301,14 @@ async def update_feedback(
     updates = body.model_dump(exclude_unset=True, mode="python")
     updates["updated_at"] = datetime.now(UTC)
     await db["feedbacks"].update_one(
-        {"feedback_id": feedback_id, "user_id": LOCAL_USER_ID},
+        {"feedback_id": feedback_id, "user_id": user_id},
         {"$set": updates},
     )
 
     target_ref = current.get("target_ref", {})
     await _recalculate_draft_feedback_summary(
         db,
+        user_id,
         target_ref.get("article_url_hash", ""),
         target_ref.get("draft_index"),
     )
@@ -307,17 +323,21 @@ async def update_feedback(
 
 
 @router.delete("/{feedback_id}", summary="删除反馈")
-async def delete_feedback(feedback_id: str, request: Request):
+async def delete_feedback(
+    feedback_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
     """删除反馈并重新计算草稿汇总。"""
     db = _get_db(request)
     current = await db["feedbacks"].find_one(
-        {"feedback_id": feedback_id, "user_id": LOCAL_USER_ID}
+        {"feedback_id": feedback_id, "user_id": user_id}
     )
     if current is None:
         raise HTTPException(status_code=404, detail="Feedback not found")
 
     result = await db["feedbacks"].delete_one(
-        {"feedback_id": feedback_id, "user_id": LOCAL_USER_ID}
+        {"feedback_id": feedback_id, "user_id": user_id}
     )
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Feedback not found")
@@ -325,6 +345,7 @@ async def delete_feedback(feedback_id: str, request: Request):
     target_ref = current.get("target_ref", {})
     await _recalculate_draft_feedback_summary(
         db,
+        user_id,
         target_ref.get("article_url_hash", ""),
         target_ref.get("draft_index"),
     )

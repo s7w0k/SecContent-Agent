@@ -23,7 +23,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from enum import StrEnum
 from typing import Any
 
@@ -52,10 +52,11 @@ class PipelineStatusV2(StrEnum):
     CANCELLED = "cancelled"
 
 
-def create_state_v2(crawl_days: int = 1) -> dict:
+def create_state_v2(crawl_days: int = 1, user_id: str = "") -> dict:
     """创建 V2 流水线初始状态"""
     return {
         "crawl_days": crawl_days,
+        "user_id": user_id,
         "phases": [p.value for p in PipelinePhaseV2],
         "crawled_count": 0,
         "classified_v2_count": 0,
@@ -141,7 +142,13 @@ async def classify_v2_node(state: dict, classifier: Any, db: Any) -> dict:
             len(articles),
             pr_eligible,
         )
-        log_pipeline(db, "INFO", "classify_v2", f"classified {updated}, {pr_eligible} PR-eligible")
+        log_pipeline(
+            db,
+            "INFO",
+            "classify_v2",
+            f"classified {updated}, {pr_eligible} PR-eligible",
+            user_id=state["user_id"],
+        )
 
     except Exception as e:
         logger.error("[classify_v2] Phase failed: %s", e)
@@ -164,7 +171,7 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
         await knowledge.load()
         adjust_threshold = getattr(scorer, "adjust_threshold", None)
         if inspect.iscoroutinefunction(adjust_threshold):
-            threshold_info = await adjust_threshold(db=db)
+            threshold_info = await adjust_threshold(db=db, user_id=state["user_id"])
             state["score_threshold"] = threshold_info["threshold"]
             state["threshold_adjustment"] = threshold_info["adjustment"]
             logger.info(
@@ -220,7 +227,11 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
             state["score_threshold"],
         )
         log_pipeline(
-            db, "INFO", "score_v2", f"scored {scored_count}/{len(articles)}, {candidates} drafted"
+            db,
+            "INFO",
+            "score_v2",
+            f"scored {scored_count}/{len(articles)}, {candidates} drafted",
+            user_id=state["user_id"],
         )
 
     except Exception as e:
@@ -242,7 +253,7 @@ async def draft_node(state: dict, draft_gen: Any, knowledge: Any, db: Any) -> di
 
         await knowledge.load()
         score_threshold = int(state.get("score_threshold", 80))
-        style_hints = await _load_style_hints(db)
+        style_hints = await _load_style_hints(db, state["user_id"])
 
         cursor = db["articles"].find({"pr_total_score": {"$gte": score_threshold}})
         articles = await cursor.to_list(length=30)
@@ -261,16 +272,20 @@ async def draft_node(state: dict, draft_gen: Any, knowledge: Any, db: Any) -> di
             }
             result = await draft_gen.generate(art, v2_scores, style_hints=style_hints)
             if result["ok"] and result["drafts"]:
-                await db["articles"].update_one(
-                    {"_id": art["_id"]},
+                now = datetime.now(UTC)
+                await db["user_drafts"].update_one(
+                    {
+                        "user_id": state["user_id"],
+                        "article_url_hash": art["url_hash"],
+                    },
                     {
                         "$set": {
-                            "pr_drafts": result["drafts"],
-                            "pr_template_used": result["drafts"][0]["template"]
-                            if result["drafts"]
-                            else "",
-                        }
+                            "drafts": result["drafts"],
+                            "updated_at": now,
+                        },
+                        "$setOnInsert": {"created_at": now},
                     },
+                    upsert=True,
                 )
                 draft_count += 1
 
@@ -284,7 +299,7 @@ async def draft_node(state: dict, draft_gen: Any, knowledge: Any, db: Any) -> di
     return state
 
 
-async def _load_style_hints(db: Any, user_id: str = "local-user") -> str | None:
+async def _load_style_hints(db: Any, user_id: str) -> str | None:
     """读取用户画像并转换为草稿生成可注入的风格提示。"""
     try:
         profile = await db["user_profiles"].find_one({"user_id": user_id})
@@ -332,9 +347,9 @@ class PipelineManagerV2:
 
     # ── 公开接口 ──────────────────────────────────────────────
 
-    async def run_full(self, crawl_days: int = 1) -> dict:
+    async def run_full(self, crawl_days: int = 1, user_id: str = "") -> dict:
         """执行全流程 V2 流水线"""
-        return await self._run(crawl_days)
+        return await self._run(crawl_days, user_id)
 
     def get_status(self) -> dict:
         if self._state is None:
@@ -393,7 +408,7 @@ class PipelineManagerV2:
 
         return graph.compile()
 
-    async def _run(self, crawl_days: int) -> dict:
+    async def _run(self, crawl_days: int, user_id: str) -> dict:
         import uuid
 
         pipeline_id = str(uuid.uuid4())[:8]
@@ -405,7 +420,7 @@ class PipelineManagerV2:
                 "error": "Pipeline is already running",
             }
 
-        self._state = create_state_v2(crawl_days=crawl_days)
+        self._state = create_state_v2(crawl_days=crawl_days, user_id=user_id)
         self._state["status"] = PipelineStatusV2.RUNNING.value
         self._state["started_at"] = _now_iso()
 
