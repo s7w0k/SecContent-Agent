@@ -276,6 +276,20 @@ class TestActivityQuery:
         assert data["items"][0]["activity_id"] == "one"
 
     @pytest.mark.asyncio
+    async def test_list_returns_second_page(self, app):
+        response = await _request(
+            app,
+            "GET",
+            "/api/activities?page=2&page_size=1",
+        )
+
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["total"] == 3
+        assert data["page"] == 2
+        assert data["items"][0]["activity_id"] == "two"
+
+    @pytest.mark.asyncio
     async def test_stats(self, app):
         response = await _request(
             app,

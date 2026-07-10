@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -19,6 +20,72 @@ def _make_app(db, profiler=...):
     if profiler is not ...:
         app.state.style_profiler = profiler
     return app
+
+
+def _matches(document: dict, query: dict) -> bool:
+    return all(document.get(key) == value for key, value in query.items())
+
+
+class FakeCursor:
+    def __init__(self, documents: list[dict]):
+        self.documents = documents
+
+    async def to_list(self, length=None):
+        items = deepcopy(self.documents)
+        return items if length is None else items[:length]
+
+
+class FakeCollection:
+    def __init__(self, documents: list[dict] | None = None):
+        self.documents = deepcopy(documents or [])
+
+    def find(self, query: dict):
+        return FakeCursor([item for item in self.documents if _matches(item, query)])
+
+    async def find_one(self, query: dict):
+        return next(
+            (deepcopy(item) for item in self.documents if _matches(item, query)),
+            None,
+        )
+
+    async def replace_one(self, query: dict, document: dict, upsert: bool = False):
+        for index, current in enumerate(self.documents):
+            if _matches(current, query):
+                self.documents[index] = deepcopy(document)
+                break
+        else:
+            if upsert:
+                self.documents.append(deepcopy(document))
+        return SimpleNamespace(modified_count=1)
+
+    async def count_documents(self, query: dict):
+        return len([item for item in self.documents if _matches(item, query)])
+
+
+class FakeProfileDatabase:
+    def __init__(self):
+        self.collections = {
+            "feedbacks": FakeCollection(),
+            "articles": FakeCollection(),
+            "user_activities": FakeCollection(
+                [{"user_id": "local-user", "action": "draft_download", "target": {}}],
+            ),
+            "chat_sessions": FakeCollection(
+                [
+                    {
+                        "messages": [
+                            {"role": "user", "content": "减少技术细节"},
+                            {"role": "user", "content": "增强传播性"},
+                            {"role": "user", "content": "标题更有冲击力"},
+                        ],
+                    }
+                ],
+            ),
+            "user_profiles": FakeCollection(),
+        }
+
+    def __getitem__(self, name: str):
+        return self.collections[name]
 
 
 async def _request(app, method: str, path: str):
@@ -130,3 +197,23 @@ async def test_rebuild_lazily_creates_profiler(db):
     assert response.status_code == 200
     assert response.json()["data"]["version"] == 1
     assert app.state.style_profiler is not None
+
+
+@pytest.mark.asyncio
+async def test_rebuild_real_profiler_falls_back_when_llm_fails():
+    db = FakeProfileDatabase()
+    llm = MagicMock()
+    llm.ainvoke = AsyncMock(side_effect=RuntimeError("llm unavailable"))
+    app = _make_app(db)
+    app.state.llm = llm
+
+    response = await _request(app, "POST", "/api/profile/rebuild")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["rebuilt"] is True
+    assert data["version"] == 1
+    assert data["activity_count"] == 1
+    stored = db["user_profiles"].documents[0]
+    assert stored["style_hints"]["common_revise_directions"] == []
+    assert stored["style_hints"]["preferred_tone"] == "market_oriented"

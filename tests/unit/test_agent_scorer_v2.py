@@ -455,6 +455,22 @@ class TestThresholdAdjustment:
         assert result["adjustment"] == 0
         assert scorer.pr_threshold == 80
 
+    @pytest.mark.asyncio
+    async def test_adjust_threshold_query_failure_resets_default(self, scorer):
+        class BrokenCollection:
+            def find(self, query):
+                raise RuntimeError("db unavailable")
+
+        scorer.pr_threshold = 90
+        scorer.threshold_adjustment = 10
+
+        result = await scorer.adjust_threshold(db={"feedbacks": BrokenCollection()})
+
+        assert result["threshold"] == 80
+        assert result["adjustment"] == 0
+        assert result["feedback_count"] == 0
+        assert scorer.pr_threshold == 80
+
 
 # ═══════════════════════════════════════════════════════════════
 # 6. 常量/配置测试

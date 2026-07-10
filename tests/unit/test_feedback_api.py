@@ -214,6 +214,27 @@ class TestCreateFeedback:
         assert db["feedbacks"].documents[0]["target_type"] == "revision"
 
     @pytest.mark.asyncio
+    async def test_create_article_score_feedback_skips_draft_summary(self, app, db):
+        response = await _request(
+            app,
+            "POST",
+            "/api/feedback",
+            json=_feedback_payload(
+                target_type="article_score",
+                target_ref={"article_url_hash": ARTICLE_HASH},
+                comment="这篇文章打分偏高",
+                tags=["偏高"],
+            ),
+        )
+
+        assert response.status_code == 200
+        feedback = db["feedbacks"].documents[0]
+        assert feedback["target_type"] == "article_score"
+        assert len(db["user_activities"].documents) == 1
+        assert db["user_activities"].documents[0]["target"]["template"] is None
+        assert "feedback_summary" not in db["articles"].documents[0]["pr_drafts"][0]
+
+    @pytest.mark.asyncio
     async def test_create_rejects_invalid_rating(self, app):
         response = await _request(
             app,
@@ -336,6 +357,42 @@ class TestListAndStats:
         assert data["total"] == 2
         assert data["avg_rating"] == 4.0
         assert [item["feedback_id"] for item in data["items"]] == ["one", "two"]
+
+    @pytest.mark.asyncio
+    async def test_list_returns_second_page(self, app, db):
+        now = datetime.now(UTC)
+        db["feedbacks"].documents.extend(
+            [
+                {
+                    "feedback_id": f"feedback-{index}",
+                    "user_id": "local-user",
+                    "target_type": "draft",
+                    "target_ref": {
+                        "article_url_hash": ARTICLE_HASH,
+                        "draft_index": 0,
+                    },
+                    "rating": 5 - index,
+                    "comment": "",
+                    "tags": [],
+                    "status": "active",
+                    "created_at": now - timedelta(minutes=index),
+                    "updated_at": now,
+                }
+                for index in range(3)
+            ]
+        )
+
+        response = await _request(
+            app,
+            "GET",
+            "/api/feedback?page=2&page_size=1",
+        )
+
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["total"] == 3
+        assert data["page"] == 2
+        assert data["items"][0]["feedback_id"] == "feedback-1"
 
     @pytest.mark.asyncio
     async def test_stats_groups_by_template_and_perspective(self, app, db):
