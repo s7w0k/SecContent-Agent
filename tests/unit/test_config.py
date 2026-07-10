@@ -21,28 +21,33 @@ class TestSettingsDefaults:
 
     def test_default_mongodb_uri(self):
         from config import Settings
+
         s = Settings(DEEPSEEK_API_KEY="test-key")
         assert s.MONGODB_URI == "mongodb://admin:pr_agent_2024@mongodb:27017"
 
     def test_default_db_name(self):
         from config import Settings
+
         s = Settings(DEEPSEEK_API_KEY="test")
         assert s.MONGODB_DB == "pr_agent"
 
     def test_default_pool_sizes(self):
         from config import Settings
+
         s = Settings(DEEPSEEK_API_KEY="test")
         assert s.MONGODB_MAX_POOL_SIZE == 20
         assert s.MONGODB_MIN_POOL_SIZE == 2
 
     def test_default_mcp_urls(self):
         from config import Settings
+
         s = Settings(DEEPSEEK_API_KEY="test")
         assert s.MCP_WEWE_URL == "http://mcp-wewe:8100"
         assert s.MCP_CRAWL_URL == "http://mcp-crawl:8101"
 
     def test_default_llm_config(self):
         from config import Settings
+
         s = Settings(DEEPSEEK_API_KEY="test")
         # .env may override the code default — just verify it's a valid URL
         assert s.DEEPSEEK_BASE_URL.startswith("https://")
@@ -50,12 +55,14 @@ class TestSettingsDefaults:
 
     def test_default_pipeline(self):
         from config import Settings
+
         s = Settings(DEEPSEEK_API_KEY="test")
         assert s.PIPELINE_SCORE_THRESHOLD == 140
         assert s.PIPELINE_CRAWL_DEFAULT_DAYS == 1
 
     def test_default_api(self):
         from config import Settings
+
         s = Settings(DEEPSEEK_API_KEY="test")
         assert s.API_PAGE_SIZE_MAX == 100
         assert s.API_PAGE_SIZE_DEFAULT == 20
@@ -63,9 +70,18 @@ class TestSettingsDefaults:
 
     def test_cors_origins_default(self):
         from config import Settings
+
         s = Settings(DEEPSEEK_API_KEY="test")
         assert "http://localhost:5173" in s.CORS_ORIGINS
         assert "http://localhost:8000" in s.CORS_ORIGINS
+
+    def test_default_jwt_config(self):
+        from config import Settings
+
+        s = Settings(DEEPSEEK_API_KEY="test", _env_file=None)
+        assert s.JWT_SECRET == ""
+        assert s.JWT_ALGORITHM == "HS256"
+        assert s.JWT_EXPIRE_HOURS == 24
 
 
 class TestSettingsCustomValues:
@@ -73,6 +89,7 @@ class TestSettingsCustomValues:
 
     def test_custom_mongodb(self):
         from config import Settings
+
         s = Settings(
             MONGODB_URI="mongodb://custom:27017",
             MONGODB_DB="custom_db",
@@ -83,6 +100,7 @@ class TestSettingsCustomValues:
 
     def test_custom_llm(self):
         from config import Settings
+
         s = Settings(
             DEEPSEEK_API_KEY="sk-custom",
             DEEPSEEK_MODEL="deepseek-reasoner",
@@ -93,6 +111,7 @@ class TestSettingsCustomValues:
 
     def test_custom_thresholds(self):
         from config import Settings
+
         s = Settings(
             DEEPSEEK_API_KEY="test",
             PIPELINE_SCORE_THRESHOLD=120,
@@ -103,8 +122,22 @@ class TestSettingsCustomValues:
 
     def test_custom_backend_port(self):
         from config import Settings
+
         s = Settings(DEEPSEEK_API_KEY="test", BACKEND_PORT=9000)
         assert s.BACKEND_PORT == 9000
+
+    def test_jwt_config_from_environment(self, monkeypatch):
+        from config import Settings
+
+        monkeypatch.setenv("JWT_SECRET", "test-secret-at-least-32-characters")
+        monkeypatch.setenv("JWT_ALGORITHM", "HS512")
+        monkeypatch.setenv("JWT_EXPIRE_HOURS", "48")
+
+        s = Settings(DEEPSEEK_API_KEY="test", _env_file=None)
+
+        assert s.JWT_SECRET == "test-secret-at-least-32-characters"
+        assert s.JWT_ALGORITHM == "HS512"
+        assert s.JWT_EXPIRE_HOURS == 48
 
 
 class TestSettingsValidation:
@@ -112,11 +145,13 @@ class TestSettingsValidation:
 
     def test_mongo_uri_must_be_valid(self):
         from config import Settings
+
         with pytest.raises(ValidationError):
             Settings(MONGODB_URI="invalid-uri", DEEPSEEK_API_KEY="test")
 
     def test_mongo_uri_accepts_srv(self):
         from config import Settings
+
         s = Settings(
             MONGODB_URI="mongodb+srv://user:pass@cluster.mongodb.net",
             DEEPSEEK_API_KEY="test",
@@ -125,23 +160,34 @@ class TestSettingsValidation:
 
     def test_score_threshold_too_high(self):
         from config import Settings
+
         with pytest.raises(ValidationError):
             Settings(DEEPSEEK_API_KEY="test", PIPELINE_SCORE_THRESHOLD=999)
 
     def test_score_threshold_negative(self):
         from config import Settings
+
         with pytest.raises(ValidationError):
             Settings(DEEPSEEK_API_KEY="test", PIPELINE_SCORE_THRESHOLD=-1)
 
     def test_page_size_too_large(self):
         from config import Settings
+
         with pytest.raises(ValidationError):
             Settings(DEEPSEEK_API_KEY="test", API_PAGE_SIZE_MAX=1000)
 
     def test_page_size_too_small(self):
         from config import Settings
+
         with pytest.raises(ValidationError):
             Settings(DEEPSEEK_API_KEY="test", API_PAGE_SIZE_MAX=5)
+
+    @pytest.mark.parametrize("hours", [0, 721])
+    def test_jwt_expire_hours_out_of_range(self, hours):
+        from config import Settings
+
+        with pytest.raises(ValidationError):
+            Settings(DEEPSEEK_API_KEY="test", JWT_EXPIRE_HOURS=hours)
 
     def test_deepseek_key_empty_warning(self, monkeypatch, caplog):
         import logging
@@ -151,6 +197,7 @@ class TestSettingsValidation:
         # Override both env var and .env file
         monkeypatch.setenv("DEEPSEEK_API_KEY", "  ")
         from config import get_settings
+
         get_settings.cache_clear()
 
         logging.getLogger("backend.config")
@@ -172,6 +219,7 @@ class TestSettingsSingleton:
 
     def test_cache_clear(self):
         from config import get_settings
+
         get_settings.cache_clear()
         s1 = get_settings()
         s2 = get_settings()

@@ -121,12 +121,29 @@ class MongoDB:
 
     @classmethod
     async def ensure_indexes(cls) -> dict[str, list[str]]:
-        """幂等创建阶段六所需的 MongoDB 索引。
+        """幂等创建反馈、画像与用户认证所需的 MongoDB 索引。
 
         Returns:
             按集合名分组的索引名称。
         """
         index_specs = {
+            "users": [
+                IndexModel(
+                    [("user_id", ASCENDING)],
+                    unique=True,
+                    name="idx_user_id",
+                ),
+                IndexModel(
+                    [("username", ASCENDING)],
+                    unique=True,
+                    name="idx_user_username",
+                ),
+                IndexModel(
+                    [("email", ASCENDING)],
+                    sparse=True,
+                    name="idx_user_email",
+                ),
+            ],
             "feedbacks": [
                 IndexModel(
                     [("feedback_id", ASCENDING)],

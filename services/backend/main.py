@@ -18,6 +18,8 @@ from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
+from auth.deps import AuthError, auth_error_handler
+from auth.jwt import decode_access_token
 from config import get_settings
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -190,6 +192,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+app.add_exception_handler(AuthError, auth_error_handler)
 
 settings = get_settings()
 app.add_middleware(
@@ -201,7 +204,28 @@ app.add_middleware(
 )
 
 
-# ── Request logging middleware ──────────────────────────
+# ── Authentication + request logging middleware ────────
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """解析 JWT，并将用户 ID 写入 request.state。"""
+    whitelist = {"/api/health", "/api/auth/register", "/api/auth/login"}
+    request.state.user_id = None
+    if request.url.path not in whitelist:
+        auth_header = request.headers.get("Authorization", "")
+        token = None
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:].strip()
+        elif "token" in request.query_params:
+            token = request.query_params["token"]
+
+        if token:
+            payload = decode_access_token(token)
+            if payload:
+                request.state.user_id = payload.get("sub")
+
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -221,6 +245,7 @@ async def log_requests(request: Request, call_next):
 
 from api.accounts import router as accounts_router
 from api.activity import router as activity_router
+from api.auth import router as auth_router
 from api.chat import router as chat_router
 from api.crawl_config import router as crawl_config_router
 from api.dashboard import router as dashboard_router
@@ -238,6 +263,7 @@ app.include_router(chat_router)
 app.include_router(feedback_router)
 app.include_router(activity_router)
 app.include_router(profile_router)
+app.include_router(auth_router)
 app.include_router(accounts_router)
 app.include_router(logs_router)
 app.include_router(crawl_config_router)

@@ -114,6 +114,24 @@ class Settings(BaseSettings):
         description="允许的跨域来源",
     )
 
+    # ── JWT 认证 ─────────────────────────────────────
+    JWT_SECRET: str = Field(
+        default="",
+        description="JWT 签名密钥（仅从环境变量读取，生产环境必须设置）",
+        repr=False,
+    )
+    JWT_ALGORITHM: str = Field(
+        default="HS256",
+        min_length=1,
+        description="JWT 签名算法",
+    )
+    JWT_EXPIRE_HOURS: int = Field(
+        default=24,
+        ge=1,
+        le=720,
+        description="JWT 访问令牌有效期（小时）",
+    )
+
     # ── 校验 ─────────────────────────────────────────
     @field_validator("DEEPSEEK_API_KEY")
     @classmethod
@@ -123,8 +141,21 @@ class Settings(BaseSettings):
         """
         if not v:
             import logging
+
             logging.getLogger("backend.config").warning(
                 "DEEPSEEK_API_KEY is not set — LLM features will fail"
+            )
+        return v
+
+    @field_validator("JWT_SECRET")
+    @classmethod
+    def jwt_secret_required_in_production(cls, v: str) -> str:
+        """开发基线允许暂未配置；认证启用前必须通过环境变量设置。"""
+        if not v:
+            import logging
+
+            logging.getLogger("backend.config").warning(
+                "JWT_SECRET is not set — authentication features will fail"
             )
         return v
 
@@ -139,6 +170,7 @@ class Settings(BaseSettings):
 # ═══════════════════════════════════════════════════════════
 # 单例（避免反复解析环境变量）
 # ═══════════════════════════════════════════════════════════
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

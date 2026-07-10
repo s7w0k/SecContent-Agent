@@ -234,7 +234,8 @@ class TestMongoDBIndexes:
         with patch.object(MongoDB, "get_collection", side_effect=get_collection):
             result = await MongoDB.ensure_indexes()
 
-        assert set(result) == {"feedbacks", "user_activities", "user_profiles"}
+        assert set(result) == {"users", "feedbacks", "user_activities", "user_profiles"}
+        assert len(result["users"]) == 3
         assert len(result["feedbacks"]) == 4
         assert len(result["user_activities"]) == 4
         assert len(result["user_profiles"]) == 2
@@ -255,6 +256,14 @@ class TestMongoDBIndexes:
         }
         assert profile_indexes["idx_profile_user_id"]["unique"] is True
 
+        user_indexes = {
+            index.document["name"]: index.document
+            for index in collections["users"].received_indexes
+        }
+        assert user_indexes["idx_user_id"]["unique"] is True
+        assert user_indexes["idx_user_username"]["unique"] is True
+        assert user_indexes["idx_user_email"]["sparse"] is True
+
     @pytest.mark.asyncio
     async def test_ensure_indexes_is_repeatable(self):
         from db.mongo import MongoDB
@@ -267,4 +276,4 @@ class TestMongoDBIndexes:
             second = await MongoDB.ensure_indexes()
 
         assert first == second
-        assert collection.create_indexes.await_count == 6
+        assert collection.create_indexes.await_count == 8
