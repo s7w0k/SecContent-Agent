@@ -6,13 +6,15 @@ import {
   WarningOutlined,
 } from '@ant-design/icons';
 import { Empty, Layout, List, Menu, Row, Spin, Tag, Typography } from 'antd';
-import axios from 'axios';
+import type { ReactNode } from 'react';
 import { useCallback, useEffect, useState } from 'react';
+import { logsApi } from '../api/client';
+import type { PipelineLogEntry } from '../types';
 
 const { Sider, Content } = Layout;
 const { Text, Title } = Typography;
 
-const LEVEL_ICON: Record<string, any> = {
+const LEVEL_ICON: Record<string, ReactNode> = {
   INFO: <InfoCircleOutlined style={{ color: '#1677ff' }} />,
   WARNING: <WarningOutlined style={{ color: '#fa8c16' }} />,
   ERROR: <CloseCircleOutlined style={{ color: '#ff4d4f' }} />,
@@ -28,27 +30,26 @@ const LEVEL_COLOR: Record<string, string> = {
 export default function LogsPage() {
   const [dates, setDates] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().slice(0, 10));
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<PipelineLogEntry[]>([]);
   const [phases, setPhases] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    axios
-      .get('/api/logs/dates')
-      .then((r) => {
-        const ds = r.data.dates || [];
+    logsApi
+      .getDates()
+      .then((ds) => {
         setDates(ds);
         if (ds.length > 0 && !ds.includes(selectedDate)) setSelectedDate(ds[0]);
       })
       .catch(() => {});
-  }, []);
+  }, [selectedDate]);
 
   const loadLogs = useCallback(async (date: string) => {
     setLoading(true);
     try {
-      const r = await axios.get(`/api/logs/${date}`);
-      setLogs(r.data.logs || []);
-      setPhases(r.data.phases || []);
+      const result = await logsApi.getByDate(date);
+      setLogs(result.logs);
+      setPhases(result.phases);
     } catch {
       setLogs([]);
     }
@@ -98,7 +99,7 @@ export default function LogsPage() {
             <List
               size="small"
               dataSource={logs}
-              renderItem={(item: any) => (
+              renderItem={(item) => (
                 <List.Item>
                   <List.Item.Meta
                     avatar={LEVEL_ICON[item.level] || LEVEL_ICON.INFO}

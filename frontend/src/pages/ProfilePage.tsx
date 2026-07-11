@@ -23,6 +23,7 @@ import {
 } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { activityApi, profileApi } from '../api/client';
+import { useAuth } from '../auth/useAuth';
 import ActivityTimeline from '../components/ActivityTimeline';
 import PreferenceStats from '../components/PreferenceStats';
 import StyleProfileCard from '../components/StyleProfileCard';
@@ -185,6 +186,7 @@ function ActivityStatsCard({
 }
 
 export default function ProfilePage() {
+  const { user } = useAuth();
   const [profile, setProfile] = useState<StyleProfile | null>(null);
   const [activities, setActivities] = useState<UserActivity[]>([]);
   const [activityStats, setActivityStats] = useState<ActivityStats | null>(null);
@@ -261,7 +263,7 @@ export default function ProfilePage() {
         <Col>
           <Space direction="vertical" size={0}>
             <Title level={3} style={{ margin: 0 }}>
-              用户画像
+              {user?.display_name || user?.username} 的用户画像
             </Title>
             <Paragraph type="secondary" style={{ margin: 0 }}>
               基于反馈、下载、改稿与应用记录学习你的 PR 草稿偏好。

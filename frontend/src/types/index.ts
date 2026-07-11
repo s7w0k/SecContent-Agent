@@ -227,6 +227,28 @@ export interface PipelineTaskList {
   page_size: number;
 }
 
+export interface PipelineTaskCreated {
+  task_id: string;
+  message: string;
+}
+
+export interface PipelineTaskResponse {
+  ok: boolean;
+  data: PipelineTaskCreated;
+}
+
+export interface PipelineLogEntry {
+  level: string;
+  phase: string;
+  message: string;
+  created_at: string;
+}
+
+export interface PipelineLogsResponse {
+  logs: PipelineLogEntry[];
+  phases: string[];
+}
+
 // ═══════════════════════════════════════════════════════════
 // Knowledge（知识库）
 // ═══════════════════════════════════════════════════════════

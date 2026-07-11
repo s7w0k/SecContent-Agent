@@ -5,23 +5,19 @@
  * 管理全局状态（筛选/分页/排序/报道查看）。
  */
 
-import { useCallback, useEffect, useState } from "react";
-import { Button, Drawer, message, Space, Tag, Typography } from "antd";
-import { ImportOutlined } from "@ant-design/icons";
-import StatsCards from "../components/StatsCards";
-import FilterBar from "../components/FilterBar";
-import ArticleTable from "../components/ArticleTable";
-import PipelineControl from "../components/PipelineControl";
-import ReportViewer from "../components/ReportViewer";
-import DraftViewer from "../components/DraftViewer";
-import CrawlConfig from "../components/CrawlConfig";
-import api from "../api/client";
-import type {
-  Article,
-  ArticleQuery,
-  FilterValues,
-  StatsData,
-} from "../types";
+import { ImportOutlined } from '@ant-design/icons';
+import { Button, Drawer, Space, Tag, Typography, message } from 'antd';
+import { useCallback, useEffect, useState } from 'react';
+import api from '../api/client';
+import ArticleTable from '../components/ArticleTable';
+import CrawlConfig from '../components/CrawlConfig';
+import DraftViewer from '../components/DraftViewer';
+import FilterBar from '../components/FilterBar';
+import PipelineControl from '../components/PipelineControl';
+import PipelineTaskProgress from '../components/PipelineTaskProgress';
+import ReportViewer from '../components/ReportViewer';
+import StatsCards from '../components/StatsCards';
+import type { Article, ArticleQuery, FilterValues, StatsData } from '../types';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -38,13 +34,14 @@ export default function Dashboard() {
   const [filter, setFilter] = useState<FilterValues>({});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [sortField, setSortField] = useState("added_at");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [sortField, setSortField] = useState('added_at');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // ── 报道查看 ──────────────────────────────────────────────
   const [viewingReportId, setViewingReportId] = useState<string | null>(null);
   const [viewingArticle, setViewingArticle] = useState<Article | null>(null);
   const [draftArticle, setDraftArticle] = useState<Article | null>(null);
+  const [draftTask, setDraftTask] = useState<{ taskId: string; articleHash: string } | null>(null);
 
   // ── 文章详情 Drawer ──────────────────────────────────────
   const [detailArticle, setDetailArticle] = useState<Article | null>(null);
@@ -75,7 +72,7 @@ export default function Dashboard() {
       setArticles(res.items);
       setTotalArticles(res.total);
     } catch {
-      message.error("加载文章列表失败");
+      message.error('加载文章列表失败');
     } finally {
       setTableLoading(false);
     }
@@ -94,9 +91,7 @@ export default function Dashboard() {
   // ── 初始加载 ─────────────────────────────────────────────
   useEffect(() => {
     setLoading(true);
-    Promise.all([loadStats(), loadArticles(), loadReportCount()]).finally(() =>
-      setLoading(false),
-    );
+    Promise.all([loadStats(), loadArticles(), loadReportCount()]).finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 筛选 / 分页 / 排序变更时重新加载文章 ─────────────────
@@ -118,13 +113,10 @@ export default function Dashboard() {
   }, []);
 
   // ── 排序变更 ─────────────────────────────────────────────
-  const handleSortChange = useCallback(
-    (field: string, order: "asc" | "desc" | undefined) => {
-      setSortField(field);
-      setSortOrder(order || "desc");
-    },
-    [],
-  );
+  const handleSortChange = useCallback((field: string, order: 'asc' | 'desc' | undefined) => {
+    setSortField(field);
+    setSortOrder(order || 'desc');
+  }, []);
 
   // ── 查看报道 ─────────────────────────────────────────────
   const handleViewReport = useCallback((article: Article) => {
@@ -133,38 +125,36 @@ export default function Dashboard() {
   }, []);
 
   // ── 单文章 V2 打分 ──────────────────────────────────────
-  const handleScoreV2Single = useCallback(async (article: Article) => {
-    message.loading({ content: "V2打分中...", key: "scoresingle", duration: 0 });
-    try {
-      const res = await api.scoreV2Single(article.url_hash);
-      message.success({
-        content: `V2打分: 产品${res.product_relevance}+事件${res.event_impact}=${res.pr_total_score} ${res.is_pr_candidate ? "达标" : "未达标"}`,
-        key: "scoresingle", duration: 4,
-      });
-      loadArticles();
-    } catch (e: unknown) {
-      message.error({ content: "V2打分失败", key: "scoresingle" });
-    }
-  }, [loadArticles]);
+  const handleScoreV2Single = useCallback(
+    async (article: Article) => {
+      message.loading({ content: 'V2打分中...', key: 'scoresingle', duration: 0 });
+      try {
+        const res = await api.scoreV2Single(article.url_hash);
+        message.success({
+          content: `V2打分: 产品${res.product_relevance}+事件${res.event_impact}=${res.pr_total_score} ${res.is_pr_candidate ? '达标' : '未达标'}`,
+          key: 'scoresingle',
+          duration: 4,
+        });
+        loadArticles();
+      } catch {
+        message.error({ content: 'V2打分失败', key: 'scoresingle' });
+      }
+    },
+    [loadArticles],
+  );
 
   // ── 单文章 V2 流水线 ────────────────────────────────────
   const handleRunV2Single = useCallback(async (article: Article) => {
-    message.loading({ content: "V2流水线运行中...", key: "v2single", duration: 0 });
+    message.loading({ content: '正在创建个性化草稿任务...', key: 'v2single', duration: 0 });
     try {
       const res = await api.runV2Single(article.url_hash);
-      const steps = res.steps.map((s) => {
-        if (s.phase === "classify_v2") return `分类:${s.category}`;
-        if (s.phase === "score_v2") return `综合分:${s.pr_total_score}`;
-        if (s.phase === "draft") return `草稿:${s.draft_count}篇`;
-        return s.phase;
-      }).join(" → ");
-      message.success({ content: `V2完成: ${steps}`, key: "v2single", duration: 5 });
-      loadArticles();
+      setDraftTask({ taskId: res.data.task_id, articleHash: article.url_hash });
+      message.success({ content: '草稿任务已创建', key: 'v2single', duration: 2 });
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "未知错误";
-      message.error({ content: `V2失败: ${msg}`, key: "v2single" });
+      const msg = e instanceof Error ? e.message : '未知错误';
+      message.error({ content: `V2失败: ${msg}`, key: 'v2single' });
     }
-  }, [loadArticles]);
+  }, []);
 
   // ── 查看 V2 草稿 ────────────────────────────────────────
   const handleViewDrafts = useCallback((article: Article) => {
@@ -183,23 +173,43 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <div style={{ padding: "16px 24px", maxWidth: 1600, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+    <div style={{ padding: '16px 24px', maxWidth: 1600, margin: '0 auto' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 24,
+        }}
+      >
         <Title level={3} style={{ margin: 0 }}>
           🚀 PR Agent Dashboard
         </Title>
-        <Button icon={<ImportOutlined />}
+        <Button
+          icon={<ImportOutlined />}
           onClick={async () => {
             try {
               const res = await api.importWewe();
               message.success(`RSS 导入: ${res.saved} 篇`);
-              loadStats(); loadArticles();
-            } catch (e: any) { message.error(`导入失败: ${e?.response?.data?.detail || e.message}`); }
-          }}>导入 RSS</Button>
+              loadStats();
+              loadArticles();
+            } catch (e: any) {
+              message.error(`导入失败: ${e?.response?.data?.detail || e.message}`);
+            }
+          }}
+        >
+          导入 RSS
+        </Button>
       </div>
 
       {/* API 抓取配置 */}
-      <CrawlConfig onCrawl={() => { loadStats(); loadArticles(); loadReportCount(); }} />
+      <CrawlConfig
+        onCrawl={() => {
+          loadStats();
+          loadArticles();
+          loadReportCount();
+        }}
+      />
 
       {/* 统计卡片 */}
       <StatsCards stats={stats} loading={loading} reportCount={reportCount} />
@@ -207,15 +217,32 @@ export default function Dashboard() {
       {/* 流水线控制 */}
       <PipelineControl onComplete={handlePipelineComplete} onRefresh={loadArticles} />
 
+      {draftTask && (
+        <div style={{ marginBottom: 16 }}>
+          <PipelineTaskProgress
+            taskId={draftTask.taskId}
+            onCompleted={async () => {
+              const article = await api.getArticle(draftTask.articleHash);
+              setArticles((current) =>
+                current.map((item) => (item.url_hash === article.url_hash ? article : item)),
+              );
+              setDraftArticle(article);
+              setDraftTask(null);
+              message.success('个性化草稿已生成');
+            }}
+            onFailed={(task) => {
+              setDraftTask(null);
+              message.error(`草稿生成失败：${task.error || '未知错误'}`);
+            }}
+          />
+        </div>
+      )}
+
       {/* 筛选栏 */}
       <FilterBar
         value={filter}
         onChange={handleFilterChange}
-        categories={
-          stats?.category_distribution
-            ? Object.keys(stats.category_distribution)
-            : []
-        }
+        categories={stats?.category_distribution ? Object.keys(stats.category_distribution) : []}
       />
 
       {/* 文章表格 */}
@@ -225,7 +252,10 @@ export default function Dashboard() {
         loading={tableLoading}
         page={page}
         pageSize={pageSize}
-        onPageChange={(p, ps) => { setPage(p); setPageSize(ps); }}
+        onPageChange={(p, ps) => {
+          setPage(p);
+          setPageSize(ps);
+        }}
         onSortChange={handleSortChange}
         onViewReport={handleViewReport}
         onViewDetail={handleViewDetail}
@@ -246,29 +276,15 @@ export default function Dashboard() {
       />
 
       {/* V2 PR 草稿查看器 Modal */}
-      {draftArticle && (
-        <DraftViewer
-          article={draftArticle}
-          onClose={() => setDraftArticle(null)}
-        />
-      )}
+      {draftArticle && <DraftViewer article={draftArticle} onClose={() => setDraftArticle(null)} />}
 
       {/* 文章详情 Drawer */}
-      <Drawer
-        title="文章详情"
-        open={detailOpen}
-        onClose={() => setDetailOpen(false)}
-        width={640}
-      >
+      <Drawer title="文章详情" open={detailOpen} onClose={() => setDetailOpen(false)} width={640}>
         {detailArticle && (
           <>
             <Paragraph>
               <Text strong>标题：</Text>
-              <a
-                href={detailArticle.url}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a href={detailArticle.url} target="_blank" rel="noopener noreferrer">
                 {detailArticle.title}
               </a>
             </Paragraph>
@@ -278,7 +294,7 @@ export default function Dashboard() {
             </Paragraph>
             <Paragraph>
               <Text strong>分类：</Text>
-              <Tag>{detailArticle.category || "未分类"}</Tag>
+              <Tag>{detailArticle.category || '未分类'}</Tag>
             </Paragraph>
             <Space>
               <Text strong>AI相关度：</Text>
@@ -286,17 +302,13 @@ export default function Dashboard() {
               <Text strong>可报道性：</Text>
               <Tag color="purple">{detailArticle.reportability_score}</Tag>
               <Text strong>综合分：</Text>
-              <Tag
-                color={
-                  detailArticle.total_score >= 140 ? "red" : "default"
-                }
-              >
+              <Tag color={detailArticle.total_score >= 140 ? 'red' : 'default'}>
                 {detailArticle.total_score}
               </Tag>
             </Space>
             <Paragraph style={{ marginTop: 16 }}>
               <Text strong>打分理由：</Text>
-              {detailArticle.score_reason || "无"}
+              {detailArticle.score_reason || '无'}
             </Paragraph>
             {detailArticle.summary_cn && (
               <Paragraph>
@@ -312,16 +324,16 @@ export default function Dashboard() {
                 <div
                   style={{
                     maxHeight: 400,
-                    overflow: "auto",
+                    overflow: 'auto',
                     padding: 12,
-                    background: "#fafafa",
+                    background: '#fafafa',
                     borderRadius: 8,
                   }}
                 >
                   <pre
                     style={{
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-word",
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
                       margin: 0,
                     }}
                   >

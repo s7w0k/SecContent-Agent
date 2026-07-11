@@ -15,6 +15,10 @@ vi.mock('../api/client', () => ({
   },
 }));
 
+vi.mock('../auth/useAuth', () => ({
+  useAuth: () => ({ user: { username: 'alice', display_name: 'Alice' } }),
+}));
+
 const mockProfile: StyleProfile = {
   user_id: 'local-user',
   style_hints: {

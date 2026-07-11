@@ -37,10 +37,12 @@ import type {
   KnowledgeSummary,
   LoginRequest,
   PaginatedResponse,
+  PipelineLogsResponse,
   PipelineResult,
   PipelineStatusResponse,
   PipelineTask,
   PipelineTaskList,
+  PipelineTaskResponse,
   PollLoginResult,
   ProfileRebuildResponse,
   QRCodeResult,
@@ -195,7 +197,7 @@ export const pipelineApi = {
   },
 
   /** 爬取+分类 */
-  async crawl(crawlDays = 1): Promise<PipelineResult> {
+  async crawl(crawlDays = 1): Promise<PipelineTaskResponse> {
     const { data } = await client.post('/pipeline/crawl', { crawl_days: crawlDays });
     return data;
   },
@@ -267,25 +269,13 @@ export const pipelineApi = {
   },
 
   /** V2 智能 PR 流水线（单文章） */
-  async runV2Single(urlHash: string): Promise<{
-    ok: boolean;
-    url_hash: string;
-    title: string;
-    steps: Array<{
-      phase: string;
-      category?: string;
-      product_relevance?: number;
-      event_impact?: number;
-      pr_total_score?: number;
-      draft_count?: number;
-    }>;
-  }> {
+  async runV2Single(urlHash: string): Promise<PipelineTaskResponse> {
     const { data } = await client.post(`/pipeline/run-v2/${urlHash}`);
     return data;
   },
 
   /** V2 智能 PR 流水线（全量） */
-  async runV2(crawlDays = 1): Promise<PipelineResult> {
+  async runV2(crawlDays = 1): Promise<PipelineTaskResponse> {
     const { data } = await client.post('/pipeline/run-v2', { crawl_days: crawlDays });
     return data;
   },
@@ -332,6 +322,18 @@ export const pipelineApi = {
       force,
     });
     return data;
+  },
+};
+
+export const logsApi = {
+  async getDates(): Promise<string[]> {
+    const { data } = await client.get('/logs/dates');
+    return data.dates || [];
+  },
+
+  async getByDate(date: string): Promise<PipelineLogsResponse> {
+    const { data } = await client.get(`/logs/${date}`);
+    return { logs: data.logs || [], phases: data.phases || [] };
   },
 };
 
@@ -718,6 +720,7 @@ const api = {
   ...feedbackApi,
   ...activityApi,
   ...profileApi,
+  ...logsApi,
 };
 
 export default api;

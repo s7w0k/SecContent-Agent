@@ -1,20 +1,17 @@
 import {
   DashboardOutlined,
-  DeleteOutlined,
-  DownOutlined,
   EditOutlined,
   FileTextOutlined,
   InfoCircleOutlined,
-  LogoutOutlined,
   SearchOutlined,
   UserOutlined,
   WechatOutlined,
 } from '@ant-design/icons';
-import { Avatar, Dropdown, Layout, Menu, Modal, Space, Typography, message } from 'antd';
+import { Layout, Menu, Typography } from 'antd';
 import { useState } from 'react';
 import { AuthProvider } from './auth/AuthContext';
 import ProtectedRoute from './auth/ProtectedRoute';
-import { useAuth } from './auth/useAuth';
+import UserMenu from './components/UserMenu';
 import AccountPage from './pages/AccountPage';
 import ChatPage from './pages/ChatPage';
 import Dashboard from './pages/Dashboard';
@@ -38,42 +35,6 @@ const menuItems = [
 
 export function MainLayout() {
   const [tab, setTab] = useState('dashboard');
-  const { user, logout, deleteAccount } = useAuth();
-
-  const confirmDeleteAccount = () => {
-    Modal.confirm({
-      title: '确认注销账号？',
-      content: '此操作将永久删除你的画像、草稿、反馈、对话和流水线记录，且无法恢复。',
-      okText: '永久注销',
-      cancelText: '取消',
-      okType: 'danger',
-      async onOk() {
-        try {
-          await deleteAccount();
-          message.success('账号已注销');
-        } catch {
-          message.error('账号注销失败，请稍后重试');
-          throw new Error('Account deletion failed');
-        }
-      },
-    });
-  };
-
-  const userMenu = {
-    items: [
-      { key: 'logout', icon: <LogoutOutlined />, label: '退出登录' },
-      { type: 'divider' as const },
-      { key: 'delete', icon: <DeleteOutlined />, label: '注销账号', danger: true },
-    ],
-    onClick: ({ key }: { key: string }) => {
-      if (key === 'logout') {
-        logout();
-        message.success('已退出登录');
-      } else if (key === 'delete') {
-        confirmDeleteAccount();
-      }
-    },
-  };
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -96,13 +57,7 @@ export function MainLayout() {
           items={menuItems}
           style={{ flex: 1, minWidth: 0 }}
         />
-        <Dropdown menu={userMenu} placement="bottomRight">
-          <Space style={{ color: '#fff', cursor: 'pointer', marginLeft: 16 }}>
-            <Avatar size="small" icon={<UserOutlined />} />
-            <span>{user?.display_name || user?.username}</span>
-            <DownOutlined style={{ fontSize: 10 }} />
-          </Space>
-        </Dropdown>
+        <UserMenu />
       </Header>
       <Content>
         {tab === 'dashboard' && <Dashboard />}

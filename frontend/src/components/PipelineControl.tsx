@@ -8,37 +8,29 @@
  *   onComplete: () => void  — 流水线完成后的回调（刷新数据）
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Alert,
-  Button,
-  Card,
-  message,
-  Space,
-  Steps,
-  Tag,
-  Typography,
-} from "antd";
-import {
-  PlayCircleOutlined,
-  SyncOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   CloudDownloadOutlined,
   ExperimentOutlined,
   FileTextOutlined,
-} from "@ant-design/icons";
-import api from "../api/client";
-import type { PipelineState, PipelineStatus } from "../types";
+  PlayCircleOutlined,
+  SyncOutlined,
+} from '@ant-design/icons';
+import { Alert, Button, Card, Space, Steps, Tag, Typography, message } from 'antd';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import api from '../api/client';
+import type { PipelineState, PipelineStatus } from '../types';
+import PipelineTaskProgress from './PipelineTaskProgress';
 
 const { Text } = Typography;
 const POLL_INTERVAL_MS = 2000;
 
 const PHASE_STEPS = [
-  { title: "爬取", icon: <CloudDownloadOutlined />, key: "crawled_count" as const },
-  { title: "分类", icon: <ExperimentOutlined />, key: "classified_count" as const },
-  { title: "打分", icon: <SyncOutlined />, key: "scored_count" as const },
-  { title: "报道", icon: <FileTextOutlined />, key: "report_count" as const },
+  { title: '爬取', icon: <CloudDownloadOutlined />, key: 'crawled_count' as const },
+  { title: '分类', icon: <ExperimentOutlined />, key: 'classified_count' as const },
+  { title: '打分', icon: <SyncOutlined />, key: 'scored_count' as const },
+  { title: '报道', icon: <FileTextOutlined />, key: 'report_count' as const },
 ];
 
 interface PipelineControlProps {
@@ -47,10 +39,11 @@ interface PipelineControlProps {
 }
 
 export default function PipelineControl({ onComplete, onRefresh }: PipelineControlProps) {
-  const [status, setStatus] = useState<PipelineStatus>("idle");
+  const [status, setStatus] = useState<PipelineStatus>('idle');
   const [state, setState] = useState<PipelineState | null>(null);
   const [running, setRunning] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  const [activeTask, setActiveTask] = useState<{ id: string; label: string } | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPolling = useCallback(() => {
@@ -71,14 +64,14 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
         setState(res.state as PipelineState);
       }
 
-      if (s === "completed" || s === "failed" || s === "cancelled") {
+      if (s === 'completed' || s === 'failed' || s === 'cancelled') {
         stopPolling();
         setRunning(false);
-        if (s === "completed") {
-          message.success("流水线执行完成");
+        if (s === 'completed') {
+          message.success('流水线执行完成');
           onComplete();
-        } else if (s === "failed") {
-          message.error(`流水线执行失败: ${res.errors?.join(", ") || "未知错误"}`);
+        } else if (s === 'failed') {
+          message.error(`流水线执行失败: ${res.errors?.join(', ') || '未知错误'}`);
         }
       }
     } catch {
@@ -100,66 +93,80 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
   // ── 触发操作 ──────────────────────────────────────────────
 
   const trigger = useCallback(
-    async (action: "run" | "crawl" | "score" | "report", label: string, days?: number) => {
+    async (action: 'run' | 'score' | 'report', label: string, days?: number) => {
       console.log(`[Pipeline] Triggering ${action}...`);
       setRunning(true);
+      setStatus('running');
       setErrors([]);
-      setStatus("running");
-      message.loading({ content: `${label}中...`, key: "pipeline", duration: 0 });
+      message.loading({ content: `${label}中...`, key: 'pipeline', duration: 0 });
 
       try {
-        if (action === "run") await api.run(days || 1);
-        else if (action === "crawl") await api.crawl(days || 1);
-        else if (action === "score") await api.score();
-        else if (action === "report") await api.report();
+        if (action === 'run') await api.run(days || 1);
+        else if (action === 'score') await api.score();
+        else if (action === 'report') await api.report();
         console.log(`[Pipeline] ${action} triggered successfully`);
-        message.success({ content: `${label}已触发`, key: "pipeline", duration: 2 });
+        message.success({ content: `${label}已触发`, key: 'pipeline', duration: 2 });
         startPolling();
       } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : "未知错误";
+        const msg = e instanceof Error ? e.message : '未知错误';
         console.error(`[Pipeline] ${action} failed:`, e);
-        message.error({ content: `${label}失败: ${msg}`, key: "pipeline" });
+        message.error({ content: `${label}失败: ${msg}`, key: 'pipeline' });
         setRunning(false);
-        setStatus("failed");
+        setStatus('failed');
       }
     },
     [startPolling],
   );
 
-  const handleRunFull = useCallback(() => trigger("run", "全流程", 1), [trigger]);
-  const handleCrawl = useCallback(() => trigger("crawl", "爬取+分类", 1), [trigger]);
+  const handleRunFull = useCallback(() => trigger('run', '全流程', 1), [trigger]);
+  const handleCrawl = useCallback(async () => {
+    try {
+      setRunning(true);
+      setStatus('running');
+      setErrors([]);
+      message.loading({ content: '正在创建爬取任务...', key: 'pipeline', duration: 0 });
+      const res = await api.crawl(1);
+      setActiveTask({ id: res.data.task_id, label: '爬取+分类' });
+      message.success({ content: '爬取任务已创建', key: 'pipeline', duration: 2 });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : '未知错误';
+      setRunning(false);
+      setStatus('failed');
+      message.error({ content: `爬取任务创建失败: ${detail}`, key: 'pipeline' });
+    }
+  }, []);
   const handleCrawlOverseas = useCallback(async () => {
     setRunning(true);
-    message.loading({ content: "海外新闻爬取中，预计 1-2 分钟...", key: "overseas", duration: 0 });
+    message.loading({ content: '海外新闻爬取中，预计 1-2 分钟...', key: 'overseas', duration: 0 });
     try {
       const res = await api.crawlOverseas(1);
       const siteDetail = res.per_site
         ? Object.entries(res.per_site)
             .filter(([, count]) => count > 0)
             .map(([name, count]) => `${name}: ${count}`)
-            .join("  ")
-        : "";
+            .join('  ')
+        : '';
       message.success({
-        content: `海外新闻: ${res.saved} 篇入库 (共 ${res.total || 0} 篇)${siteDetail ? `  |  ${siteDetail}` : ""}`,
-        key: "overseas",
+        content: `海外新闻: ${res.saved} 篇入库 (共 ${res.total || 0} 篇)${siteDetail ? `  |  ${siteDetail}` : ''}`,
+        key: 'overseas',
         duration: 6,
       });
       onComplete();
     } catch (e: any) {
-      message.error({ content: `海外爬取失败: ${e?.message || ""}`, key: "overseas" });
+      message.error({ content: `海外爬取失败: ${e?.message || ''}`, key: 'overseas' });
     } finally {
       setRunning(false);
     }
   }, [onComplete]);
   const handleCrawlWewe = useCallback(async () => {
     setRunning(true);
-    message.loading({ content: "公众号爬取中...", key: "wewe", duration: 0 });
+    message.loading({ content: '公众号爬取中...', key: 'wewe', duration: 0 });
     try {
       const res = await api.crawlWewe();
-      message.success({ content: `公众号: ${res.saved} 篇入库`, key: "wewe", duration: 4 });
+      message.success({ content: `公众号: ${res.saved} 篇入库`, key: 'wewe', duration: 4 });
       onComplete();
     } catch (e: any) {
-      message.error({ content: `公众号爬取失败: ${e?.message || ""}`, key: "wewe" });
+      message.error({ content: `公众号爬取失败: ${e?.message || ''}`, key: 'wewe' });
     } finally {
       setRunning(false);
     }
@@ -167,34 +174,42 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
   const handleScoreV2 = useCallback(async () => {
     try {
       setRunning(true);
-      message.loading({ content: "V2打分中...", key: "scoreV2", duration: 0 });
+      setStatus('running');
+      message.loading({ content: 'V2打分中...', key: 'scoreV2', duration: 0 });
       const res = await api.scoreV2();
       message.success({
         content: `V2打分: ${res.scored} 篇 (${res.candidates} 篇达标≥80)`,
-        key: "scoreV2", duration: 4,
+        key: 'scoreV2',
+        duration: 4,
       });
       await onRefresh();
-    } catch (e: unknown) {
-      message.error({ content: `V2打分失败`, key: "scoreV2" });
+    } catch {
+      message.error({ content: 'V2打分失败', key: 'scoreV2' });
     } finally {
       setRunning(false);
     }
   }, [onRefresh]);
-  const handleReport = useCallback(() => trigger("report", "报道"), [trigger]);
+  const handleReport = useCallback(() => trigger('report', '报道'), [trigger]);
   const handleClassifyV2 = useCallback(async () => {
     try {
       setRunning(true);
-      message.loading({ content: "6分类中...", key: "classifyV2", duration: 0 });
+      message.loading({ content: '6分类中...', key: 'classifyV2', duration: 0 });
       const res = await api.classifyV2();
       message.success({
-        content: `6分类完成: ${res.classified} 篇 (${res.summary ? Object.entries(res.summary).map(([k, v]) => `${k}:${v}`).join(", ") : ""})`,
-        key: "classifyV2",
+        content: `6分类完成: ${res.classified} 篇 (${
+          res.summary
+            ? Object.entries(res.summary)
+                .map(([k, v]) => `${k}:${v}`)
+                .join(', ')
+            : ''
+        })`,
+        key: 'classifyV2',
         duration: 5,
       });
       onComplete();
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "未知错误";
-      message.error({ content: `6分类失败: ${msg}`, key: "classifyV2" });
+      const msg = e instanceof Error ? e.message : '未知错误';
+      message.error({ content: `6分类失败: ${msg}`, key: 'classifyV2' });
     } finally {
       setRunning(false);
     }
@@ -202,29 +217,27 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
   const handleRunV2 = useCallback(async () => {
     try {
       setRunning(true);
-      message.loading({ content: "V2智能PR流水线运行中...", key: "pipelineV2", duration: 0 });
+      setStatus('running');
+      message.loading({ content: '正在创建V2智能PR任务...', key: 'pipelineV2', duration: 0 });
       const res = await api.runV2(1);
-      message.success({
-        content: `V2流水线完成: 分类${res.state?.classified_v2_count || 0} 打分${res.state?.scored_v2_count || 0} 草稿${res.state?.draft_count || 0}`,
-        key: "pipelineV2", duration: 5,
-      });
-      onComplete();
+      setActiveTask({ id: res.data.task_id, label: 'V2智能PR流水线' });
+      message.success({ content: 'V2任务已创建', key: 'pipelineV2', duration: 2 });
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "未知错误";
-      message.error({ content: `V2流水线失败: ${msg}`, key: "pipelineV2" });
-    } finally {
+      const msg = e instanceof Error ? e.message : '未知错误';
+      message.error({ content: `V2流水线失败: ${msg}`, key: 'pipelineV2' });
       setRunning(false);
+      setStatus('failed');
     }
-  }, [onComplete]);
+  }, []);
 
   // ── 当前阶段索引 ──────────────────────────────────────────
 
   const phaseIndex = state
     ? PHASE_STEPS.findIndex((s) => {
-        if (state.report_count > 0) return s.key === "report_count";
-        if (state.scored_count > 0) return s.key === "scored_count";
-        if (state.classified_count > 0) return s.key === "classified_count";
-        if (state.crawled_count > 0) return s.key === "crawled_count";
+        if (state.report_count > 0) return s.key === 'report_count';
+        if (state.scored_count > 0) return s.key === 'scored_count';
+        if (state.classified_count > 0) return s.key === 'classified_count';
+        if (state.crawled_count > 0) return s.key === 'crawled_count';
         return false;
       })
     : -1;
@@ -233,15 +246,27 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
 
   const statusTag = () => {
     switch (status) {
-      case "idle":
+      case 'idle':
         return <Tag color="default">● 空闲</Tag>;
-      case "running":
-        return <Tag color="processing" icon={<SyncOutlined spin />}>运行中</Tag>;
-      case "completed":
-        return <Tag color="success" icon={<CheckCircleOutlined />}>完成</Tag>;
-      case "failed":
-        return <Tag color="error" icon={<CloseCircleOutlined />}>失败</Tag>;
-      case "cancelled":
+      case 'running':
+        return (
+          <Tag color="processing" icon={<SyncOutlined spin />}>
+            运行中
+          </Tag>
+        );
+      case 'completed':
+        return (
+          <Tag color="success" icon={<CheckCircleOutlined />}>
+            完成
+          </Tag>
+        );
+      case 'failed':
+        return (
+          <Tag color="error" icon={<CloseCircleOutlined />}>
+            失败
+          </Tag>
+        );
+      case 'cancelled':
         return <Tag color="warning">已取消</Tag>;
     }
   };
@@ -266,11 +291,7 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
         >
           全流程
         </Button>
-        <Button
-          icon={<CloudDownloadOutlined />}
-          onClick={handleCrawl}
-          disabled={running}
-        >
+        <Button icon={<CloudDownloadOutlined />} onClick={handleCrawl} disabled={running}>
           爬取+分类
         </Button>
         <Button onClick={handleCrawlOverseas} disabled={running} loading={running}>
@@ -279,18 +300,10 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
         <Button onClick={handleCrawlWewe} disabled={running} loading={running}>
           公众号
         </Button>
-        <Button
-          icon={<ExperimentOutlined />}
-          onClick={handleScoreV2}
-          disabled={running}
-        >
+        <Button icon={<ExperimentOutlined />} onClick={handleScoreV2} disabled={running}>
           V2打分
         </Button>
-        <Button
-          icon={<ExperimentOutlined />}
-          onClick={handleClassifyV2}
-          disabled={running}
-        >
+        <Button icon={<ExperimentOutlined />} onClick={handleClassifyV2} disabled={running}>
           V2分类
         </Button>
         <Button
@@ -301,26 +314,38 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
         >
           智能PR流水线
         </Button>
-        <Button
-          icon={<FileTextOutlined />}
-          onClick={handleReport}
-          disabled={running}
-        >
+        <Button icon={<FileTextOutlined />} onClick={handleReport} disabled={running}>
           仅报道
         </Button>
       </Space>
+
+      {activeTask && (
+        <PipelineTaskProgress
+          taskId={activeTask.id}
+          onCompleted={() => {
+            const label = activeTask.label;
+            setActiveTask(null);
+            setRunning(false);
+            setStatus('completed');
+            message.success(`${label}执行完成`);
+            onComplete();
+          }}
+          onFailed={(task) => {
+            const label = activeTask.label;
+            setActiveTask(null);
+            setRunning(false);
+            setStatus('failed');
+            setErrors([task.error || '未知错误']);
+            message.error(`${label}失败: ${task.error || '未知错误'}`);
+          }}
+        />
+      )}
 
       {/* 进度 Steps */}
       {state && (
         <Steps
           current={phaseIndex >= 0 ? phaseIndex : 0}
-          status={
-            status === "failed"
-              ? "error"
-              : status === "completed"
-                ? "finish"
-                : "process"
-          }
+          status={status === 'failed' ? 'error' : status === 'completed' ? 'finish' : 'process'}
           size="small"
           items={PHASE_STEPS.map((s) => ({
             title: s.title,
@@ -330,7 +355,7 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
       )}
 
       {/* 首次使用提示 */}
-      {!state && status === "idle" && (
+      {!state && status === 'idle' && (
         <Text type="secondary">点击"全流程"开始爬取、分类、打分和报道生成</Text>
       )}
 
