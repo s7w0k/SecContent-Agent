@@ -15,6 +15,35 @@ export type PipelinePhase = 'crawl' | 'classify' | 'score' | 'report';
 export type PipelineStatus = 'idle' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 // ═══════════════════════════════════════════════════════════
+// Authentication（用户认证）
+// ═══════════════════════════════════════════════════════════
+
+export interface User {
+  user_id: string;
+  username: string;
+  display_name: string;
+  email?: string | null;
+  created_at: string;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  user: User;
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface RegisterRequest extends LoginRequest {
+  display_name?: string;
+  email?: string;
+}
+
+// ═══════════════════════════════════════════════════════════
 // Article（文章）
 // ═══════════════════════════════════════════════════════════
 
@@ -165,6 +194,37 @@ export interface PipelineStatusResponse {
   current_phase: string;
   state: PipelineState;
   errors: string[];
+}
+
+export type PipelineTaskStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface PipelineTaskProgress {
+  phase: string;
+  current: number;
+  total: number;
+  message: string;
+}
+
+export interface PipelineTask {
+  id?: string;
+  task_id: string;
+  user_id: string;
+  task_type: 'crawl' | 'classify' | 'score' | 'run-v2' | 'report';
+  article_url_hash?: string | null;
+  status: PipelineTaskStatus;
+  progress: PipelineTaskProgress;
+  result?: Record<string, unknown> | null;
+  error?: string | null;
+  created_at: string;
+  updated_at: string;
+  expires_at: string;
+}
+
+export interface PipelineTaskList {
+  items: PipelineTask[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 // ═══════════════════════════════════════════════════════════

@@ -35,6 +35,8 @@ const mockGet = vi.fn();
 const mockPost = vi.fn();
 const mockPut = vi.fn();
 const mockDelete = vi.fn();
+let requestInterceptor: ((config: { headers: Record<string, string> }) => unknown) | undefined;
+let responseErrorInterceptor: ((error: unknown) => Promise<never>) | undefined;
 
 // Re-create client with controlled mocks
 let api: typeof import('./client').default;
@@ -50,14 +52,111 @@ async function setupApi() {
     put: mockPut,
     delete: mockDelete,
     interceptors: {
-      response: { use: vi.fn() },
-      request: { use: vi.fn() },
+      response: {
+        use: vi.fn((_success, error) => {
+          responseErrorInterceptor = error;
+        }),
+      },
+      request: {
+        use: vi.fn((success) => {
+          requestInterceptor = success;
+        }),
+      },
     },
   } as unknown as AxiosInstance);
 
   const mod = await import('./client');
   api = mod.default;
 }
+
+beforeEach(() => {
+  window.localStorage.clear();
+  requestInterceptor = undefined;
+  responseErrorInterceptor = undefined;
+});
+
+// ═══════════════════════════════════════════════════════════
+// Authentication API + interceptors
+// ═══════════════════════════════════════════════════════════
+
+describe('Authentication API', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await setupApi();
+  });
+
+  it('request interceptor adds bearer token', () => {
+    window.localStorage.setItem('access_token', 'jwt-token');
+    const config = { headers: {} as Record<string, string> };
+
+    requestInterceptor?.(config);
+
+    expect(config.headers.Authorization).toBe('Bearer jwt-token');
+  });
+
+  it('401 response clears token and emits unauthorized event', async () => {
+    window.localStorage.setItem('access_token', 'expired-token');
+    const listener = vi.fn();
+    window.addEventListener('auth:unauthorized', listener);
+    const error = {
+      response: { status: 401, data: { detail: 'expired' } },
+      config: { url: '/profile/style' },
+      message: 'Unauthorized',
+    };
+
+    await expect(responseErrorInterceptor?.(error)).rejects.toBe(error);
+
+    expect(window.localStorage.getItem('access_token')).toBeNull();
+    expect(listener).toHaveBeenCalledOnce();
+    window.removeEventListener('auth:unauthorized', listener);
+  });
+
+  it('login, register, me and deleteAccount call auth endpoints', async () => {
+    const user = {
+      user_id: 'user-a',
+      username: 'alice',
+      display_name: 'Alice',
+      created_at: '2026-07-11T00:00:00Z',
+    };
+    mockPost
+      .mockResolvedValueOnce({ data: { data: user } })
+      .mockResolvedValueOnce({ data: { data: { access_token: 'token', user } } });
+    mockGet.mockResolvedValueOnce({ data: { data: user } });
+    mockDelete.mockResolvedValueOnce({ data: { data: { message: 'deleted' } } });
+    const { authApi } = await import('./client');
+
+    await authApi.register({ username: 'alice', password: 'secret1' });
+    const login = await authApi.login({ username: 'alice', password: 'secret1' });
+    const current = await authApi.me();
+    await authApi.deleteAccount('secret1');
+
+    expect(mockPost).toHaveBeenNthCalledWith(1, '/auth/register', {
+      username: 'alice',
+      password: 'secret1',
+    });
+    expect(mockPost).toHaveBeenNthCalledWith(2, '/auth/login', {
+      username: 'alice',
+      password: 'secret1',
+    });
+    expect(mockGet).toHaveBeenCalledWith('/auth/me');
+    expect(mockDelete).toHaveBeenCalledWith('/auth/account', {
+      data: { password: 'secret1' },
+    });
+    expect(login.access_token).toBe('token');
+    expect(current.user_id).toBe('user-a');
+  });
+
+  it('buildSSEUrl appends token and query parameters', async () => {
+    window.localStorage.setItem('access_token', 'sse-token');
+    const { buildSSEUrl } = await import('./client');
+
+    const url = new URL(buildSSEUrl('/chat/ask_stream', { draft_index: 2 }));
+
+    expect(url.pathname).toBe('/api/chat/ask_stream');
+    expect(url.searchParams.get('token')).toBe('sse-token');
+    expect(url.searchParams.get('draft_index')).toBe('2');
+  });
+});
 
 // ═══════════════════════════════════════════════════════════
 // Dashboard API
@@ -151,6 +250,23 @@ describe('Pipeline API', () => {
     const result = await api.getStatus();
     expect(mockGet).toHaveBeenCalledWith('/pipeline/status');
     expect(result.status).toBe('idle');
+  });
+
+  it('getTaskStatus and getTasks call async task endpoints', async () => {
+    const task = { task_id: 'task-1', status: 'running', progress: { phase: 'score' } };
+    mockGet
+      .mockResolvedValueOnce({ data: { data: task } })
+      .mockResolvedValueOnce({ data: { data: { items: [task], total: 1 } } });
+
+    const status = await api.getTaskStatus('task-1');
+    const tasks = await api.getTasks(2, 10);
+
+    expect(mockGet).toHaveBeenNthCalledWith(1, '/pipeline/tasks/task-1');
+    expect(mockGet).toHaveBeenNthCalledWith(2, '/pipeline/tasks', {
+      params: { page: 2, page_size: 10 },
+    });
+    expect(status.task_id).toBe('task-1');
+    expect(tasks.total).toBe(1);
   });
 });
 

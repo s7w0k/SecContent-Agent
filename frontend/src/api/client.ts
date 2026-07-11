@@ -20,6 +20,7 @@ import type {
   ApplyRevisionResponse,
   Article,
   ArticleQuery,
+  AuthResponse,
   ChatAskRequest,
   ChatAskResponse,
   ChatMessage,
@@ -34,15 +35,20 @@ import type {
   FeedbackUpdate,
   FeedbackUpdateResponse,
   KnowledgeSummary,
+  LoginRequest,
   PaginatedResponse,
   PipelineResult,
   PipelineStatusResponse,
+  PipelineTask,
+  PipelineTaskList,
   PollLoginResult,
   ProfileRebuildResponse,
   QRCodeResult,
+  RegisterRequest,
   Report,
   StatsData,
   StyleProfile,
+  User,
   UserActivityCreate,
 } from '../types';
 
@@ -52,6 +58,28 @@ import type {
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
+export const ACCESS_TOKEN_KEY = 'access_token';
+export const AUTH_UNAUTHORIZED_EVENT = 'auth:unauthorized';
+
+export function getAccessToken(): string | null {
+  return typeof window === 'undefined' ? null : window.localStorage.getItem(ACCESS_TOKEN_KEY);
+}
+
+export function buildSSEUrl(
+  path: string,
+  params: Record<string, string | number | boolean | null | undefined> = {},
+): string {
+  const basePath = `${BASE_URL.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+  const origin = typeof window === 'undefined' ? 'http://localhost' : window.location.origin;
+  const url = new URL(basePath, origin);
+  const token = getAccessToken();
+  if (token) url.searchParams.set('token', token);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== null && value !== undefined) url.searchParams.set(key, String(value));
+  }
+  return url.toString();
+}
+
 const client: AxiosInstance = axios.create({
   baseURL: BASE_URL,
   timeout: 300000,
@@ -60,8 +88,10 @@ const client: AxiosInstance = axios.create({
   },
 });
 
-// 请求拦截器：记录日志
+// 请求拦截器：自动携带 JWT
 client.interceptors.request.use((config) => {
+  const token = getAccessToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
@@ -71,11 +101,43 @@ client.interceptors.response.use(
     return response;
   },
   (error) => {
+    if (error.response?.status === 401 && typeof window !== 'undefined') {
+      window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+      window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+    }
     const message = error.response?.data?.detail || error.message || 'Network error';
     console.error(`[API] ERROR ${error.response?.status || ''} ${error.config?.url}: ${message}`);
     return Promise.reject(error);
   },
 );
+
+// ═══════════════════════════════════════════════════════════
+// Authentication API
+// ═══════════════════════════════════════════════════════════
+
+export const authApi = {
+  async register(payload: RegisterRequest): Promise<User> {
+    const { data } = await client.post('/auth/register', payload);
+    return data.data;
+  },
+
+  async login(payload: LoginRequest): Promise<AuthResponse> {
+    const { data } = await client.post('/auth/login', payload);
+    return data.data;
+  },
+
+  async me(): Promise<User> {
+    const { data } = await client.get('/auth/me');
+    return data.data;
+  },
+
+  async deleteAccount(password?: string): Promise<{ message: string }> {
+    const { data } = await client.delete('/auth/account', {
+      data: password ? { password } : undefined,
+    });
+    return data.data;
+  },
+};
 
 // ═══════════════════════════════════════════════════════════
 // Dashboard API
@@ -234,6 +296,20 @@ export const pipelineApi = {
     return data;
   },
 
+  /** 查询异步流水线任务状态 */
+  async getTaskStatus(taskId: string): Promise<PipelineTask> {
+    const { data } = await client.get(`/pipeline/tasks/${taskId}`);
+    return data.data;
+  },
+
+  /** 查询当前用户异步任务列表 */
+  async getTasks(page = 1, pageSize = 20): Promise<PipelineTaskList> {
+    const { data } = await client.get('/pipeline/tasks', {
+      params: { page, page_size: pageSize },
+    });
+    return data.data;
+  },
+
   /** V2 6分类 */
   async classifyV2(
     urlHashes?: string[],
@@ -366,7 +442,7 @@ export const chatApi = {
     onDone?: (fullAnswer: string) => void,
     onError?: (error: string) => void,
   ): Promise<void> {
-    const url = `${BASE_URL}/chat/ask_stream`;
+    const url = buildSSEUrl('/chat/ask_stream');
 
     try {
       const response = await fetch(url, {
@@ -452,7 +528,7 @@ export const chatApi = {
     onDone?: (result: DraftReviseResponse) => void,
     onError?: (error: string) => void,
   ): Promise<void> {
-    const url = `${BASE_URL}/articles/${urlHash}/drafts/${draftIndex}/revise_stream`;
+    const url = buildSSEUrl(`/articles/${urlHash}/drafts/${draftIndex}/revise_stream`);
 
     try {
       const response = await fetch(url, {
@@ -633,6 +709,7 @@ export const profileApi = {
 // ═══════════════════════════════════════════════════════════
 
 const api = {
+  ...authApi,
   ...dashboardApi,
   ...pipelineApi,
   ...reportsApi,
