@@ -59,6 +59,9 @@ coverage.xml
 
 # ── 脚本 & 工具（不进入镜像）───────────────────────
 scripts/
+!scripts/
+scripts/*
+!scripts/migrate_local_user.py
 *.sh
 !*.py
 

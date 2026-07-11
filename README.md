@@ -16,7 +16,7 @@
 git clone https://gitee.com/s7w0k/pr-agent-demo.git
 cd pr-agent-demo
 cp .env.example .env
-# 编辑 .env，填入 DEEPSEEK_API_KEY
+# 编辑 .env，填入 DEEPSEEK_API_KEY，并将 JWT_SECRET 替换为 32 字符以上随机强密钥
 ```
 
 ### 2. 启动
@@ -27,13 +27,21 @@ docker compose up -d
 
 ### 3. 访问
 
-浏览器打开 **http://localhost:8000**
+浏览器打开 **http://localhost:8000**，首次使用请选择“注册”，注册完成后系统会自动登录。
 
 > 详细部署说明见 [部署文档](docs/部署文档.md)
 
 ---
 
 ## 核心功能
+
+### 用户认证与多租户隔离
+
+- 支持用户名/密码注册和 JWT 登录，刷新页面会自动恢复登录状态。
+- 反馈、操作记录、用户画像、对话、草稿和流水线日志均按登录用户隔离。
+- 文章和报道作为公共情报共享；个性化草稿独立保存在 `user_drafts`，不同用户互不覆盖。
+- 用户菜单支持退出登录和注销账号；注销仅级联删除个人数据，不删除共享文章与报道。
+- 对话和改稿流式接口使用 Query Token 认证，前端会自动附加 `?token=<JWT>`。
 
 ### V2 智能 PR 流水线
 
@@ -50,6 +58,8 @@ docker compose up -d
 | **对话改稿** | 问答模式咨询 + 改稿模式修订，支持修订记录和应用 | ✅ |
 | **用户反馈** | 对草稿/修订稿 1-5 星评分 + 文字反馈 + 标签 | ✅ |
 | **风格学习** | 基于反馈和操作记录学习用户偏好，注入草稿生成 Prompt | ✅ |
+
+流水线和单篇草稿生成采用后台任务模式：触发接口立即返回 `task_id`，前端轮询任务端点展示 `crawl -> classify -> score -> draft -> completed` 进度，完成后自动加载当前用户草稿。
 
 ### 数据源
 
@@ -122,7 +132,7 @@ pr-agent-demo/
 │   ├── mcp_crawl/           # 海外新闻 RSS 爬虫
 │   └── mcp_wewe/            # 微信公众号 MCP 服务
 ├── frontend/                # React + Ant Design 仪表盘
-├── tests/                   # 测试（180+ 用例）
+├── tests/                   # 后端与前端自动化测试（680+ 用例）
 ├── docs/                    # 文档
 │   └── 部署文档.md
 └── docker-compose.yml       # 容器编排
@@ -148,8 +158,14 @@ make lint                             # 代码检查
 
 | 端点 | 说明 |
 |------|------|
-| `POST /api/pipeline/run-v2` | 触发 V2 全流程（批量） |
-| `POST /api/pipeline/run-v2/{hash}` | 单篇 V2 流水线 |
+| `POST /api/auth/register` | 注册用户 |
+| `POST /api/auth/login` | 登录并获取 JWT |
+| `GET /api/auth/me` | 获取当前登录用户 |
+| `DELETE /api/auth/account` | 注销账号并删除个人数据 |
+| `POST /api/pipeline/run-v2` | 创建 V2 全流程后台任务，返回 `task_id` |
+| `POST /api/pipeline/run-v2/{hash}` | 创建单篇 V2 后台任务，返回 `task_id` |
+| `GET /api/pipeline/tasks/{task_id}` | 查询当前用户任务状态与进度 |
+| `GET /api/pipeline/tasks` | 查询当前用户任务列表 |
 | `POST /api/pipeline/classify-v2` | V2 6分类 |
 | `POST /api/pipeline/score-v2` | V2 双维度打分（批量） |
 | `POST /api/pipeline/score-v2/{hash}` | V2 单篇打分 |
@@ -157,7 +173,9 @@ make lint                             # 代码检查
 | `GET /api/articles` | 文章列表 |
 | `GET /api/articles/{url_hash}` | 文章详情 |
 | `POST /api/chat/ask` | 对话问答（文章/草稿上下文） |
+| `POST /api/chat/ask_stream?token={jwt}` | SSE 流式对话 |
 | `POST /api/articles/{url_hash}/drafts/{draft_index}/revise` | 改稿（生成修订稿） |
+| `POST /api/articles/{url_hash}/drafts/{draft_index}/revise_stream?token={jwt}` | SSE 流式改稿 |
 | `POST /api/articles/{url_hash}/drafts/{draft_index}/revisions/{revision_id}/apply` | 应用修订为当前稿 |
 | `POST /api/feedback` | 提交反馈（评分+文字+标签） |
 | `GET /api/feedback` | 查询反馈列表（支持筛选） |
@@ -178,12 +196,16 @@ make lint                             # 代码检查
 
 | 集合 | 说明 |
 |------|------|
-| `articles` | 文章数据（含 PR 草稿、修订记录、反馈冗余） |
+| `users` | 用户账号和 bcrypt 密码摘要 |
+| `articles` | 共享文章数据 |
 | `reports` | V1 PR 报道 |
-| `chat_sessions` | 对话改稿历史 |
+| `chat_sessions` | 按用户隔离的对话改稿历史 |
+| `user_drafts` | 按用户和文章隔离的个性化草稿 |
 | `feedbacks` | 用户反馈记录（评分+文字+标签） |
 | `user_activities` | 用户操作记录（下载/改稿/应用等） |
 | `user_profiles` | 用户风格画像（偏好模板/视角/语气等） |
+| `pipeline_tasks` | 异步流水线任务状态和结果 |
+| `pipeline_logs` | 按用户隔离的流水线日志 |
 
 ---
 

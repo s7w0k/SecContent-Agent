@@ -15,6 +15,7 @@ RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple \
     && pip install --no-cache-dir -r requirements.txt
 
 COPY services/backend/ .
+COPY scripts/migrate_local_user.py ./scripts/migrate_local_user.py
 COPY --from=frontend-builder /frontend/dist ./static
 
 RUN groupadd -r appuser && useradd -r -g appuser appuser \
