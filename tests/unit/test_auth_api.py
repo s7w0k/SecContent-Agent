@@ -216,7 +216,15 @@ async def test_delete_account_cascades_private_data(app, db):
     assert response.status_code == 200
     assert db["users"].documents == []
     for collection_name in PRIVATE_USER_COLLECTIONS:
-        assert db[collection_name].documents == [{"user_id": "another-user", "value": "keep"}]
+        documents = db[collection_name].documents
+        if collection_name == "pipeline_logs":
+            assert documents[0] == {"user_id": "another-user", "value": "keep"}
+            assert documents[1]["user_id"] == user_id
+            assert documents[1]["phase"] == "auth"
+            assert documents[1]["action"] == "logout"
+            assert "password" not in str(documents[1]).lower()
+        else:
+            assert documents == [{"user_id": "another-user", "value": "keep"}]
 
 
 @pytest.mark.asyncio
@@ -235,6 +243,20 @@ async def test_delete_account_rejects_wrong_password(app, db):
 
     assert response.status_code == 401
     assert len(db["users"].documents) == 1
+
+
+@pytest.mark.asyncio
+async def test_register_and_login_write_auth_logs_without_credentials(app, db):
+    register = await _register(app)
+    login = await _login(app)
+
+    assert register.status_code == 200
+    assert login.status_code == 200
+    auth_logs = db["pipeline_logs"].documents
+    assert [document["action"] for document in auth_logs] == ["register", "login"]
+    assert all(document["phase"] == "auth" for document in auth_logs)
+    assert all("password" not in str(document).lower() for document in auth_logs)
+    assert all("access_token" not in str(document).lower() for document in auth_logs)
 
 
 def test_hash_password_is_bcrypt_cost_12():

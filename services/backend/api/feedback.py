@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from api.activity import log_activity
+from api.logs import generate_trace_id, log_pipeline
 from auth.deps import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from models.feedback import (
@@ -149,9 +150,8 @@ async def create_feedback(
 ):
     """提交反馈并同步草稿汇总与操作记录。"""
     db = _get_db(request)
-    article = await db["articles"].find_one(
-        {"url_hash": body.target_ref.article_url_hash}
-    )
+    trace_id = generate_trace_id()
+    article = await db["articles"].find_one({"url_hash": body.target_ref.article_url_hash})
     if article is None:
         raise HTTPException(status_code=404, detail="Article not found")
 
@@ -172,12 +172,34 @@ async def create_feedback(
         feedback.target_ref.draft_index,
     )
     await _log_feedback_activity(db, feedback, article, draft)
+    await log_pipeline(
+        db,
+        "INFO",
+        "feedback_submit",
+        "feedback submitted",
+        user_id=user_id,
+        username=getattr(getattr(request, "state", None), "username", None) or user_id,
+        trace_id=trace_id,
+        action="complete",
+        detail={
+            "feedback_id": feedback.feedback_id,
+            "target_type": feedback.target_type,
+            "target_ref": {
+                "article_url_hash": feedback.target_ref.article_url_hash,
+                "draft_index": feedback.target_ref.draft_index,
+                "revision_id": feedback.target_ref.revision_id,
+            },
+            "rating": feedback.rating,
+            "tags": feedback.tags,
+        },
+    )
 
     return {
         "ok": True,
         "data": {
             "feedback_id": feedback.feedback_id,
             "created_at": feedback.created_at.isoformat(),
+            "trace_id": trace_id,
         },
     }
 
@@ -276,9 +298,7 @@ async def feedback_stats(
         "data": {
             "groups": groups,
             "total": len(all_ratings),
-            "overall_avg": (
-                round(sum(all_ratings) / len(all_ratings), 2) if all_ratings else 0
-            ),
+            "overall_avg": (round(sum(all_ratings) / len(all_ratings), 2) if all_ratings else 0),
         },
     }
 
@@ -292,9 +312,7 @@ async def update_feedback(
 ):
     """更新反馈内容并重新计算草稿汇总。"""
     db = _get_db(request)
-    current = await db["feedbacks"].find_one(
-        {"feedback_id": feedback_id, "user_id": user_id}
-    )
+    current = await db["feedbacks"].find_one({"feedback_id": feedback_id, "user_id": user_id})
     if current is None:
         raise HTTPException(status_code=404, detail="Feedback not found")
 
@@ -330,15 +348,11 @@ async def delete_feedback(
 ):
     """删除反馈并重新计算草稿汇总。"""
     db = _get_db(request)
-    current = await db["feedbacks"].find_one(
-        {"feedback_id": feedback_id, "user_id": user_id}
-    )
+    current = await db["feedbacks"].find_one({"feedback_id": feedback_id, "user_id": user_id})
     if current is None:
         raise HTTPException(status_code=404, detail="Feedback not found")
 
-    result = await db["feedbacks"].delete_one(
-        {"feedback_id": feedback_id, "user_id": user_id}
-    )
+    result = await db["feedbacks"].delete_one({"feedback_id": feedback_id, "user_id": user_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Feedback not found")
 

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime
 
 from agent.style_profiler import StyleProfiler
+from api.logs import build_log_error, generate_trace_id, log_pipeline
 from auth.deps import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -57,9 +59,44 @@ async def rebuild_style_profile(
 ):
     db = _get_db(request)
     profiler = _get_profiler(request)
-    profile = await profiler.build_profile(user_id)
+    trace_id = generate_trace_id()
+    started = time.perf_counter()
+    username = getattr(getattr(request, "state", None), "username", None) or user_id
+    try:
+        profile = await profiler.build_profile(user_id)
+    except Exception as exc:
+        await log_pipeline(
+            db,
+            "ERROR",
+            "profile_rebuild",
+            "style profile rebuild failed",
+            user_id=user_id,
+            username=username,
+            trace_id=trace_id,
+            action="error",
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            error=build_log_error(exc),
+        )
+        raise
     activity_count = await db["user_activities"].count_documents(
         {"user_id": user_id},
+    )
+    duration_ms = int((time.perf_counter() - started) * 1000)
+    await log_pipeline(
+        db,
+        "INFO",
+        "profile_rebuild",
+        "style profile rebuilt",
+        user_id=user_id,
+        username=username,
+        trace_id=trace_id,
+        action="complete",
+        duration_ms=duration_ms,
+        detail={
+            "feedback_count": profile["feedback_summary"]["total_feedbacks"],
+            "activity_count": activity_count,
+            "version": profile["version"],
+        },
     )
     return {
         "ok": True,
@@ -69,5 +106,6 @@ async def rebuild_style_profile(
             "activity_count": activity_count,
             "version": profile["version"],
             "updated_at": profile["updated_at"],
+            "trace_id": trace_id,
         },
     }

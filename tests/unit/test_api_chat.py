@@ -105,6 +105,7 @@ def mock_db(sample_article_with_drafts):
     user_drafts = MagicMock()
     user_profiles = MagicMock()
     user_activities = MagicMock()
+    pipeline_logs = MagicMock()
 
     # 默认返回带草稿的文章
     articles.find_one = AsyncMock(return_value=sample_article_with_drafts.copy())
@@ -124,6 +125,7 @@ def mock_db(sample_article_with_drafts):
     chat_sessions.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
     chat_sessions.delete_one = AsyncMock(return_value=MagicMock(deleted_count=1))
     user_activities.insert_one = AsyncMock(return_value=MagicMock(inserted_id="activity-id"))
+    pipeline_logs.insert_one = AsyncMock(return_value=MagicMock(inserted_id="log-id"))
 
     def _get_collection(key):
         if key == "articles":
@@ -136,6 +138,8 @@ def mock_db(sample_article_with_drafts):
             return user_profiles
         if key == "user_activities":
             return user_activities
+        if key == "pipeline_logs":
+            return pipeline_logs
         return MagicMock()
 
     db.__getitem__.side_effect = _get_collection
@@ -144,6 +148,7 @@ def mock_db(sample_article_with_drafts):
     db._user_drafts = user_drafts
     db._user_profiles = user_profiles
     db._user_activities = user_activities
+    db._pipeline_logs = pipeline_logs
     return db
 
 
@@ -181,6 +186,11 @@ class TestChatAsk:
         assert data["ok"] is True
         assert data["data"]["answer"] == "这是回答。"
         assert "knowledge" in data["data"]["references"]
+        log_document = app.state.db._pipeline_logs.insert_one.await_args.args[0]
+        assert log_document["phase"] == "chat_ask"
+        assert log_document["action"] == "complete"
+        assert log_document["detail"]["question_length"] == 2
+        assert "问题" not in str(log_document)
 
     @pytest.mark.asyncio
     async def test_ask_with_article_and_draft(self, app, mock_draft_gen, mock_db):
@@ -253,14 +263,16 @@ class TestGetChatHistory:
     @pytest.mark.asyncio
     async def test_get_history_with_messages(self, app, mock_db):
         """有历史记录返回消息列表"""
-        mock_db._chat_sessions.find_one = AsyncMock(return_value={
-            "article_url_hash": "d41d8cd98f00b204e9800998ecf8427e",
-            "draft_index": 0,
-            "messages": [
-                {"role": "user", "content": "问题1", "created_at": "2026-07-07T10:00:00"},
-                {"role": "assistant", "content": "回答1", "created_at": "2026-07-07T10:00:01"},
-            ],
-        })
+        mock_db._chat_sessions.find_one = AsyncMock(
+            return_value={
+                "article_url_hash": "d41d8cd98f00b204e9800998ecf8427e",
+                "draft_index": 0,
+                "messages": [
+                    {"role": "user", "content": "问题1", "created_at": "2026-07-07T10:00:00"},
+                    {"role": "assistant", "content": "回答1", "created_at": "2026-07-07T10:00:01"},
+                ],
+            }
+        )
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get(
@@ -540,9 +552,7 @@ class TestApplyRevision:
             ],
         }
         mock_db["articles"].find_one = AsyncMock(return_value=article)
-        mock_db["user_drafts"].find_one = AsyncMock(
-            return_value={"drafts": article["pr_drafts"]}
-        )
+        mock_db["user_drafts"].find_one = AsyncMock(return_value={"drafts": article["pr_drafts"]})
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post(
@@ -557,6 +567,9 @@ class TestApplyRevision:
         activity = mock_db._user_activities.insert_one.await_args.args[0]
         assert activity["action"] == "revision_apply"
         assert activity["target"]["revision_id"] == "rev-001"
+        log_document = mock_db._pipeline_logs.insert_one.await_args.args[0]
+        assert log_document["phase"] == "chat_apply"
+        assert log_document["detail"]["revision_id"] == "rev-001"
         # 验证写入 DB
         mock_db["user_drafts"].update_one.assert_called_once()
 
@@ -585,9 +598,7 @@ class TestApplyRevision:
             ],
         }
         mock_db["articles"].find_one = AsyncMock(return_value=article)
-        mock_db["user_drafts"].find_one = AsyncMock(
-            return_value={"drafts": article["pr_drafts"]}
-        )
+        mock_db["user_drafts"].find_one = AsyncMock(return_value={"drafts": article["pr_drafts"]})
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post(

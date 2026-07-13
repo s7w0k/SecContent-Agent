@@ -97,6 +97,7 @@ class FakeDatabase:
             ),
             "feedbacks": FakeCollection(),
             "user_activities": FakeCollection(),
+            "pipeline_logs": FakeCollection(),
         }
 
     def __getitem__(self, name: str):
@@ -199,6 +200,10 @@ class TestCreateFeedback:
         assert len(db["feedbacks"].documents) == 1
         assert len(db["user_activities"].documents) == 1
         assert db["user_activities"].documents[0]["action"] == "feedback_submit"
+        log_document = db["pipeline_logs"].documents[0]
+        assert log_document["phase"] == "feedback_submit"
+        assert log_document["detail"]["rating"] == 5
+        assert "comment" not in log_document["detail"]
 
         user_draft = db["user_drafts"].documents[0]
         assert user_draft["drafts"][0]["feedback_summary"] == {

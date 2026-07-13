@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from api.logs import generate_trace_id, log_pipeline
 from auth.deps import AuthError, get_current_user
 from auth.jwt import create_access_token
 from config import get_settings
@@ -86,7 +87,19 @@ async def register_user(body: UserCreate, request: Request):
         await users.insert_one(document)
     except DuplicateKeyError as exc:
         raise AuthError(409, "USERNAME_EXISTS", "用户名已被占用") from exc
-    return {"ok": True, "data": _public_payload(user)}
+    trace_id = generate_trace_id()
+    await log_pipeline(
+        db,
+        "INFO",
+        "auth",
+        "user registered",
+        user_id=user.user_id,
+        username=user.username,
+        trace_id=trace_id,
+        action="register",
+        detail={"has_email": bool(user.email)},
+    )
+    return {"ok": True, "data": _public_payload(user), "trace_id": trace_id}
 
 
 @router.post("/login", summary="用户登录")
@@ -104,7 +117,18 @@ async def login_user(body: UserLogin, request: Request):
         expires_in=get_settings().JWT_EXPIRE_HOURS * 3600,
         user=_public_user(document),
     )
-    return {"ok": True, "data": data.model_dump(mode="json")}
+    trace_id = generate_trace_id()
+    await log_pipeline(
+        db,
+        "INFO",
+        "auth",
+        "user logged in",
+        user_id=document["user_id"],
+        username=document["username"],
+        trace_id=trace_id,
+        action="login",
+    )
+    return {"ok": True, "data": data.model_dump(mode="json"), "trace_id": trace_id}
 
 
 @router.get("/me", summary="获取当前用户")
@@ -145,5 +169,20 @@ async def delete_account(
             await collection.delete_one({"user_id": user_id})
         else:
             await collection.delete_many({"user_id": user_id})
+    trace_id = generate_trace_id()
+    await log_pipeline(
+        db,
+        "INFO",
+        "auth",
+        "user account deleted",
+        user_id=user_id,
+        username=document.get("username", user_id),
+        trace_id=trace_id,
+        action="logout",
+        detail={"account_deleted": True},
+    )
     await users.delete_one({"user_id": user_id})
-    return {"ok": True, "data": {"message": "账号已注销，所有数据已删除"}}
+    return {
+        "ok": True,
+        "data": {"message": "账号已注销，所有数据已删除", "trace_id": trace_id},
+    }

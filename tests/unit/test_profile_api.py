@@ -107,6 +107,7 @@ def db():
     profiles = MagicMock()
     profiles.find_one = AsyncMock(return_value=None)
     profiles.count_documents = AsyncMock(return_value=15)
+    profiles.insert_one = AsyncMock()
     database = MagicMock()
     database.__getitem__.return_value = profiles
     database._profiles = profiles
@@ -185,6 +186,9 @@ async def test_rebuild_profile(db):
     assert data["activity_count"] == 15
     assert data["version"] == 2
     profiler.build_profile.assert_awaited_once_with("local-user")
+    log_document = db._profiles.insert_one.await_args.args[0]
+    assert log_document["phase"] == "profile_rebuild"
+    assert log_document["detail"]["feedback_count"] == 6
 
 
 @pytest.mark.asyncio

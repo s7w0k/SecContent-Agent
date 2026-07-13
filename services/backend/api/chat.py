@@ -12,11 +12,14 @@
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from agent.style_profiler import load_style_hints
 from api.activity import log_activity
+from api.logs import build_log_error, generate_trace_id, log_pipeline
 from auth.deps import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -76,6 +79,39 @@ def _get_draft_chat_agent(request: Request):
 def _now_cn() -> str:
     """当前东八区时间 ISO 字符串"""
     return datetime.now(_TZ_CN).isoformat()
+
+
+def _username(request: Request, user_id: str) -> str:
+    return getattr(getattr(request, "state", None), "username", None) or user_id
+
+
+async def _log_chat_operation(
+    db: Any,
+    request: Request,
+    user_id: str,
+    phase: str,
+    message: str,
+    trace_id: str,
+    *,
+    action: str = "complete",
+    started: float | None = None,
+    detail: dict[str, Any] | None = None,
+    error: BaseException | None = None,
+) -> None:
+    duration_ms = int((time.perf_counter() - started) * 1000) if started is not None else None
+    await log_pipeline(
+        db,
+        "ERROR" if error else "INFO",
+        phase,
+        message,
+        user_id=user_id,
+        username=_username(request, user_id),
+        trace_id=trace_id,
+        action="error" if error else action,
+        duration_ms=duration_ms,
+        detail=detail,
+        error=build_log_error(error) if error else None,
+    )
 
 
 async def _save_chat_message(
@@ -186,6 +222,8 @@ async def chat_ask(
     - 自动保存对话记录到 chat_sessions 集合
     """
     db = _get_db(request)
+    trace_id = generate_trace_id()
+    started = time.perf_counter()
     agent = _get_draft_chat_agent(request)
     style_hints = await load_style_hints(db, user_id)
 
@@ -230,6 +268,17 @@ async def chat_ask(
             style_hints=style_hints,
         )
     except LLMError as e:
+        await _log_chat_operation(
+            db,
+            request,
+            user_id,
+            "chat_ask",
+            "chat ask failed",
+            trace_id,
+            started=started,
+            detail={"article_url_hash": body.article_url_hash, "draft_index": body.draft_index},
+            error=e,
+        )
         raise HTTPException(status_code=502, detail=str(e)) from e
 
     # 保存对话记录到 chat_sessions
@@ -251,7 +300,23 @@ async def chat_ask(
             result["answer"],
         )
 
-    return {"ok": True, "data": result}
+    await _log_chat_operation(
+        db,
+        request,
+        user_id,
+        "chat_ask",
+        "chat ask completed",
+        trace_id,
+        started=started,
+        detail={
+            "article_url_hash": body.article_url_hash,
+            "draft_index": body.draft_index,
+            "question_length": len(body.message),
+            "answer_length": len(result["answer"]),
+            "stream": False,
+        },
+    )
+    return {"ok": True, "data": result, "trace_id": trace_id}
 
 
 @router.post("/chat/ask_stream", summary="流式对话问答（SSE）")
@@ -268,6 +333,8 @@ async def chat_ask_stream(
         data: {"error": "错误信息"}\\n\\n
     """
     db = _get_db(request)
+    trace_id = generate_trace_id()
+    started = time.perf_counter()
     agent = _get_draft_chat_agent(request)
     style_hints = await load_style_hints(db, user_id)
 
@@ -335,11 +402,50 @@ async def chat_ask_stream(
                     answer_text,
                 )
 
+            await _log_chat_operation(
+                db,
+                request,
+                user_id,
+                "chat_ask",
+                "stream chat ask completed",
+                trace_id,
+                started=started,
+                detail={
+                    "article_url_hash": body.article_url_hash,
+                    "draft_index": body.draft_index,
+                    "question_length": len(body.message),
+                    "answer_length": len(answer_text),
+                    "stream": True,
+                },
+            )
+
             yield f"data: {json.dumps({'done': True, 'answer': answer_text}, ensure_ascii=False)}\n\n"
 
         except LLMError as e:
+            await _log_chat_operation(
+                db,
+                request,
+                user_id,
+                "chat_ask",
+                "stream chat ask failed",
+                trace_id,
+                started=started,
+                detail={"article_url_hash": body.article_url_hash, "stream": True},
+                error=e,
+            )
             yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
         except Exception as e:
+            await _log_chat_operation(
+                db,
+                request,
+                user_id,
+                "chat_ask",
+                "stream chat ask failed",
+                trace_id,
+                started=started,
+                detail={"article_url_hash": body.article_url_hash, "stream": True},
+                error=e,
+            )
             yield f"data: {json.dumps({'error': f'服务器错误: {e}'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
@@ -349,6 +455,7 @@ async def chat_ask_stream(
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
+            "X-Trace-ID": trace_id,
         },
     )
 
@@ -373,6 +480,8 @@ async def revise_draft(
     - 自动保存对话记录到 chat_sessions 集合
     """
     db = _get_db(request)
+    trace_id = generate_trace_id()
+    started = time.perf_counter()
     agent = _get_draft_chat_agent(request)
     style_hints = await load_style_hints(db, user_id)
 
@@ -400,6 +509,17 @@ async def revise_draft(
             style_hints=style_hints,
         )
     except LLMError as e:
+        await _log_chat_operation(
+            db,
+            request,
+            user_id,
+            "chat_revise",
+            "draft revision failed",
+            trace_id,
+            started=started,
+            detail={"article_url_hash": url_hash, "draft_index": draft_index},
+            error=e,
+        )
         raise HTTPException(status_code=502, detail=str(e)) from e
 
     revised_content = result["revised_content_md"]
@@ -458,6 +578,24 @@ async def revise_draft(
         },
     )
 
+    await _log_chat_operation(
+        db,
+        request,
+        user_id,
+        "chat_revise",
+        "draft revision completed",
+        trace_id,
+        started=started,
+        detail={
+            "article_url_hash": url_hash,
+            "draft_index": draft_index,
+            "instruction_length": len(body.instruction),
+            "revision_id": revision_id,
+            "saved": saved,
+            "stream": False,
+        },
+    )
+
     return {
         "ok": True,
         "data": {
@@ -488,6 +626,8 @@ async def revise_draft_stream(
         data: {"error": "错误信息"}\\n\\n
     """
     db = _get_db(request)
+    trace_id = generate_trace_id()
+    started = time.perf_counter()
     agent = _get_draft_chat_agent(request)
     style_hints = await load_style_hints(db, user_id)
 
@@ -582,11 +722,51 @@ async def revise_draft_stream(
                 },
             )
 
+            await _log_chat_operation(
+                db,
+                request,
+                user_id,
+                "chat_revise",
+                "stream draft revision completed",
+                trace_id,
+                started=started,
+                detail={
+                    "article_url_hash": url_hash,
+                    "draft_index": draft_index,
+                    "instruction_length": len(body.instruction),
+                    "revision_id": revision_id,
+                    "saved": saved,
+                    "stream": True,
+                },
+            )
+
             yield f"data: {json.dumps({'done': True, 'revision_id': revision_id, 'revised_content_md': revised_content, 'change_summary': change_summary, 'saved': saved}, ensure_ascii=False)}\n\n"
 
         except LLMError as e:
+            await _log_chat_operation(
+                db,
+                request,
+                user_id,
+                "chat_revise",
+                "stream draft revision failed",
+                trace_id,
+                started=started,
+                detail={"article_url_hash": url_hash, "draft_index": draft_index, "stream": True},
+                error=e,
+            )
             yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
         except Exception as e:
+            await _log_chat_operation(
+                db,
+                request,
+                user_id,
+                "chat_revise",
+                "stream draft revision failed",
+                trace_id,
+                started=started,
+                detail={"article_url_hash": url_hash, "draft_index": draft_index, "stream": True},
+                error=e,
+            )
             yield f"data: {json.dumps({'error': f'服务器错误: {e}'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
@@ -596,6 +776,7 @@ async def revise_draft_stream(
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
+            "X-Trace-ID": trace_id,
         },
     )
 
@@ -613,6 +794,8 @@ async def apply_revision(
 ):
     """应用修订：将修订稿写回草稿主稿 content_md，并标记 applied=true。"""
     db = _get_db(request)
+    trace_id = generate_trace_id()
+    started = time.perf_counter()
 
     article = await db["articles"].find_one({"url_hash": url_hash})
     if article is None:
@@ -652,6 +835,21 @@ async def apply_revision(
         },
     )
 
+    await _log_chat_operation(
+        db,
+        request,
+        user_id,
+        "chat_apply",
+        "revision applied",
+        trace_id,
+        started=started,
+        detail={
+            "article_url_hash": url_hash,
+            "draft_index": draft_index,
+            "revision_id": revision_id,
+        },
+    )
+
     return {
         "ok": True,
         "data": {
@@ -659,6 +857,7 @@ async def apply_revision(
             "draft_index": draft_index,
             "revision_id": revision_id,
             "applied": True,
+            "trace_id": trace_id,
         },
     }
 
