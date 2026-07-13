@@ -35,6 +35,9 @@ services:
     volumes:
       - mongo_data:/data/db
       - ./mongodb/init.js:/docker-entrypoint-initdb.d/init.js:ro
+    # 仅绑定宿主机回环地址，供 MongoDB Compass 安全访问
+    ports:
+      - "127.0.0.1:${MONGO_HOST_PORT:-27017}:27017"
     networks:
       - agent-net
     healthcheck:
