@@ -695,3 +695,74 @@ describe('Profile API', () => {
     expect(result.version).toBe(2);
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+// Developer Logs API
+// ═══════════════════════════════════════════════════════════
+
+describe('Developer Logs API', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await setupApi();
+  });
+
+  it('query serializes multi-select filters and unwraps the result', async () => {
+    const result = {
+      logs: [],
+      phases: ['crawl', 'draft'],
+      levels: ['INFO', 'ERROR'],
+      users: [],
+      total: 0,
+      page: 2,
+      page_size: 20,
+    };
+    mockGet.mockResolvedValueOnce({ data: { ok: true, data: result } });
+    const { devLogsApi } = await import('./client');
+
+    const response = await devLogsApi.query({
+      date: '2026-07-13',
+      phase: ['crawl', 'draft'],
+      level: ['INFO', 'ERROR'],
+      page: 2,
+      page_size: 20,
+    });
+
+    expect(mockGet).toHaveBeenCalledWith('/dev/logs', {
+      params: {
+        date: '2026-07-13',
+        phase: 'crawl,draft',
+        level: 'INFO,ERROR',
+        page: 2,
+        page_size: 20,
+      },
+    });
+    expect(response).toEqual(result);
+  });
+
+  it('calls dates, trace and stats endpoints', async () => {
+    mockGet
+      .mockResolvedValueOnce({
+        data: { ok: true, data: { dates: ['2026-07-13'] } },
+      })
+      .mockResolvedValueOnce({
+        data: { ok: true, data: { trace_id: 'trace/a', events: [] } },
+      })
+      .mockResolvedValueOnce({
+        data: { ok: true, data: { total: 3, error_count: 1 } },
+      });
+    const { devLogsApi } = await import('./client');
+
+    const dates = await devLogsApi.dates();
+    const traceResult = await devLogsApi.trace('trace/a');
+    const statsResult = await devLogsApi.stats('2026-07-13');
+
+    expect(mockGet).toHaveBeenNthCalledWith(1, '/dev/logs/dates');
+    expect(mockGet).toHaveBeenNthCalledWith(2, '/dev/logs/trace/trace%2Fa');
+    expect(mockGet).toHaveBeenNthCalledWith(3, '/dev/logs/stats', {
+      params: { date: '2026-07-13' },
+    });
+    expect(dates).toEqual(['2026-07-13']);
+    expect(traceResult.trace_id).toBe('trace/a');
+    expect(statsResult.error_count).toBe(1);
+  });
+});
