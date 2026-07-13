@@ -219,6 +219,7 @@ async def auth_middleware(request: Request, call_next):
     """解析 JWT，并将用户 ID 写入 request.state。"""
     whitelist = {"/api/health", "/api/auth/register", "/api/auth/login"}
     request.state.user_id = None
+    request.state.username = None
     if request.url.path not in whitelist:
         auth_header = request.headers.get("Authorization", "")
         token = None
@@ -231,6 +232,7 @@ async def auth_middleware(request: Request, call_next):
             payload = decode_access_token(token)
             if payload:
                 request.state.user_id = payload.get("sub")
+                request.state.username = payload.get("username")
 
     return await call_next(request)
 

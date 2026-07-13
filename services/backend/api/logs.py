@@ -1,7 +1,7 @@
 """Operational logs API with date-based filtering."""
 
-import asyncio
 import logging
+import traceback
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
@@ -24,6 +24,16 @@ def generate_trace_id() -> str:
     """生成可读的链路 ID。"""
 
     return f"trace-{datetime.now(_tz()).strftime('%Y%m%d')}-{uuid4().hex[:12]}"
+
+
+def build_log_error(exc: BaseException) -> dict[str, str]:
+    """构造统一、可查询的结构化错误信息。"""
+
+    return {
+        "type": type(exc).__name__,
+        "message": str(exc),
+        "stack_trace": "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
+    }
 
 
 async def _log_to_db(
@@ -66,7 +76,7 @@ async def _log_to_db(
         logger.warning("log_pipeline 写入失败: phase=%s, error=%s", phase, exc)
 
 
-def log_pipeline(
+async def log_pipeline(
     db: Any,
     level: str,
     phase: str,
@@ -80,29 +90,23 @@ def log_pipeline(
     username: str | None = None,
     detail: dict[str, Any] | None = None,
     **legacy_detail: Any,
-) -> asyncio.Task[None] | None:
-    """Helper to log pipeline events (non-blocking)."""
-    try:
-        loop = asyncio.get_running_loop()
-        merged_detail = {**(detail or {}), **legacy_detail}
-        return loop.create_task(
-            _log_to_db(
-                db,
-                level,
-                phase,
-                message,
-                user_id,
-                merged_detail,
-                trace_id=trace_id,
-                action=action,
-                duration_ms=duration_ms,
-                error=error,
-                username=username,
-            )
-        )
-    except RuntimeError as exc:
-        logger.warning("log_pipeline 调度失败: phase=%s, error=%s", phase, exc)
-        return None
+) -> None:
+    """异步写入流水线事件；写入异常由底层降级为 WARNING。"""
+
+    merged_detail = {**(detail or {}), **legacy_detail}
+    await _log_to_db(
+        db,
+        level,
+        phase,
+        message,
+        user_id,
+        merged_detail,
+        trace_id=trace_id,
+        action=action,
+        duration_ms=duration_ms,
+        error=error,
+        username=username,
+    )
 
 
 # ---- API Endpoints ----

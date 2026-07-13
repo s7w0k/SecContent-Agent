@@ -316,6 +316,8 @@ class PipelineTask(BaseModel):
     id: str | None = Field(default=None, alias="_id")
     task_id: str = Field(default_factory=_task_id)
     user_id: str = Field(..., min_length=1, max_length=100)
+    trace_id: str | None = Field(default=None, min_length=1, max_length=100)
+    username: str | None = Field(default=None, min_length=1, max_length=100)
     task_type: PipelineTaskType
     article_url_hash: UrlHash | None = None
     status: PipelineTaskStatus = PipelineTaskStatus.PENDING

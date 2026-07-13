@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import time
 from datetime import UTC, datetime, timedelta, timezone
 from enum import StrEnum
 from typing import Any
@@ -52,11 +53,18 @@ class PipelineStatusV2(StrEnum):
     CANCELLED = "cancelled"
 
 
-def create_state_v2(crawl_days: int = 1, user_id: str = "") -> dict:
+def create_state_v2(
+    crawl_days: int = 1,
+    user_id: str = "",
+    trace_id: str = "",
+    username: str = "",
+) -> dict:
     """创建 V2 流水线初始状态"""
     return {
         "crawl_days": crawl_days,
         "user_id": user_id,
+        "trace_id": trace_id,
+        "username": username or user_id,
         "phases": [p.value for p in PipelinePhaseV2],
         "crawled_count": 0,
         "classified_v2_count": 0,
@@ -87,13 +95,18 @@ async def crawl_node_v2(state: dict, tools: dict, db: Any) -> dict:
 
 async def classify_v2_node(state: dict, classifier: Any, db: Any) -> dict:
     """V2 6分类阶段：调用 ClassifierV2 对 crawled 文章分类"""
-    from api.logs import log_pipeline
+    from agent.pipeline import _log_stage
 
+    started = time.perf_counter()
     state["current_phase"] = PipelinePhaseV2.CLASSIFY_V2.value
     logger.info("[classify_v2] Starting V2 classification")
+    await _log_stage(state, db, "classify_v2", "V2 classification started", action="start")
 
     try:
         if db is None:
+            await _log_stage(
+                state, db, "classify_v2", "V2 classification skipped: no database", action="skip"
+            )
             return state
 
         query = {
@@ -108,6 +121,9 @@ async def classify_v2_node(state: dict, classifier: Any, db: Any) -> dict:
 
         if not articles:
             logger.info("[classify_v2] No articles to classify")
+            await _log_stage(
+                state, db, "classify_v2", "V2 classification skipped: no articles", action="skip"
+            )
             return state
 
         results = await classifier.classify_batch(articles)
@@ -142,30 +158,53 @@ async def classify_v2_node(state: dict, classifier: Any, db: Any) -> dict:
             len(articles),
             pr_eligible,
         )
-        log_pipeline(
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        await _log_stage(
+            state,
             db,
-            "INFO",
             "classify_v2",
             f"classified {updated}, {pr_eligible} PR-eligible",
-            user_id=state["user_id"],
+            duration_ms=duration_ms,
+            detail={
+                "article_count": len(articles),
+                "classified_count": updated,
+                "pr_eligible_count": pr_eligible,
+            },
         )
 
     except Exception as e:
         logger.error("[classify_v2] Phase failed: %s", e)
         state["errors"].append(f"classify_v2: {e}")
+        from api.logs import build_log_error
+
+        await _log_stage(
+            state,
+            db,
+            "classify_v2",
+            "V2 classification failed",
+            level="ERROR",
+            action="error",
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            error=build_log_error(e),
+        )
 
     return state
 
 
 async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> dict:
     """V2 双维度打分阶段：对 PR 候选文章评分"""
-    from api.logs import log_pipeline
+    from agent.pipeline import _log_stage
 
+    started = time.perf_counter()
     state["current_phase"] = PipelinePhaseV2.SCORE_V2.value
     logger.info("[score_v2] Starting V2 scoring")
+    await _log_stage(state, db, "score_v2", "V2 scoring started", action="start")
 
     try:
         if db is None:
+            await _log_stage(
+                state, db, "score_v2", "V2 scoring skipped: no database", action="skip"
+            )
             return state
 
         await knowledge.load()
@@ -191,6 +230,9 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
 
         if not articles:
             logger.info("[score_v2] No PR-eligible articles")
+            await _log_stage(
+                state, db, "score_v2", "V2 scoring skipped: no articles", action="skip"
+            )
             return state
 
         scored = await scorer.score_batch(articles)
@@ -226,17 +268,36 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
             candidates,
             state["score_threshold"],
         )
-        log_pipeline(
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        await _log_stage(
+            state,
             db,
-            "INFO",
             "score_v2",
             f"scored {scored_count}/{len(articles)}, {candidates} drafted",
-            user_id=state["user_id"],
+            duration_ms=duration_ms,
+            detail={
+                "article_count": len(articles),
+                "scored_count": scored_count,
+                "candidate_count": candidates,
+                "threshold": state["score_threshold"],
+            },
         )
 
     except Exception as e:
         logger.error("[score_v2] Phase failed: %s", e)
         state["errors"].append(f"score_v2: {e}")
+        from api.logs import build_log_error
+
+        await _log_stage(
+            state,
+            db,
+            "score_v2",
+            "V2 scoring failed",
+            level="ERROR",
+            action="error",
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            error=build_log_error(e),
+        )
 
     return state
 
@@ -244,11 +305,16 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
 async def draft_node(state: dict, draft_gen: Any, knowledge: Any, db: Any) -> dict:
     """PR 草稿生成阶段：对高分文章生成 4 篇草稿"""
 
+    from agent.pipeline import _log_stage
+
+    started = time.perf_counter()
     state["current_phase"] = PipelinePhaseV2.DRAFT.value
     logger.info("[draft] Starting draft generation")
+    await _log_stage(state, db, "draft", "draft generation started", action="start")
 
     try:
         if db is None:
+            await _log_stage(state, db, "draft", "draft skipped: no database", action="skip")
             return state
 
         await knowledge.load()
@@ -260,6 +326,7 @@ async def draft_node(state: dict, draft_gen: Any, knowledge: Any, db: Any) -> di
 
         if not articles:
             logger.info("[draft] No articles scored >= %d", score_threshold)
+            await _log_stage(state, db, "draft", "draft skipped: no candidates", action="skip")
             return state
 
         draft_count = 0
@@ -291,10 +358,36 @@ async def draft_node(state: dict, draft_gen: Any, knowledge: Any, db: Any) -> di
 
         state["draft_count"] = draft_count
         logger.info("[draft] Generated drafts for %d articles", draft_count)
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        await _log_stage(
+            state,
+            db,
+            "draft",
+            f"generated drafts for {draft_count} articles",
+            duration_ms=duration_ms,
+            detail={
+                "article_count": len(articles),
+                "draft_count": draft_count,
+                "style_hints_used": bool(style_hints),
+                "duration_ms": duration_ms,
+            },
+        )
 
     except Exception as e:
         logger.error("[draft] Phase failed: %s", e)
         state["errors"].append(f"draft: {e}")
+        from api.logs import build_log_error
+
+        await _log_stage(
+            state,
+            db,
+            "draft",
+            "draft generation failed",
+            level="ERROR",
+            action="error",
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            error=build_log_error(e),
+        )
 
     return state
 
@@ -340,9 +433,15 @@ class PipelineManagerV2:
 
     # ── 公开接口 ──────────────────────────────────────────────
 
-    async def run_full(self, crawl_days: int = 1, user_id: str = "") -> dict:
+    async def run_full(
+        self,
+        crawl_days: int = 1,
+        user_id: str = "",
+        trace_id: str = "",
+        username: str = "",
+    ) -> dict:
         """执行全流程 V2 流水线"""
-        return await self._run(crawl_days, user_id)
+        return await self._run(crawl_days, user_id, trace_id, username)
 
     def get_status(self) -> dict:
         if self._state is None:
@@ -401,7 +500,9 @@ class PipelineManagerV2:
 
         return graph.compile()
 
-    async def _run(self, crawl_days: int, user_id: str) -> dict:
+    async def _run(
+        self, crawl_days: int, user_id: str, trace_id: str = "", username: str = ""
+    ) -> dict:
         import uuid
 
         pipeline_id = str(uuid.uuid4())[:8]
@@ -413,7 +514,12 @@ class PipelineManagerV2:
                 "error": "Pipeline is already running",
             }
 
-        self._state = create_state_v2(crawl_days=crawl_days, user_id=user_id)
+        self._state = create_state_v2(
+            crawl_days=crawl_days,
+            user_id=user_id,
+            trace_id=trace_id,
+            username=username,
+        )
         self._state["status"] = PipelineStatusV2.RUNNING.value
         self._state["started_at"] = _now_iso()
 

@@ -101,28 +101,35 @@ def mock_db():
 @pytest.fixture
 def mock_manager():
     mgr = MagicMock()
-    mgr.run_full = AsyncMock(return_value={
-        "pipeline_id": "test-123",
-        "status": "completed",
-        "state": {"crawled_count": 0},
-    })
-    mgr.run_phase = AsyncMock(return_value={
-        "pipeline_id": "test-456",
-        "status": "completed",
-        "state": {},
-    })
-    mgr.get_status = MagicMock(return_value={
-        "status": "idle",
-        "current_phase": "",
-        "state": {},
-        "errors": [],
-    })
+    mgr.run_full = AsyncMock(
+        return_value={
+            "pipeline_id": "test-123",
+            "status": "completed",
+            "state": {"crawled_count": 0},
+        }
+    )
+    mgr.run_phase = AsyncMock(
+        return_value={
+            "pipeline_id": "test-456",
+            "status": "completed",
+            "state": {},
+        }
+    )
+    mgr.get_status = MagicMock(
+        return_value={
+            "status": "idle",
+            "current_phase": "",
+            "state": {},
+            "errors": [],
+        }
+    )
     return mgr
 
 
 @pytest.fixture
 def mock_knowledge():
     """使用简单类避免 MagicMock 序列化递归"""
+
     class FakeKnowledge:
         is_loaded = True
 
@@ -194,10 +201,12 @@ class TestPipelineAPI:
             assert resp.status_code == 200
             data = resp.json()
             assert data["status"] == "completed"
-            app.state.pipeline_manager.run_full.assert_awaited_once_with(
-                crawl_days=1,
-                user_id="local-user",
-            )
+            assert data["trace_id"].startswith("trace-")
+            run_kwargs = app.state.pipeline_manager.run_full.await_args.kwargs
+            assert run_kwargs["crawl_days"] == 1
+            assert run_kwargs["user_id"] == "local-user"
+            assert run_kwargs["username"] == "local-user"
+            assert run_kwargs["trace_id"] == data["trace_id"]
             activity = mock_db._user_activities.insert_one.await_args.args[0]
             assert activity["action"] == "pipeline_run"
             assert activity["target"]["pipeline_id"] == "test-123"
@@ -234,7 +243,9 @@ class TestPipelineAPI:
     async def test_pipeline_not_initialized(self):
         """未初始化时返回 503"""
         app_no_mgr = _make_app(pipeline_manager=None, db=MagicMock())
-        async with AsyncClient(transport=ASGITransport(app=app_no_mgr), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app_no_mgr), base_url="http://test"
+        ) as client:
             resp = await client.get("/api/pipeline/status")
             assert resp.status_code == 503
 
@@ -282,7 +293,9 @@ class TestDashboardAPI:
     @pytest.mark.asyncio
     async def test_db_not_available(self):
         app_no_db = _make_app(pipeline_manager=MagicMock(), db=None)
-        async with AsyncClient(transport=ASGITransport(app_no_db), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app_no_db), base_url="http://test"
+        ) as client:
             resp = await client.get("/api/articles")
             assert resp.status_code == 503
 
@@ -330,7 +343,9 @@ class TestReportsAPI:
     async def test_knowledge_not_loaded(self):
         knowledge = MagicMock()
         knowledge.is_loaded = False
-        app_no_k = _make_app(pipeline_manager=MagicMock(), db=MagicMock(), knowledge_loader=knowledge)
+        app_no_k = _make_app(
+            pipeline_manager=MagicMock(), db=MagicMock(), knowledge_loader=knowledge
+        )
         async with AsyncClient(transport=ASGITransport(app_no_k), base_url="http://test") as client:
             resp = await client.get("/api/knowledge")
             assert resp.status_code == 200

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
@@ -56,11 +57,15 @@ def create_state(
     crawl_days: int = 1,
     phases: list[str] | None = None,
     user_id: str = "",
+    trace_id: str = "",
+    username: str = "",
 ) -> dict:
     """创建流水线初始状态（普通 dict，兼容 LangGraph）"""
     return {
         "crawl_days": crawl_days,
         "user_id": user_id,
+        "trace_id": trace_id,
+        "username": username or user_id,
         "phases": phases or [p.value for p in PipelinePhase],
         "crawled_count": 0,
         "classified_count": 0,
@@ -72,6 +77,37 @@ def create_state(
         "started_at": "",
         "finished_at": "",
     }
+
+
+async def _log_stage(
+    state: dict,
+    db: Any,
+    phase: str,
+    message: str,
+    *,
+    level: str = "INFO",
+    action: str = "complete",
+    duration_ms: int | None = None,
+    detail: dict[str, Any] | None = None,
+    error: dict[str, Any] | None = None,
+) -> None:
+    """使用状态中的租户和 trace 上下文写入阶段日志。"""
+
+    from api.logs import log_pipeline
+
+    await log_pipeline(
+        db,
+        level,
+        phase,
+        message,
+        user_id=state["user_id"],
+        username=state.get("username"),
+        trace_id=state.get("trace_id"),
+        action=action,
+        duration_ms=duration_ms,
+        detail=detail,
+        error=error,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -88,21 +124,24 @@ async def crawl_node(state: dict, tools: dict, db: Any) -> dict:
         db: MongoDB 数据库实例
     """
     import uuid
+
     batch_id = uuid.uuid4().hex[:12]
     state["batch_id"] = batch_id
-    from api.logs import log_pipeline
+    started = time.perf_counter()
     state["current_phase"] = PipelinePhase.CRAWL.value
     logger.info("[crawl] Starting crawl phase (days=%d, batch=%s)", state["crawl_days"], batch_id)
-    log_pipeline(
+    await _log_stage(
+        state,
         db,
-        "INFO",
         "crawl",
         f"start crawl (days={state['crawl_days']})",
-        user_id=state["user_id"],
+        action="start",
+        detail={"days": state["crawl_days"], "batch_id": batch_id},
     )
 
     if PipelinePhase.CRAWL.value not in state["phases"]:
         logger.info("[crawl] Skipped (not in selected phases)")
+        await _log_stage(state, db, "crawl", "crawl skipped", action="skip")
         return state
 
     try:
@@ -120,10 +159,12 @@ async def crawl_node(state: dict, tools: dict, db: Any) -> dict:
         # 2. 获取微信公众号文章（从 Atom feed，含 author 信息）
         try:
             import httpx
+
             atom_url = "http://49.232.145.182:4001/feeds/all.atom"
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.get(atom_url)
                 import xml.etree.ElementTree as ET
+
                 NS = {"atom": "http://www.w3.org/2005/Atom"}
                 root = ET.fromstring(resp.text)
                 entries = root.findall("atom:entry", NS)
@@ -135,16 +176,22 @@ async def crawl_node(state: dict, tools: dict, db: Any) -> dict:
                     title = title_el.text if title_el is not None else ""
                     url = link_el.get("href", "") if link_el is not None else ""
                     source_name = author_el.text if author_el is not None else "微信公众号"
-                    pub_date = updated_el.text[:10].replace("-", "年", 1).replace("-", "月") + "日" if updated_el is not None and updated_el.text else ""
+                    pub_date = (
+                        updated_el.text[:10].replace("-", "年", 1).replace("-", "月") + "日"
+                        if updated_el is not None and updated_el.text
+                        else ""
+                    )
                     if url:
-                        articles.append({
-                            "title": title,
-                            "url": url,
-                            "source": source_name,
-                            "source_type": "wechat_mp",
-                            "published_at": pub_date,
-                            "summary": "",
-                        })
+                        articles.append(
+                            {
+                                "title": title,
+                                "url": url,
+                                "source": source_name,
+                                "source_type": "wechat_mp",
+                                "published_at": pub_date,
+                                "summary": "",
+                            }
+                        )
                 logger.info("[crawl] WeWe Atom: %d articles", len(entries))
         except Exception as e:
             logger.warning("[crawl] WeWe fetch failed (non-critical): %s", e)
@@ -159,6 +206,7 @@ async def crawl_node(state: dict, tools: dict, db: Any) -> dict:
                     if not url:
                         continue
                     import hashlib
+
                     url_hash = art.get("url_hash") or hashlib.md5(url.encode()).hexdigest()
 
                     # 去重：检查是否已存在
@@ -207,22 +255,47 @@ async def crawl_node(state: dict, tools: dict, db: Any) -> dict:
                     logger.warning("[crawl] Failed to save: %s", e)
 
             state["crawled_count"] = saved_count
-            logger.info("[crawl] Saved %d new, skipped %d duplicates (of %d total)",
-                        saved_count, skipped, len(articles))
-            log_pipeline(
-                db,
-                "INFO",
-                "crawl",
-                f"saved {saved_count} new, skipped {skipped} dupes",
-                user_id=state["user_id"],
+            logger.info(
+                "[crawl] Saved %d new, skipped %d duplicates (of %d total)",
+                saved_count,
+                skipped,
+                len(articles),
             )
         else:
             state["crawled_count"] = len(articles)
             logger.info("[crawl] %d articles crawled (no DB, not saved)", len(articles))
 
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        await _log_stage(
+            state,
+            db,
+            "crawl",
+            f"crawl completed: {state['crawled_count']} new articles",
+            duration_ms=duration_ms,
+            detail={
+                "source": "overseas,wewe",
+                "new_count": state["crawled_count"],
+                "total_count": len(articles),
+                "duration_ms": duration_ms,
+            },
+        )
+
     except Exception as e:
         logger.error("[crawl] Phase failed: %s", e)
         state["errors"].append(f"crawl: {e}")
+        from api.logs import build_log_error
+
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        await _log_stage(
+            state,
+            db,
+            "crawl",
+            "crawl failed",
+            level="ERROR",
+            action="error",
+            duration_ms=duration_ms,
+            error=build_log_error(e),
+        )
 
     return state
 
@@ -232,17 +305,20 @@ async def classify_node(state: dict, tools: dict, db: Any) -> dict:
 
     从 MongoDB 读取 pipeline_status="crawled" 的文章，调用 mcp-crawl 分类。
     """
-    from api.logs import log_pipeline
+    started = time.perf_counter()
     state["current_phase"] = PipelinePhase.CLASSIFY.value
     logger.info("[classify] Starting classify phase")
+    await _log_stage(state, db, "classify", "classify started", action="start")
 
     if PipelinePhase.CLASSIFY.value not in state["phases"]:
         logger.info("[classify] Skipped (not in selected phases)")
+        await _log_stage(state, db, "classify", "classify skipped", action="skip")
         return state
 
     try:
         if db is None:
             logger.info("[classify] No DB, skipping")
+            await _log_stage(state, db, "classify", "classify skipped: no database", action="skip")
             return state
 
         cursor = db["articles"].find({"pipeline_status": "crawled"})
@@ -250,22 +326,31 @@ async def classify_node(state: dict, tools: dict, db: Any) -> dict:
 
         if not raw_articles:
             logger.info("[classify] No articles to classify")
+            await _log_stage(state, db, "classify", "classify skipped: no articles", action="skip")
             return state
 
         # 并行分类：每篇文章独立调用 classify 工具
         import json as _json
+
         sem = asyncio.Semaphore(10)
 
         async def _classify_one(art):
             async with sem:
                 try:
-                    ajson = _json.dumps([{
-                        "title": art.get("title", ""),
-                        "url": art.get("url", ""),
-                        "source": art.get("source", ""),
-                        "summary": art.get("summary", ""),
-                    }], ensure_ascii=False)
-                    r = await tools["classify_articles"].ainvoke({"payload": {"articles_json": ajson, "batch_size": 1}})
+                    ajson = _json.dumps(
+                        [
+                            {
+                                "title": art.get("title", ""),
+                                "url": art.get("url", ""),
+                                "source": art.get("source", ""),
+                                "summary": art.get("summary", ""),
+                            }
+                        ],
+                        ensure_ascii=False,
+                    )
+                    r = await tools["classify_articles"].ainvoke(
+                        {"payload": {"articles_json": ajson, "batch_size": 1}}
+                    )
                     if r.get("ok") and r.get("data"):
                         data = r["data"]
                         classified = data.get("classified", []) if isinstance(data, dict) else data
@@ -273,13 +358,15 @@ async def classify_node(state: dict, tools: dict, db: Any) -> dict:
                             cls = classified[0]
                             await db["articles"].update_one(
                                 {"_id": art["_id"]},
-                                {"$set": {
-                                    "is_ai_security": cls.get("is_ai_security", False),
-                                    "is_agent_security": cls.get("is_agent_security", False),
-                                    "category": cls.get("category", ""),
-                                    "summary_cn": cls.get("summary_cn", ""),
-                                    "pipeline_status": "classified",
-                                }},
+                                {
+                                    "$set": {
+                                        "is_ai_security": cls.get("is_ai_security", False),
+                                        "is_agent_security": cls.get("is_agent_security", False),
+                                        "category": cls.get("category", ""),
+                                        "summary_cn": cls.get("summary_cn", ""),
+                                        "pipeline_status": "classified",
+                                    }
+                                },
                             )
                             return True
                 except Exception as e:
@@ -289,18 +376,34 @@ async def classify_node(state: dict, tools: dict, db: Any) -> dict:
         results = await asyncio.gather(*[_classify_one(a) for a in raw_articles])
         classified_count = sum(1 for r in results if r)
         state["classified_count"] = classified_count
-        logger.info("[classify] Parallel classified %d/%d articles", classified_count, len(raw_articles))
-        log_pipeline(
+        logger.info(
+            "[classify] Parallel classified %d/%d articles", classified_count, len(raw_articles)
+        )
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        await _log_stage(
+            state,
             db,
-            "INFO",
             "classify",
             f"parallel classified {classified_count}/{len(raw_articles)}",
-            user_id=state["user_id"],
+            duration_ms=duration_ms,
+            detail={"article_count": len(raw_articles), "classified_count": classified_count},
         )
 
     except Exception as e:
         logger.error("[classify] Phase failed: %s", e)
         state["errors"].append(f"classify: {e}")
+        from api.logs import build_log_error
+
+        await _log_stage(
+            state,
+            db,
+            "classify",
+            "classify failed",
+            level="ERROR",
+            action="error",
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            error=build_log_error(e),
+        )
 
     return state
 
@@ -316,17 +419,20 @@ async def score_node(
 
     从 MongoDB 读取 pipeline_status="classified" 且 is_ai_security=true 的文章。
     """
-    from api.logs import log_pipeline
+    started = time.perf_counter()
     state["current_phase"] = PipelinePhase.SCORE.value
     logger.info("[score] Starting score phase")
+    await _log_stage(state, db, "score", "score started", action="start")
 
     if PipelinePhase.SCORE.value not in state["phases"]:
         logger.info("[score] Skipped (not in selected phases)")
+        await _log_stage(state, db, "score", "score skipped", action="skip")
         return state
 
     try:
         if db is None:
             logger.info("[score] No DB, skipping")
+            await _log_stage(state, db, "score", "score skipped: no database", action="skip")
             return state
 
         # 确保知识库已加载
@@ -337,6 +443,7 @@ async def score_node(
 
         if not raw_articles:
             logger.info("[score] No articles to score")
+            await _log_stage(state, db, "score", "score skipped: no articles", action="skip")
             return state
 
         # LLM 批量打分
@@ -346,27 +453,43 @@ async def score_node(
             if not scores.get("_fallback", True):
                 await db["articles"].update_one(
                     {"_id": art["_id"]},
-                    {"$set": {
-                        "ai_relevance_score": scores["ai_relevance_score"],
-                        "reportability_score": scores["reportability_score"],
-                        "score_reason": scores.get("score_reason", ""),
-                        "pipeline_status": "scored",
-                    }},
+                    {
+                        "$set": {
+                            "ai_relevance_score": scores["ai_relevance_score"],
+                            "reportability_score": scores["reportability_score"],
+                            "score_reason": scores.get("score_reason", ""),
+                            "pipeline_status": "scored",
+                        }
+                    },
                 )
                 scored_count += 1
         state["scored_count"] = scored_count
         logger.info("[score] LLM scored %d/%d articles", scored_count, len(raw_articles))
-        log_pipeline(
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        await _log_stage(
+            state,
             db,
-            "INFO",
             "score",
             f"scored {scored_count}/{len(raw_articles)} articles",
-            user_id=state["user_id"],
+            duration_ms=duration_ms,
+            detail={"article_count": len(raw_articles), "scored_count": scored_count},
         )
 
     except Exception as e:
         logger.error("[score] Phase failed: %s", e)
         state["errors"].append(f"score: {e}")
+        from api.logs import build_log_error
+
+        await _log_stage(
+            state,
+            db,
+            "score",
+            "score failed",
+            level="ERROR",
+            action="error",
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            error=build_log_error(e),
+        )
 
     return state
 
@@ -382,16 +505,20 @@ async def report_node(
 
     从 MongoDB 读取 pipeline_status="scored" 且 total_score≥140 的文章。
     """
+    started = time.perf_counter()
     state["current_phase"] = PipelinePhase.REPORT.value
     logger.info("[report] Starting report generation phase")
+    await _log_stage(state, db, "report", "report generation started", action="start")
 
     if PipelinePhase.REPORT.value not in state["phases"]:
         logger.info("[report] Skipped (not in selected phases)")
+        await _log_stage(state, db, "report", "report skipped", action="skip")
         return state
 
     try:
         if db is None:
             logger.info("[report] No DB, skipping")
+            await _log_stage(state, db, "report", "report skipped: no database", action="skip")
             return state
 
         await knowledge.load()
@@ -419,6 +546,7 @@ async def report_node(
 
         if not high_value:
             logger.info("[report] No high-value articles (≥140)")
+            await _log_stage(state, db, "report", "report skipped: no candidates", action="skip")
             return state
 
         report_count = 0
@@ -439,10 +567,35 @@ async def report_node(
 
         state["report_count"] = report_count
         logger.info("[report] Generated %d reports", report_count)
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        await _log_stage(
+            state,
+            db,
+            "report",
+            f"generated {report_count} reports",
+            duration_ms=duration_ms,
+            detail={
+                "candidate_count": len(high_value),
+                "report_count": report_count,
+                "style_hints_used": bool(style_hints),
+            },
+        )
 
     except Exception as e:
         logger.error("[report] Phase failed: %s", e)
         state["errors"].append(f"report: {e}")
+        from api.logs import build_log_error
+
+        await _log_stage(
+            state,
+            db,
+            "report",
+            "report generation failed",
+            level="ERROR",
+            action="error",
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            error=build_log_error(e),
+        )
 
     return state
 
@@ -461,10 +614,10 @@ class PipelineManager:
     def __init__(
         self,
         tools: dict[str, Callable],
-        scorer: Any,         # ScoringAgent
-        reporter: Any,       # ReportAgent
-        knowledge: Any,      # KnowledgeLoader
-        db: Any = None,      # AsyncIOMotorDatabase
+        scorer: Any,  # ScoringAgent
+        reporter: Any,  # ReportAgent
+        knowledge: Any,  # KnowledgeLoader
+        db: Any = None,  # AsyncIOMotorDatabase
     ):
         self.tools = tools
         self.scorer = scorer
@@ -479,7 +632,13 @@ class PipelineManager:
 
     # ── 公开接口 ──────────────────────────────────────────────
 
-    async def run_full(self, crawl_days: int = 1, user_id: str = "") -> dict:
+    async def run_full(
+        self,
+        crawl_days: int = 1,
+        user_id: str = "",
+        trace_id: str = "",
+        username: str = "",
+    ) -> dict:
         """执行全流程流水线。
 
         Args:
@@ -489,13 +648,15 @@ class PipelineManager:
             {"pipeline_id": str, "status": str, "state": dict}
         """
         phases = [p.value for p in PipelinePhase]
-        return await self._run(crawl_days, phases, user_id)
+        return await self._run(crawl_days, phases, user_id, trace_id, username)
 
     async def run_phase(
         self,
         phase: str,
         crawl_days: int = 1,
         user_id: str = "",
+        trace_id: str = "",
+        username: str = "",
     ) -> dict:
         """执行单个阶段（及其前置依赖）。
 
@@ -512,7 +673,7 @@ class PipelineManager:
 
         idx = phase_order.index(phase)
         phases = phase_order[: idx + 1]  # 包含该阶段及之前所有阶段
-        return await self._run(crawl_days, phases, user_id)
+        return await self._run(crawl_days, phases, user_id, trace_id, username)
 
     def get_status(self) -> dict:
         """获取流水线当前状态。
@@ -585,6 +746,8 @@ class PipelineManager:
         crawl_days: int,
         phases: list[str],
         user_id: str,
+        trace_id: str,
+        username: str,
     ) -> dict:
         """内部执行逻辑"""
         import uuid
@@ -599,7 +762,13 @@ class PipelineManager:
                 "error": "Pipeline is already running",
             }
 
-        self._state = create_state(crawl_days=crawl_days, phases=phases, user_id=user_id)
+        self._state = create_state(
+            crawl_days=crawl_days,
+            phases=phases,
+            user_id=user_id,
+            trace_id=trace_id,
+            username=username,
+        )
         self._state["status"] = PipelineStatus.RUNNING.value
         self._state["started_at"] = _now_iso()
 
