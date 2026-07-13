@@ -23,6 +23,7 @@ export interface User {
   username: string;
   display_name: string;
   email?: string | null;
+  is_developer: boolean;
   created_at: string;
 }
 
@@ -247,6 +248,77 @@ export interface PipelineLogEntry {
 export interface PipelineLogsResponse {
   logs: PipelineLogEntry[];
   phases: string[];
+}
+
+export interface DevLogError {
+  type?: string;
+  message?: string;
+  stack_trace?: string;
+  [key: string]: unknown;
+}
+
+export interface DevLogEntry {
+  _id?: string;
+  log_id: string;
+  trace_id?: string | null;
+  user_id: string;
+  username?: string | null;
+  level: string;
+  phase: string;
+  action: string;
+  message: string;
+  detail: Record<string, unknown>;
+  duration_ms?: number | null;
+  error?: DevLogError | null;
+  created_at: string;
+  date: string;
+}
+
+export interface TraceEvent extends DevLogEntry {}
+
+export interface DevLogUserOption {
+  user_id: string;
+  username: string;
+}
+
+export interface DevLogQuery {
+  date?: string;
+  user_id?: string;
+  phase?: string[];
+  level?: string[];
+  trace_id?: string;
+  keyword?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export interface DevLogQueryResult {
+  logs: DevLogEntry[];
+  phases: string[];
+  levels: string[];
+  users: DevLogUserOption[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface DevLogTrace {
+  trace_id: string;
+  user_id: string;
+  username: string;
+  events: TraceEvent[];
+  total_duration_ms: number;
+  phase_count: number;
+  has_error: boolean;
+}
+
+export interface DevLogStats {
+  total: number;
+  by_level: Record<string, number>;
+  by_phase: Record<string, number>;
+  by_user: Array<DevLogUserOption & { count: number }>;
+  error_count: number;
+  avg_duration_ms: Record<string, number>;
 }
 
 // ═══════════════════════════════════════════════════════════

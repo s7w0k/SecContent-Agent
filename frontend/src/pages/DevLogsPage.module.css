@@ -1,0 +1,14 @@
+.errorRow > td {
+  background: #fff1f0 !important;
+}
+
+.detail {
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  color: #d4d4d4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #1f1f1f;
+  border-radius: 6px;
+}

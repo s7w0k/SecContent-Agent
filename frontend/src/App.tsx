@@ -1,5 +1,6 @@
 import {
   DashboardOutlined,
+  DatabaseOutlined,
   EditOutlined,
   FileTextOutlined,
   InfoCircleOutlined,
@@ -11,10 +12,12 @@ import { Layout, Menu, Typography } from 'antd';
 import { useState } from 'react';
 import { AuthProvider } from './auth/AuthContext';
 import ProtectedRoute from './auth/ProtectedRoute';
+import { useAuth } from './auth/useAuth';
 import UserMenu from './components/UserMenu';
 import AccountPage from './pages/AccountPage';
 import ChatPage from './pages/ChatPage';
 import Dashboard from './pages/Dashboard';
+import DevLogsPage from './pages/DevLogsPage';
 import LoginPage from './pages/LoginPage';
 import LogsPage from './pages/LogsPage';
 import ProfilePage from './pages/ProfilePage';
@@ -23,7 +26,7 @@ import SearchPage from './pages/SearchPage';
 const { Header, Content } = Layout;
 const { Text } = Typography;
 
-const menuItems = [
+const baseMenuItems = [
   { key: 'dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
   { key: 'chat', icon: <EditOutlined />, label: '对话改稿' },
   { key: 'accounts', icon: <WechatOutlined />, label: '公众号账号' },
@@ -35,6 +38,14 @@ const menuItems = [
 
 export function MainLayout() {
   const [tab, setTab] = useState('dashboard');
+  const { user } = useAuth();
+  const menuItems = user?.is_developer
+    ? [
+        ...baseMenuItems.slice(0, -1),
+        { key: 'dev-logs', icon: <DatabaseOutlined />, label: '开发者日志' },
+        baseMenuItems[baseMenuItems.length - 1],
+      ]
+    : baseMenuItems;
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -66,6 +77,7 @@ export function MainLayout() {
         {tab === 'logs' && <LogsPage />}
         {tab === 'search' && <SearchPage />}
         {tab === 'profile' && <ProfilePage />}
+        {tab === 'dev-logs' && user?.is_developer && <DevLogsPage />}
         {tab === 'about' && (
           <div style={{ padding: 48, maxWidth: 800, margin: '0 auto' }}>
             <h2>🚀 PR Agent Dashboard</h2>

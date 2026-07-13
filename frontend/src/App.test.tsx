@@ -7,6 +7,9 @@ import { AuthContext, type AuthContextValue } from './auth/AuthContext';
 vi.mock('./pages/Dashboard', () => ({
   default: () => <div>Dashboard Page</div>,
 }));
+vi.mock('./pages/DevLogsPage', () => ({
+  default: () => <div>Developer Logs Page</div>,
+}));
 
 describe('App', () => {
   const authValue: AuthContextValue = {
@@ -14,6 +17,7 @@ describe('App', () => {
       user_id: 'user-a',
       username: 'alice',
       display_name: 'Alice',
+      is_developer: false,
       created_at: '2026-07-11T00:00:00Z',
     },
     token: 'token',
@@ -46,5 +50,21 @@ describe('App', () => {
   it('shows dashboard content by default', () => {
     renderApp();
     expect(screen.getByText('Dashboard Page')).toBeDefined();
+  });
+
+  it('hides developer logs from normal users', () => {
+    renderApp();
+    expect(screen.queryByText('开发者日志')).not.toBeInTheDocument();
+  });
+
+  it('shows developer logs to developer users', () => {
+    render(
+      <AuthContext.Provider
+        value={{ ...authValue, user: authValue.user && { ...authValue.user, is_developer: true } }}
+      >
+        <MainLayout />
+      </AuthContext.Provider>,
+    );
+    expect(screen.getByText('开发者日志')).toBeInTheDocument();
   });
 });

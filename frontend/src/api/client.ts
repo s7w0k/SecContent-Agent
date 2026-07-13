@@ -24,6 +24,10 @@ import type {
   ChatAskRequest,
   ChatAskResponse,
   ChatMessage,
+  DevLogQuery,
+  DevLogQueryResult,
+  DevLogStats,
+  DevLogTrace,
   DraftReviseRequest,
   DraftReviseResponse,
   FeedbackCreate,
@@ -334,6 +338,33 @@ export const logsApi = {
   async getByDate(date: string): Promise<PipelineLogsResponse> {
     const { data } = await client.get(`/logs/${date}`);
     return { logs: data.logs || [], phases: data.phases || [] };
+  },
+};
+
+export const devLogsApi = {
+  async query(query: DevLogQuery = {}): Promise<DevLogQueryResult> {
+    const params = {
+      ...query,
+      phase: query.phase?.join(','),
+      level: query.level?.join(','),
+    };
+    const { data } = await client.get('/dev/logs', { params });
+    return data.data;
+  },
+
+  async dates(): Promise<string[]> {
+    const { data } = await client.get('/dev/logs/dates');
+    return data.data.dates || [];
+  },
+
+  async trace(traceId: string): Promise<DevLogTrace> {
+    const { data } = await client.get(`/dev/logs/trace/${encodeURIComponent(traceId)}`);
+    return data.data;
+  },
+
+  async stats(date?: string): Promise<DevLogStats> {
+    const { data } = await client.get('/dev/logs/stats', { params: { date } });
+    return data.data;
   },
 };
 
@@ -721,6 +752,7 @@ const api = {
   ...activityApi,
   ...profileApi,
   ...logsApi,
+  devLogs: devLogsApi,
 };
 
 export default api;
