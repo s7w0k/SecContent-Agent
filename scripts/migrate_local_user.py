@@ -14,7 +14,19 @@ import sys
 from datetime import UTC, datetime
 from typing import Any
 
-BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "services", "backend"))
+
+def _resolve_backend_dir(script_file: str = __file__) -> str:
+    """兼容源码仓库（services/backend）与容器（/app）目录结构。"""
+
+    project_dir = os.path.abspath(os.path.join(os.path.dirname(script_file), ".."))
+    candidates = (project_dir, os.path.join(project_dir, "services", "backend"))
+    for candidate in candidates:
+        if os.path.isfile(os.path.join(candidate, "config.py")):
+            return candidate
+    raise RuntimeError("Backend config.py was not found")
+
+
+BACKEND_DIR = _resolve_backend_dir()
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 

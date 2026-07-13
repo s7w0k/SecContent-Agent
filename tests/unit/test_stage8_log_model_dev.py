@@ -1,5 +1,6 @@
 """阶段八任务 8.1：日志模型与开发者权限测试。"""
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -10,7 +11,7 @@ from db.mongo import MongoDB
 from models.feedback import PipelineLog
 from models.user import UserInDB, UserPublic
 
-from scripts.set_developer import set_developer
+from scripts.set_developer import _resolve_backend_dir, set_developer
 
 
 def _request(user_id: str | None, db) -> SimpleNamespace:
@@ -132,6 +133,20 @@ async def test_set_developer_updates_only_existing_user() -> None:
     users.update_one.assert_awaited_once_with(
         {"user_id": "user-a"}, {"$set": {"is_developer": True}}
     )
+
+
+def test_set_developer_resolves_source_and_container_layouts(tmp_path: Path) -> None:
+    source_script = tmp_path / "source" / "scripts" / "set_developer.py"
+    source_backend = tmp_path / "source" / "services" / "backend"
+    source_backend.mkdir(parents=True)
+    source_script.parent.mkdir(parents=True)
+    (source_backend / "config.py").touch()
+    assert _resolve_backend_dir(str(source_script)) == str(source_backend)
+
+    container_script = tmp_path / "container" / "scripts" / "set_developer.py"
+    container_script.parent.mkdir(parents=True)
+    (tmp_path / "container" / "config.py").touch()
+    assert _resolve_backend_dir(str(container_script)) == str(tmp_path / "container")
 
 
 @pytest.mark.asyncio
