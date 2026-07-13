@@ -9,6 +9,7 @@ from api.activity import log_activity
 from api.logs import generate_trace_id, log_pipeline
 from auth.deps import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from logging_config import get_audit_logger
 from models.feedback import (
     Feedback,
     FeedbackCreate,
@@ -192,6 +193,11 @@ async def create_feedback(
             "rating": feedback.rating,
             "tags": feedback.tags,
         },
+    )
+    get_audit_logger().log(
+        user_id=user_id,
+        action="feedback_submit",
+        detail={"rating": feedback.rating, "tags": feedback.tags},
     )
 
     return {

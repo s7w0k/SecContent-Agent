@@ -61,10 +61,11 @@ services:
     container_name: pr-agent-wewe
     restart: unless-stopped
     <<: *common-security
+    env_file:
+      - .env
     environment:
       WEWE_RSS_URL: ${WEWE_RSS_URL:-}
       WEWE_AUTH_CODE: ${WEWE_AUTH_CODE:-}
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
     networks:
       - agent-net
     # 不暴露端口到宿主机（仅内部网络可达）
@@ -94,9 +95,10 @@ services:
     dns:
       - 8.8.8.8
       - 8.8.4.4
+    env_file:
+      - .env
     environment:
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
       RSSHUB_URL: http://rsshub:1200
@@ -128,14 +130,13 @@ services:
     <<: *common-security
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+    env_file:
+      - .env
     environment:
       MONGODB_URI: mongodb://admin:${MONGO_ROOT_PASSWORD:-pr_agent_2024}@mongodb:27017
       MONGODB_DB: pr_agent
       MCP_WEWE_URL: http://mcp-wewe:8100
       MCP_CRAWL_URL: http://mcp-crawl:8101
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
-      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-24}

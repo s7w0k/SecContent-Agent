@@ -9,6 +9,7 @@ from agent.style_profiler import StyleProfiler
 from api.logs import build_log_error, generate_trace_id, log_pipeline
 from auth.deps import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Request
+from logging_config import get_audit_logger
 
 router = APIRouter(prefix="/api/profile", tags=["Profile"])
 
@@ -97,6 +98,10 @@ async def rebuild_style_profile(
             "activity_count": activity_count,
             "version": profile["version"],
         },
+    )
+    get_audit_logger().log(
+        user_id=user_id,
+        action="profile_rebuild",
     )
     return {
         "ok": True,

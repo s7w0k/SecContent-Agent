@@ -7,6 +7,7 @@ from auth.deps import AuthError, get_current_user
 from auth.jwt import create_access_token
 from config import get_settings
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from logging_config import get_audit_logger
 from models.user import (
     AccountDelete,
     TokenResponse,
@@ -99,6 +100,10 @@ async def register_user(body: UserCreate, request: Request):
         action="register",
         detail={"has_email": bool(user.email)},
     )
+    get_audit_logger().log(
+        user_id=user.user_id,
+        action="register",
+    )
     return {"ok": True, "data": _public_payload(user), "trace_id": trace_id}
 
 
@@ -126,6 +131,10 @@ async def login_user(body: UserLogin, request: Request):
         user_id=document["user_id"],
         username=document["username"],
         trace_id=trace_id,
+        action="login",
+    )
+    get_audit_logger().log(
+        user_id=document["user_id"],
         action="login",
     )
     return {"ok": True, "data": data.model_dump(mode="json"), "trace_id": trace_id}
@@ -182,6 +191,10 @@ async def delete_account(
         detail={"account_deleted": True},
     )
     await users.delete_one({"user_id": user_id})
+    get_audit_logger().log(
+        user_id=user_id,
+        action="account_delete",
+    )
     return {
         "ok": True,
         "data": {"message": "账号已注销，所有数据已删除", "trace_id": trace_id},

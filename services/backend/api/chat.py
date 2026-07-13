@@ -23,6 +23,7 @@ from api.logs import build_log_error, generate_trace_id, log_pipeline
 from auth.deps import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from logging_config import get_audit_logger
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api", tags=["Chat"])
@@ -316,6 +317,11 @@ async def chat_ask(
             "stream": False,
         },
     )
+    get_audit_logger().log(
+        user_id=user_id,
+        action="chat_ask",
+        resource=body.article_url_hash or "",
+    )
     return {"ok": True, "data": result, "trace_id": trace_id}
 
 
@@ -596,6 +602,12 @@ async def revise_draft(
         },
     )
 
+    get_audit_logger().log(
+        user_id=user_id,
+        action="chat_revise",
+        resource=url_hash,
+    )
+
     return {
         "ok": True,
         "data": {
@@ -848,6 +860,12 @@ async def apply_revision(
             "draft_index": draft_index,
             "revision_id": revision_id,
         },
+    )
+
+    get_audit_logger().log(
+        user_id=user_id,
+        action="chat_apply",
+        resource=url_hash,
     )
 
     return {

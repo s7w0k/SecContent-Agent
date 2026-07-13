@@ -24,6 +24,7 @@ from api.activity import log_activity
 from api.logs import build_log_error, generate_trace_id, log_pipeline
 from auth.deps import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from logging_config import get_audit_logger
 from models.feedback import PipelineTask
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
@@ -521,6 +522,11 @@ async def pipeline_run_v2(
             username=username,
         ),
     )
+    get_audit_logger().log(
+        user_id=user_id,
+        action="pipeline_trigger",
+        detail={"task_type": "run-v2"},
+    )
     return {
         "ok": True,
         "data": {
@@ -620,6 +626,10 @@ async def pipeline_crawl(
             trace_id=trace_id,
             username=username,
         ),
+    )
+    get_audit_logger().log(
+        user_id=user_id,
+        action="crawl_trigger",
     )
     return {
         "ok": True,
@@ -1187,6 +1197,10 @@ async def classify_v2(
             f"[classify-v2] Done: {updated}/{len(articles)} updated, "
             f"{sum(1 for r in results if r.is_pr_eligible)} PR-eligible"
         )
+        get_audit_logger().log(
+            user_id=_user_id,
+            action="classify_v2",
+        )
         return {
             "ok": True,
             "total": len(articles),
@@ -1232,6 +1246,11 @@ async def run_v2_single(url_hash: str, request: Request, user_id: str = Depends(
             trace_id=trace_id,
             username=username,
         ),
+    )
+    get_audit_logger().log(
+        user_id=user_id,
+        action="pipeline_trigger_single",
+        resource=url_hash,
     )
     return {
         "ok": True,
