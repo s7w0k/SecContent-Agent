@@ -1,5 +1,15 @@
 """MongoDB 数据模型。"""
 
+from .execution_log import (
+    EventLevel,
+    EventType,
+    ExecutionEvent,
+    ExecutionLink,
+    ExecutionRun,
+    LogService,
+    RunStatus,
+    validate_run_status_transition,
+)
 from .feedback import (
     ActionType,
     Feedback,
@@ -14,12 +24,20 @@ from .feedback import (
 
 __all__ = [
     "ActionType",
+    "EventLevel",
+    "EventType",
+    "ExecutionEvent",
+    "ExecutionLink",
+    "ExecutionRun",
     "Feedback",
     "FeedbackCreate",
     "FeedbackTargetRef",
     "FeedbackUpdate",
+    "LogService",
+    "RunStatus",
     "StyleProfile",
     "TargetType",
     "UserActivity",
     "UserActivityCreate",
+    "validate_run_status_transition",
 ]

@@ -18,7 +18,7 @@ from motor.motor_asyncio import (
     AsyncIOMotorCollection,
     AsyncIOMotorDatabase,
 )
-from pymongo import ASCENDING, DESCENDING, IndexModel
+from pymongo import ASCENDING, DESCENDING, IndexModel, ReturnDocument
 from pymongo.errors import ConnectionFailure, OperationFailure, ServerSelectionTimeoutError
 
 logger = logging.getLogger("backend.db.mongo")
@@ -256,6 +256,82 @@ class MongoDB:
                     name="idx_pipeline_log_user_date",
                 ),
             ],
+            "execution_runs": [
+                IndexModel([("execution_id", ASCENDING)], unique=True, name="idx_run_execution_id"),
+                IndexModel(
+                    [("owner_user_id", ASCENDING), ("started_at", DESCENDING)],
+                    name="idx_run_owner_started",
+                ),
+                IndexModel(
+                    [("initiator_user_id", ASCENDING), ("started_at", DESCENDING)],
+                    name="idx_run_initiator_started",
+                ),
+                IndexModel([("task_id", ASCENDING)], name="idx_run_task_id"),
+                IndexModel(
+                    [
+                        ("scope", ASCENDING),
+                        ("execution_type", ASCENDING),
+                        ("status", ASCENDING),
+                        ("started_at", DESCENDING),
+                    ],
+                    name="idx_run_scope_type_status_started",
+                ),
+                IndexModel(
+                    [("expires_at", ASCENDING)],
+                    expireAfterSeconds=0,
+                    name="idx_run_expires",
+                ),
+            ],
+            "execution_events": [
+                IndexModel([("event_id", ASCENDING)], unique=True, name="idx_event_event_id"),
+                IndexModel(
+                    [("execution_id", ASCENDING), ("sequence", ASCENDING)],
+                    unique=True,
+                    name="idx_event_execution_sequence",
+                ),
+                IndexModel(
+                    [("execution_id", ASCENDING), ("created_at", ASCENDING)],
+                    name="idx_event_execution_created",
+                ),
+                IndexModel(
+                    [("task_id", ASCENDING), ("created_at", ASCENDING)],
+                    name="idx_event_task_created",
+                ),
+                IndexModel(
+                    [("owner_user_id", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_event_owner_created",
+                ),
+                IndexModel(
+                    [("level", ASCENDING), ("phase", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_event_level_phase_created",
+                ),
+                IndexModel(
+                    [("expires_at", ASCENDING)],
+                    expireAfterSeconds=0,
+                    name="idx_event_expires",
+                ),
+            ],
+            "execution_links": [
+                IndexModel(
+                    [
+                        ("user_id", ASCENDING),
+                        ("shared_execution_id", ASCENDING),
+                        ("task_id", ASCENDING),
+                    ],
+                    unique=True,
+                    name="idx_link_user_shared_task",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("joined_at", DESCENDING)],
+                    name="idx_link_user_joined",
+                ),
+                IndexModel([("shared_execution_id", ASCENDING)], name="idx_link_shared_execution"),
+                IndexModel(
+                    [("expires_at", ASCENDING)],
+                    expireAfterSeconds=0,
+                    name="idx_link_expires",
+                ),
+            ],
         }
 
         try:
@@ -275,6 +351,22 @@ class MongoDB:
                 ", ".join(index_names),
             )
         return created
+
+    @classmethod
+    async def allocate_execution_sequence(cls, execution_id: str) -> int:
+        """通过单文档原子自增为 execution event 分配稳定序号。"""
+
+        if not execution_id:
+            raise ValueError("execution_id must not be empty")
+        run = await cls.get_collection("execution_runs").find_one_and_update(
+            {"execution_id": execution_id},
+            {"$inc": {"next_sequence": 1}},
+            projection={"next_sequence": True, "_id": False},
+            return_document=ReturnDocument.AFTER,
+        )
+        if run is None:
+            raise LookupError(f"execution run not found: {execution_id}")
+        return int(run["next_sequence"])
 
     @classmethod
     def is_connected(cls) -> bool:

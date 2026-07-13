@@ -46,6 +46,20 @@ class Settings(BaseSettings):
         description="连接池最小连接数",
     )
 
+    # ── 全链路执行日志 ──────────────────────────────
+    EXECUTION_LOG_LEVEL: str = Field(
+        default="INFO",
+        pattern=r"^(DEBUG|INFO|WARNING|ERROR)$",
+        description="执行日志最低记录级别",
+    )
+    EXECUTION_LOG_RUN_RETENTION_DAYS: int = Field(default=90, ge=1, le=3650)
+    EXECUTION_LOG_EVENT_RETENTION_DAYS: int = Field(default=30, ge=1, le=3650)
+    EXECUTION_LOG_ERROR_RETENTION_DAYS: int = Field(default=90, ge=1, le=3650)
+    EXECUTION_LOG_DEBUG_RETENTION_DAYS: int = Field(default=7, ge=1, le=3650)
+    EXECUTION_LOG_QUEUE_SIZE: int = Field(default=10000, ge=100, le=1000000)
+    EXECUTION_LOG_BATCH_SIZE: int = Field(default=50, ge=1, le=1000)
+    EXECUTION_LOG_FLUSH_INTERVAL_MS: int = Field(default=500, ge=50, le=60000)
+
     # ── MCP 服务地址 ─────────────────────────────────
     MCP_WEWE_URL: str = Field(
         default="http://mcp-wewe:8100",
