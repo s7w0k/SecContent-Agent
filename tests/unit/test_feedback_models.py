@@ -320,6 +320,9 @@ class TestMongoDBIndexes:
             "pipeline_locks",
             "pipeline_tasks",
             "pipeline_logs",
+            "execution_runs",
+            "execution_events",
+            "execution_links",
         }
         assert len(result["users"]) == 3
         assert len(result["feedbacks"]) == 4
@@ -329,7 +332,10 @@ class TestMongoDBIndexes:
         assert len(result["user_drafts"]) == 2
         assert len(result["pipeline_locks"]) == 2
         assert len(result["pipeline_tasks"]) == 3
-        assert len(result["pipeline_logs"]) == 1
+        assert len(result["pipeline_logs"]) == 5
+        assert len(result["execution_runs"]) == 6
+        assert len(result["execution_events"]) == 7
+        assert len(result["execution_links"]) == 4
 
         feedback_indexes = {
             index.document["name"]: index.document
@@ -378,6 +384,15 @@ class TestMongoDBIndexes:
         assert task_indexes["idx_pipeline_task_id"]["unique"] is True
         assert task_indexes["idx_pipeline_task_expires"]["expireAfterSeconds"] == 0
 
+        pipeline_log_indexes = {
+            index.document["name"]: index.document
+            for index in collections["pipeline_logs"].received_indexes
+        }
+        assert pipeline_log_indexes["idx_pipeline_log_trace_created"]
+        assert pipeline_log_indexes["idx_pipeline_log_phase_date"]
+        assert pipeline_log_indexes["idx_pipeline_log_level_date"]
+        assert pipeline_log_indexes["idx_pipeline_log_date_created"]
+
     @pytest.mark.asyncio
     async def test_ensure_indexes_is_repeatable(self):
         from db.mongo import MongoDB
@@ -391,5 +406,5 @@ class TestMongoDBIndexes:
             second = await MongoDB.ensure_indexes()
 
         assert first == second
-        assert collection.create_indexes.await_count == 18
+        assert collection.create_indexes.await_count == 24
         assert collection.drop_index.await_count == 2

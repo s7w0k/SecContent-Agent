@@ -255,6 +255,22 @@ class MongoDB:
                     [("user_id", ASCENDING), ("date", DESCENDING)],
                     name="idx_pipeline_log_user_date",
                 ),
+                IndexModel(
+                    [("trace_id", ASCENDING), ("created_at", ASCENDING)],
+                    name="idx_pipeline_log_trace_created",
+                ),
+                IndexModel(
+                    [("phase", ASCENDING), ("date", DESCENDING)],
+                    name="idx_pipeline_log_phase_date",
+                ),
+                IndexModel(
+                    [("level", ASCENDING), ("date", DESCENDING)],
+                    name="idx_pipeline_log_level_date",
+                ),
+                IndexModel(
+                    [("date", DESCENDING), ("created_at", DESCENDING)],
+                    name="idx_pipeline_log_date_created",
+                ),
             ],
             "execution_runs": [
                 IndexModel([("execution_id", ASCENDING)], unique=True, name="idx_run_execution_id"),

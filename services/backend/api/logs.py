@@ -1,7 +1,10 @@
 """Operational logs API with date-based filtering."""
 
-import contextlib
+import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
+from typing import Any
+from uuid import uuid4
 
 from auth.deps import get_current_user
 from fastapi import APIRouter, Depends, Query, Request
@@ -10,55 +13,96 @@ from models.feedback import PipelineLog
 router = APIRouter(prefix="/api/logs", tags=["Logs"])
 
 LOG_COLLECTION = "pipeline_logs"
+logger = logging.getLogger("backend.api.logs")
 
 
-def _tz():
+def _tz() -> timezone:
     return timezone(timedelta(hours=8))
 
 
+def generate_trace_id() -> str:
+    """生成可读的链路 ID。"""
+
+    return f"trace-{datetime.now(_tz()).strftime('%Y%m%d')}-{uuid4().hex[:12]}"
+
+
 async def _log_to_db(
-    db,
+    db: Any,
     level: str,
     phase: str,
     message: str,
     user_id: str,
-    detail: dict | None = None,
-):
+    detail: dict[str, Any] | None = None,
+    *,
+    trace_id: str | None = None,
+    action: str = "complete",
+    duration_ms: int | None = None,
+    error: dict[str, Any] | None = None,
+    username: str | None = None,
+) -> None:
     """Write a log entry to MongoDB."""
     if db is None:
         return
-    with contextlib.suppress(Exception):
+    try:
         now = datetime.now(_tz())
         log = PipelineLog(
+            trace_id=trace_id or generate_trace_id(),
             user_id=user_id,
+            username=username or user_id,
             level=level,
             phase=phase,
+            action=action,
             message=message,
             detail=detail or {},
+            duration_ms=duration_ms,
+            error=error,
             created_at=now,
             date=now.strftime("%Y-%m-%d"),
         )
-        await db[LOG_COLLECTION].insert_one(log.model_dump(exclude={"id"}, mode="python"))
+        await db[LOG_COLLECTION].insert_one(
+            log.model_dump(exclude={"id"}, exclude_none=True, mode="python")
+        )
+    except Exception as exc:
+        logger.warning("log_pipeline 写入失败: phase=%s, error=%s", phase, exc)
 
 
 def log_pipeline(
-    db,
+    db: Any,
     level: str,
     phase: str,
     message: str,
     *,
     user_id: str,
-    **detail,
-):
+    trace_id: str | None = None,
+    action: str = "complete",
+    duration_ms: int | None = None,
+    error: dict[str, Any] | None = None,
+    username: str | None = None,
+    detail: dict[str, Any] | None = None,
+    **legacy_detail: Any,
+) -> asyncio.Task[None] | None:
     """Helper to log pipeline events (non-blocking)."""
-    import asyncio
-
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.create_task(_log_to_db(db, level, phase, message, user_id, detail))
-    except Exception:
-        pass
+        loop = asyncio.get_running_loop()
+        merged_detail = {**(detail or {}), **legacy_detail}
+        return loop.create_task(
+            _log_to_db(
+                db,
+                level,
+                phase,
+                message,
+                user_id,
+                merged_detail,
+                trace_id=trace_id,
+                action=action,
+                duration_ms=duration_ms,
+                error=error,
+                username=username,
+            )
+        )
+    except RuntimeError as exc:
+        logger.warning("log_pipeline 调度失败: phase=%s, error=%s", phase, exc)
+        return None
 
 
 # ---- API Endpoints ----

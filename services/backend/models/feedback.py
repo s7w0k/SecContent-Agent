@@ -333,11 +333,17 @@ class PipelineLog(BaseModel):
     """按用户隔离的流水线日志文档。"""
 
     id: str | None = Field(default=None, alias="_id")
+    log_id: str = Field(default_factory=lambda: f"log-{uuid4().hex[:12]}")
+    trace_id: str | None = Field(default=None, max_length=100)
     user_id: str = Field(..., min_length=1, max_length=100)
+    username: str | None = Field(default=None, max_length=100)
     level: str = Field(..., min_length=1, max_length=20)
     phase: str = Field(..., min_length=1, max_length=100)
+    action: str = Field(default="complete", min_length=1, max_length=50)
     message: str = Field(..., min_length=1, max_length=5000)
     detail: dict[str, Any] = Field(default_factory=dict)
+    duration_ms: int | None = Field(default=None, ge=0)
+    error: dict[str, Any] | None = None
     created_at: datetime = Field(default_factory=_utc_now)
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
 

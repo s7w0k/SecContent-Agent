@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
@@ -31,3 +33,16 @@ async def get_current_user(request: Request) -> str:
     if not user_id:
         raise AuthError(401, "NOT_AUTHENTICATED", "请先登录")
     return user_id
+
+
+async def get_developer_user(request: Request) -> tuple[str, dict[str, Any]]:
+    """返回当前开发者及其用户文档，普通用户不得访问开发者接口。"""
+
+    user_id = await get_current_user(request)
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise AuthError(503, "DATABASE_UNAVAILABLE", "数据库暂不可用")
+    user_doc = await db["users"].find_one({"user_id": user_id})
+    if not user_doc or not user_doc.get("is_developer", False):
+        raise AuthError(403, "FORBIDDEN", "需要开发者权限")
+    return user_id, user_doc
