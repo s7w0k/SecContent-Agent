@@ -90,6 +90,32 @@ docker compose up -d
 5. **偏好注入** - 反馈累计 ≥ 5 条后自动生成画像，新生成的草稿会参考用户偏好
 6. **打分微调** - 对文章打分的反馈（偏高/偏低）会微调后续打分阈值（±10 分上限）
 
+### 开发者日志
+
+系统将流水线、对话改稿、反馈、画像和认证操作写入 MongoDB `pipeline_logs`，并通过同一 `trace_id` 关联一次调用的完整链路。普通用户只能查看自己的运行日志；开发者可以跨用户排查全链路问题。
+
+先注册开发者账号，再授予开发者权限：
+
+```bash
+# 参数支持 user_id 或 username
+docker compose exec backend python scripts/set_developer.py alice
+```
+
+刷新页面后，顶部菜单会显示“开发者日志”。页面支持：
+
+- 按日期、用户、阶段、级别、Trace ID 和消息关键词筛选。
+- 分页查看所有用户的日志，ERROR/CRITICAL 事件红色高亮。
+- 点击日志行展开 `detail` 和结构化错误信息。
+- 点击 Trace ID 查看按时间排序的完整链路、阶段数、总耗时和异常状态。
+
+如需撤销权限：
+
+```bash
+docker compose exec backend python scripts/set_developer.py alice --disable
+```
+
+> 开发者日志可能包含跨用户运行元数据，仅应向受信任的排障人员授权。权限变更后刷新页面或重新登录即可生效。
+
 ---
 
 ## 架构
@@ -188,6 +214,10 @@ make lint                             # 代码检查
 | `GET /api/activities/stats` | 操作统计（按类型/模板/日期分组） |
 | `GET /api/profile/style` | 获取用户风格画像 |
 | `POST /api/profile/rebuild` | 重建用户风格画像 |
+| `GET /api/dev/logs` | 开发者跨用户日志查询（筛选+分页） |
+| `GET /api/dev/logs/dates` | 开发者日志日期列表 |
+| `GET /api/dev/logs/trace/{trace_id}` | 开发者查看完整 Trace 链路 |
+| `GET /api/dev/logs/stats` | 开发者日志统计 |
 | `GET /api/health` | 健康检查 |
 
 ---
@@ -205,7 +235,7 @@ make lint                             # 代码检查
 | `user_activities` | 用户操作记录（下载/改稿/应用等） |
 | `user_profiles` | 用户风格画像（偏好模板/视角/语气等） |
 | `pipeline_tasks` | 异步流水线任务状态和结果 |
-| `pipeline_logs` | 按用户隔离的流水线日志 |
+| `pipeline_logs` | 含用户归属和 Trace ID 的全链路日志；普通用户隔离、开发者可跨用户查询 |
 
 ---
 

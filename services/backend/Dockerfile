@@ -16,6 +16,7 @@ RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple \
 
 COPY services/backend/ .
 COPY scripts/migrate_local_user.py ./scripts/migrate_local_user.py
+COPY scripts/set_developer.py ./scripts/set_developer.py
 COPY --from=frontend-builder /frontend/dist ./static
 
 RUN groupadd -r appuser && useradd -r -g appuser appuser \

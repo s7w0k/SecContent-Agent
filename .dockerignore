@@ -62,6 +62,7 @@ scripts/
 !scripts/
 scripts/*
 !scripts/migrate_local_user.py
+!scripts/set_developer.py
 *.sh
 !*.py
 
