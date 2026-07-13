@@ -165,14 +165,6 @@ class NewsCrawler:
             "feed": "https://www.freebuf.com/feed",
             "fallback": "https://rss.feedspot.com/folder/Lu7DjgV4nOQ=/",
         },
-        "安全客": {
-            "domain": "aqker.com",
-            "feed": "https://api.anquanke.com/data/v1/posts/rss",
-        },
-        "奇安信": {
-            "domain": "qianxin.com",
-            "feed": "https://ti.qianxin.com/rss",
-        },
     }
 
     def __init__(self, tavily_api_key: str = ""):

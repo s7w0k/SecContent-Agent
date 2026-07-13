@@ -219,18 +219,18 @@ class TestNewsCrawler:
     def test_sites_configuration(self):
         """站点配置包含 RSS 源（海外 + 国内）"""
         crawler = NewsCrawler()
-        # 5 个海外 + 3 个国内 = 8 个站点
-        assert len(crawler.SITES) == 8
+        # 5 个海外 + FreeBuf = 6 个有效站点
+        assert len(crawler.SITES) == 6
         assert "The Hacker News" in crawler.SITES
         assert "feed" in crawler.SITES["The Hacker News"]
         assert (
             crawler.SITES["The Hacker News"]["feed"]
             == "https://thehackernews.com/feeds/posts/default"
         )
-        # 国内安全新闻源
+        # 国内安全新闻源（移除已失效的安全客、奇安信 Feed）
         assert "FreeBuf" in crawler.SITES
-        assert "安全客" in crawler.SITES
-        assert "奇安信" in crawler.SITES
+        assert "安全客" not in crawler.SITES
+        assert "奇安信" not in crawler.SITES
 
     def test_parse_date_iso(self):
         result = NewsCrawler._parse_date("2026-06-29T12:00:00")
