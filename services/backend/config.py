@@ -128,6 +128,40 @@ class Settings(BaseSettings):
         description="允许的跨域来源",
     )
 
+    # ── 日志文件 ───────────────────────────────────────
+    LOG_DIR: str = Field(
+        default="/app/logs",
+        description="日志文件根目录（为空则不写文件，仅输出到控制台）",
+    )
+    LOG_LEVEL: str = Field(
+        default="INFO",
+        description="全局日志级别：DEBUG/INFO/WARNING/ERROR/CRITICAL",
+    )
+    LOG_APP_RETENTION_DAYS: int = Field(
+        default=30,
+        ge=1,
+        le=365,
+        description="应用日志保留天数",
+    )
+    LOG_ERROR_RETENTION_DAYS: int = Field(
+        default=90,
+        ge=1,
+        le=730,
+        description="错误日志保留天数",
+    )
+    LOG_ACCESS_RETENTION_DAYS: int = Field(
+        default=7,
+        ge=1,
+        le=90,
+        description="访问日志保留天数",
+    )
+    LOG_AUDIT_RETENTION_DAYS: int = Field(
+        default=365,
+        ge=1,
+        le=2555,
+        description="审计日志保留天数",
+    )
+
     # ── JWT 认证 ─────────────────────────────────────
     JWT_SECRET: str = Field(
         default="",

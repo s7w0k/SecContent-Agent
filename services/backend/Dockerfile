@@ -20,6 +20,7 @@ COPY scripts/set_developer.py ./scripts/set_developer.py
 COPY --from=frontend-builder /frontend/dist ./static
 
 RUN groupadd -r appuser && useradd -r -g appuser appuser \
+    && mkdir -p /app/logs \
     && chown -R appuser:appuser /app
 USER appuser
 

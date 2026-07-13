@@ -15,6 +15,7 @@ import asyncio
 import logging
 import sys
 import time
+import uuid
 from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -25,11 +26,17 @@ from config import get_settings
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from logging_config import setup_logging, log_request, set_trace_id, set_user_id, set_request_id, get_audit_logger
 
-# ── Logging ─────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+# ── Logging（企业级：JSON 结构化 + 按日期轮转 + 分级文件）────
+_settings = get_settings()
+setup_logging(
+    log_dir=_settings.LOG_DIR,
+    log_level=_settings.LOG_LEVEL,
+    app_retention_days=_settings.LOG_APP_RETENTION_DAYS,
+    error_retention_days=_settings.LOG_ERROR_RETENTION_DAYS,
+    access_retention_days=_settings.LOG_ACCESS_RETENTION_DAYS,
+    audit_retention_days=_settings.LOG_AUDIT_RETENTION_DAYS,
 )
 logger = logging.getLogger("backend")
 
@@ -216,10 +223,16 @@ app.add_middleware(
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    """解析 JWT，并将用户 ID 写入 request.state。"""
+    """解析 JWT，并将用户 ID 写入 request.state 和日志上下文。"""
     whitelist = {"/api/health", "/api/auth/register", "/api/auth/login"}
     request.state.user_id = None
     request.state.username = None
+
+    # 生成 request_id 并设置到上下文
+    request_id = request.headers.get("X-Request-ID") or f"req-{uuid.uuid4().hex[:12]}"
+    request.state.request_id = request_id
+    set_request_id(request_id)
+
     if request.url.path not in whitelist:
         auth_header = request.headers.get("Authorization", "")
         token = None
@@ -233,20 +246,53 @@ async def auth_middleware(request: Request, call_next):
             if payload:
                 request.state.user_id = payload.get("sub")
                 request.state.username = payload.get("username")
+                set_user_id(payload.get("sub"))
 
-    return await call_next(request)
+    response = await call_next(request)
+
+    # 清理上下文
+    set_request_id(None)
+    set_user_id(None)
+
+    # 透传 request_id 到响应头
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Log every HTTP request with method, path, status, and duration."""
+    """记录 HTTP 请求日志：method/path/status/duration/client_ip/user_id -> access.log"""
+    # 健康检查不打访问日志，避免刷屏
+    if request.url.path == "/api/health":
+        return await call_next(request)
+
     start = time.time()
     response = await call_next(request)
-    duration_ms = (time.time() - start) * 1000
-    _log(
-        "WARNING" if response.status_code >= 400 else "INFO",
-        f"{request.method} {request.url.path} -> {response.status_code} ({duration_ms:.0f}ms)",
+    duration_ms = int((time.time() - start) * 1000)
+
+    # 获取客户端 IP
+    client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    if not client_ip:
+        client_ip = request.client.host if request.client else "unknown"
+
+    # 记录到 access.log（JSON 结构化）
+    log_request(
+        method=request.method,
+        path=request.url.path,
+        status=response.status_code,
+        duration_ms=duration_ms,
+        client_ip=client_ip,
+        user_id=getattr(request.state, "user_id", None),
+        request_id=getattr(request.state, "request_id", None),
     )
+
+    # 同时写入内存缓冲区（供 /api/logs 接口）
+    level = "WARNING" if response.status_code >= 400 else "INFO"
+    _log(
+        level,
+        f"{request.method} {request.url.path} -> {response.status_code} ({duration_ms}ms)",
+    )
+
     return response
 
 

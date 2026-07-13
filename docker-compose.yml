@@ -148,9 +148,16 @@ services:
       EXECUTION_LOG_BATCH_SIZE: ${EXECUTION_LOG_BATCH_SIZE:-50}
       EXECUTION_LOG_FLUSH_INTERVAL_MS: ${EXECUTION_LOG_FLUSH_INTERVAL_MS:-500}
       KNOWLEDGE_BASE_DIR: /app/documents
+      LOG_DIR: /app/logs
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_APP_RETENTION_DAYS: ${LOG_APP_RETENTION_DAYS:-30}
+      LOG_ERROR_RETENTION_DAYS: ${LOG_ERROR_RETENTION_DAYS:-90}
+      LOG_ACCESS_RETENTION_DAYS: ${LOG_ACCESS_RETENTION_DAYS:-7}
+      LOG_AUDIT_RETENTION_DAYS: ${LOG_AUDIT_RETENTION_DAYS:-365}
     volumes:
       - ./agent-security-briefs:/app/documents:ro
       - ./docs:/app/docs:ro
+      - ./logs:/app/logs
     networks:
       - agent-net
     depends_on:
