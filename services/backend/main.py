@@ -258,6 +258,7 @@ from api.auth import router as auth_router
 from api.chat import router as chat_router
 from api.crawl_config import router as crawl_config_router
 from api.dashboard import router as dashboard_router
+from api.dev_logs import router as dev_logs_router
 from api.feedback import router as feedback_router
 from api.logs import router as logs_router
 from api.overseas_crawl import router as overseas_router
@@ -275,6 +276,7 @@ app.include_router(profile_router)
 app.include_router(auth_router)
 app.include_router(accounts_router)
 app.include_router(logs_router)
+app.include_router(dev_logs_router)
 app.include_router(crawl_config_router)
 app.include_router(overseas_router)
 
