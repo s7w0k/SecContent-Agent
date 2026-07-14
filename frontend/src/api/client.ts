@@ -174,6 +174,12 @@ export const dashboardApi = {
     return data;
   },
 
+  /** 批量补抓原文 */
+  async batchFetchContent(): Promise<{ ok: boolean; data: { total: number; updated: number; message?: string } }> {
+    const { data } = await client.post('/articles/batch-fetch-content');
+    return data;
+  },
+
   /** 生成摘要 */
   async summarizeArticle(hash: string): Promise<{ ok: boolean; summary_cn: string }> {
     const { data } = await client.post(`/articles/${hash}/summarize`);

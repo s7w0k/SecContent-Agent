@@ -29,6 +29,7 @@ export default function Dashboard() {
   const [reportCount, setReportCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
+  const [batchFetching, setBatchFetching] = useState(false);
 
   // ── 筛选 & 分页 & 排序 ───────────────────────────────────
   const [filter, setFilter] = useState<FilterValues>({});
@@ -97,6 +98,17 @@ export default function Dashboard() {
   // ── 筛选 / 分页 / 排序变更时重新加载文章 ─────────────────
   useEffect(() => {
     loadArticles();
+  }, [loadArticles]);
+
+  // ── 自动刷新（15 秒轮询，后台全文抓取完成后 UI 自动更新）──
+  useEffect(() => {
+    const timer = setInterval(() => {
+      // 仅在页面可见时刷新
+      if (!document.hidden) {
+        loadArticles();
+      }
+    }, 15000);
+    return () => clearInterval(timer);
   }, [loadArticles]);
 
   // ── 流水线完成后刷新全部数据 ─────────────────────────────
@@ -216,6 +228,30 @@ export default function Dashboard() {
 
       {/* 流水线控制 */}
       <PipelineControl onComplete={handlePipelineComplete} onRefresh={loadArticles} />
+
+      {/* 批量补抓原文按钮 */}
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
+        <Button
+          loading={batchFetching}
+          onClick={async () => {
+            setBatchFetching(true);
+            try {
+              const res = await api.batchFetchContent();
+              if (res.data.updated > 0) {
+                message.success(`补抓完成：${res.data.updated}/${res.data.total} 篇文章已更新`);
+                loadArticles();
+              } else {
+                message.info('没有需要补抓的文章');
+              }
+            } catch {
+              message.error('批量补抓失败');
+            }
+            setBatchFetching(false);
+          }}
+        >
+          批量补抓原文
+        </Button>
+      </div>
 
       {draftTask && (
         <div style={{ marginBottom: 16 }}>

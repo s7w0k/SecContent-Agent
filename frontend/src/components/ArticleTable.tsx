@@ -253,7 +253,7 @@ export default function ArticleTable({
             >
               打分
             </Button>
-            {record.source_type === 'wechat_mp' && !hasContent && (
+            {record.source_type !== 'overseas_news' && !hasContent && (
               <Button
                 type="link"
                 size="small"
@@ -262,6 +262,17 @@ export default function ArticleTable({
                 onClick={() => handleFetch(record.url_hash)}
               >
                 原文
+              </Button>
+            )}
+            {record.source_type === 'overseas_news' && !hasContent && (
+              <Button
+                type="link"
+                size="small"
+                icon={<FileTextOutlined />}
+                loading={b}
+                onClick={() => handleFetch(record.url_hash)}
+              >
+                抓取原文
               </Button>
             )}
             {hasContent && !hasSummary && (

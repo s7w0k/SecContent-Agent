@@ -212,6 +212,86 @@ class NewsCrawler:
         logger.info("Total after dedup + date filter (%dd): %d", days, len(filtered))
         return filtered
 
+    async def fetch_fulltext_batch(
+        self,
+        articles: list[NewsArticle],
+        *,
+        max_concurrent: int = 5,
+        per_domain_concurrent: int = 2,
+        delay_range: tuple[float, float] = (1.0, 3.0),
+        max_retries: int = 3,
+    ) -> dict[str, str]:
+        """异步批量抓取文章全文（含反风控策略）
+
+        Args:
+            articles: 文章列表
+            max_concurrent: 全局最大并发数
+            per_domain_concurrent: 同域名最大并发数
+            delay_range: 请求前随机延迟范围（秒）
+            max_retries: 失败重试次数
+
+        Returns:
+            {url_hash: content_md} 成功抓取的全文映射
+        """
+        import asyncio
+        import random
+        from urllib.parse import urlparse
+
+        if not articles:
+            return {}
+
+        # 按域名分组
+        domain_groups: dict[str, list[NewsArticle]] = {}
+        for art in articles:
+            domain = urlparse(art.url).netloc
+            domain_groups.setdefault(domain, []).append(art)
+
+        global_sem = asyncio.Semaphore(max_concurrent)
+        domain_sems: dict[str, asyncio.Semaphore] = {
+            d: asyncio.Semaphore(per_domain_concurrent) for d in domain_groups
+        }
+
+        results: dict[str, str] = {}
+        success_count = 0
+        fail_count = 0
+
+        async def _fetch_one(art: NewsArticle):
+            nonlocal success_count, fail_count
+            domain = urlparse(art.url).netloc
+            # 随机延迟
+            await asyncio.sleep(random.uniform(*delay_range))
+
+            async with global_sem:
+                async with domain_sems[domain]:
+                    for attempt in range(max_retries + 1):
+                        try:
+                            content = await self.fetch_fulltext(art.url)
+                            if content and len(content) >= 100:
+                                results[art.url_hash] = content
+                                success_count += 1
+                                logger.info("[fulltext] OK: %s (%d chars)",
+                                            art.title[:40], len(content))
+                                return
+                        except Exception as e:
+                            logger.warning("[fulltext] attempt %d failed: %s - %s",
+                                           attempt + 1, art.url[:50], e)
+
+                        if attempt < max_retries:
+                            backoff = 2 ** attempt + random.uniform(0, 1)
+                            logger.info("[fulltext] retry in %.1fs: %s",
+                                        backoff, art.url[:50])
+                            await asyncio.sleep(backoff)
+
+                    fail_count += 1
+                    logger.warning("[fulltext] GIVE UP: %s", art.url[:60])
+
+        tasks = [_fetch_one(art) for art in articles]
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+        logger.info("[fulltext] Batch done: %d/%d success, %d failed",
+                    success_count, len(articles), fail_count)
+        return results
+
     async def fetch_fulltext(self, url: str) -> str:
         """抓取单篇文章全文并转为 Markdown。"""
         try:
@@ -221,7 +301,11 @@ class NewsCrawler:
             return ""
 
         try:
-            resp = requests.get(url, impersonate="chrome124", timeout=15)
+            # 用线程池执行同步 HTTP 请求，避免阻塞事件循环
+            import asyncio as _aio
+            resp = await _aio.to_thread(
+                requests.get, url, impersonate="chrome124", timeout=15
+            )
             if resp.status_code != 200:
                 return ""
         except Exception:
@@ -230,16 +314,27 @@ class NewsCrawler:
         soup = BeautifulSoup(resp.text, "html.parser")
 
         # 移除无用标签
-        for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside", "form", "noscript"]):
             tag.decompose()
 
-        # 定位正文容器
-        article = soup.select_one("article") or soup.select_one(
-            "div.article-content, div.post-content, div.entry-content, div.body-post"
-        )
-
+        # 定位正文容器：优先专用选择器，article 标签可能匹配到广告区域需过滤
+        _SELECTORS = [
+            "div.post-body", "div#articlebody", "div.article-body",
+            "div.article-content", "div.post-content", "div.entry-content",
+            "div.body-post", "div.story-body", "div.article-text",
+            "div.content-body", "main article",
+            "article",  # article 标签放最后，可能匹配到广告
+        ]
+        article = None
+        for sel in _SELECTORS:
+            for el in soup.select(sel):
+                text = el.get_text(strip=True)
+                if len(text) >= 500:  # 正文至少 500 字符，过滤广告/侧边栏
+                    article = el
+                    break
+            if article:
+                break
         if not article:
-            # 回退到 body
             article = soup.body or soup
 
         # 提取标题

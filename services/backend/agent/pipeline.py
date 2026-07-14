@@ -79,6 +79,61 @@ def create_state(
     }
 
 
+# 后台全文抓取任务引用集合（防止 asyncio.create_task 被 GC 回收）
+_fulltext_tasks: set = set()
+
+
+async def _fetch_fulltext_background(
+    db: Any, articles: list[dict], trace_id: str
+) -> None:
+    """后台异步抓取海外新闻全文（不阻塞流水线）
+
+    调用 mcp-crawl 的批量抓取端点，含反风控策略：
+    - 域名并发限制（每域名 2 并发）
+    - 随机延迟 1-3 秒
+    - 失败重试 3 次（指数退避）
+    """
+    import httpx
+
+    urls = [a["url"] for a in articles]
+    logger.info(
+        "[fulltext-bg] Start: %d articles, trace=%s", len(urls), trace_id
+    )
+    try:
+        async with httpx.AsyncClient(timeout=180) as client:
+            resp = await client.post(
+                "http://mcp-crawl:8101/fetch-fulltext-batch",
+                json=urls,
+            )
+        if resp.status_code != 200:
+            logger.warning(
+                "[fulltext-bg] mcp-crawl returned %s, trace=%s",
+                resp.status_code,
+                trace_id,
+            )
+            return
+
+        data = resp.json().get("data", {})
+        updated = 0
+        for art in articles:
+            content = data.get(art["url"], "")
+            if content:
+                await db["articles"].update_one(
+                    {"url_hash": art["url_hash"]},
+                    {"$set": {"content_md": content[:50000]}},
+                )
+                updated += 1
+
+        logger.info(
+            "[fulltext-bg] Done: %d/%d updated, trace=%s",
+            updated,
+            len(articles),
+            trace_id,
+        )
+    except Exception as e:
+        logger.warning("[fulltext-bg] failed: %s, trace=%s", e, trace_id)
+
+
 async def _log_stage(
     state: dict,
     db: Any,
@@ -261,6 +316,22 @@ async def crawl_node(state: dict, tools: dict, db: Any) -> dict:
                 skipped,
                 len(articles),
             )
+
+            # 收集新入库的海外文章 URL，异步抓取全文
+            overseas_urls: list[dict] = []
+            for art in articles:
+                if art.get("source_type", "overseas_news") == "overseas_news":
+                    url = art.get("url", "")
+                    url_hash = art.get("url_hash") or hashlib.md5(url.encode()).hexdigest()
+                    if url:
+                        overseas_urls.append({"url_hash": url_hash, "url": url})
+
+            if overseas_urls:
+                task = asyncio.create_task(
+                    _fetch_fulltext_background(db, overseas_urls, state.get("trace_id", ""))
+                )
+                _fulltext_tasks.add(task)
+                task.add_done_callback(_fulltext_tasks.discard)
         else:
             state["crawled_count"] = len(articles)
             logger.info("[crawl] %d articles crawled (no DB, not saved)", len(articles))

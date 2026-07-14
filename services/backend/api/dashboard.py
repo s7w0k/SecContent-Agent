@@ -163,13 +163,13 @@ async def delete_article(
     return {"ok": True, "deleted": result.deleted_count}
 
 
-@router.post("/articles/{url_hash}/fetch-content", summary="获取推文原文")
+@router.post("/articles/{url_hash}/fetch-content", summary="获取文章原文")
 async def fetch_article_content(
     url_hash: str,
     request: Request,
     _user_id: str = Depends(get_current_user),
 ):
-    """抓取公众号推文原文并保存。"""
+    """抓取文章原文并保存（支持公众号和海外新闻）。"""
     import httpx as _httpx
     db = _get_db(request)
     article = await db["articles"].find_one({"url_hash": url_hash})
@@ -179,34 +179,113 @@ async def fetch_article_content(
     if not url:
         raise HTTPException(status_code=400, detail="Article has no URL")
 
+    source_type = article.get("source_type", "")
+    content = ""
+
     try:
-        # 调用 mcp-wewe 抓取全文
-        async with _httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post("http://mcp-wewe:8100/fetch-article",
-                                     json={"link": url})
-            resp.raise_for_status()
-            data = resp.json()
-        content = ""
-        if isinstance(data, dict):
-            content = data.get("text", "") or data.get("content_md", "") or data.get("content", "") or data.get("fulltext", "")
-            if not content and "result" in data:
-                content = data["result"].get("content", "") if isinstance(data["result"], dict) else data["result"]
+        if source_type == "overseas_news":
+            # 海外新闻：用 httpx + BeautifulSoup 抓取
+            from api.overseas_crawl import _fetch_fulltext
+            content = await _fetch_fulltext(url)
+        else:
+            # 公众号：调用 mcp-wewe 抓取全文
+            async with _httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post("http://mcp-wewe:8100/fetch-article",
+                                         json={"link": url})
+                resp.raise_for_status()
+                data = resp.json()
+            if isinstance(data, dict):
+                content = data.get("text", "") or data.get("content_md", "") or data.get("content", "") or data.get("fulltext", "")
+                if not content and "result" in data:
+                    content = data["result"].get("content", "") if isinstance(data["result"], dict) else data["result"]
+            if not content:
+                # fallback: 直接 requests 抓取
+                import requests as _req
+                from bs4 import BeautifulSoup
+                r = _req.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+                soup = BeautifulSoup(r.text, "html.parser")
+                el = soup.select_one("#js_content") or soup.select_one(".rich_media_content")
+                content = el.get_text() if el else r.text[:5000]
+
         if not content:
-            # fallback: 直接 requests 抓取
-            import requests as _req
-            from bs4 import BeautifulSoup
-            r = _req.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
-            soup = BeautifulSoup(r.text, "html.parser")
-            el = soup.select_one("#js_content") or soup.select_one(".rich_media_content")
-            content = el.get_text() if el else r.text[:5000]
+            raise HTTPException(status_code=502, detail="抓取原文失败：内容为空")
+
         # 保存到 DB
         await db["articles"].update_one(
             {"url_hash": url_hash},
             {"$set": {"content_md": content[:50000]}},
         )
         return {"ok": True, "content": content[:5000]}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.post("/articles/batch-fetch-content", summary="批量补抓原文")
+async def batch_fetch_content(
+    request: Request,
+    _user_id: str = Depends(get_current_user),
+):
+    """批量抓取 content_md 为空的文章全文，支持海外新闻和公众号。"""
+    db = _get_db(request)
+    cursor = db["articles"].find(
+        {"$or": [{"content_md": ""}, {"content_md": {"$exists": False}}]},
+        {"url_hash": 1, "url": 1, "title": 1, "source": 1, "source_type": 1},
+    ).limit(50)
+    articles = await cursor.to_list(length=50)
+
+    if not articles:
+        return {"ok": True, "data": {"message": "没有需要补抓的文章", "updated": 0}}
+
+    # 按类型分组
+    overseas = [a for a in articles if a.get("source_type") == "overseas_news" and a.get("url")]
+    wechat = [a for a in articles if a.get("source_type") != "overseas_news" and a.get("url")]
+    updated = 0
+
+    # 海外新闻：调用 mcp-crawl 批量抓取
+    if overseas:
+        try:
+            import httpx as _httpx
+            urls = [a["url"] for a in overseas]
+            async with _httpx.AsyncClient(timeout=180) as client:
+                resp = await client.post("http://mcp-crawl:8101/fetch-fulltext-batch", json=urls)
+            if resp.status_code == 200:
+                data = resp.json().get("data", {})
+                for art in overseas:
+                    content = data.get(art["url"], "")
+                    if content:
+                        await db["articles"].update_one(
+                            {"url_hash": art["url_hash"]},
+                            {"$set": {"content_md": content[:50000]}},
+                        )
+                        updated += 1
+                        logger.info("Batch fetch: %s -> %d chars", art.get("title", "")[:40], len(content))
+        except Exception as e:
+            logger.warning("Overseas batch fetch failed: %s", e)
+
+    # 公众号：逐篇调用 mcp-wewe
+    for art in wechat:
+        url = art.get("url", "")
+        try:
+            import httpx as _httpx2
+            async with _httpx2.AsyncClient(timeout=30) as client:
+                resp = await client.post("http://mcp-wewe:8100/fetch-article", json={"link": url})
+                resp.raise_for_status()
+                data = resp.json()
+            content = ""
+            if isinstance(data, dict):
+                content = data.get("text", "") or data.get("content_md", "") or data.get("content", "")
+            if content:
+                await db["articles"].update_one(
+                    {"url_hash": art["url_hash"]},
+                    {"$set": {"content_md": content[:50000]}},
+                )
+                updated += 1
+        except Exception:
+            pass
+
+    return {"ok": True, "data": {"total": len(articles), "updated": updated}}
 
 
 @router.post("/articles/{url_hash}/summarize", summary="生成摘要")

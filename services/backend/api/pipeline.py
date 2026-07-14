@@ -666,6 +666,7 @@ async def crawl_overseas_only(
             articles = data.get("articles", []) if isinstance(data, dict) else data
 
         saved = 0
+        new_urls: list[dict] = []
         for art in articles:
             url = art.get("url", "")
             if not url:
@@ -688,7 +689,20 @@ async def crawl_overseas_only(
                     "pipeline_status": "crawled",
                 }
             )
+            new_urls.append({"url_hash": url_hash, "url": url})
             saved += 1
+
+        # 异步批量抓取全文（不阻塞响应）
+        if new_urls:
+            import asyncio as _aio
+            from agent.pipeline import _fetch_fulltext_background, _fulltext_tasks
+
+            _task = _aio.create_task(
+                _fetch_fulltext_background(db, new_urls, "")
+            )
+            _fulltext_tasks.add(_task)
+            _task.add_done_callback(_fulltext_tasks.discard)
+
         errors = data.get("errors", {}) if isinstance(data, dict) else {}
         per_site = data.get("per_site", {}) if isinstance(data, dict) else {}
         return {

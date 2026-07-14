@@ -182,6 +182,33 @@ async def crawl_news(days: int = Body(1, embed=True)):
     return json.loads(result)
 
 
+@app.post("/fetch-fulltext")
+async def fetch_fulltext(url: str = Body(..., embed=True)):
+    """抓取单篇文章全文（使用 curl_cffi 浏览器指纹模拟）"""
+    from crawler import NewsCrawler
+    crawler = NewsCrawler()
+    content = await crawler.fetch_fulltext(url)
+    if not content:
+        raise HTTPException(status_code=502, detail="抓取失败：内容为空")
+    return {"ok": True, "content_md": content, "length": len(content)}
+
+
+@app.post("/fetch-fulltext-batch")
+async def fetch_fulltext_batch(urls: list[str] = Body(...)):
+    """批量异步抓取文章全文（含反风控：域名并发限制+随机延迟+指数退避重试）"""
+    from crawler import NewsArticle, NewsCrawler
+    crawler = NewsCrawler()
+    articles = [NewsArticle(title="", url=u, source="") for u in urls if u]
+    results = await crawler.fetch_fulltext_batch(articles)
+
+    # 返回 {url: content_md}
+    url_map = {}
+    for art in articles:
+        if art.url_hash in results:
+            url_map[art.url] = results[art.url_hash]
+    return {"ok": True, "data": url_map, "success": len(url_map), "total": len(urls)}
+
+
 @app.post("/classify")
 async def classify(articles_json: str = Body(...), batch_size: int = Body(25, embed=True)):
     """AI 分类文章"""
