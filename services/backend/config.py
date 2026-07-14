@@ -46,6 +46,34 @@ class Settings(BaseSettings):
         description="连接池最小连接数",
     )
 
+    # ── Redis / ARQ ──────────────────────────────────
+    REDIS_HOST: str = Field(default="redis", min_length=1, description="Redis host")
+    REDIS_PORT: int = Field(default=6379, ge=1, le=65535, description="Redis port")
+    REDIS_DB: int = Field(default=1, ge=0, le=15, description="Redis database number")
+    REDIS_PASSWORD: str = Field(
+        default="",
+        description="Optional Redis password",
+        repr=False,
+    )
+    ARQ_MAX_JOBS: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="Maximum concurrent jobs per worker",
+    )
+    ARQ_JOB_TIMEOUT: int = Field(
+        default=600,
+        ge=60,
+        le=3600,
+        description="Job timeout in seconds",
+    )
+    ARQ_MAX_RETRIES: int = Field(
+        default=3,
+        ge=0,
+        le=10,
+        description="Maximum job retry count",
+    )
+
     # ── 全链路执行日志 ──────────────────────────────
     EXECUTION_LOG_LEVEL: str = Field(
         default="INFO",

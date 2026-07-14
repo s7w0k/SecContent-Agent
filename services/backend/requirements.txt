@@ -25,6 +25,10 @@ langchain>=0.3.0
 langchain-core>=0.3.0
 langchain-openai>=0.3.0
 langgraph>=0.2.0
+langgraph-checkpoint-mongodb>=0.4.0
+
+# Task queue (stage 9: durable pipeline execution)
+arq>=0.28.0
 
 # MCP Client
 mcp>=1.0.0

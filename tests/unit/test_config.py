@@ -38,6 +38,18 @@ class TestSettingsDefaults:
         assert s.MONGODB_MAX_POOL_SIZE == 20
         assert s.MONGODB_MIN_POOL_SIZE == 2
 
+    def test_default_redis_and_arq_config(self):
+        from config import Settings
+
+        s = Settings(DEEPSEEK_API_KEY="test", _env_file=None)
+        assert s.REDIS_HOST == "redis"
+        assert s.REDIS_PORT == 6379
+        assert s.REDIS_DB == 1
+        assert s.REDIS_PASSWORD == ""
+        assert s.ARQ_MAX_JOBS == 3
+        assert s.ARQ_JOB_TIMEOUT == 600
+        assert s.ARQ_MAX_RETRIES == 3
+
     def test_default_mcp_urls(self):
         from config import Settings
 
@@ -48,9 +60,8 @@ class TestSettingsDefaults:
     def test_default_llm_config(self):
         from config import Settings
 
-        s = Settings(DEEPSEEK_API_KEY="test")
-        # .env may override the code default — just verify it's a valid URL
-        assert s.DEEPSEEK_BASE_URL.startswith("https://")
+        s = Settings(DEEPSEEK_API_KEY="test", _env_file=None)
+        assert s.DEEPSEEK_BASE_URL == "https://api.deepseek.com"
         assert s.DEEPSEEK_MODEL == "deepseek-chat"
 
     def test_default_pipeline(self):
@@ -97,6 +108,27 @@ class TestSettingsCustomValues:
         )
         assert s.MONGODB_URI == "mongodb://custom:27017"
         assert s.MONGODB_DB == "custom_db"
+
+    def test_redis_and_arq_config_from_environment(self, monkeypatch):
+        from config import Settings
+
+        monkeypatch.setenv("REDIS_HOST", "redis.internal")
+        monkeypatch.setenv("REDIS_PORT", "6380")
+        monkeypatch.setenv("REDIS_DB", "4")
+        monkeypatch.setenv("REDIS_PASSWORD", "queue-secret")
+        monkeypatch.setenv("ARQ_MAX_JOBS", "8")
+        monkeypatch.setenv("ARQ_JOB_TIMEOUT", "1200")
+        monkeypatch.setenv("ARQ_MAX_RETRIES", "5")
+
+        s = Settings(DEEPSEEK_API_KEY="test", _env_file=None)
+
+        assert s.REDIS_HOST == "redis.internal"
+        assert s.REDIS_PORT == 6380
+        assert s.REDIS_DB == 4
+        assert s.REDIS_PASSWORD == "queue-secret"
+        assert s.ARQ_MAX_JOBS == 8
+        assert s.ARQ_JOB_TIMEOUT == 1200
+        assert s.ARQ_MAX_RETRIES == 5
 
     def test_custom_llm(self):
         from config import Settings
@@ -188,6 +220,28 @@ class TestSettingsValidation:
 
         with pytest.raises(ValidationError):
             Settings(DEEPSEEK_API_KEY="test", JWT_EXPIRE_HOURS=hours)
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("REDIS_HOST", ""),
+            ("REDIS_PORT", 0),
+            ("REDIS_PORT", 65536),
+            ("REDIS_DB", -1),
+            ("REDIS_DB", 16),
+            ("ARQ_MAX_JOBS", 0),
+            ("ARQ_MAX_JOBS", 21),
+            ("ARQ_JOB_TIMEOUT", 59),
+            ("ARQ_JOB_TIMEOUT", 3601),
+            ("ARQ_MAX_RETRIES", -1),
+            ("ARQ_MAX_RETRIES", 11),
+        ],
+    )
+    def test_redis_and_arq_values_out_of_range(self, field, value):
+        from config import Settings
+
+        with pytest.raises(ValidationError):
+            Settings(DEEPSEEK_API_KEY="test", _env_file=None, **{field: value})
 
     def test_deepseek_key_empty_warning(self, monkeypatch, caplog):
         import logging
