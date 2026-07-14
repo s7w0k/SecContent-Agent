@@ -18,13 +18,14 @@ HTTP-MCP 桥接脚本 —— 将 wewe_mcp_server.py 包装为 HTTP API，供外�
     DELETE /account/<id>         — 快捷：删除账号
     GET  /docs                   — Swagger 文档
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 import os
 import sys
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import uvicorn
 from fastapi import Body, FastAPI, HTTPException
@@ -39,11 +40,9 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 MCP_SERVER_PATH = os.path.join(SCRIPT_DIR, "wewe_mcp_server.py")
 
 if sys.platform == "win32":
-    try:
-        sys.stdout = open(sys.stdout.fileno(), mode="w", encoding="utf-8", buffering=1)
-        sys.stderr = open(sys.stderr.fileno(), mode="w", encoding="utf-8", buffering=1)
-    except (OSError, AttributeError):
-        pass
+    for stream in (sys.stdout, sys.stderr):
+        with suppress(OSError, AttributeError):
+            stream.reconfigure(encoding="utf-8", line_buffering=True)
 
 # ═══════════════════════════════════════════════════════════
 # MCP 会话管理（持久连接，启动时建立，关闭时清理）
@@ -137,6 +136,7 @@ app.add_middleware(
 # 健康检查
 # ═══════════════════════════════════════════════════════════
 
+
 @app.get("/health")
 async def health():
     return {"ok": True, "status": "healthy", "mcp_connected": _mcp_session is not None}
@@ -145,6 +145,7 @@ async def health():
 # ═══════════════════════════════════════════════════════════
 # 通用接口
 # ═══════════════════════════════════════════════════════════
+
 
 @app.get("/tools")
 async def list_tools():
@@ -167,6 +168,7 @@ async def call_tool_endpoint(tool_name: str, arguments: dict = Body(default={}))
 # ═══════════════════════════════════════════════════════════
 # 快捷接口（无需记工具名和参数）
 # ═══════════════════════════════════════════════════════════
+
 
 @app.post("/check-accounts")
 async def check_accounts():
@@ -207,20 +209,31 @@ async def create_qrcode():
 
 
 @app.post("/poll-login")
-async def poll_login(uuid: str = Body(..., embed=True), timeout_seconds: int = Body(120, embed=True)):
+async def poll_login(
+    uuid: str = Body(..., embed=True), timeout_seconds: int = Body(120, embed=True)
+):
     """轮询扫码登录结果。"""
-    result = await _call_tool("poll_login_result", {
-        "uuid": uuid, "timeout_seconds": timeout_seconds,
-    })
+    result = await _call_tool(
+        "poll_login_result",
+        {
+            "uuid": uuid,
+            "timeout_seconds": timeout_seconds,
+        },
+    )
     return json.loads(result)
 
 
 @app.post("/save-account")
 async def save_account(vid: str = Body(...), token: str = Body(...), name: str = Body(...)):
     """保存账号到 WeWe RSS。"""
-    result = await _call_tool("save_account", {
-        "vid": vid, "token": token, "name": name,
-    })
+    result = await _call_tool(
+        "save_account",
+        {
+            "vid": vid,
+            "token": token,
+            "name": name,
+        },
+    )
     return json.loads(result)
 
 

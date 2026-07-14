@@ -87,12 +87,18 @@ class TestMCPWeweHTTPBridge:
     @pytest.mark.asyncio
     async def test_health_endpoint(self):
         """健康检查返回 200"""
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "mcp_wewe"))
+        sys.path.insert(
+            0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "mcp_wewe")
+        )
         os.environ.setdefault("WEWE_RSS_URL", "http://localhost:4000")
         os.environ.setdefault("WEWE_AUTH_CODE", "test-code")
 
+        original_stdout = sys.stdout
+        original_stderr = sys.stderr
         from http_mcp_bridge import app
 
+        assert sys.stdout is original_stdout
+        assert sys.stderr is original_stderr
         async with AsyncClient(
             transport=ASGITransport(app=app),
             base_url="http://test",
@@ -105,7 +111,9 @@ class TestMCPWeweHTTPBridge:
     @pytest.mark.asyncio
     async def test_tools_endpoint(self):
         """GET /tools 返回工具列表"""
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "mcp_wewe"))
+        sys.path.insert(
+            0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "mcp_wewe")
+        )
 
         from http_mcp_bridge import app
 
@@ -121,7 +129,9 @@ class TestMCPWeweHTTPBridge:
     @pytest.mark.asyncio
     async def test_openapi_schema(self):
         """OpenAPI schema 可访问"""
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "mcp_wewe"))
+        sys.path.insert(
+            0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "mcp_wewe")
+        )
 
         from http_mcp_bridge import app
 

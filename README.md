@@ -4,7 +4,7 @@
 
 - **仓库**: https://gitee.com/s7w0k/pr-agent-demo
 - **部署**: Docker Compose 一键启动
-- **技术栈**: Python 3.12 / FastAPI / LangChain / MongoDB / React + Ant Design / DeepSeek
+- **技术栈**: Python 3.12 / FastAPI / LangGraph / MongoDB / Redis + ARQ / React + Ant Design / DeepSeek
 
 ---
 
@@ -59,7 +59,7 @@ docker compose up -d
 | **用户反馈** | 对草稿/修订稿 1-5 星评分 + 文字反馈 + 标签 | ✅ |
 | **风格学习** | 基于反馈和操作记录学习用户偏好，注入草稿生成 Prompt | ✅ |
 
-流水线和单篇草稿生成采用后台任务模式：触发接口立即返回 `task_id`，前端轮询任务端点展示 `crawl -> classify -> score -> draft -> completed` 进度，完成后自动加载当前用户草稿。
+流水线和单篇草稿生成通过 Redis + ARQ 提交给独立 `backend-worker` 进程：触发接口立即返回 `task_id`，前端轮询 MongoDB 中的持久化任务状态，展示 `crawl -> enrich -> classify_v2 -> filter -> score_v2 -> draft -> quality_check -> rewrite` 进度。任务执行状态、LangGraph 检查点和 LLM 调用元数据均持久化；服务重启后可查询状态并从最近检查点恢复，不依赖 FastAPI 进程内内存。
 
 ### 数据源
 
@@ -122,10 +122,12 @@ docker compose exec backend python scripts/set_developer.py alice --disable
 
 ```
 docker compose up
-├── mongodb:27017      - 数据持久化
+├── mongodb:27017      - 业务数据、任务状态、LangGraph 检查点
+├── redis:6379         - ARQ 持久任务队列（AOF）
 ├── mcp-crawl:8101     - 海外安全新闻 RSS 爬虫
 ├── mcp-wewe:8100      - 微信公众号 RSS 桥接（可选）
-└── backend:8000       - FastAPI + LangGraph Agent + React 前端
+├── backend:8000       - FastAPI API + React 前端，只负责入队与查询
+└── backend-worker     - 独立执行 Agent 流水线和检查点恢复
 ```
 
 ### V2 Agent 模块
@@ -138,7 +140,12 @@ services/backend/agent/
 ├── draft_generator.py  # 草稿生成器（每文 4 稿，支持风格偏好注入）
 ├── draft_chat.py       # 对话改稿 Agent（问答 + 改稿）
 ├── style_profiler.py   # 风格画像管理 Agent（偏好提取 + 画像构建）
-├── pipeline_v2.py      # LangGraph 流水线编排
+├── pipeline_v2.py      # LangGraph 条件路由流水线编排
+├── pipeline_state.py   # MongoDB 持久化任务状态
+├── checkpointer.py     # LangGraph MongoDB 检查点
+├── task_queue.py       # ARQ 任务定义与 Worker 配置
+├── llm_wrapper.py      # 结构化输出降级与 LLM 调用观测
+├── schemas.py          # 分类、评分结构化输出 Schema
 └── knowledge.py        # 产品知识库加载器（V2 多文件 + CLAUDE.md 市场角色）
 ```
 
@@ -171,8 +178,10 @@ pr-agent-demo/
 ```bash
 docker compose up -d                  # 启动
 docker compose down                   # 停止
-docker compose logs backend -f        # 查看日志
-docker compose build --no-cache backend  # 重建后端
+docker compose logs backend -f        # 查看 API 日志
+docker compose logs backend-worker -f # 查看 Worker 执行日志
+docker compose build --no-cache backend backend-worker  # 重建 API 与 Worker
+docker compose exec backend-worker python -m arq worker.WorkerSettings --check  # Worker 心跳
 
 make test                             # 运行全部测试
 make lint                             # 代码检查
@@ -190,8 +199,12 @@ make lint                             # 代码检查
 | `DELETE /api/auth/account` | 注销账号并删除个人数据 |
 | `POST /api/pipeline/run-v2` | 创建 V2 全流程后台任务，返回 `task_id` |
 | `POST /api/pipeline/run-v2/{hash}` | 创建单篇 V2 后台任务，返回 `task_id` |
+| `GET /api/pipeline/status-v2?task_id={task_id}` | 查询当前用户的 V2 持久化状态与节点进度 |
 | `GET /api/pipeline/tasks/{task_id}` | 查询当前用户任务状态与进度 |
 | `GET /api/pipeline/tasks` | 查询当前用户任务列表 |
+| `GET /api/pipeline/tasks/{task_id}/checkpoints` | 查询当前用户任务的 LangGraph 检查点 |
+| `POST /api/pipeline/tasks/{task_id}/resume` | 从最近检查点重新入队恢复任务 |
+| `GET /api/llm-logs` | 查询当前用户的 LLM 调用元数据 |
 | `POST /api/pipeline/classify-v2` | V2 6分类 |
 | `POST /api/pipeline/score-v2` | V2 双维度打分（批量） |
 | `POST /api/pipeline/score-v2/{hash}` | V2 单篇打分 |
@@ -235,6 +248,9 @@ make lint                             # 代码检查
 | `user_activities` | 用户操作记录（下载/改稿/应用等） |
 | `user_profiles` | 用户风格画像（偏好模板/视角/语气等） |
 | `pipeline_tasks` | 异步流水线任务状态和结果 |
+| `pipeline_checkpoints` | LangGraph 节点级状态快照 |
+| `pipeline_checkpoint_writes` | LangGraph 检查点中间写入 |
+| `llm_call_logs` | 结构化输出、降级原因、Token 和耗时等 LLM 调用元数据 |
 | `pipeline_logs` | 含用户归属和 Trace ID 的全链路日志；普通用户隔离、开发者可跨用户查询 |
 
 ---
