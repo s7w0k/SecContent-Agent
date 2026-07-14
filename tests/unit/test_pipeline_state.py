@@ -127,8 +127,12 @@ async def test_shared_manager_runs_two_users_without_rejection():
     manager = PipelineManagerV2({}, dependency, dependency, dependency, dependency, db)
 
     class SuccessfulGraph:
-        async def ainvoke(self, state: dict):
+        async def ainvoke(self, state: dict, config: dict):
             await asyncio.sleep(0.01)
+            assert config["configurable"]["thread_id"] in {
+                "thread-task-a",
+                "thread-task-b",
+            }
             return dict(state)
 
     manager._graph = SuccessfulGraph()

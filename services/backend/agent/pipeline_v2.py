@@ -29,6 +29,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
+from agent.checkpointer import create_checkpointer, supports_mongodb_checkpoints
 from agent.pipeline_state import PipelineStateManager
 from langgraph.graph import END, StateGraph
 
@@ -478,7 +479,12 @@ class PipelineManagerV2:
         graph.add_edge("score_v2", "draft")
         graph.add_edge("draft", END)
 
-        return graph.compile()
+        checkpointer = None
+        if supports_mongodb_checkpoints(self.db):
+            checkpointer = create_checkpointer(self.db)
+        elif self.db is not None:
+            logger.debug("MongoDB checkpointer disabled for non-Motor database")
+        return graph.compile(checkpointer=checkpointer)
 
     async def _run(
         self,
@@ -530,7 +536,8 @@ class PipelineManagerV2:
             )
 
         try:
-            final_state = await self._graph.ainvoke(state)
+            config = {"configurable": {"thread_id": f"thread-{pipeline_id}"}}
+            final_state = await self._graph.ainvoke(state, config=config)
             final_state["status"] = PipelineStatusV2.COMPLETED.value
             final_state["finished_at"] = _now_iso()
         except asyncio.CancelledError:
@@ -577,6 +584,56 @@ class PipelineManagerV2:
             final_state["scored_v2_count"],
             final_state["draft_count"],
         )
+        return result
+
+    async def resume_from_checkpoint(self, task_id: str) -> dict:
+        """Resume a task from its latest durable LangGraph checkpoint."""
+        config = {"configurable": {"thread_id": f"thread-{task_id}"}}
+        snapshot = await self._graph.aget_state(config)
+        if not snapshot.values:
+            error = "No checkpoint found"
+            if self._state_manager is not None:
+                await self._state_manager.update_status(task_id, "failed", error=error)
+            return {"pipeline_id": task_id, "status": "failed", "error": error}
+
+        if self._state_manager is not None:
+            await self._state_manager.update_status(
+                task_id,
+                "running",
+                progress={
+                    "phase": "resume",
+                    "current": 0,
+                    "total": 4,
+                    "message": "正在从检查点恢复...",
+                },
+            )
+
+        final_state = (
+            await self._graph.ainvoke(None, config=config)
+            if snapshot.next
+            else dict(snapshot.values)
+        )
+        final_state["status"] = PipelineStatusV2.COMPLETED.value
+        final_state["finished_at"] = _now_iso()
+        result = {
+            "pipeline_id": task_id,
+            "status": PipelineStatusV2.COMPLETED.value,
+            "state": dict(final_state),
+        }
+        if self._state_manager is not None:
+            await self._state_manager.update_status(
+                task_id,
+                PipelineStatusV2.COMPLETED.value,
+                progress={
+                    "phase": "completed",
+                    "current": 4,
+                    "total": 4,
+                    "message": "任务恢复完成",
+                },
+                last_node=final_state.get("current_phase", ""),
+                state=dict(final_state),
+                result=result,
+            )
         return result
 
 
