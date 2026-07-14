@@ -7,7 +7,6 @@ Agent 流水线编排 V2 — 单元测试
 
 from __future__ import annotations
 
-import contextlib
 import os
 import sys
 from unittest.mock import AsyncMock, MagicMock
@@ -173,21 +172,11 @@ class TestCreateStateV2:
 
 
 class TestPipelineManagerV2:
-    def test_initial_status_idle(self, manager):
-        status = manager.get_status()
-        assert status["status"] == "idle"
-
     @pytest.mark.asyncio
     async def test_run_full_completes(self, manager):
-        result = await manager.run_full(crawl_days=1)
+        result = await manager.run_full(crawl_days=1, task_id="task-v2-test")
         assert result["status"] == "completed"
-        assert "pipeline_id" in result
-
-    @pytest.mark.asyncio
-    async def test_status_after_run(self, manager):
-        await manager.run_full()
-        status = manager.get_status()
-        assert status["status"] == "completed"
+        assert result["pipeline_id"] == "task-v2-test"
 
     @pytest.mark.asyncio
     async def test_pipeline_id_in_result(self, manager):
@@ -437,6 +426,8 @@ class TestPipelineV2E2E:
         mock_cursor = MagicMock()
         mock_cursor.to_list = _to_list
         articles_mock.find = MagicMock(return_value=mock_cursor)
+        articles_mock.find_one = AsyncMock(return_value=None)
+        articles_mock.insert_one = AsyncMock()
         articles_mock.update_one = _update_one
 
         return db, store
@@ -542,18 +533,3 @@ class TestPipelineV2E2E:
         assert result["state"]["classified_v2_count"] == 1
         assert result["state"]["pr_eligible_count"] == 0
         assert result["state"]["scored_v2_count"] == 0
-
-    @pytest.mark.asyncio
-    async def test_cancel_pipeline(self, manager):
-        """流水线可被取消"""
-        import asyncio
-
-        task = asyncio.create_task(manager.run_full())
-        await asyncio.sleep(0.1)
-        await manager.cancel()
-
-        with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError):
-            await asyncio.wait_for(task, timeout=2.0)
-
-        status = manager.get_status()
-        assert status["status"] in ("cancelled", "completed", "failed")

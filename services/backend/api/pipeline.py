@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
+from agent.pipeline_state import PipelineStateManager
 from agent.style_profiler import load_style_hints
 from api.activity import log_activity
 from api.logs import build_log_error, generate_trace_id, log_pipeline
@@ -342,23 +343,12 @@ async def _execute_pipeline_task(
             )
         elif task_type == "run-v2":
             manager = app.state.pipeline_v2
-            result = await _run_manager_with_progress(
-                db,
-                task_id,
-                user_id,
-                manager,
-                manager.run_full(
-                    crawl_days=crawl_days,
-                    user_id=user_id,
-                    trace_id=trace_id,
-                    username=username,
-                ),
-                {
-                    "crawl": ("crawl", 0, "正在爬取文章..."),
-                    "classify_v2": ("classify", 1, "正在分类文章..."),
-                    "score_v2": ("score", 2, "正在评估文章..."),
-                    "draft": ("draft", 3, "正在生成草稿..."),
-                },
+            result = await manager.run_full(
+                crawl_days=crawl_days,
+                user_id=user_id,
+                trace_id=trace_id,
+                username=username,
+                task_id=task_id,
             )
         elif task_type == "crawl":
             manager = app.state.pipeline_manager
@@ -594,12 +584,39 @@ async def _execute_crawl_pipeline(
 
 
 @router.get("/status-v2", summary="查询 V2 流水线状态")
-async def pipeline_status_v2(request: Request, _user_id: str = Depends(get_current_user)):
-    """返回 V2 流水线的运行状态"""
-    manager_v2 = getattr(request.app.state, "pipeline_v2", None)
-    if manager_v2 is None:
-        raise HTTPException(status_code=503, detail="Pipeline V2 not initialized")
-    return manager_v2.get_status()
+async def pipeline_status_v2(
+    request: Request,
+    task_id: str | None = Query(default=None),
+    user_id: str = Depends(get_current_user),
+):
+    """从 MongoDB 返回当前用户指定或最近的 V2 流水线状态。"""
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    if task_id:
+        task = await PipelineStateManager(db).get_task(task_id, user_id)
+    else:
+        task = await db["pipeline_tasks"].find_one(
+            {"user_id": user_id, "task_type": "run-v2"},
+            sort=[("created_at", -1)],
+        )
+    if task is None:
+        return {
+            "status": "idle",
+            "current_phase": "",
+            "state": {},
+            "errors": [],
+        }
+
+    state = task.get("state") or {}
+    return {
+        "task_id": task["task_id"],
+        "status": task.get("status", "pending"),
+        "current_phase": state.get("current_phase", task.get("progress", {}).get("phase", "")),
+        "state": state,
+        "errors": state.get("errors", []),
+    }
 
 
 @router.post("/crawl", summary="爬取+分类")
@@ -695,11 +712,10 @@ async def crawl_overseas_only(
         # 异步批量抓取全文（不阻塞响应）
         if new_urls:
             import asyncio as _aio
+
             from agent.pipeline import _fetch_fulltext_background, _fulltext_tasks
 
-            _task = _aio.create_task(
-                _fetch_fulltext_background(db, new_urls, "")
-            )
+            _task = _aio.create_task(_fetch_fulltext_background(db, new_urls, ""))
             _fulltext_tasks.add(_task)
             _task.add_done_callback(_fulltext_tasks.discard)
 

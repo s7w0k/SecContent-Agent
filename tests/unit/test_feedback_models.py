@@ -331,7 +331,7 @@ class TestMongoDBIndexes:
         assert len(result["chat_sessions"]) == 1
         assert len(result["user_drafts"]) == 2
         assert len(result["pipeline_locks"]) == 2
-        assert len(result["pipeline_tasks"]) == 3
+        assert len(result["pipeline_tasks"]) == 4
         assert len(result["pipeline_logs"]) == 5
         assert len(result["execution_runs"]) == 6
         assert len(result["execution_events"]) == 7
@@ -383,6 +383,7 @@ class TestMongoDBIndexes:
         }
         assert task_indexes["idx_pipeline_task_id"]["unique"] is True
         assert task_indexes["idx_pipeline_task_expires"]["expireAfterSeconds"] == 0
+        assert task_indexes["idx_pipeline_task_thread_id"]["sparse"] is True
 
         pipeline_log_indexes = {
             index.document["name"]: index.document

@@ -27,7 +27,9 @@ import time
 from datetime import UTC, datetime, timedelta, timezone
 from enum import StrEnum
 from typing import Any
+from uuid import uuid4
 
+from agent.pipeline_state import PipelineStateManager
 from langgraph.graph import END, StateGraph
 
 logger = logging.getLogger("backend.agent.pipeline_v2")
@@ -426,9 +428,7 @@ class PipelineManagerV2:
         self.draft_gen = draft_gen
         self.knowledge = knowledge
         self.db = db
-
-        self._state: dict | None = None
-        self._task: asyncio.Task | None = None
+        self._state_manager = PipelineStateManager(db) if db is not None else None
         self._graph = self._build_graph()
 
     # ── 公开接口 ──────────────────────────────────────────────
@@ -439,30 +439,10 @@ class PipelineManagerV2:
         user_id: str = "",
         trace_id: str = "",
         username: str = "",
+        task_id: str = "",
     ) -> dict:
-        """执行全流程 V2 流水线"""
-        return await self._run(crawl_days, user_id, trace_id, username)
-
-    def get_status(self) -> dict:
-        if self._state is None:
-            return {
-                "status": PipelineStatusV2.IDLE.value,
-                "current_phase": "",
-                "state": {},
-                "errors": [],
-            }
-        return {
-            "status": self._state["status"],
-            "current_phase": self._state["current_phase"],
-            "state": dict(self._state),
-            "errors": self._state["errors"],
-        }
-
-    async def cancel(self):
-        if self._task and not self._task.done():
-            self._task.cancel()
-            if self._state:
-                self._state["status"] = PipelineStatusV2.CANCELLED.value
+        """执行全流程 V2 流水线，状态按 task_id 持久化。"""
+        return await self._run(crawl_days, user_id, trace_id, username, task_id)
 
     # ── 内部实现 ──────────────────────────────────────────────
 
@@ -501,57 +481,103 @@ class PipelineManagerV2:
         return graph.compile()
 
     async def _run(
-        self, crawl_days: int, user_id: str, trace_id: str = "", username: str = ""
+        self,
+        crawl_days: int,
+        user_id: str,
+        trace_id: str = "",
+        username: str = "",
+        task_id: str = "",
     ) -> dict:
-        import uuid
-
-        pipeline_id = str(uuid.uuid4())[:8]
-
-        if self._state and self._state["status"] == PipelineStatusV2.RUNNING.value:
-            return {
-                "pipeline_id": pipeline_id,
-                "status": "rejected",
-                "error": "Pipeline is already running",
-            }
-
-        self._state = create_state_v2(
+        pipeline_id = task_id or uuid4().hex[:8]
+        state = create_state_v2(
             crawl_days=crawl_days,
             user_id=user_id,
             trace_id=trace_id,
             username=username,
         )
-        self._state["status"] = PipelineStatusV2.RUNNING.value
-        self._state["started_at"] = _now_iso()
+        state["task_id"] = pipeline_id
+        state["status"] = PipelineStatusV2.RUNNING.value
+        state["started_at"] = _now_iso()
+
+        if self._state_manager is not None:
+            task = await self._state_manager.get_task(pipeline_id, user_id)
+            if task is None:
+                await self._state_manager.create_task(
+                    pipeline_id,
+                    user_id,
+                    "run-v2",
+                    crawl_days=crawl_days,
+                    trace_id=trace_id,
+                    username=username,
+                )
+            await self._state_manager.update_status(
+                pipeline_id,
+                PipelineStatusV2.RUNNING.value,
+                progress={
+                    "phase": "crawl",
+                    "current": 0,
+                    "total": 4,
+                    "message": "正在启动流水线...",
+                },
+                state=dict(state),
+                task_metadata={
+                    "thread_id": f"thread-{pipeline_id}",
+                    "checkpoint_ns": "",
+                    "crawl_days": crawl_days,
+                    "trace_id": trace_id or None,
+                    "username": username or user_id,
+                },
+            )
 
         try:
-            final_state = await self._graph.ainvoke(self._state)
+            final_state = await self._graph.ainvoke(state)
             final_state["status"] = PipelineStatusV2.COMPLETED.value
             final_state["finished_at"] = _now_iso()
-            self._state = final_state
         except asyncio.CancelledError:
-            self._state["status"] = PipelineStatusV2.CANCELLED.value
-            self._state["finished_at"] = _now_iso()
+            final_state = state
+            final_state["status"] = PipelineStatusV2.CANCELLED.value
+            final_state["finished_at"] = _now_iso()
         except Exception as e:
             logger.error("[pipeline_v2] Fatal: %s", e)
-            self._state["status"] = PipelineStatusV2.FAILED.value
-            self._state["errors"].append(f"fatal: {e}")
-            self._state["finished_at"] = _now_iso()
+            final_state = state
+            final_state["status"] = PipelineStatusV2.FAILED.value
+            final_state["errors"].append(f"fatal: {e}")
+            final_state["finished_at"] = _now_iso()
+
+        status = final_state["status"]
+        result = {
+            "pipeline_id": pipeline_id,
+            "status": status,
+            "state": dict(final_state),
+        }
+        if self._state_manager is not None:
+            await self._state_manager.update_status(
+                pipeline_id,
+                status,
+                progress={
+                    "phase": status,
+                    "current": 4 if status == PipelineStatusV2.COMPLETED.value else 0,
+                    "total": 4,
+                    "message": "任务完成"
+                    if status == PipelineStatusV2.COMPLETED.value
+                    else "任务已结束",
+                },
+                last_node=final_state.get("current_phase", ""),
+                state=dict(final_state),
+                error="; ".join(final_state["errors"]) if final_state["errors"] else None,
+                result=result,
+            )
 
         logger.info(
             "[pipeline_v2] %s — crawled=%d classified=%d pr_eligible=%d scored=%d drafts=%d",
-            self._state["status"],
-            self._state["crawled_count"],
-            self._state["classified_v2_count"],
-            self._state.get("pr_eligible_count", 0),
-            self._state["scored_v2_count"],
-            self._state["draft_count"],
+            status,
+            final_state["crawled_count"],
+            final_state["classified_v2_count"],
+            final_state.get("pr_eligible_count", 0),
+            final_state["scored_v2_count"],
+            final_state["draft_count"],
         )
-
-        return {
-            "pipeline_id": pipeline_id,
-            "status": self._state["status"],
-            "state": dict(self._state),
-        }
+        return result
 
 
 def _now_iso() -> str:

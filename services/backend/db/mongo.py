@@ -249,6 +249,11 @@ class MongoDB:
                     expireAfterSeconds=0,
                     name="idx_pipeline_task_expires",
                 ),
+                IndexModel(
+                    [("thread_id", ASCENDING)],
+                    sparse=True,
+                    name="idx_pipeline_task_thread_id",
+                ),
             ],
             "pipeline_logs": [
                 IndexModel(
