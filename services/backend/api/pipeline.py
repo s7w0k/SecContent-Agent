@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
 router = APIRouter(prefix="/api/pipeline", tags=["Pipeline"])
+llm_router = APIRouter(prefix="/api", tags=["LLM Observability"])
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1120,7 +1121,11 @@ async def classify_v2_single(
             )
             return _classification_payload(article, skipped=True)
 
-        result = await classifier.classify_single(dict(article))
+        result = await classifier.classify_single(
+            dict(article),
+            user_id=user_id,
+            trace_id=trace_id,
+        )
         classified = {
             "category_v2": result.category,
             "category_v2_confidence": result.confidence,
@@ -1164,7 +1169,7 @@ async def classify_v2_single(
 
 @router.post("/classify-v2", summary="V2 6分类")
 async def classify_v2(
-    body: ClassifyV2Request, request: Request, _user_id: str = Depends(get_current_user)
+    body: ClassifyV2Request, request: Request, user_id: str = Depends(get_current_user)
 ):
     """对文章执行6分类（爆点事件/法律法规/AI进展/竞品/行业/学术）。
 
@@ -1199,7 +1204,7 @@ async def classify_v2(
             return {"ok": True, "total": 0, "classified": 0, "results": []}
 
         # 批量分类
-        results = await classifier.classify_batch(articles)
+        results = await classifier.classify_batch(articles, user_id=user_id)
 
         # 更新数据库
         updated = 0
@@ -1231,7 +1236,7 @@ async def classify_v2(
             f"{sum(1 for r in results if r.is_pr_eligible)} PR-eligible"
         )
         get_audit_logger().log(
-            user_id=_user_id,
+            user_id=user_id,
             action="classify_v2",
         )
         return {
@@ -1345,7 +1350,12 @@ async def _run_v2_single_workflow(
         is_pr_eligible = article.get("is_pr_eligible", False)
         classification_skipped = True
     else:
-        classify_result = await classifier.classify_single(dict(article))
+        classify_result = await classifier.classify_single(
+            dict(article),
+            user_id=user_id,
+            trace_id=trace_id,
+            task_id=task_id,
+        )
         category = classify_result.category
         confidence = classify_result.confidence
         is_pr_eligible = classify_result.is_pr_eligible
@@ -1422,7 +1432,12 @@ async def _run_v2_single_workflow(
                 }
                 score_skipped = True
             else:
-                scores = await scorer.score_single(dict(article))
+                scores = await scorer.score_single(
+                    dict(article),
+                    user_id=user_id,
+                    trace_id=trace_id,
+                    task_id=task_id,
+                )
                 score_skipped = False
                 await db["articles"].update_one(
                     {"url_hash": url_hash},
@@ -1564,7 +1579,7 @@ async def _run_v2_single_workflow(
 
 
 @router.post("/score-v2", summary="V2 双维度打分（批量）")
-async def score_v2_all(request: Request, _user_id: str = Depends(get_current_user)):
+async def score_v2_all(request: Request, user_id: str = Depends(get_current_user)):
     """对所有 is_pr_eligible=True 的文章进行 V2 双维度打分。"""
     db = getattr(request.app.state, "db", None)
     if db is None:
@@ -1588,7 +1603,7 @@ async def score_v2_all(request: Request, _user_id: str = Depends(get_current_use
         if not articles:
             return {"ok": True, "total": 0, "scored": 0}
 
-        scored = await scorer.score_batch(articles)
+        scored = await scorer.score_batch(articles, user_id=user_id)
         scored_count = 0
         candidates = 0
         for art, result in zip(articles, scored, strict=False):
@@ -1698,7 +1713,11 @@ async def score_v2_single(
             )
             return _score_payload(article, skipped=True)
 
-        scores = await scorer.score_single(dict(article))
+        scores = await scorer.score_single(
+            dict(article),
+            user_id=user_id,
+            trace_id=trace_id,
+        )
         scored = {
             "product_relevance": scores["product_relevance"],
             "event_impact": scores["event_impact"],
@@ -1789,6 +1808,52 @@ async def list_pipeline_tasks(
         "ok": True,
         "data": {
             "items": [_serialize_pipeline_task(task) for task in tasks],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        },
+    }
+
+
+def _serialize_llm_log(document: dict[str, Any]) -> dict[str, Any]:
+    """Convert MongoDB-specific values in an LLM call log to JSON values."""
+    result = {key: value for key, value in document.items() if key != "_id"}
+    for field in ("created_at", "expires_at"):
+        if isinstance(result.get(field), datetime):
+            result[field] = result[field].isoformat()
+    return result
+
+
+@llm_router.get("/llm-logs", summary="查询当前用户的 LLM 调用记录")
+async def list_llm_logs(
+    request: Request,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    agent_type: str | None = Query(default=None, max_length=50),
+    task_id: str | None = Query(default=None, max_length=100),
+    user_id: str = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Return tenant-isolated LLM metadata without storing or exposing prompts."""
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    query: dict[str, Any] = {"user_id": user_id}
+    if agent_type:
+        query["agent_type"] = agent_type
+    if task_id:
+        query["task_id"] = task_id
+
+    collection = db["llm_call_logs"]
+    total = await collection.count_documents(query)
+    cursor = (
+        collection.find(query).sort("created_at", -1).skip((page - 1) * page_size).limit(page_size)
+    )
+    documents = await cursor.to_list(length=page_size)
+    return {
+        "ok": True,
+        "data": {
+            "items": [_serialize_llm_log(document) for document in documents],
             "total": total,
             "page": page,
             "page_size": page_size,

@@ -320,6 +320,7 @@ class TestMongoDBIndexes:
             "pipeline_locks",
             "pipeline_tasks",
             "pipeline_logs",
+            "llm_call_logs",
             "execution_runs",
             "execution_events",
             "execution_links",
@@ -333,6 +334,7 @@ class TestMongoDBIndexes:
         assert len(result["pipeline_locks"]) == 2
         assert len(result["pipeline_tasks"]) == 4
         assert len(result["pipeline_logs"]) == 5
+        assert len(result["llm_call_logs"]) == 5
         assert len(result["execution_runs"]) == 6
         assert len(result["execution_events"]) == 7
         assert len(result["execution_links"]) == 4
@@ -352,6 +354,13 @@ class TestMongoDBIndexes:
             for index in collections["user_profiles"].received_indexes
         }
         assert profile_indexes["idx_profile_user_id"]["unique"] is True
+
+        llm_indexes = {
+            index.document["name"]: index.document
+            for index in collections["llm_call_logs"].received_indexes
+        }
+        assert llm_indexes["idx_llm_call_id"]["unique"] is True
+        assert llm_indexes["idx_llm_expires"]["expireAfterSeconds"] == 0
 
         user_indexes = {
             index.document["name"]: index.document
@@ -407,5 +416,5 @@ class TestMongoDBIndexes:
             second = await MongoDB.ensure_indexes()
 
         assert first == second
-        assert collection.create_indexes.await_count == 24
+        assert collection.create_indexes.await_count == 26
         assert collection.drop_index.await_count == 2

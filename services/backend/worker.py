@@ -58,7 +58,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         base_url=settings.DEEPSEEK_BASE_URL,
         temperature=0.1,
     )
-    classifier_v2 = ClassifierV2(llm=llm)
+    classifier_v2 = ClassifierV2(llm=llm, db=db)
     scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge, db=db)
     draft_gen = DraftGenerator(llm=llm, knowledge=knowledge._cache)
     pipeline_v2 = PipelineManagerV2(

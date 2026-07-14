@@ -214,7 +214,12 @@ async def classify_v2_node(state: dict, classifier: Any, db: Any) -> dict:
             )
             return state
 
-        results = await classifier.classify_batch(articles)
+        results = await classifier.classify_batch(
+            articles,
+            user_id=state.get("user_id", ""),
+            trace_id=state.get("trace_id", ""),
+            task_id=state.get("task_id", ""),
+        )
 
         updated = 0
         low_confidence_articles: list[str] = []
@@ -348,6 +353,9 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
             articles,
             threshold=state["score_threshold"],
             threshold_adjustment=state["threshold_adjustment"],
+            user_id=state.get("user_id", ""),
+            trace_id=state.get("trace_id", ""),
+            task_id=state.get("task_id", ""),
         )
         scored_count = 0
         candidates = 0

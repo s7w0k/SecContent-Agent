@@ -157,7 +157,7 @@ async def lifespan(app: FastAPI):
         # V2 6分类 Agent
         from agent.classifier_v2 import ClassifierV2
 
-        classifier_v2 = ClassifierV2(llm=llm)
+        classifier_v2 = ClassifierV2(llm=llm, db=app.state.db)
         app.state.classifier_v2 = classifier_v2
         _log("INFO", "ClassifierV2 initialized")
 
@@ -324,11 +324,13 @@ from api.dev_logs import router as dev_logs_router
 from api.feedback import router as feedback_router
 from api.logs import router as logs_router
 from api.overseas_crawl import router as overseas_router
+from api.pipeline import llm_router
 from api.pipeline import router as pipeline_router
 from api.profile import router as profile_router
 from api.reports import router as reports_router
 
 app.include_router(pipeline_router)
+app.include_router(llm_router)
 app.include_router(dashboard_router)
 app.include_router(reports_router)
 app.include_router(chat_router)

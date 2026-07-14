@@ -36,8 +36,9 @@ import logging
 import re
 from typing import Any
 
+from agent.llm_wrapper import LLMWrapper
+from agent.schemas import ScoreResultSchema
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
 
 logger = logging.getLogger("backend.agent.scorer_v2")
 
@@ -127,6 +128,7 @@ class ScoringAgentV2:
         self.knowledge = knowledge
         self.db = db
         self.system_prompt = self._build_system_prompt()
+        self.llm_wrapper = LLMWrapper(llm, db)
 
     # ── 公开接口 ──────────────────────────────────────────────
 
@@ -136,6 +138,9 @@ class ScoringAgentV2:
         *,
         threshold: int = PR_THRESHOLD,
         threshold_adjustment: int = 0,
+        user_id: str = "",
+        trace_id: str = "",
+        task_id: str = "",
     ) -> dict:
         """单篇打分，返回包含 product_relevance / event_impact / pr_total_score 的 dict。"""
         art = (
@@ -147,6 +152,9 @@ class ScoringAgentV2:
             art,
             threshold=threshold,
             threshold_adjustment=threshold_adjustment,
+            user_id=user_id,
+            trace_id=trace_id,
+            task_id=task_id,
         )
 
     async def score_batch(
@@ -156,6 +164,9 @@ class ScoringAgentV2:
         concurrency: int = DEFAULT_CONCURRENCY,
         threshold: int = PR_THRESHOLD,
         threshold_adjustment: int = 0,
+        user_id: str = "",
+        trace_id: str = "",
+        task_id: str = "",
     ) -> list[dict]:
         """批量并发打分。
 
@@ -183,6 +194,9 @@ class ScoringAgentV2:
                     d,
                     threshold=threshold,
                     threshold_adjustment=threshold_adjustment,
+                    user_id=user_id,
+                    trace_id=trace_id,
+                    task_id=task_id,
                 )
 
         results = await asyncio.gather(*[_score_one(a) for a in articles])
@@ -316,21 +330,26 @@ class ScoringAgentV2:
         *,
         threshold: int,
         threshold_adjustment: int,
+        user_id: str = "",
+        trace_id: str = "",
+        task_id: str = "",
     ) -> dict:
         """调用 LLM 进行双维度打分（含重试和降级）。"""
         user_prompt = self._build_user_prompt(article)
 
         for attempt in range(MAX_RETRIES + 1):
             try:
-                response = await self.llm.ainvoke(
-                    [
-                        SystemMessage(content=self.system_prompt),
-                        HumanMessage(content=user_prompt),
-                    ]
+                structured = await self.llm_wrapper.invoke_structured(
+                    system_prompt=self.system_prompt,
+                    user_prompt=user_prompt,
+                    output_schema=ScoreResultSchema,
+                    agent_type="scorer_v2",
+                    user_id=user_id,
+                    trace_id=trace_id,
+                    task_id=task_id,
                 )
-                raw = response.content if hasattr(response, "content") else str(response)
                 return self._enrich_result(
-                    self._validate_and_fix(self._parse_response(raw)),
+                    self._validate_and_fix(structured.model_dump()),
                     threshold=threshold,
                     threshold_adjustment=threshold_adjustment,
                 )

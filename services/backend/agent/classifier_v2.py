@@ -36,8 +36,9 @@ import re
 from enum import StrEnum
 from typing import Any
 
+from agent.llm_wrapper import LLMWrapper
+from agent.schemas import ClassifyResultSchema
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
 
 logger = logging.getLogger("backend.agent.classifier_v2")
 
@@ -49,13 +50,13 @@ logger = logging.getLogger("backend.agent.classifier_v2")
 class CategoryV2(StrEnum):
     """6 分类标签（值 = 中文类别名）"""
 
-    BREAKING_EVENT = "爆点事件"            # 重大安全事件
+    BREAKING_EVENT = "爆点事件"  # 重大安全事件
     LAW_AND_REGULATION = "法律法规/监管动态"  # 法规合规
-    AI_TECH_PROGRESS = "AI技术重大进展"     # AI/Agent技术突破
-    COMPETITOR = "国内外竞品信息"            # 友商动态
-    INDUSTRY_EVENT = "运营商/行业事件"       # 行业安全事件
-    ACADEMIC = "学术/会展/高校"              # 学术前沿
-    NOT_RELEVANT = "不相关"                  # 与AI/Agent安全无关
+    AI_TECH_PROGRESS = "AI技术重大进展"  # AI/Agent技术突破
+    COMPETITOR = "国内外竞品信息"  # 友商动态
+    INDUSTRY_EVENT = "运营商/行业事件"  # 行业安全事件
+    ACADEMIC = "学术/会展/高校"  # 学术前沿
+    NOT_RELEVANT = "不相关"  # 与AI/Agent安全无关
 
     @classmethod
     def valid_values(cls) -> set[str]:
@@ -256,13 +257,22 @@ class ClassifierV2:
         self,
         llm: BaseChatModel,
         temperature: float = DEFAULT_TEMPERATURE,
+        db: Any = None,
     ):
         self.llm = llm
         self.llm.temperature = temperature
+        self.llm_wrapper = LLMWrapper(llm, db)
 
     # ── 公开接口 ──────────────────────────────────────────────
 
-    async def classify_single(self, article: dict | Any) -> ClassifyResultV2:
+    async def classify_single(
+        self,
+        article: dict | Any,
+        *,
+        user_id: str = "",
+        trace_id: str = "",
+        task_id: str = "",
+    ) -> ClassifyResultV2:
         """对单篇文章进行分类（LLM 自行判断安全相关性 + 6分类）。
 
         Args:
@@ -271,15 +281,26 @@ class ClassifierV2:
         Returns:
             ClassifyResultV2 分类结果
         """
-        art = article if isinstance(article, dict) else (
-            article.model_dump() if hasattr(article, "model_dump") else article
+        art = (
+            article
+            if isinstance(article, dict)
+            else (article.model_dump() if hasattr(article, "model_dump") else article)
         )
-        return await self._classify_with_llm(art)
+        return await self._classify_with_llm(
+            art,
+            user_id=user_id,
+            trace_id=trace_id,
+            task_id=task_id,
+        )
 
     async def classify_batch(
         self,
         articles: list[dict | Any],
         concurrency: int = DEFAULT_CONCURRENCY,
+        *,
+        user_id: str = "",
+        trace_id: str = "",
+        task_id: str = "",
     ) -> list[ClassifyResultV2]:
         """批量并发分类文章。
 
@@ -298,10 +319,17 @@ class ClassifierV2:
 
         async def _classify_one(art: dict) -> ClassifyResultV2:
             async with sem:
-                d = art if isinstance(art, dict) else (
-                    art.model_dump() if hasattr(art, "model_dump") else art
+                d = (
+                    art
+                    if isinstance(art, dict)
+                    else (art.model_dump() if hasattr(art, "model_dump") else art)
                 )
-                return await self._classify_with_llm(d)
+                return await self._classify_with_llm(
+                    d,
+                    user_id=user_id,
+                    trace_id=trace_id,
+                    task_id=task_id,
+                )
 
         results = await asyncio.gather(*[_classify_one(a) for a in articles])
         rlist = list(results)
@@ -310,31 +338,45 @@ class ClassifierV2:
         not_relevant = sum(1 for r in rlist if r.category == CategoryV2.NOT_RELEVANT.value)
         logger.info(
             "Classified: %d/%d ok, %d PR-eligible, %d not-relevant",
-            ok_count, len(rlist), pr_count, not_relevant,
+            ok_count,
+            len(rlist),
+            pr_count,
+            not_relevant,
         )
         return rlist
 
     # ── 核心分类逻辑 ──────────────────────────────────────────
 
-    async def _classify_with_llm(self, article: dict) -> ClassifyResultV2:
+    async def _classify_with_llm(
+        self,
+        article: dict,
+        *,
+        user_id: str = "",
+        trace_id: str = "",
+        task_id: str = "",
+    ) -> ClassifyResultV2:
         """调用 LLM 进行6分类（含重试和降级）。"""
         user_prompt = self._build_user_prompt(article)
 
         for attempt in range(MAX_RETRIES + 1):
             try:
-                response = await self.llm.ainvoke([
-                    SystemMessage(content=SYSTEM_PROMPT),
-                    HumanMessage(content=user_prompt),
-                ])
-                raw = response.content if hasattr(response, "content") else str(response)
-                parsed = self._parse_response(raw)
-                validated = self._validate_and_fix(parsed)
+                structured = await self.llm_wrapper.invoke_structured(
+                    system_prompt=SYSTEM_PROMPT,
+                    user_prompt=user_prompt,
+                    output_schema=ClassifyResultSchema,
+                    agent_type="classifier_v2",
+                    user_id=user_id,
+                    trace_id=trace_id,
+                    task_id=task_id,
+                )
+                validated = self._validate_and_fix(structured.model_dump())
                 return self._build_result(validated)
             except Exception as e:
                 if attempt == MAX_RETRIES:
                     logger.warning(
                         "Classification failed after %d retries: %s",
-                        MAX_RETRIES + 1, e,
+                        MAX_RETRIES + 1,
+                        e,
                     )
                     return self._fallback_result(str(e))
 
@@ -347,16 +389,8 @@ class ClassifierV2:
         """构建 User Prompt（文章标题+摘要+正文前段）。"""
         title = article.get("title", "")
         source = article.get("source", "")
-        summary = (
-            article.get("summary_cn", "")
-            or article.get("summary", "")
-            or "无"
-        )
-        content = (
-            article.get("content_md", "")
-            or article.get("summary", "")
-            or ""
-        )[:800]
+        summary = article.get("summary_cn", "") or article.get("summary", "") or "无"
+        content = (article.get("content_md", "") or article.get("summary", "") or "")[:800]
 
         return USER_PROMPT_TEMPLATE.format(
             title=title,
@@ -415,7 +449,8 @@ class ClassifierV2:
         valid_categories = CategoryV2.valid_values() | {CategoryV2.NOT_RELEVANT.value}
         if category not in valid_categories:
             logger.debug(
-                "Invalid category '%s', falling back to default", category,
+                "Invalid category '%s', falling back to default",
+                category,
             )
             category = CategoryV2.default()
         result["category"] = category

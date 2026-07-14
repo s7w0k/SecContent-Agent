@@ -277,6 +277,30 @@ class MongoDB:
                     name="idx_pipeline_log_date_created",
                 ),
             ],
+            "llm_call_logs": [
+                IndexModel(
+                    [("call_id", ASCENDING)],
+                    unique=True,
+                    name="idx_llm_call_id",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_llm_user_created",
+                ),
+                IndexModel(
+                    [("task_id", ASCENDING), ("agent_type", ASCENDING)],
+                    name="idx_llm_task_agent",
+                ),
+                IndexModel(
+                    [("agent_type", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_llm_agent_created",
+                ),
+                IndexModel(
+                    [("expires_at", ASCENDING)],
+                    expireAfterSeconds=0,
+                    name="idx_llm_expires",
+                ),
+            ],
             "execution_runs": [
                 IndexModel([("execution_id", ASCENDING)], unique=True, name="idx_run_execution_id"),
                 IndexModel(

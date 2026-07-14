@@ -198,7 +198,7 @@ async def test_concurrent_classification_calls_llm_once(fast_lock_poll):
     finish = asyncio.Event()
     classifier = MagicMock()
 
-    async def _classify(_article):
+    async def _classify(_article, **_kwargs):
         started.set()
         await finish.wait()
         return SimpleNamespace(
@@ -235,7 +235,7 @@ async def test_concurrent_scoring_calls_llm_once(fast_lock_poll):
     finish = asyncio.Event()
     scorer = MagicMock()
 
-    async def _score(_article):
+    async def _score(_article, **_kwargs):
         started.set()
         await finish.wait()
         return {
