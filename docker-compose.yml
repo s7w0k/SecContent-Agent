@@ -261,6 +261,12 @@ services:
       mcp-crawl:
         condition: service_started
     command: ["python", "-m", "worker"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "arq", "worker.WorkerSettings", "--check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 # ═══════════════════════════════════════════════════════════════
 # 持久卷

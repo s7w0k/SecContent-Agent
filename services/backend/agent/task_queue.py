@@ -137,3 +137,4 @@ class WorkerSettings:
     job_timeout = _settings.ARQ_JOB_TIMEOUT
     max_tries = _settings.ARQ_MAX_RETRIES + 1
     retry_jobs = True
+    health_check_interval = 15
