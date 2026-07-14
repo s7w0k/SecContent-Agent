@@ -1,0 +1,106 @@
+"""ARQ worker entry point for durable pipeline execution."""
+
+from __future__ import annotations
+
+import logging
+from types import SimpleNamespace
+from typing import Any
+
+from agent.task_queue import WorkerSettings
+from arq import run_worker
+from config import get_settings
+from langchain_openai import ChatOpenAI
+from logging_config import setup_logging
+
+settings = get_settings()
+setup_logging(
+    log_dir=settings.LOG_DIR,
+    log_level=settings.LOG_LEVEL,
+    app_retention_days=settings.LOG_APP_RETENTION_DAYS,
+    error_retention_days=settings.LOG_ERROR_RETENTION_DAYS,
+    access_retention_days=settings.LOG_ACCESS_RETENTION_DAYS,
+    audit_retention_days=settings.LOG_AUDIT_RETENTION_DAYS,
+)
+logger = logging.getLogger("backend.worker")
+
+
+async def startup(ctx: dict[str, Any]) -> None:
+    """Initialize MongoDB and all pipeline dependencies in the worker process."""
+    from agent.classifier_v2 import ClassifierV2
+    from agent.draft_generator import DraftGenerator
+    from agent.knowledge import KnowledgeLoader
+    from agent.pipeline import PipelineManager
+    from agent.pipeline_v2 import PipelineManagerV2
+    from agent.reporter import ReportAgent
+    from agent.scorer import ScoringAgent
+    from agent.scorer_v2 import ScoringAgentV2
+    from agent.tools import create_mcp_toolset
+    from db.mongo import MongoDB
+
+    await MongoDB.connect(
+        uri=settings.MONGODB_URI,
+        db_name=settings.MONGODB_DB,
+        max_pool_size=settings.MONGODB_MAX_POOL_SIZE,
+        min_pool_size=settings.MONGODB_MIN_POOL_SIZE,
+    )
+    db = MongoDB.get_db()
+    await MongoDB.ensure_indexes()
+
+    tools = create_mcp_toolset(
+        wewe_url=settings.MCP_WEWE_URL,
+        crawl_url=settings.MCP_CRAWL_URL,
+    )
+    knowledge = KnowledgeLoader(docs_dir=settings.KNOWLEDGE_BASE_DIR)
+    await knowledge.load()
+    llm = ChatOpenAI(
+        model=settings.DEEPSEEK_MODEL,
+        api_key=settings.DEEPSEEK_API_KEY,
+        base_url=settings.DEEPSEEK_BASE_URL,
+        temperature=0.1,
+    )
+    classifier_v2 = ClassifierV2(llm=llm)
+    scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge, db=db)
+    draft_gen = DraftGenerator(llm=llm, knowledge=knowledge._cache)
+    pipeline_v2 = PipelineManagerV2(
+        tools=tools,
+        classifier_v2=classifier_v2,
+        scorer_v2=scorer_v2,
+        draft_gen=draft_gen,
+        knowledge=knowledge,
+        db=db,
+    )
+    pipeline_manager = PipelineManager(
+        tools=tools,
+        scorer=ScoringAgent(llm=llm, knowledge=knowledge._cache),
+        reporter=ReportAgent(llm=llm, knowledge=knowledge._cache, db=db),
+        knowledge=knowledge,
+        db=db,
+    )
+    app = SimpleNamespace(
+        state=SimpleNamespace(
+            db=db,
+            classifier_v2=classifier_v2,
+            scorer_v2=scorer_v2,
+            draft_gen=draft_gen,
+            pipeline_v2=pipeline_v2,
+            pipeline_manager=pipeline_manager,
+        )
+    )
+    ctx.update({"app": app, "db": db, "pipeline_v2": pipeline_v2})
+    logger.info("ARQ worker runtime initialized")
+
+
+async def shutdown(_ctx: dict[str, Any]) -> None:
+    """Close the worker's MongoDB connection pool."""
+    from db.mongo import MongoDB
+
+    await MongoDB.disconnect()
+    logger.info("ARQ worker stopped")
+
+
+WorkerSettings.on_startup = startup
+WorkerSettings.on_shutdown = shutdown
+
+
+if __name__ == "__main__":
+    run_worker(WorkerSettings)

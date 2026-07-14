@@ -52,6 +52,36 @@ services:
       start_period: 30s
 
   # ──────────────────────────────────────────────────────────
+  # Redis 7 - ARQ 持久任务队列
+  # ──────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: pr-agent-redis
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command: >-
+      sh -c 'if [ -n "$$REDIS_PASSWORD" ]; then
+      exec redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction --requirepass "$$REDIS_PASSWORD";
+      else exec redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction; fi'
+    volumes:
+      - redis_data:/data
+    networks:
+      - agent-net
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  # ──────────────────────────────────────────────────────────
   # MCP-WeWe - 微信公众号 RSS MCP HTTP 桥接
   # ──────────────────────────────────────────────────────────
   mcp-wewe:
@@ -135,6 +165,10 @@ services:
     environment:
       MONGODB_URI: mongodb://admin:${MONGO_ROOT_PASSWORD:-pr_agent_2024}@mongodb:27017
       MONGODB_DB: pr_agent
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "1"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       MCP_WEWE_URL: http://mcp-wewe:8100
       MCP_CRAWL_URL: http://mcp-crawl:8101
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
@@ -164,6 +198,8 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       mcp-wewe:
         condition: service_started
       mcp-crawl:
@@ -181,11 +217,58 @@ services:
       retries: 3
       start_period: 15s
 
+  # ──────────────────────────────────────────────────────────
+  # Backend Worker - ARQ 独立流水线执行进程
+  # ──────────────────────────────────────────────────────────
+  backend-worker:
+    build:
+      context: .
+      dockerfile: services/backend/Dockerfile
+    container_name: pr-agent-worker
+    restart: unless-stopped
+    <<: *common-security
+    env_file:
+      - .env
+    environment:
+      MONGODB_URI: mongodb://admin:${MONGO_ROOT_PASSWORD:-pr_agent_2024}@mongodb:27017
+      MONGODB_DB: pr_agent
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "1"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      MCP_WEWE_URL: http://mcp-wewe:8100
+      MCP_CRAWL_URL: http://mcp-crawl:8101
+      KNOWLEDGE_BASE_DIR: /app/documents
+      LOG_DIR: /app/logs/worker
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_APP_RETENTION_DAYS: ${LOG_APP_RETENTION_DAYS:-30}
+      LOG_ERROR_RETENTION_DAYS: ${LOG_ERROR_RETENTION_DAYS:-90}
+      LOG_ACCESS_RETENTION_DAYS: ${LOG_ACCESS_RETENTION_DAYS:-7}
+      LOG_AUDIT_RETENTION_DAYS: ${LOG_AUDIT_RETENTION_DAYS:-365}
+    volumes:
+      - ./agent-security-briefs:/app/documents:ro
+      - ./docs:/app/docs:ro
+      - ./logs:/app/logs
+    networks:
+      - agent-net
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mcp-wewe:
+        condition: service_started
+      mcp-crawl:
+        condition: service_started
+    command: ["python", "-m", "worker"]
+
 # ═══════════════════════════════════════════════════════════════
 # 持久卷
 # ═══════════════════════════════════════════════════════════════
 volumes:
   mongo_data:
+    driver: local
+  redis_data:
     driver: local
 
 # ═══════════════════════════════════════════════════════════════

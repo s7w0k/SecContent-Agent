@@ -11,7 +11,6 @@ FastAPI app:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import sys
 import time
@@ -26,7 +25,12 @@ from config import get_settings
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from logging_config import setup_logging, log_request, set_trace_id, set_user_id, set_request_id, get_audit_logger
+from logging_config import (
+    log_request,
+    set_request_id,
+    set_user_id,
+    setup_logging,
+)
 
 # ── Logging（企业级：JSON 结构化 + 按日期轮转 + 分级文件）────
 _settings = get_settings()
@@ -64,7 +68,7 @@ def _log(level: str, msg: str):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: connect MongoDB + init Agent components. Shutdown: cleanup."""
-    app.state.pipeline_background_tasks = set()
+    app.state.arq_pool = None
     settings = get_settings()
     _log("INFO", "=" * 50)
     _log("INFO", "Backend starting...")
@@ -95,6 +99,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         _log("ERROR", f"MongoDB connection failed: {e}")
         app.state.db = None
+
+    # Redis / ARQ
+    try:
+        from agent.task_queue import redis_settings
+        from arq import create_pool
+
+        app.state.arq_pool = await create_pool(redis_settings())
+        _log(
+            "INFO",
+            f"ARQ connected: {settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}",
+        )
+    except Exception as e:
+        _log("ERROR", f"ARQ connection failed: {e}")
+        app.state.arq_pool = None
 
     # Agent components
     try:
@@ -183,11 +201,9 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     _log("INFO", "Shutting down backend...")
-    background_tasks = list(app.state.pipeline_background_tasks)
-    for task in background_tasks:
-        task.cancel()
-    if background_tasks:
-        await asyncio.gather(*background_tasks, return_exceptions=True)
+    arq_pool = getattr(app.state, "arq_pool", None)
+    if arq_pool is not None:
+        await arq_pool.aclose()
     try:
         from db.mongo import MongoDB
 

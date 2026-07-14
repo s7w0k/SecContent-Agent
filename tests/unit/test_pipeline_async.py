@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 import sys
 from copy import deepcopy
@@ -228,24 +227,15 @@ async def test_pipeline_task_failure_is_persisted():
 
 
 @pytest.mark.asyncio
-async def test_run_v2_endpoint_returns_before_background_finishes():
+async def test_run_v2_endpoint_enqueues_worker_job():
     tasks = FakeTaskCollection()
     activities = FakeCollection(None)
     db = FakeDatabase(pipeline_tasks=tasks, user_activities=activities)
-    started = asyncio.Event()
-    finish = asyncio.Event()
     manager = MagicMock()
-    manager.get_status = MagicMock(
-        return_value={"current_phase": "crawl", "status": "running"},
-    )
-
-    async def _run_full(**_kwargs):
-        started.set()
-        await finish.wait()
-        return {"pipeline_id": "p-1", "status": "completed", "state": {}}
-
-    manager.run_full = AsyncMock(side_effect=_run_full)
-    app = _app(db, pipeline_v2=manager)
+    manager.run_full = AsyncMock()
+    arq_pool = MagicMock()
+    arq_pool.enqueue_job = AsyncMock(return_value=SimpleNamespace(job_id="queued"))
+    app = _app(db, pipeline_v2=manager, arq_pool=arq_pool)
     request = SimpleNamespace(app=app)
 
     response = await pipeline_run_v2(
@@ -253,16 +243,20 @@ async def test_run_v2_endpoint_returns_before_background_finishes():
         request,
         user_id="user-a",
     )
-    await started.wait()
-
     task_id = response["data"]["task_id"]
-    assert tasks.documents[task_id]["status"] == "running"
-    background = list(app.state.pipeline_background_tasks)
-    assert background and not background[0].done()
-
-    finish.set()
-    await asyncio.gather(*background)
-    assert tasks.documents[task_id]["status"] == "completed"
+    assert tasks.documents[task_id]["status"] == "pending"
+    arq_pool.enqueue_job.assert_awaited_once_with(
+        "execute_pipeline",
+        task_id=task_id,
+        user_id="user-a",
+        task_type="run-v2",
+        crawl_days=1,
+        article_url_hash=None,
+        trace_id=response["data"]["trace_id"],
+        username="user-a",
+        _job_id=task_id,
+    )
+    manager.run_full.assert_not_awaited()
 
 
 @pytest.mark.asyncio

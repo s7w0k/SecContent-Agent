@@ -7,7 +7,6 @@ REST API 端点 — 单元测试
 
 from __future__ import annotations
 
-import asyncio
 import os
 import sys
 from unittest.mock import AsyncMock, MagicMock
@@ -38,6 +37,9 @@ def _make_app(pipeline_manager=None, db=None, knowledge_loader=None):
     _app.state.pipeline_manager = pipeline_manager
     _app.state.db = db
     _app.state.knowledge_loader = knowledge_loader
+    arq_pool = MagicMock()
+    arq_pool.enqueue_job = AsyncMock(return_value=MagicMock(job_id="queued"))
+    _app.state.arq_pool = arq_pool
     return _app
 
 
@@ -217,7 +219,7 @@ class TestPipelineAPI:
             resp = await client.post("/api/pipeline/crawl", json={"crawl_days": 2})
             assert resp.status_code == 200
             assert resp.json()["data"]["task_id"].startswith("task-")
-        await asyncio.gather(*app.state.pipeline_background_tasks)
+        app.state.arq_pool.enqueue_job.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_run_score(self, app):

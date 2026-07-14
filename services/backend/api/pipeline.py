@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Coroutine
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -247,50 +246,58 @@ async def _update_pipeline_task(
     )
 
 
-def _schedule_pipeline_task(app: Any, coroutine: Coroutine[Any, Any, None]) -> None:
-    """调度后台协程，并在 app.state 中持有引用直至任务结束。"""
-    tasks = getattr(app.state, "pipeline_background_tasks", None)
-    if tasks is None:
-        tasks = set()
-        app.state.pipeline_background_tasks = tasks
-    task = asyncio.create_task(coroutine)
-    tasks.add(task)
-    task.add_done_callback(tasks.discard)
-
-
-async def _run_manager_with_progress(
-    db: Any,
+async def _enqueue_pipeline_task(
+    app: Any,
     task_id: str,
     user_id: str,
-    manager: Any,
-    operation: Coroutine[Any, Any, dict],
-    phase_map: dict[str, tuple[str, int, str]],
-) -> dict:
-    """执行现有 PipelineManager，同时将其 current_phase 镜像到任务进度。"""
-    runner = asyncio.create_task(operation)
-    last_phase = ""
+    task_type: str,
+    *,
+    crawl_days: int = 1,
+    article_url_hash: str | None = None,
+    trace_id: str = "",
+    username: str = "",
+) -> None:
+    """Submit a persisted task to ARQ and fail clearly when Redis is unavailable."""
+    pool = getattr(app.state, "arq_pool", None)
+    db = getattr(app.state, "db", None)
+    if pool is None:
+        if db is not None:
+            await _update_pipeline_task(
+                db,
+                task_id,
+                user_id,
+                status="failed",
+                phase="failed",
+                message="任务队列不可用",
+                error="Task queue not available",
+            )
+        raise HTTPException(status_code=503, detail="Task queue not available")
     try:
-        while not runner.done():
-            manager_status = manager.get_status()
-            raw_phase = manager_status.get("current_phase", "")
-            if raw_phase in phase_map and raw_phase != last_phase:
-                phase, current, message = phase_map[raw_phase]
-                await _update_pipeline_task(
-                    db,
-                    task_id,
-                    user_id,
-                    status="running",
-                    phase=phase,
-                    current=current,
-                    total=len(phase_map),
-                    message=message,
-                )
-                last_phase = raw_phase
-            await asyncio.sleep(0.2)
-        return await runner
-    finally:
-        if not runner.done():
-            runner.cancel()
+        job = await pool.enqueue_job(
+            "execute_pipeline",
+            task_id=task_id,
+            user_id=user_id,
+            task_type=task_type,
+            crawl_days=crawl_days,
+            article_url_hash=article_url_hash,
+            trace_id=trace_id,
+            username=username,
+            _job_id=task_id,
+        )
+    except Exception as exc:
+        if db is not None:
+            await _update_pipeline_task(
+                db,
+                task_id,
+                user_id,
+                status="failed",
+                phase="failed",
+                message="任务提交失败",
+                error=str(exc),
+            )
+        raise HTTPException(status_code=503, detail="Task queue unavailable") from exc
+    if job is None:
+        raise HTTPException(status_code=409, detail="Pipeline task is already queued")
 
 
 async def _execute_pipeline_task(
@@ -303,6 +310,7 @@ async def _execute_pipeline_task(
     article_url_hash: str | None = None,
     trace_id: str | None = None,
     username: str | None = None,
+    raise_errors: bool = False,
 ) -> None:
     """后台执行流水线任务并持久化阶段进度、结果或错误。"""
     db = app.state.db
@@ -354,17 +362,12 @@ async def _execute_pipeline_task(
                 task_id=task_id,
             )
         elif task_type == "crawl":
-            manager = app.state.pipeline_manager
-            result = await _run_manager_with_progress(
-                db,
-                task_id,
+            result = await _execute_crawl_pipeline(
+                app,
+                crawl_days,
                 user_id,
-                manager,
-                _execute_crawl_pipeline(app, crawl_days, user_id, trace_id, username),
-                {
-                    "crawl": ("crawl", 0, "正在爬取文章..."),
-                    "classify": ("classify", 1, "正在分类文章..."),
-                },
+                trace_id,
+                username,
             )
         else:
             raise ValueError(f"Unsupported pipeline task type: {task_type}")
@@ -455,6 +458,8 @@ async def _execute_pipeline_task(
             error=build_log_error(exc),
             detail={"task_id": task_id, "task_type": task_type},
         )
+        if raise_errors:
+            raise
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -499,21 +504,21 @@ async def pipeline_run_v2(
     db = getattr(request.app.state, "db", None)
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
+    arq_pool = getattr(request.app.state, "arq_pool", None)
+    if arq_pool is None:
+        raise HTTPException(status_code=503, detail="Task queue not available")
 
     trace_id = generate_trace_id()
     username = _request_username(request, user_id)
     task = await _create_pipeline_task(db, user_id, "run-v2", trace_id=trace_id, username=username)
-    _schedule_pipeline_task(
+    await _enqueue_pipeline_task(
         request.app,
-        _execute_pipeline_task(
-            request.app,
-            task["task_id"],
-            user_id,
-            "run-v2",
-            crawl_days=body.crawl_days,
-            trace_id=trace_id,
-            username=username,
-        ),
+        task["task_id"],
+        user_id,
+        "run-v2",
+        crawl_days=body.crawl_days,
+        trace_id=trace_id,
+        username=username,
     )
     get_audit_logger().log(
         user_id=user_id,
@@ -635,17 +640,14 @@ async def pipeline_crawl(
     trace_id = generate_trace_id()
     username = _request_username(request, user_id)
     task = await _create_pipeline_task(db, user_id, "crawl", trace_id=trace_id, username=username)
-    _schedule_pipeline_task(
+    await _enqueue_pipeline_task(
         request.app,
-        _execute_pipeline_task(
-            request.app,
-            task["task_id"],
-            user_id,
-            "crawl",
-            crawl_days=body.crawl_days,
-            trace_id=trace_id,
-            username=username,
-        ),
+        task["task_id"],
+        user_id,
+        "crawl",
+        crawl_days=body.crawl_days,
+        trace_id=trace_id,
+        username=username,
     )
     get_audit_logger().log(
         user_id=user_id,
@@ -672,6 +674,9 @@ async def crawl_overseas_only(
     db = getattr(request.app.state, "db", None)
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
+    arq_pool = getattr(request.app.state, "arq_pool", None)
+    if arq_pool is None:
+        raise HTTPException(status_code=503, detail="Task queue not available")
 
     tz = timezone(timedelta(hours=8))
     tools = getattr(request.app.state, "pipeline_manager", None)
@@ -680,6 +685,7 @@ async def crawl_overseas_only(
 
     try:
         result = await tools.tools["crawl_overseas_news"].ainvoke({"payload": {"days": days}})
+        data: dict[str, Any] = {}
         articles = []
         if result.get("ok") and result.get("data"):
             data = result["data"]
@@ -712,15 +718,9 @@ async def crawl_overseas_only(
             new_urls.append({"url_hash": url_hash, "url": url})
             saved += 1
 
-        # 异步批量抓取全文（不阻塞响应）
+        # 全文抓取交由 ARQ Worker，API 进程不持有后台协程。
         if new_urls:
-            import asyncio as _aio
-
-            from agent.pipeline import _fetch_fulltext_background, _fulltext_tasks
-
-            _task = _aio.create_task(_fetch_fulltext_background(db, new_urls, ""))
-            _fulltext_tasks.add(_task)
-            _task.add_done_callback(_fulltext_tasks.discard)
+            await arq_pool.enqueue_job("fetch_fulltext_batch", new_urls)
 
         errors = data.get("errors", {}) if isinstance(data, dict) else {}
         per_site = data.get("per_site", {}) if isinstance(data, dict) else {}
@@ -1268,17 +1268,14 @@ async def run_v2_single(url_hash: str, request: Request, user_id: str = Depends(
         trace_id=trace_id,
         username=username,
     )
-    _schedule_pipeline_task(
+    await _enqueue_pipeline_task(
         request.app,
-        _execute_pipeline_task(
-            request.app,
-            task["task_id"],
-            user_id,
-            "run-v2",
-            article_url_hash=url_hash,
-            trace_id=trace_id,
-            username=username,
-        ),
+        task["task_id"],
+        user_id,
+        "run-v2",
+        article_url_hash=url_hash,
+        trace_id=trace_id,
+        username=username,
     )
     get_audit_logger().log(
         user_id=user_id,
