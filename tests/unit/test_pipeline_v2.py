@@ -158,11 +158,15 @@ class TestCreateStateV2:
         from agent.pipeline_v2 import create_state_v2
 
         state = create_state_v2()
-        assert len(state["phases"]) == 4
+        assert len(state["phases"]) == 8
         assert "crawl" in state["phases"]
+        assert "enrich" in state["phases"]
         assert "classify_v2" in state["phases"]
+        assert "filter" in state["phases"]
         assert "score_v2" in state["phases"]
         assert "draft" in state["phases"]
+        assert "quality_check" in state["phases"]
+        assert "rewrite" in state["phases"]
         assert state["crawl_days"] == 1
 
 
@@ -237,7 +241,7 @@ class TestClassifyV2Node:
         state = create_state_v2()
         result = await classify_v2_node(state, mock_classifier, mock_db)
         assert result["classified_v2_count"] == 2
-        assert result["pr_eligible_count"] == 1
+        assert result["low_confidence_count"] == 0
 
 
 class TestScoreV2Node:
@@ -423,12 +427,20 @@ class TestPipelineV2E2E:
                     return MagicMock(modified_count=1)
             return MagicMock(modified_count=0)
 
+        async def _count_documents(query):
+            if "$expr" in query:
+                return 0
+            if query.get("is_pr_eligible") is True:
+                return sum(1 for article in store if article.get("is_pr_eligible") is True)
+            return len(store)
+
         mock_cursor = MagicMock()
         mock_cursor.to_list = _to_list
         articles_mock.find = MagicMock(return_value=mock_cursor)
         articles_mock.find_one = AsyncMock(return_value=None)
         articles_mock.insert_one = AsyncMock()
         articles_mock.update_one = _update_one
+        articles_mock.count_documents = _count_documents
 
         return db, store
 

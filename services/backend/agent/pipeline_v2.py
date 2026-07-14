@@ -2,7 +2,8 @@
 Agent 流水线编排 V2 — LangGraph StateGraph
 
 V2 流水线:
-  crawl → classify_v2 (6分类) → filter (3 PR类) → score_v2 → draft (4草稿)
+  crawl → [enrich] → classify_v2 → filter → score_v2 → draft
+  → quality_check → [rewrite] → END
 
 与 V1 差异:
   - 使用 ClassifierV2 替代 V1 classify_articles MCP 工具
@@ -43,9 +44,13 @@ logger = logging.getLogger("backend.agent.pipeline_v2")
 
 class PipelinePhaseV2(StrEnum):
     CRAWL = "crawl"
+    ENRICH = "enrich"
     CLASSIFY_V2 = "classify_v2"
+    FILTER = "filter"
     SCORE_V2 = "score_v2"
     DRAFT = "draft"
+    QUALITY_CHECK = "quality_check"
+    REWRITE = "rewrite"
 
 
 class PipelineStatusV2(StrEnum):
@@ -70,12 +75,21 @@ def create_state_v2(
         "username": username or user_id,
         "phases": [p.value for p in PipelinePhaseV2],
         "crawled_count": 0,
+        "enriched_count": 0,
         "classified_v2_count": 0,
+        "low_confidence_count": 0,
         "pr_eligible_count": 0,
         "scored_v2_count": 0,
         "draft_count": 0,
+        "rewritten_count": 0,
         "score_threshold": 80,
         "threshold_adjustment": 0,
+        "needs_enrich": False,
+        "enriched": False,
+        "low_confidence_articles": [],
+        "score_anomaly": False,
+        "score_retried": False,
+        "needs_rewrite": [],
         "errors": [],
         "status": PipelineStatusV2.IDLE.value,
         "current_phase": "",
@@ -93,7 +107,78 @@ async def crawl_node_v2(state: dict, tools: dict, db: Any) -> dict:
     """爬取阶段 — 复用 V1 crawl_node"""
     from agent.pipeline import crawl_node
 
-    return await crawl_node(state, tools, db)
+    state = await crawl_node(state, tools, db)
+    if db is not None:
+        incomplete = await db["articles"].count_documents(_incomplete_article_query())
+        state["needs_enrich"] = incomplete > 0 and not state.get("enriched", False)
+        state["incomplete_article_count"] = incomplete
+    return state
+
+
+def _incomplete_article_query() -> dict[str, Any]:
+    """MongoDB query for crawled articles whose body is shorter than 200 chars."""
+    return {
+        "pipeline_status": "crawled",
+        "url": {"$nin": [None, ""]},
+        "$expr": {
+            "$lt": [
+                {"$strLenCP": {"$ifNull": ["$content_md", ""]}},
+                200,
+            ]
+        },
+    }
+
+
+async def _fetch_fulltext_batch(articles: list[dict]) -> dict[str, str]:
+    """Fetch full text from mcp-crawl and return a URL-to-content mapping."""
+    import httpx
+
+    urls = [article["url"] for article in articles if article.get("url")]
+    if not urls:
+        return {}
+    async with httpx.AsyncClient(timeout=180) as client:
+        response = await client.post(
+            "http://mcp-crawl:8101/fetch-fulltext-batch",
+            json=urls,
+        )
+    response.raise_for_status()
+    payload = response.json()
+    data = payload.get("data", {}) if isinstance(payload, dict) else {}
+    return data if isinstance(data, dict) else {}
+
+
+async def enrich_node(state: dict, tools: dict, db: Any) -> dict:
+    """补爬正文不足 200 字的文章，并在一次执行中最多触发一次。"""
+    del tools  # Reserved for a future MCP tool abstraction.
+    state["current_phase"] = PipelinePhaseV2.ENRICH.value
+    state["enriched"] = True
+    state["needs_enrich"] = False
+    if db is None:
+        return state
+
+    cursor = db["articles"].find(_incomplete_article_query())
+    articles = await cursor.to_list(length=100)
+    if not articles:
+        return state
+
+    try:
+        content_by_url = await _fetch_fulltext_batch(articles)
+        enriched_count = 0
+        for article in articles:
+            content = content_by_url.get(article.get("url", ""), "")
+            if len(content) < 200:
+                continue
+            await db["articles"].update_one(
+                {"_id": article["_id"]},
+                {"$set": {"content_md": content[:50000]}},
+            )
+            enriched_count += 1
+        state["enriched_count"] = enriched_count
+        logger.info("[enrich] Enriched %d/%d articles", enriched_count, len(articles))
+    except Exception as exc:
+        logger.warning("[enrich] Full-text enrichment failed: %s", exc)
+        state["errors"].append(f"enrich: {exc}")
+    return state
 
 
 async def classify_v2_node(state: dict, classifier: Any, db: Any) -> dict:
@@ -132,9 +217,10 @@ async def classify_v2_node(state: dict, classifier: Any, db: Any) -> dict:
         results = await classifier.classify_batch(articles)
 
         updated = 0
-        pr_eligible = 0
+        low_confidence_articles: list[str] = []
         for art, result in zip(articles, results, strict=False):
             try:
+                is_low_confidence = result.confidence < 60
                 await db["articles"].update_one(
                     {"_id": art["_id"]},
                     {
@@ -143,35 +229,37 @@ async def classify_v2_node(state: dict, classifier: Any, db: Any) -> dict:
                             "category_v2_confidence": result.confidence,
                             "category_v2_reason": result.reason,
                             "category_v2_fallback": result.is_fallback,
+                            "category_v2_low_confidence": is_low_confidence,
                             "is_pr_eligible": result.is_pr_eligible,
                         }
                     },
                 )
                 updated += 1
-                if result.is_pr_eligible:
-                    pr_eligible += 1
+                if is_low_confidence:
+                    low_confidence_articles.append(str(art.get("url_hash") or art["_id"]))
             except Exception as e:
                 logger.warning("[classify_v2] DB update failed: %s", e)
 
         state["classified_v2_count"] = updated
-        state["pr_eligible_count"] = pr_eligible
+        state["low_confidence_articles"] = low_confidence_articles
+        state["low_confidence_count"] = len(low_confidence_articles)
         logger.info(
-            "[classify_v2] Done: %d/%d classified, %d PR-eligible",
+            "[classify_v2] Done: %d/%d classified, %d low-confidence",
             updated,
             len(articles),
-            pr_eligible,
+            len(low_confidence_articles),
         )
         duration_ms = int((time.perf_counter() - started) * 1000)
         await _log_stage(
             state,
             db,
             "classify_v2",
-            f"classified {updated}, {pr_eligible} PR-eligible",
+            f"classified {updated}, {len(low_confidence_articles)} low-confidence",
             duration_ms=duration_ms,
             detail={
                 "article_count": len(articles),
                 "classified_count": updated,
-                "pr_eligible_count": pr_eligible,
+                "low_confidence_count": len(low_confidence_articles),
             },
         )
 
@@ -194,12 +282,27 @@ async def classify_v2_node(state: dict, classifier: Any, db: Any) -> dict:
     return state
 
 
+async def filter_node(state: dict, db: Any) -> dict:
+    """独立统计可进入评分和草稿阶段的 PR 候选文章。"""
+    state["current_phase"] = PipelinePhaseV2.FILTER.value
+    if db is None:
+        return state
+    count = await db["articles"].count_documents({"is_pr_eligible": True})
+    state["pr_eligible_count"] = count
+    logger.info("[filter] %d PR-eligible articles", count)
+    return state
+
+
 async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> dict:
     """V2 双维度打分阶段：对 PR 候选文章评分"""
     from agent.pipeline import _log_stage
 
     started = time.perf_counter()
     state["current_phase"] = PipelinePhaseV2.SCORE_V2.value
+    is_retry = bool(state.get("score_anomaly") and not state.get("score_retried"))
+    if is_retry:
+        state["score_retried"] = True
+    state["score_anomaly"] = False
     logger.info("[score_v2] Starting V2 scoring")
     await _log_stage(state, db, "score_v2", "V2 scoring started", action="start")
 
@@ -223,12 +326,15 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
                 threshold_info["directional_count"],
             )
 
-        cursor = db["articles"].find(
-            {
-                "is_pr_eligible": True,
-                "pr_total_score": None,
-            }
-        )
+        score_query: dict[str, Any] = {"is_pr_eligible": True}
+        if is_retry:
+            score_query["$or"] = [
+                {"pr_total_score": 0},
+                {"pr_total_score": {"$gt": 190}},
+            ]
+        else:
+            score_query["pr_total_score"] = None
+        cursor = db["articles"].find(score_query)
         articles = await cursor.to_list(length=500)
 
         if not articles:
@@ -241,8 +347,10 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
         scored = await scorer.score_batch(articles)
         scored_count = 0
         candidates = 0
+        anomaly_count = 0
         for art, result in zip(articles, scored, strict=False):
             if not result.get("_fallback", True):
+                total_score = result["pr_total_score"]
                 await db["articles"].update_one(
                     {"_id": art["_id"]},
                     {
@@ -262,13 +370,17 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
                 scored_count += 1
                 if result.get("is_pr_candidate"):
                     candidates += 1
+                if total_score == 0 or total_score > 190:
+                    anomaly_count += 1
 
         state["scored_v2_count"] = scored_count
+        state["score_anomaly"] = anomaly_count > 0
         logger.info(
-            "[score_v2] Scored: %d/%d, %d PR candidates (>=%d)",
+            "[score_v2] Scored: %d/%d, %d candidates, %d anomalies (>=%d)",
             scored_count,
             len(articles),
             candidates,
+            anomaly_count,
             state["score_threshold"],
         )
         duration_ms = int((time.perf_counter() - started) * 1000)
@@ -282,6 +394,8 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
                 "article_count": len(articles),
                 "scored_count": scored_count,
                 "candidate_count": candidates,
+                "anomaly_count": anomaly_count,
+                "is_retry": is_retry,
                 "threshold": state["score_threshold"],
             },
         )
@@ -395,11 +509,114 @@ async def draft_node(state: dict, draft_gen: Any, knowledge: Any, db: Any) -> di
     return state
 
 
+async def quality_check_node(state: dict, db: Any) -> dict:
+    """使用确定性启发式规则标记缺字段或正文不足 300 字的草稿。"""
+    state["current_phase"] = PipelinePhaseV2.QUALITY_CHECK.value
+    state["needs_rewrite"] = []
+    if db is None:
+        return state
+
+    cursor = db["user_drafts"].find({"user_id": state["user_id"]})
+    draft_documents = await cursor.to_list(length=30)
+    needs_rewrite: list[dict[str, Any]] = []
+    for document in draft_documents:
+        for position, draft in enumerate(document.get("drafts", [])):
+            content = (draft.get("content_md") or "").strip()
+            if not draft.get("title") or not content:
+                reason = "missing_fields"
+            elif len(content) < 300:
+                reason = "too_short"
+            else:
+                continue
+            needs_rewrite.append(
+                {
+                    "url_hash": document["article_url_hash"],
+                    "index": draft.get("index", position + 1),
+                    "position": position,
+                    "reason": reason,
+                }
+            )
+
+    state["needs_rewrite"] = needs_rewrite
+    logger.info("[quality_check] %d drafts need rewrite", len(needs_rewrite))
+    return state
+
+
+async def rewrite_node(
+    state: dict,
+    draft_gen: Any,
+    knowledge: Any,
+    db: Any,
+) -> dict:
+    """重新生成质量不达标的草稿，并替换原数组中的对应版本。"""
+    state["current_phase"] = PipelinePhaseV2.REWRITE.value
+    state["rewritten_count"] = 0
+    if db is None:
+        return state
+
+    await knowledge.load()
+    base_style_hints = await _load_style_hints(db, state["user_id"])
+    rewritten_count = 0
+    for item in state.get("needs_rewrite", []):
+        article = await db["articles"].find_one({"url_hash": item["url_hash"]})
+        if not article:
+            continue
+        scores = {
+            "product_relevance": article.get("product_relevance", 0),
+            "event_impact": article.get("event_impact", 0),
+            "pr_total_score": article.get("pr_total_score", 0),
+            "score_reason": article.get("score_reason", ""),
+        }
+        reflection = (
+            f"反思重写要求：上一版草稿存在 {item['reason']} 问题，"
+            "请补全标题和正文，并确保正文不少于300字。"
+        )
+        style_hints = "\n".join(part for part in [base_style_hints, reflection] if part)
+        generated = await draft_gen.generate(
+            article,
+            scores,
+            style_hints=style_hints,
+        )
+        if not generated.get("ok") or not generated.get("drafts"):
+            continue
+        replacement = next(
+            (draft for draft in generated["drafts"] if draft.get("index") == item["index"]),
+            generated["drafts"][0],
+        )
+        await db["user_drafts"].update_one(
+            {
+                "user_id": state["user_id"],
+                "article_url_hash": item["url_hash"],
+            },
+            {"$set": {f"drafts.{item['position']}": replacement}},
+        )
+        rewritten_count += 1
+
+    state["rewritten_count"] = rewritten_count
+    logger.info("[rewrite] Rewritten %d drafts", rewritten_count)
+    return state
+
+
 async def _load_style_hints(db: Any, user_id: str) -> str | None:
     """读取用户画像并转换为草稿生成可注入的风格提示。"""
     from agent.style_profiler import load_style_hints
 
     return await load_style_hints(db, user_id)
+
+
+def route_after_crawl(state: dict) -> str:
+    """Route incomplete articles through one enrichment pass."""
+    return "enrich" if state.get("needs_enrich") and not state.get("enriched") else "classify_v2"
+
+
+def route_after_score(state: dict) -> str:
+    """Retry anomalous scores once, then continue to draft generation."""
+    return "score_v2" if state.get("score_anomaly") and not state.get("score_retried") else "draft"
+
+
+def route_after_quality_check(state: dict) -> str:
+    """Route low-quality drafts through one reflection rewrite pass."""
+    return "rewrite" if state.get("needs_rewrite") else END
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -411,7 +628,8 @@ class PipelineManagerV2:
     """V2 流水线生命周期管理器。
 
     V2 流水线:
-      crawl → classify_v2 → score_v2 → draft
+      crawl → [enrich] → classify_v2 → filter → score_v2 → draft
+      → quality_check → [rewrite]
     """
 
     def __init__(
@@ -462,22 +680,54 @@ class PipelineManagerV2:
         async def _classify_v2(state: dict) -> dict:
             return await classify_v2_node(state, cclassifier, cdb)
 
+        async def _enrich(state: dict) -> dict:
+            return await enrich_node(state, ctools, cdb)
+
+        async def _filter(state: dict) -> dict:
+            return await filter_node(state, cdb)
+
         async def _score_v2(state: dict) -> dict:
             return await score_v2_node(state, cscorer, cknowledge, cdb)
 
         async def _draft(state: dict) -> dict:
             return await draft_node(state, cdraft_gen, cknowledge, cdb)
 
+        async def _quality_check(state: dict) -> dict:
+            return await quality_check_node(state, cdb)
+
+        async def _rewrite(state: dict) -> dict:
+            return await rewrite_node(state, cdraft_gen, cknowledge, cdb)
+
         graph.add_node("crawl", _crawl)
+        graph.add_node("enrich", _enrich)
         graph.add_node("classify_v2", _classify_v2)
+        graph.add_node("filter", _filter)
         graph.add_node("score_v2", _score_v2)
         graph.add_node("draft", _draft)
+        graph.add_node("quality_check", _quality_check)
+        graph.add_node("rewrite", _rewrite)
 
         graph.set_entry_point("crawl")
-        graph.add_edge("crawl", "classify_v2")
-        graph.add_edge("classify_v2", "score_v2")
-        graph.add_edge("score_v2", "draft")
-        graph.add_edge("draft", END)
+        graph.add_conditional_edges(
+            "crawl",
+            route_after_crawl,
+            {"enrich": "enrich", "classify_v2": "classify_v2"},
+        )
+        graph.add_edge("enrich", "classify_v2")
+        graph.add_edge("classify_v2", "filter")
+        graph.add_edge("filter", "score_v2")
+        graph.add_conditional_edges(
+            "score_v2",
+            route_after_score,
+            {"score_v2": "score_v2", "draft": "draft"},
+        )
+        graph.add_edge("draft", "quality_check")
+        graph.add_conditional_edges(
+            "quality_check",
+            route_after_quality_check,
+            {"rewrite": "rewrite", END: END},
+        )
+        graph.add_edge("rewrite", END)
 
         checkpointer = None
         if supports_mongodb_checkpoints(self.db):
@@ -522,7 +772,7 @@ class PipelineManagerV2:
                 progress={
                     "phase": "crawl",
                     "current": 0,
-                    "total": 4,
+                    "total": 8,
                     "message": "正在启动流水线...",
                 },
                 state=dict(state),
@@ -563,8 +813,8 @@ class PipelineManagerV2:
                 status,
                 progress={
                     "phase": status,
-                    "current": 4 if status == PipelineStatusV2.COMPLETED.value else 0,
-                    "total": 4,
+                    "current": 8 if status == PipelineStatusV2.COMPLETED.value else 0,
+                    "total": 8,
                     "message": "任务完成"
                     if status == PipelineStatusV2.COMPLETED.value
                     else "任务已结束",
@@ -603,7 +853,7 @@ class PipelineManagerV2:
                 progress={
                     "phase": "resume",
                     "current": 0,
-                    "total": 4,
+                    "total": 8,
                     "message": "正在从检查点恢复...",
                 },
             )
@@ -626,8 +876,8 @@ class PipelineManagerV2:
                 PipelineStatusV2.COMPLETED.value,
                 progress={
                     "phase": "completed",
-                    "current": 4,
-                    "total": 4,
+                    "current": 8,
+                    "total": 8,
                     "message": "任务恢复完成",
                 },
                 last_node=final_state.get("current_phase", ""),

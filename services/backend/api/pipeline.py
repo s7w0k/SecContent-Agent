@@ -309,6 +309,9 @@ async def _execute_pipeline_task(
     trace_id = trace_id or generate_trace_id()
     username = username or user_id
     task_started = time.perf_counter()
+    total_steps = 8 if task_type == "run-v2" and not article_url_hash else 4
+    if task_type != "run-v2":
+        total_steps = 2
     try:
         await log_pipeline(
             db,
@@ -328,7 +331,7 @@ async def _execute_pipeline_task(
             status="running",
             phase="crawl" if not article_url_hash else "classify",
             current=0,
-            total=4 if task_type == "run-v2" else 2,
+            total=total_steps,
             message="正在启动流水线...",
         )
 
@@ -374,8 +377,8 @@ async def _execute_pipeline_task(
             user_id,
             status="completed",
             phase="completed",
-            current=4 if task_type == "run-v2" else 2,
-            total=4 if task_type == "run-v2" else 2,
+            current=total_steps,
+            total=total_steps,
             message="任务完成",
             result=result,
         )
