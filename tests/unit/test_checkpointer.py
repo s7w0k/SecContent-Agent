@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from types import SimpleNamespace
@@ -44,6 +45,27 @@ def test_create_checkpointer_rejects_non_mongo_database():
         create_checkpointer(MagicMock())
 
 
+def test_pipeline_graph_compiles_with_mongodb_checkpointer():
+    from agent.pipeline_v2 import PipelineManagerV2, StateGraph
+
+    dependency = MagicMock()
+    dependency.load = AsyncMock()
+    db = MagicMock()
+    saver = MagicMock()
+    compiled_graph = MagicMock()
+
+    with (
+        patch("agent.pipeline_v2.supports_mongodb_checkpoints", return_value=True),
+        patch("agent.pipeline_v2.create_checkpointer", return_value=saver) as create_saver,
+        patch.object(StateGraph, "compile", return_value=compiled_graph) as compile_graph,
+    ):
+        manager = PipelineManagerV2({}, dependency, dependency, dependency, dependency, db)
+
+    assert manager._graph is compiled_graph
+    create_saver.assert_called_once_with(db)
+    assert compile_graph.call_args.kwargs["checkpointer"] is saver
+
+
 def _manager_without_db():
     from agent.pipeline_v2 import PipelineManagerV2
 
@@ -65,6 +87,28 @@ async def test_run_full_uses_task_thread_id():
     assert result["status"] == "completed"
     config = manager._graph.ainvoke.await_args.kwargs["config"]
     assert config == {"configurable": {"thread_id": "thread-task-a"}}
+
+
+@pytest.mark.asyncio
+async def test_concurrent_tasks_use_isolated_checkpoint_threads():
+    manager = _manager_without_db()
+    seen_threads: list[str] = []
+
+    async def invoke(state: dict, config: dict):
+        await asyncio.sleep(0)
+        seen_threads.append(config["configurable"]["thread_id"])
+        return dict(state)
+
+    manager._graph = MagicMock()
+    manager._graph.ainvoke = AsyncMock(side_effect=invoke)
+
+    results = await asyncio.gather(
+        manager.run_full(user_id="user-a", task_id="task-a"),
+        manager.run_full(user_id="user-b", task_id="task-b"),
+    )
+
+    assert {result["status"] for result in results} == {"completed"}
+    assert set(seen_threads) == {"thread-task-a", "thread-task-b"}
 
 
 @pytest.mark.asyncio

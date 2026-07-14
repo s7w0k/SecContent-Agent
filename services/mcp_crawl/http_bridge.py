@@ -23,7 +23,7 @@ import argparse
 import json
 import os
 import sys
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import uvicorn
 from fastapi import Body, FastAPI, HTTPException
@@ -39,11 +39,9 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 MCP_SERVER_PATH = os.path.join(SCRIPT_DIR, "server.py")
 
 if sys.platform == "win32":
-    try:
-        sys.stdout = open(sys.stdout.fileno(), mode="w", encoding="utf-8", buffering=1)
-        sys.stderr = open(sys.stderr.fileno(), mode="w", encoding="utf-8", buffering=1)
-    except (OSError, AttributeError):
-        pass
+    for stream in (sys.stdout, sys.stderr):
+        with suppress(OSError, AttributeError):
+            stream.reconfigure(encoding="utf-8", line_buffering=True)
 
 # ═══════════════════════════════════════════════════════════
 # MCP 会话管理（持久连接，启动时建立，关闭时清理）
@@ -138,6 +136,7 @@ app.add_middleware(
 # 健康检查
 # ═══════════════════════════════════════════════════════════
 
+
 @app.get("/health")
 async def health():
     """服务健康检查"""
@@ -152,6 +151,7 @@ async def health():
 # ═══════════════════════════════════════════════════════════
 # 通用接口
 # ═══════════════════════════════════════════════════════════
+
 
 @app.get("/tools")
 async def list_tools():
@@ -175,6 +175,7 @@ async def call_tool_endpoint(tool_name: str, arguments: dict = Body(default={}))
 # 快捷接口（无需记工具名和参数）
 # ═══════════════════════════════════════════════════════════
 
+
 @app.post("/crawl-news")
 async def crawl_news(days: int = Body(1, embed=True)):
     """爬取海外安全新闻"""
@@ -186,6 +187,7 @@ async def crawl_news(days: int = Body(1, embed=True)):
 async def fetch_fulltext(url: str = Body(..., embed=True)):
     """抓取单篇文章全文（使用 curl_cffi 浏览器指纹模拟）"""
     from crawler import NewsCrawler
+
     crawler = NewsCrawler()
     content = await crawler.fetch_fulltext(url)
     if not content:
@@ -197,6 +199,7 @@ async def fetch_fulltext(url: str = Body(..., embed=True)):
 async def fetch_fulltext_batch(urls: list[str] = Body(...)):
     """批量异步抓取文章全文（含反风控：域名并发限制+随机延迟+指数退避重试）"""
     from crawler import NewsArticle, NewsCrawler
+
     crawler = NewsCrawler()
     articles = [NewsArticle(title="", url=u, source="") for u in urls if u]
     results = await crawler.fetch_fulltext_batch(articles)
@@ -212,10 +215,13 @@ async def fetch_fulltext_batch(urls: list[str] = Body(...)):
 @app.post("/classify")
 async def classify(articles_json: str = Body(...), batch_size: int = Body(25, embed=True)):
     """AI 分类文章"""
-    result = await _call_tool("classify_articles", {
-        "articles_json": articles_json,
-        "batch_size": batch_size,
-    })
+    result = await _call_tool(
+        "classify_articles",
+        {
+            "articles_json": articles_json,
+            "batch_size": batch_size,
+        },
+    )
     return json.loads(result)
 
 
@@ -226,11 +232,14 @@ async def query(
     keyword: str = Body("", embed=True),
 ):
     """查询已爬取文章"""
-    result = await _call_tool("query_database", {
-        "category": category,
-        "days": days,
-        "keyword": keyword,
-    })
+    result = await _call_tool(
+        "query_database",
+        {
+            "category": category,
+            "days": days,
+            "keyword": keyword,
+        },
+    )
     return json.loads(result)
 
 

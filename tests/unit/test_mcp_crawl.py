@@ -325,12 +325,20 @@ class TestMCPServerProtocol:
         """导入 server 模块前的环境设置"""
         os.environ["TAVILY_API_KEY"] = "test-tavily-key"
         os.environ["DEEPSEEK_API_KEY"] = "test-deepseek-key"
+        original_stdout = sys.stdout
+        original_stderr = sys.stderr
         import server as srv
 
         self.server = srv
+        self.original_stdout = original_stdout
+        self.original_stderr = original_stderr
         yield
         # 清理服务端的全局状态
         self.server._article_cache.clear()
+
+    def test_import_keeps_process_standard_streams(self):
+        assert sys.stdout is self.original_stdout
+        assert sys.stderr is self.original_stderr
 
     def test_tools_count(self):
         assert len(self.server.TOOLS) == 5

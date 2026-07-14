@@ -33,15 +33,14 @@ import os
 import sys
 import traceback
 from collections import Counter
+from contextlib import suppress
 from typing import Any
 
 # ── Windows GBK → UTF-8 ──
 if sys.platform == "win32":
-    try:
-        sys.stdout = open(sys.stdout.fileno(), mode="w", encoding="utf-8", buffering=1)
-        sys.stderr = open(sys.stderr.fileno(), mode="w", encoding="utf-8", buffering=1)
-    except (OSError, AttributeError):
-        pass
+    for stream in (sys.stdout, sys.stderr):
+        with suppress(OSError, AttributeError):
+            stream.reconfigure(encoding="utf-8", line_buffering=True)
 
 from classifier import AISecurityClassifier
 from crawler import NewsCrawler
@@ -175,7 +174,7 @@ def make_error(req_id: Any, code: int, message: str) -> dict:
 # 内存中的文章缓存（阶段一：暂代 MongoDB）
 # ═══════════════════════════════════════════════════════════
 
-_article_cache: list[dict] = []     # 最近一次爬取 + 分类的结果
+_article_cache: list[dict] = []  # 最近一次爬取 + 分类的结果
 
 
 # ═══════════════════════════════════════════════════════════
@@ -207,6 +206,7 @@ def call_tool(name: str, arguments: dict) -> str:
 
 # ── crawl_news ──
 
+
 def _handle_crawl_news(arguments: dict) -> str:
     global _article_cache
     days = int(arguments.get("days", 1))
@@ -215,25 +215,30 @@ def _handle_crawl_news(arguments: dict) -> str:
     crawler = NewsCrawler()
 
     import asyncio
+
     loop = asyncio.new_event_loop()
     articles = loop.run_until_complete(crawler.crawl(days=days))
     loop.close()
     _article_cache = [a.to_dict() for a in articles]
 
-    return json.dumps({
-        "ok": True,
-        "data": {
-            "articles": _article_cache,
-            "count": len(_article_cache),
-            "crawled_at": _now_iso(),
-            "errors": getattr(crawler, "_last_errors", {}),
-            "per_site": getattr(crawler, "_per_site", {}),
-            "per_site_detail": getattr(crawler, "_per_site_detail", {}),
+    return json.dumps(
+        {
+            "ok": True,
+            "data": {
+                "articles": _article_cache,
+                "count": len(_article_cache),
+                "crawled_at": _now_iso(),
+                "errors": getattr(crawler, "_last_errors", {}),
+                "per_site": getattr(crawler, "_per_site", {}),
+                "per_site_detail": getattr(crawler, "_per_site_detail", {}),
+            },
         },
-    }, ensure_ascii=False)
+        ensure_ascii=False,
+    )
 
 
 # ── classify_articles ──
+
 
 def _handle_classify(arguments: dict) -> str:
     global _article_cache
@@ -251,6 +256,7 @@ def _handle_classify(arguments: dict) -> str:
 
     # 转为 NewsArticle 对象
     from crawler import NewsArticle as NA
+
     articles = [
         NA(
             title=a.get("title", ""),
@@ -263,6 +269,7 @@ def _handle_classify(arguments: dict) -> str:
     ]
 
     import asyncio
+
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
@@ -273,19 +280,23 @@ def _handle_classify(arguments: dict) -> str:
     classified = loop.run_until_complete(classifier.classify(articles, batch_size=batch_size))
     _article_cache = [c.to_dict() for c in classified]
 
-    return json.dumps({
-        "ok": True,
-        "data": {
-            "classified": _article_cache,
-            "count": len(_article_cache),
-            "ai_security_count": sum(1 for c in classified if c.is_ai_security),
-            "agent_security_count": sum(1 for c in classified if c.is_agent_security),
-            "classified_at": _now_iso(),
+    return json.dumps(
+        {
+            "ok": True,
+            "data": {
+                "classified": _article_cache,
+                "count": len(_article_cache),
+                "ai_security_count": sum(1 for c in classified if c.is_ai_security),
+                "agent_security_count": sum(1 for c in classified if c.is_agent_security),
+                "classified_at": _now_iso(),
+            },
         },
-    }, ensure_ascii=False)
+        ensure_ascii=False,
+    )
 
 
 # ── query_database ──
+
 
 def _handle_query(arguments: dict) -> str:
     global _article_cache
@@ -299,7 +310,8 @@ def _handle_query(arguments: dict) -> str:
         results = [r for r in results if category in (r.get("category", "") or "")]
     if keyword:
         results = [
-            r for r in results
+            r
+            for r in results
             if keyword in (r.get("title", "") or "").lower()
             or keyword in (r.get("summary", "") or "").lower()
             or keyword in (r.get("summary_cn", "") or "").lower()
@@ -307,23 +319,30 @@ def _handle_query(arguments: dict) -> str:
 
     results.sort(key=lambda r: r.get("classified_at", r.get("published_at", "")), reverse=True)
 
-    return json.dumps({
-        "ok": True,
-        "data": {
-            "items": results,
-            "count": len(results),
-            "total_in_cache": len(_article_cache),
+    return json.dumps(
+        {
+            "ok": True,
+            "data": {
+                "items": results,
+                "count": len(results),
+                "total_in_cache": len(_article_cache),
+            },
         },
-    }, ensure_ascii=False)
+        ensure_ascii=False,
+    )
 
 
 # ── get_stats ──
+
 
 def _handle_stats(arguments: dict) -> str:
     global _article_cache
 
     if not _article_cache:
-        return json.dumps({"ok": True, "data": {"total": 0, "message": "缓存为空，请先执行 crawl_news"}}, ensure_ascii=False)
+        return json.dumps(
+            {"ok": True, "data": {"total": 0, "message": "缓存为空，请先执行 crawl_news"}},
+            ensure_ascii=False,
+        )
 
     total = len(_article_cache)
     ai_count = sum(1 for r in _article_cache if r.get("is_ai_security"))
@@ -347,20 +366,24 @@ def _handle_stats(arguments: dict) -> str:
         else:
             score_dist["81-100"] += 1
 
-    return json.dumps({
-        "ok": True,
-        "data": {
-            "total": total,
-            "ai_security": ai_count,
-            "agent_security": agent_count,
-            "sources": dict(sources.most_common()),
-            "top_categories": dict(categories.most_common(10)),
-            "score_distribution": score_dist,
+    return json.dumps(
+        {
+            "ok": True,
+            "data": {
+                "total": total,
+                "ai_security": ai_count,
+                "agent_security": agent_count,
+                "sources": dict(sources.most_common()),
+                "top_categories": dict(categories.most_common(10)),
+                "score_distribution": score_dist,
+            },
         },
-    }, ensure_ascii=False)
+        ensure_ascii=False,
+    )
 
 
 # ── export_csv ──
+
 
 def _handle_export(arguments: dict) -> str:
     global _article_cache
@@ -371,7 +394,10 @@ def _handle_export(arguments: dict) -> str:
         records = [r for r in records if category in (r.get("category", "") or "")]
 
     if not records:
-        return json.dumps({"ok": True, "data": {"csv": "", "count": 0, "message": "无匹配记录"}}, ensure_ascii=False)
+        return json.dumps(
+            {"ok": True, "data": {"csv": "", "count": 0, "message": "无匹配记录"}},
+            ensure_ascii=False,
+        )
 
     buf = io.StringIO()
     writer = csv.writer(buf)
@@ -381,35 +407,42 @@ def _handle_export(arguments: dict) -> str:
         category_label = r.get("category", "")
         if r.get("is_agent_security"):
             category_label = f"[Agent] {category_label}"
-        writer.writerow([
-            idx,
-            r.get("title", ""),
-            r.get("source", ""),
-            category_label,
-            r.get("ai_relevance_score", 0),
-            "是" if r.get("is_agent_security") else "否",
-            r.get("summary_cn", "") or r.get("summary", ""),
-            r.get("url", ""),
-        ])
+        writer.writerow(
+            [
+                idx,
+                r.get("title", ""),
+                r.get("source", ""),
+                category_label,
+                r.get("ai_relevance_score", 0),
+                "是" if r.get("is_agent_security") else "否",
+                r.get("summary_cn", "") or r.get("summary", ""),
+                r.get("url", ""),
+            ]
+        )
 
     csv_content = buf.getvalue()
     buf.close()
 
-    return json.dumps({
-        "ok": True,
-        "data": {
-            "csv": csv_content,
-            "count": len(records),
+    return json.dumps(
+        {
+            "ok": True,
+            "data": {
+                "csv": csv_content,
+                "count": len(records),
+            },
         },
-    }, ensure_ascii=False)
+        ensure_ascii=False,
+    )
 
 
 # ═══════════════════════════════════════════════════════════
 # 辅助
 # ═══════════════════════════════════════════════════════════
 
+
 def _now_iso() -> str:
     from datetime import datetime, timedelta, timezone
+
     tz = timezone(timedelta(hours=8))
     return datetime.now(tz).strftime("%Y-%m-%dT%H:%M:%S+08:00")
 
@@ -429,11 +462,14 @@ def handle_message(msg: dict) -> dict | None:
 
     # --- 初始化 ---
     if method == "initialize":
-        return make_response(req_id, {
-            "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": {"tools": {}},
-            "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
-        })
+        return make_response(
+            req_id,
+            {
+                "protocolVersion": PROTOCOL_VERSION,
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
+            },
+        )
 
     # --- 工具列表 ---
     if method == "tools/list":
@@ -445,20 +481,32 @@ def handle_message(msg: dict) -> dict | None:
         arguments = params.get("arguments", {})
         try:
             text = call_tool(tool_name, arguments)
-            return make_response(req_id, {
-                "content": [{"type": "text", "text": text}],
-            })
+            return make_response(
+                req_id,
+                {
+                    "content": [{"type": "text", "text": text}],
+                },
+            )
         except Exception as e:
             log(f"工具调用异常: {traceback.format_exc()}")
-            return make_response(req_id, {
-                "content": [
-                    {"type": "text", "text": json.dumps({
-                        "ok": False,
-                        "error": str(e),
-                    }, ensure_ascii=False)},
-                ],
-                "isError": True,
-            })
+            return make_response(
+                req_id,
+                {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(
+                                {
+                                    "ok": False,
+                                    "error": str(e),
+                                },
+                                ensure_ascii=False,
+                            ),
+                        },
+                    ],
+                    "isError": True,
+                },
+            )
 
     # --- 通知（无需响应） ---
     if method.startswith("notifications/"):

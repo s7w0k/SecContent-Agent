@@ -78,6 +78,38 @@ async def test_execute_pipeline_runs_worker_operation():
 
 
 @pytest.mark.asyncio
+async def test_pipeline_task_is_enqueued_with_durable_job_id():
+    from api.pipeline import _enqueue_pipeline_task
+
+    pool = SimpleNamespace(
+        enqueue_job=AsyncMock(return_value=SimpleNamespace(job_id="task-a")),
+    )
+    app = SimpleNamespace(state=SimpleNamespace(arq_pool=pool, db=None))
+
+    await _enqueue_pipeline_task(
+        app,
+        "task-a",
+        "user-a",
+        "run-v2",
+        crawl_days=3,
+        trace_id="trace-a",
+        username="alice",
+    )
+
+    pool.enqueue_job.assert_awaited_once_with(
+        "execute_pipeline",
+        task_id="task-a",
+        user_id="user-a",
+        task_type="run-v2",
+        crawl_days=3,
+        article_url_hash=None,
+        trace_id="trace-a",
+        username="alice",
+        _job_id="task-a",
+    )
+
+
+@pytest.mark.asyncio
 async def test_execute_pipeline_returns_failed_for_missing_task():
     from agent.task_queue import execute_pipeline
 
@@ -148,6 +180,49 @@ def test_worker_settings_follow_application_config():
         "fetch_fulltext_batch",
         "resume_pipeline",
     }
+
+
+def test_worker_timeout_is_applied_to_all_queue_jobs():
+    from agent.task_queue import WorkerSettings
+    from config import get_settings
+
+    assert WorkerSettings.job_timeout == get_settings().ARQ_JOB_TIMEOUT
+    assert WorkerSettings.job_timeout > 0
+    assert all(function.timeout_s is None for function in WorkerSettings.functions)
+
+
+@pytest.mark.asyncio
+async def test_fetch_fulltext_batch_delegates_to_background_service():
+    from agent.task_queue import fetch_fulltext_batch
+
+    db = SimpleNamespace()
+    articles = [{"url": "https://example.com/a"}, {"url": "https://example.com/b"}]
+    background_fetch = AsyncMock()
+
+    with patch("agent.pipeline._fetch_fulltext_background", new=background_fetch):
+        result = await fetch_fulltext_batch(
+            {"db": db},
+            articles,
+            trace_id="trace-a",
+        )
+
+    background_fetch.assert_awaited_once_with(db, articles, "trace-a")
+    assert result == {"requested": 2}
+
+
+@pytest.mark.asyncio
+async def test_resume_pipeline_returns_failed_for_missing_task():
+    from agent.task_queue import resume_pipeline
+
+    pipeline_v2 = SimpleNamespace(resume_from_checkpoint=AsyncMock())
+    result = await resume_pipeline(
+        {"db": Database(None), "pipeline_v2": pipeline_v2},
+        "missing",
+        "user-a",
+    )
+
+    assert result == {"status": "failed", "error": "task not found"}
+    pipeline_v2.resume_from_checkpoint.assert_not_awaited()
 
 
 @pytest.mark.asyncio

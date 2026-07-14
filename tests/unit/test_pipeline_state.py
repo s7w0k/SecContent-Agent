@@ -106,6 +106,22 @@ async def test_update_status_persists_state_and_result():
 
 
 @pytest.mark.asyncio
+async def test_update_status_persists_failure_error():
+    from agent.pipeline_state import PipelineStateManager
+
+    db = MemoryDatabase()
+    manager = PipelineStateManager(db)
+    await manager.create_task("task-a", "user-a", "run-v2")
+
+    await manager.update_status("task-a", "failed", error="worker timed out")
+
+    task = await manager.get_task("task-a", "user-a")
+    assert task is not None
+    assert task["status"] == "failed"
+    assert task["error"] == "worker timed out"
+
+
+@pytest.mark.asyncio
 async def test_increment_retry_is_persistent():
     from agent.pipeline_state import PipelineStateManager
 
