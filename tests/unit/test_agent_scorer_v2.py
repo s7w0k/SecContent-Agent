@@ -291,9 +291,11 @@ class TestScoringFlow:
         from agent.scorer_v2 import ScoringAgentV2
 
         scorer_low = ScoringAgentV2(llm=mock_llm_low, knowledge=knowledge)
-        scorer_low.pr_threshold = 50
-        scorer_low.threshold_adjustment = -30
-        result = await scorer_low.score_single(sample_article)
+        result = await scorer_low.score_single(
+            sample_article,
+            threshold=50,
+            threshold_adjustment=-30,
+        )
         assert result["pr_total_score"] == 55
         assert result["is_pr_candidate"] is True
         assert result["pr_threshold"] == 50
@@ -443,26 +445,21 @@ class TestThresholdAdjustment:
         assert result["threshold"] == 84
         assert result["adjustment"] == 4
         assert result["feedback_count"] == 3
-        assert scorer.pr_threshold == 84
+        assert not hasattr(scorer, "pr_threshold")
+        assert not hasattr(scorer, "threshold_adjustment")
 
     @pytest.mark.asyncio
-    async def test_adjust_threshold_without_db_resets_default(self, scorer):
-        scorer.pr_threshold = 90
-        scorer.threshold_adjustment = 10
-
+    async def test_adjust_threshold_without_db_returns_default(self, scorer):
         result = await scorer.adjust_threshold(db=None, user_id="local-user")
         assert result["threshold"] == 80
         assert result["adjustment"] == 0
-        assert scorer.pr_threshold == 80
+        assert not hasattr(scorer, "pr_threshold")
 
     @pytest.mark.asyncio
-    async def test_adjust_threshold_query_failure_resets_default(self, scorer):
+    async def test_adjust_threshold_query_failure_returns_default(self, scorer):
         class BrokenCollection:
             def find(self, query):
                 raise RuntimeError("db unavailable")
-
-        scorer.pr_threshold = 90
-        scorer.threshold_adjustment = 10
 
         result = await scorer.adjust_threshold(
             db={"feedbacks": BrokenCollection()}, user_id="local-user"
@@ -471,7 +468,7 @@ class TestThresholdAdjustment:
         assert result["threshold"] == 80
         assert result["adjustment"] == 0
         assert result["feedback_count"] == 0
-        assert scorer.pr_threshold == 80
+        assert not hasattr(scorer, "pr_threshold")
 
 
 # ═══════════════════════════════════════════════════════════════

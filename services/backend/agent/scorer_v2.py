@@ -126,25 +126,36 @@ class ScoringAgentV2:
         self.llm.temperature = temperature
         self.knowledge = knowledge
         self.db = db
-        self.pr_threshold = PR_THRESHOLD
-        self.threshold_adjustment = 0
         self.system_prompt = self._build_system_prompt()
 
     # ── 公开接口 ──────────────────────────────────────────────
 
-    async def score_single(self, article: dict | Any) -> dict:
+    async def score_single(
+        self,
+        article: dict | Any,
+        *,
+        threshold: int = PR_THRESHOLD,
+        threshold_adjustment: int = 0,
+    ) -> dict:
         """单篇打分，返回包含 product_relevance / event_impact / pr_total_score 的 dict。"""
         art = (
             article
             if isinstance(article, dict)
             else (article.model_dump() if hasattr(article, "model_dump") else article)
         )
-        return await self._score_with_llm(art)
+        return await self._score_with_llm(
+            art,
+            threshold=threshold,
+            threshold_adjustment=threshold_adjustment,
+        )
 
     async def score_batch(
         self,
         articles: list[dict | Any],
+        *,
         concurrency: int = DEFAULT_CONCURRENCY,
+        threshold: int = PR_THRESHOLD,
+        threshold_adjustment: int = 0,
     ) -> list[dict]:
         """批量并发打分。
 
@@ -168,7 +179,11 @@ class ScoringAgentV2:
                     if isinstance(art, dict)
                     else (art.model_dump() if hasattr(art, "model_dump") else art)
                 )
-                return await self._score_with_llm(d)
+                return await self._score_with_llm(
+                    d,
+                    threshold=threshold,
+                    threshold_adjustment=threshold_adjustment,
+                )
 
         results = await asyncio.gather(*[_score_one(a) for a in articles])
         rlist = list(results)
@@ -179,7 +194,7 @@ class ScoringAgentV2:
             ok,
             len(rlist),
             pr,
-            self.pr_threshold,
+            threshold,
         )
         return rlist
 
@@ -190,9 +205,11 @@ class ScoringAgentV2:
         """
         active_db = db if db is not None else self.db
         if active_db is None:
-            self.pr_threshold = PR_THRESHOLD
-            self.threshold_adjustment = 0
-            return self._threshold_result(feedback_count=0, directional_count=0)
+            return self._threshold_result(
+                adjustment=0,
+                feedback_count=0,
+                directional_count=0,
+            )
 
         try:
             cursor = active_db["feedbacks"].find(
@@ -205,20 +222,25 @@ class ScoringAgentV2:
             feedbacks = await cursor.to_list(length=500)
         except Exception as exc:
             logger.warning("Failed to load score feedbacks for threshold adjustment: %s", exc)
-            self.pr_threshold = PR_THRESHOLD
-            self.threshold_adjustment = 0
-            return self._threshold_result(feedback_count=0, directional_count=0)
+            return self._threshold_result(
+                adjustment=0,
+                feedback_count=0,
+                directional_count=0,
+            )
 
         adjustment, directional_count = self.calculate_threshold_adjustment(feedbacks)
-        self.threshold_adjustment = adjustment
-        self.pr_threshold = PR_THRESHOLD + adjustment
-        return self._threshold_result(len(feedbacks), directional_count)
+        return self._threshold_result(adjustment, len(feedbacks), directional_count)
 
-    def _threshold_result(self, feedback_count: int, directional_count: int) -> dict:
+    @staticmethod
+    def _threshold_result(
+        adjustment: int,
+        feedback_count: int,
+        directional_count: int,
+    ) -> dict:
         return {
             "base_threshold": PR_THRESHOLD,
-            "adjustment": self.threshold_adjustment,
-            "threshold": self.pr_threshold,
+            "adjustment": adjustment,
+            "threshold": PR_THRESHOLD + adjustment,
             "feedback_count": feedback_count,
             "directional_count": directional_count,
         }
@@ -288,7 +310,13 @@ class ScoringAgentV2:
 
     # ── 核心打分逻辑 ──────────────────────────────────────────
 
-    async def _score_with_llm(self, article: dict) -> dict:
+    async def _score_with_llm(
+        self,
+        article: dict,
+        *,
+        threshold: int,
+        threshold_adjustment: int,
+    ) -> dict:
         """调用 LLM 进行双维度打分（含重试和降级）。"""
         user_prompt = self._build_user_prompt(article)
 
@@ -303,14 +331,22 @@ class ScoringAgentV2:
                 raw = response.content if hasattr(response, "content") else str(response)
                 return self._enrich_result(
                     self._validate_and_fix(self._parse_response(raw)),
-                    threshold=self.pr_threshold,
-                    threshold_adjustment=self.threshold_adjustment,
+                    threshold=threshold,
+                    threshold_adjustment=threshold_adjustment,
                 )
             except Exception as e:
                 if attempt == MAX_RETRIES:
-                    return self._fallback_score(str(e))
+                    return self._fallback_score(
+                        str(e),
+                        threshold=threshold,
+                        threshold_adjustment=threshold_adjustment,
+                    )
 
-        return self._fallback_score("max retries")
+        return self._fallback_score(
+            "max retries",
+            threshold=threshold,
+            threshold_adjustment=threshold_adjustment,
+        )
 
     # ── 响应解析 ─────────────────────────────────────────────
 
@@ -379,7 +415,12 @@ class ScoringAgentV2:
         return validated
 
     @staticmethod
-    def _fallback_score(error: str = "") -> dict:
+    def _fallback_score(
+        error: str = "",
+        *,
+        threshold: int = PR_THRESHOLD,
+        threshold_adjustment: int = 0,
+    ) -> dict:
         """打分失败时的降级结果。"""
         return {
             "product_relevance": 0,
@@ -388,7 +429,7 @@ class ScoringAgentV2:
             "tags": [],
             "pr_total_score": 0,
             "is_pr_candidate": False,
-            "pr_threshold": PR_THRESHOLD,
-            "threshold_adjustment": 0,
+            "pr_threshold": threshold,
+            "threshold_adjustment": threshold_adjustment,
             "_fallback": True,
         }

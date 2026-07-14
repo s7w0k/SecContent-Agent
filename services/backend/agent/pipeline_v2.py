@@ -344,7 +344,11 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
             )
             return state
 
-        scored = await scorer.score_batch(articles)
+        scored = await scorer.score_batch(
+            articles,
+            threshold=state["score_threshold"],
+            threshold_adjustment=state["threshold_adjustment"],
+        )
         scored_count = 0
         candidates = 0
         anomaly_count = 0
