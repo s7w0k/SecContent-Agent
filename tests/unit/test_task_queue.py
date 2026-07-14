@@ -145,4 +145,26 @@ def test_worker_settings_follow_application_config():
     assert {function.name for function in WorkerSettings.functions} == {
         "execute_pipeline",
         "fetch_fulltext_batch",
+        "resume_pipeline",
     }
+
+
+@pytest.mark.asyncio
+async def test_resume_pipeline_runs_checkpoint_recovery():
+    from agent.task_queue import resume_pipeline
+
+    db = Database(_task())
+    pipeline_v2 = SimpleNamespace(
+        resume_from_checkpoint=AsyncMock(
+            return_value={"pipeline_id": "task-a", "status": "completed"}
+        )
+    )
+
+    result = await resume_pipeline(
+        {"db": db, "pipeline_v2": pipeline_v2},
+        "task-a",
+        "user-a",
+    )
+
+    pipeline_v2.resume_from_checkpoint.assert_awaited_once_with("task-a")
+    assert result["status"] == "completed"

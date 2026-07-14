@@ -16,14 +16,17 @@ import logging
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 import httpx
+from agent.checkpointer import create_checkpointer, supports_mongodb_checkpoints
 from agent.pipeline_state import PipelineStateManager
 from agent.style_profiler import load_style_hints
 from api.activity import log_activity
 from api.logs import build_log_error, generate_trace_id, log_pipeline
 from auth.deps import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.encoders import jsonable_encoder
 from logging_config import get_audit_logger
 from models.feedback import PipelineTask
 from pydantic import BaseModel, Field
@@ -77,6 +80,62 @@ def _get_manager(request: Request):
 
 def _request_username(request: Request, user_id: str) -> str:
     return getattr(getattr(request, "state", None), "username", None) or user_id
+
+
+async def _get_owned_pipeline_task(db: Any, task_id: str, user_id: str) -> dict[str, Any]:
+    """Load one task and distinguish not-found from cross-tenant access."""
+    task = await db["pipeline_tasks"].find_one({"task_id": task_id})
+    if task is None:
+        raise HTTPException(status_code=404, detail="Pipeline task not found")
+    if task.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Cannot access another user's task")
+    return task
+
+
+def _checkpoint_node(metadata: dict[str, Any], channel_values: dict[str, Any]) -> str:
+    writes = metadata.get("writes")
+    if isinstance(writes, dict) and writes:
+        return str(next(iter(writes)))
+    return str(channel_values.get("current_phase", ""))
+
+
+async def _read_task_checkpoints(
+    db: Any,
+    task: dict[str, Any],
+    *,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Decode durable LangGraph checkpoints without an in-process graph manager."""
+    if not supports_mongodb_checkpoints(db):
+        raise HTTPException(status_code=503, detail="Checkpoint storage not available")
+
+    thread_id = task.get("thread_id") or f"thread-{task['task_id']}"
+    checkpoint_ns = task.get("checkpoint_ns", "")
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "checkpoint_ns": checkpoint_ns,
+        }
+    }
+    saver = create_checkpointer(db)
+    checkpoints: list[dict[str, Any]] = []
+    async for item in saver.alist(config, limit=limit):
+        configurable = item.config.get("configurable", {})
+        parent = (item.parent_config or {}).get("configurable", {})
+        checkpoint = item.checkpoint or {}
+        metadata = item.metadata or {}
+        channel_values = checkpoint.get("channel_values", {})
+        checkpoints.append(
+            {
+                "checkpoint_id": configurable.get("checkpoint_id"),
+                "parent_checkpoint_id": parent.get("checkpoint_id"),
+                "node": _checkpoint_node(metadata, channel_values),
+                "step": metadata.get("step"),
+                "created_at": checkpoint.get("ts"),
+                "channel_values": jsonable_encoder(channel_values),
+            }
+        )
+    return checkpoints
 
 
 async def _log_idempotent_skip(
@@ -499,9 +558,6 @@ async def pipeline_run_v2(
     body: PipelineRunRequest, request: Request, user_id: str = Depends(get_current_user)
 ):
     """创建 V2 全流程后台任务并立即返回 task_id。"""
-    manager_v2 = getattr(request.app.state, "pipeline_v2", None)
-    if manager_v2 is None:
-        raise HTTPException(status_code=503, detail="Pipeline V2 not initialized")
     db = getattr(request.app.state, "db", None)
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -604,7 +660,7 @@ async def pipeline_status_v2(
         raise HTTPException(status_code=503, detail="Database not available")
 
     if task_id:
-        task = await PipelineStateManager(db).get_task(task_id, user_id)
+        task = await _get_owned_pipeline_task(db, task_id, user_id)
     else:
         task = await db["pipeline_tasks"].find_one(
             {"user_id": user_id, "task_type": "run-v2"},
@@ -623,8 +679,11 @@ async def pipeline_status_v2(
         "task_id": task["task_id"],
         "status": task.get("status", "pending"),
         "current_phase": state.get("current_phase", task.get("progress", {}).get("phase", "")),
+        "progress": task.get("progress", {}),
+        "last_node": task.get("last_node", ""),
+        "retry_count": task.get("retry_count", 0),
         "state": state,
-        "errors": state.get("errors", []),
+        "errors": state.get("errors", []) or ([task["error"]] if task.get("error") else []),
     }
 
 
@@ -1765,6 +1824,133 @@ def _serialize_pipeline_task(document: dict) -> dict:
     return result
 
 
+@router.get("/tasks/{task_id}/checkpoints", summary="查询流水线任务检查点")
+async def list_task_checkpoints(
+    task_id: str,
+    request: Request,
+    limit: int = Query(default=100, ge=1, le=100),
+    user_id: str = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Return decoded LangGraph checkpoints for a task owned by the caller."""
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    task = await _get_owned_pipeline_task(db, task_id, user_id)
+    checkpoints = await _read_task_checkpoints(db, task, limit=limit)
+    return {
+        "ok": True,
+        "data": {
+            "task_id": task_id,
+            "thread_id": task.get("thread_id") or f"thread-{task_id}",
+            "checkpoints": checkpoints,
+        },
+    }
+
+
+@router.post("/tasks/{task_id}/resume", summary="从最后检查点恢复流水线任务")
+async def resume_pipeline_task(
+    task_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Validate ownership and enqueue checkpoint recovery in the ARQ worker."""
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    task = await _get_owned_pipeline_task(db, task_id, user_id)
+    if task.get("task_type") != "run-v2" or task.get("status") not in {
+        "failed",
+        "cancelled",
+        "interrupted",
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "TASK_NOT_RESUMABLE",
+                "message": "当前任务状态不允许恢复",
+            },
+        )
+
+    checkpoints = await _read_task_checkpoints(db, task, limit=1)
+    if not checkpoints:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "CHECKPOINT_NOT_FOUND",
+                "message": "未找到可恢复的检查点",
+            },
+        )
+
+    pool = getattr(request.app.state, "arq_pool", None)
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Task queue not available")
+
+    progress = {
+        "phase": "resume_pending",
+        "current": 0,
+        "total": 8,
+        "message": "恢复任务排队中...",
+    }
+    now = datetime.now(UTC)
+    claim = await db["pipeline_tasks"].update_one(
+        {
+            "task_id": task_id,
+            "user_id": user_id,
+            "status": {"$in": ["failed", "cancelled", "interrupted"]},
+        },
+        {
+            "$set": {
+                "status": "pending",
+                "progress": progress,
+                "error": None,
+                "retry_count": 0,
+                "resume_requested_at": now,
+                "updated_at": now,
+                "expires_at": now + timedelta(hours=2),
+            }
+        },
+    )
+    if claim.modified_count != 1:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "TASK_NOT_RESUMABLE",
+                "message": "任务已被其他恢复请求处理",
+            },
+        )
+    try:
+        job = await pool.enqueue_job(
+            "resume_pipeline",
+            task_id=task_id,
+            user_id=user_id,
+            _job_id=f"resume-{task_id}-{uuid4().hex[:8]}",
+        )
+    except Exception as exc:
+        await PipelineStateManager(db).update_status(
+            task_id,
+            "failed",
+            error=f"Resume queue unavailable: {exc}",
+        )
+        raise HTTPException(status_code=503, detail="Task queue unavailable") from exc
+    if job is None:
+        await PipelineStateManager(db).update_status(
+            task_id,
+            "failed",
+            error="Resume task is already queued",
+        )
+        raise HTTPException(status_code=409, detail="Resume task is already queued")
+
+    resumed_from = checkpoints[0].get("node") or task.get("last_node", "")
+    return {
+        "ok": True,
+        "data": {
+            "task_id": task_id,
+            "message": "任务已从检查点恢复，重新入队",
+            "resumed_from": resumed_from,
+        },
+    }
+
+
 @router.get("/tasks/{task_id}", summary="查询流水线任务状态")
 async def get_pipeline_task(
     task_id: str,
@@ -1775,11 +1961,7 @@ async def get_pipeline_task(
     db = getattr(request.app.state, "db", None)
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
-    task = await db["pipeline_tasks"].find_one({"task_id": task_id})
-    if task is None:
-        raise HTTPException(status_code=404, detail="Pipeline task not found")
-    if task.get("user_id") != user_id:
-        raise HTTPException(status_code=403, detail="Cannot access another user's task")
+    task = await _get_owned_pipeline_task(db, task_id, user_id)
     return {"ok": True, "data": _serialize_pipeline_task(task)}
 
 

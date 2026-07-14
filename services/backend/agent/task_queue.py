@@ -88,6 +88,39 @@ async def fetch_fulltext_batch(
     return {"requested": len(articles)}
 
 
+async def resume_pipeline(
+    ctx: dict[str, Any],
+    task_id: str,
+    user_id: str,
+) -> dict[str, Any]:
+    """Resume a V2 task from its latest LangGraph checkpoint in the worker."""
+    state_manager = PipelineStateManager(ctx["db"])
+    task = await state_manager.get_task(task_id, user_id)
+    if task is None:
+        logger.warning("Resume task not found: task_id=%s user_id=%s", task_id, user_id)
+        return {"status": "failed", "error": "task not found"}
+
+    try:
+        result = await ctx["pipeline_v2"].resume_from_checkpoint(task_id)
+        if result.get("status") != "completed":
+            raise RuntimeError(result.get("error") or "checkpoint resume failed")
+        return result
+    except Exception as exc:
+        await state_manager.update_status(task_id, "failed", error=str(exc))
+        retry_count = await state_manager.increment_retry(task_id)
+        max_retries = get_settings().ARQ_MAX_RETRIES
+        if retry_count <= max_retries:
+            logger.warning(
+                "Pipeline resume retry scheduled: task_id=%s retry=%d/%d error=%s",
+                task_id,
+                retry_count,
+                max_retries,
+                exc,
+            )
+            raise Retry(defer=30) from exc
+        raise
+
+
 _settings = get_settings()
 
 
@@ -96,6 +129,7 @@ class WorkerSettings:
 
     functions: ClassVar[list[Any]] = [
         func(execute_pipeline, max_tries=_settings.ARQ_MAX_RETRIES + 1),
+        func(resume_pipeline, max_tries=_settings.ARQ_MAX_RETRIES + 1),
         func(fetch_fulltext_batch, max_tries=_settings.ARQ_MAX_RETRIES + 1),
     ]
     redis_settings = redis_settings()

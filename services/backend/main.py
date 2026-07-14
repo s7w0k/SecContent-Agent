@@ -161,25 +161,15 @@ async def lifespan(app: FastAPI):
         app.state.classifier_v2 = classifier_v2
         _log("INFO", "ClassifierV2 initialized")
 
-        # V2 打分 + 草稿 + 流水线
+        # V2 打分 + 草稿（完整流水线仅在 ARQ Worker 中构建）
         from agent.draft_generator import DraftGenerator
-        from agent.pipeline_v2 import PipelineManagerV2
         from agent.scorer_v2 import ScoringAgentV2
 
         scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge_loader, db=app.state.db)
         draft_gen = DraftGenerator(llm=llm, knowledge=knowledge_loader._cache)
         app.state.scorer_v2 = scorer_v2
         app.state.draft_gen = draft_gen
-        pipeline_v2 = PipelineManagerV2(
-            tools=tools,
-            classifier_v2=classifier_v2,
-            scorer_v2=scorer_v2,
-            draft_gen=draft_gen,
-            knowledge=knowledge_loader,
-            db=app.state.db,
-        )
-        app.state.pipeline_v2 = pipeline_v2
-        _log("INFO", "Pipeline V2 initialized (classify_v2 -> score_v2 -> draft)")
+        _log("INFO", "V2 agents initialized; pipeline execution delegated to ARQ Worker")
 
         pipeline_manager = PipelineManager(
             tools=tools,

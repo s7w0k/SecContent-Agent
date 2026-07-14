@@ -6,7 +6,7 @@ import os
 import sys
 from copy import deepcopy
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -17,9 +17,13 @@ from api.pipeline import (
     PipelineRunRequest,
     _create_pipeline_task,
     _execute_pipeline_task,
+    _read_task_checkpoints,
     get_pipeline_task,
     list_pipeline_tasks,
+    list_task_checkpoints,
     pipeline_run_v2,
+    pipeline_status_v2,
+    resume_pipeline_task,
 )
 
 ARTICLE_HASH = "d41d8cd98f00b204e9800998ecf8427e"
@@ -56,7 +60,7 @@ class FakeTaskCollection:
 
     async def update_one(self, query: dict, update: dict):
         document = self.documents.get(query["task_id"])
-        if document and document.get("user_id") == query.get("user_id"):
+        if document and ("user_id" not in query or document.get("user_id") == query.get("user_id")):
             fields = deepcopy(update["$set"])
             document.update(fields)
             self.history.append(fields)
@@ -231,11 +235,9 @@ async def test_run_v2_endpoint_enqueues_worker_job():
     tasks = FakeTaskCollection()
     activities = FakeCollection(None)
     db = FakeDatabase(pipeline_tasks=tasks, user_activities=activities)
-    manager = MagicMock()
-    manager.run_full = AsyncMock()
     arq_pool = MagicMock()
     arq_pool.enqueue_job = AsyncMock(return_value=SimpleNamespace(job_id="queued"))
-    app = _app(db, pipeline_v2=manager, arq_pool=arq_pool)
+    app = _app(db, arq_pool=arq_pool)
     request = SimpleNamespace(app=app)
 
     response = await pipeline_run_v2(
@@ -256,7 +258,6 @@ async def test_run_v2_endpoint_enqueues_worker_job():
         username="user-a",
         _job_id=task_id,
     )
-    manager.run_full.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -277,3 +278,121 @@ async def test_task_queries_enforce_user_isolation_and_list_filtering():
     result = await list_pipeline_tasks(request, page=1, page_size=20, user_id="user-a")
     assert result["data"]["total"] == 1
     assert {item["user_id"] for item in result["data"]["items"]} == {"user-a"}
+
+
+@pytest.mark.asyncio
+async def test_status_v2_returns_persisted_task_and_rejects_other_user():
+    tasks = FakeTaskCollection()
+    db = FakeDatabase(pipeline_tasks=tasks)
+    task = await _create_pipeline_task(db, "user-a", "run-v2")
+    tasks.documents[task["task_id"]].update(
+        {
+            "status": "running",
+            "last_node": "classify_v2",
+            "retry_count": 1,
+            "progress": {"phase": "score_v2", "current": 3, "total": 8},
+        }
+    )
+    request = SimpleNamespace(app=_app(db))
+
+    result = await pipeline_status_v2(request, task_id=task["task_id"], user_id="user-a")
+
+    assert result["status"] == "running"
+    assert result["current_phase"] == "score_v2"
+    assert result["last_node"] == "classify_v2"
+    assert result["retry_count"] == 1
+    with pytest.raises(HTTPException) as exc_info:
+        await pipeline_status_v2(request, task_id=task["task_id"], user_id="user-b")
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_endpoint_is_tenant_isolated():
+    tasks = FakeTaskCollection()
+    db = FakeDatabase(pipeline_tasks=tasks)
+    task = await _create_pipeline_task(db, "user-a", "run-v2")
+    request = SimpleNamespace(app=_app(db))
+    checkpoint = {"checkpoint_id": "ckpt-1", "node": "score_v2"}
+
+    with patch("api.pipeline._read_task_checkpoints", new=AsyncMock(return_value=[checkpoint])):
+        result = await list_task_checkpoints(task["task_id"], request, limit=100, user_id="user-a")
+        with pytest.raises(HTTPException) as exc_info:
+            await list_task_checkpoints(task["task_id"], request, limit=100, user_id="user-b")
+
+    assert result["data"]["checkpoints"] == [checkpoint]
+    assert result["data"]["thread_id"] == f"thread-{task['task_id']}"
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_reader_decodes_langgraph_metadata():
+    class FakeSaver:
+        async def alist(self, config, *, limit):
+            assert config["configurable"]["thread_id"] == "thread-task-a"
+            assert limit == 10
+            yield SimpleNamespace(
+                config={"configurable": {"checkpoint_id": "ckpt-2"}},
+                parent_config={"configurable": {"checkpoint_id": "ckpt-1"}},
+                checkpoint={
+                    "ts": "2026-07-14T10:00:00Z",
+                    "channel_values": {"current_phase": "score_v2", "scored_v2_count": 2},
+                },
+                metadata={"step": 3, "writes": {"score_v2": {}}},
+            )
+
+    task = {"task_id": "task-a", "thread_id": "thread-task-a", "checkpoint_ns": ""}
+    with (
+        patch("api.pipeline.supports_mongodb_checkpoints", return_value=True),
+        patch("api.pipeline.create_checkpointer", return_value=FakeSaver()),
+    ):
+        checkpoints = await _read_task_checkpoints(MagicMock(), task, limit=10)
+
+    assert checkpoints == [
+        {
+            "checkpoint_id": "ckpt-2",
+            "parent_checkpoint_id": "ckpt-1",
+            "node": "score_v2",
+            "step": 3,
+            "created_at": "2026-07-14T10:00:00Z",
+            "channel_values": {"current_phase": "score_v2", "scored_v2_count": 2},
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_resume_endpoint_enqueues_worker_and_rejects_completed_task():
+    tasks = FakeTaskCollection()
+    db = FakeDatabase(pipeline_tasks=tasks)
+    task = await _create_pipeline_task(db, "user-a", "run-v2")
+    tasks.documents[task["task_id"]]["status"] = "failed"
+    arq_pool = MagicMock()
+    arq_pool.enqueue_job = AsyncMock(return_value=SimpleNamespace(job_id="resume-job"))
+    request = SimpleNamespace(app=_app(db, arq_pool=arq_pool))
+    checkpoint = {"checkpoint_id": "ckpt-1", "node": "score_v2"}
+
+    with patch("api.pipeline._read_task_checkpoints", new=AsyncMock(return_value=[checkpoint])):
+        result = await resume_pipeline_task(task["task_id"], request, user_id="user-a")
+
+    assert result["data"]["resumed_from"] == "score_v2"
+    assert tasks.documents[task["task_id"]]["status"] == "pending"
+    assert tasks.documents[task["task_id"]]["retry_count"] == 0
+    enqueue = arq_pool.enqueue_job.await_args
+    assert enqueue.args == ("resume_pipeline",)
+    assert enqueue.kwargs["task_id"] == task["task_id"]
+    assert enqueue.kwargs["user_id"] == "user-a"
+    assert enqueue.kwargs["_job_id"].startswith(f"resume-{task['task_id']}-")
+
+    tasks.documents[task["task_id"]]["status"] = "completed"
+    with pytest.raises(HTTPException) as exc_info:
+        await resume_pipeline_task(task["task_id"], request, user_id="user-a")
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "TASK_NOT_RESUMABLE"
+
+    tasks.documents[task["task_id"]]["status"] = "failed"
+    with (
+        patch("api.pipeline._read_task_checkpoints", new=AsyncMock(return_value=[])),
+        pytest.raises(HTTPException) as no_checkpoint,
+    ):
+        await resume_pipeline_task(task["task_id"], request, user_id="user-a")
+    assert no_checkpoint.value.status_code == 404
+    assert no_checkpoint.value.detail["code"] == "CHECKPOINT_NOT_FOUND"
