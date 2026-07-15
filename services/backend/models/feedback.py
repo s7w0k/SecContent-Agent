@@ -291,7 +291,9 @@ class PipelineLock(BaseModel):
 class PipelineTaskType(StrEnum):
     CRAWL = "crawl"
     CLASSIFY = "classify"
+    CLASSIFY_V2 = "classify-v2"
     SCORE = "score"
+    SCORE_V2 = "score-v2"
     RUN_V2 = "run-v2"
     REPORT = "report"
 

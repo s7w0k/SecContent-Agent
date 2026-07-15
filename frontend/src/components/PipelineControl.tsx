@@ -36,7 +36,6 @@ const PHASE_STEPS = [
 
 interface PipelineControlProps {
   onComplete: () => void;
-  onRefresh: () => void | Promise<void>;
 }
 
 type ActionKey =
@@ -61,7 +60,7 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : '未知错误';
 }
 
-export default function PipelineControl({ onComplete, onRefresh }: PipelineControlProps) {
+export default function PipelineControl({ onComplete }: PipelineControlProps) {
   const [status, setStatus] = useState<PipelineStatus>('idle');
   const [state, setState] = useState<PipelineState | null>(null);
   const [running, setRunning] = useState(false);
@@ -212,50 +211,44 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
   }, [beginOperation, endOperation, onComplete]);
   const handleScoreV2 = useCallback(async () => {
     try {
-      beginOperation('score-v2', 'V2打分', '正在对候选文章进行产品相关度和事件影响度评估...');
-      message.loading({ content: 'V2打分中...', key: 'scoreV2', duration: 0 });
-      const res = await api.scoreV2();
+      beginOperation('score-v2', 'V2打分', '正在统计待打分文章并创建后台任务...');
+      message.loading({ content: '正在创建V2打分任务...', key: 'scoreV2', duration: 0 });
+      const res = await api.scoreV2Task();
+      setActiveTask({ id: res.data.task_id, key: 'score-v2', label: 'V2打分' });
+      setActiveOperation(null);
       message.success({
-        content: `V2打分: ${res.scored} 篇 (${res.candidates} 篇达标≥80)`,
+        content: `V2打分任务已创建，共 ${res.data.total || 0} 篇`,
         key: 'scoreV2',
-        duration: 4,
+        duration: 3,
       });
-      setStatus('completed');
-      await onRefresh();
-    } catch {
+    } catch (error: unknown) {
       setStatus('failed');
-      message.error({ content: 'V2打分失败', key: 'scoreV2' });
-    } finally {
       endOperation();
+      message.error({ content: `V2打分任务创建失败: ${errorMessage(error)}`, key: 'scoreV2' });
     }
-  }, [beginOperation, endOperation, onRefresh]);
+  }, [beginOperation, endOperation]);
   const handleReport = useCallback(() => trigger('report', '报道'), [trigger]);
   const handleClassifyV2 = useCallback(async () => {
     try {
-      beginOperation('classify-v2', 'V2分类', '正在使用六分类模型逐批分析文章...');
-      message.loading({ content: '6分类中...', key: 'classifyV2', duration: 0 });
-      const res = await api.classifyV2();
+      beginOperation('classify-v2', 'V2分类', '正在统计待分类文章并创建后台任务...');
+      message.loading({ content: '正在创建V2分类任务...', key: 'classifyV2', duration: 0 });
+      const res = await api.classifyV2Task();
+      setActiveTask({ id: res.data.task_id, key: 'classify-v2', label: 'V2分类' });
+      setActiveOperation(null);
       message.success({
-        content: `6分类完成: ${res.classified} 篇 (${
-          res.summary
-            ? Object.entries(res.summary)
-                .map(([k, v]) => `${k}:${v}`)
-                .join(', ')
-            : ''
-        })`,
+        content: `V2分类任务已创建，共 ${res.data.total || 0} 篇`,
         key: 'classifyV2',
-        duration: 5,
+        duration: 3,
       });
-      setStatus('completed');
-      onComplete();
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : '未知错误';
+    } catch (error: unknown) {
       setStatus('failed');
-      message.error({ content: `6分类失败: ${msg}`, key: 'classifyV2' });
-    } finally {
       endOperation();
+      message.error({
+        content: `V2分类任务创建失败: ${errorMessage(error)}`,
+        key: 'classifyV2',
+      });
     }
-  }, [beginOperation, endOperation, onComplete]);
+  }, [beginOperation, endOperation]);
   const handleRunV2 = useCallback(async () => {
     try {
       beginOperation('run-v2', '智能PR流水线', '正在创建后台任务...');

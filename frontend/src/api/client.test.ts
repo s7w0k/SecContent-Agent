@@ -268,6 +268,20 @@ describe('Pipeline API', () => {
     expect(status.task_id).toBe('task-1');
     expect(tasks.total).toBe(1);
   });
+
+  it('creates V2 classification and scoring background tasks', async () => {
+    mockPost
+      .mockResolvedValueOnce({ data: { ok: true, data: { task_id: 'classify-1', total: 12 } } })
+      .mockResolvedValueOnce({ data: { ok: true, data: { task_id: 'score-1', total: 7 } } });
+
+    const classifyTask = await api.classifyV2Task();
+    const scoreTask = await api.scoreV2Task();
+
+    expect(mockPost).toHaveBeenNthCalledWith(1, '/pipeline/classify-v2/tasks');
+    expect(mockPost).toHaveBeenNthCalledWith(2, '/pipeline/score-v2/tasks');
+    expect(classifyTask.data.total).toBe(12);
+    expect(scoreTask.data.total).toBe(7);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════

@@ -387,6 +387,13 @@ async def _execute_pipeline_task(
     total_steps = 8 if task_type == "run-v2" and not article_url_hash else 4
     if task_type != "run-v2":
         total_steps = 2
+    initial_phase = {
+        "classify-v2": "classify_v2",
+        "score-v2": "score_v2",
+    }.get(task_type, "crawl" if not article_url_hash else "classify")
+    initial_message = (
+        "正在统计待处理文章..." if task_type in {"classify-v2", "score-v2"} else "正在启动流水线..."
+    )
     try:
         await log_pipeline(
             db,
@@ -404,10 +411,10 @@ async def _execute_pipeline_task(
             task_id,
             user_id,
             status="running",
-            phase="crawl" if not article_url_hash else "classify",
+            phase=initial_phase,
             current=0,
-            total=total_steps,
-            message="正在启动流水线...",
+            total=0 if task_type in {"classify-v2", "score-v2"} else total_steps,
+            message=initial_message,
         )
 
         if task_type == "run-v2" and article_url_hash:
@@ -438,19 +445,34 @@ async def _execute_pipeline_task(
                 username,
                 request_id,
             )
+        elif task_type == "classify-v2":
+            result = await _run_classify_v2_batch(
+                app,
+                user_id,
+                task_id=task_id,
+                trace_id=trace_id,
+            )
+        elif task_type == "score-v2":
+            result = await _run_score_v2_batch(
+                app,
+                user_id,
+                task_id=task_id,
+                trace_id=trace_id,
+            )
         else:
             raise ValueError(f"Unsupported pipeline task type: {task_type}")
 
         if result.get("status") in {"failed", "cancelled", "rejected"}:
             raise RuntimeError(result.get("error") or f"Pipeline {result['status']}")
+        completed_total = int(result.get("total", total_steps))
         await _update_pipeline_task(
             db,
             task_id,
             user_id,
             status="completed",
             phase="completed",
-            current=total_steps,
-            total=total_steps,
+            current=completed_total,
+            total=completed_total,
             message="任务完成",
             result=result,
         )
@@ -1154,6 +1176,258 @@ def _classification_payload(article: dict, *, skipped: bool) -> dict:
         "is_pr_eligible": article.get("is_pr_eligible", False),
         "skipped": skipped,
     }
+
+
+V2_BATCH_CONCURRENCY = 5
+
+
+async def _run_classify_v2_batch(
+    app: Any,
+    user_id: str,
+    *,
+    task_id: str,
+    trace_id: str = "",
+) -> dict[str, Any]:
+    """并发执行 V2 分类，并在每篇完成后持久化真实文章进度。"""
+    db = app.state.db
+    classifier = app.state.classifier_v2
+    log = logging.getLogger("backend.api.pipeline")
+    query = {
+        "pipeline_status": {"$in": ["crawled", "classified"]},
+        "category_v2": {"$in": ["", None]},
+    }
+    articles = await db["articles"].find(query).to_list(length=500)
+    total = len(articles)
+    await _update_pipeline_task(
+        db,
+        task_id,
+        user_id,
+        status="running",
+        phase="classify_v2",
+        current=0,
+        total=total,
+        message=f"共 {total} 篇待分类，准备开始...",
+    )
+    if total == 0:
+        return {"ok": True, "total": 0, "classified": 0, "summary": {}}
+
+    semaphore = asyncio.Semaphore(V2_BATCH_CONCURRENCY)
+
+    async def classify_one(article: dict[str, Any]) -> tuple[Any, bool]:
+        async with semaphore:
+            result = await classifier.classify_single(
+                article,
+                user_id=user_id,
+                trace_id=trace_id,
+                task_id=task_id,
+            )
+        try:
+            await db["articles"].update_one(
+                {"_id": article["_id"]},
+                {
+                    "$set": {
+                        "category_v2": result.category,
+                        "category_v2_confidence": result.confidence,
+                        "category_v2_reason": result.reason,
+                        "category_v2_fallback": result.is_fallback,
+                        "is_pr_eligible": result.is_pr_eligible,
+                    }
+                },
+            )
+            return result, True
+        except Exception as exc:
+            log.warning("[classify-v2] DB update failed: %s", exc)
+            return result, False
+
+    classified = 0
+    summary: dict[str, int] = {}
+    futures = [asyncio.create_task(classify_one(article)) for article in articles]
+    for completed, future in enumerate(asyncio.as_completed(futures), start=1):
+        result, updated = await future
+        classified += int(updated)
+        summary[result.category] = summary.get(result.category, 0) + 1
+        remaining = total - completed
+        await _update_pipeline_task(
+            db,
+            task_id,
+            user_id,
+            status="running",
+            phase="classify_v2",
+            current=completed,
+            total=total,
+            message=f"已分类 {completed} 篇，剩余 {remaining} 篇",
+        )
+
+    log.info("[classify-v2] Done: %d/%d updated", classified, total)
+    return {
+        "ok": True,
+        "total": total,
+        "classified": classified,
+        "summary": summary,
+    }
+
+
+async def _run_score_v2_batch(
+    app: Any,
+    user_id: str,
+    *,
+    task_id: str,
+    trace_id: str = "",
+) -> dict[str, Any]:
+    """并发执行 V2 打分，并在每篇完成后持久化真实文章进度。"""
+    db = app.state.db
+    scorer = app.state.scorer_v2
+    log = logging.getLogger("backend.api.pipeline")
+    articles = (
+        await db["articles"]
+        .find({"is_pr_eligible": True, "pr_total_score": None})
+        .to_list(length=500)
+    )
+    total = len(articles)
+    await _update_pipeline_task(
+        db,
+        task_id,
+        user_id,
+        status="running",
+        phase="score_v2",
+        current=0,
+        total=total,
+        message=f"共 {total} 篇待打分，准备开始...",
+    )
+    if total == 0:
+        return {"ok": True, "total": 0, "scored": 0, "candidates": 0}
+
+    semaphore = asyncio.Semaphore(V2_BATCH_CONCURRENCY)
+
+    async def score_one(article: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+        async with semaphore:
+            result = await scorer.score_single(
+                article,
+                user_id=user_id,
+                trace_id=trace_id,
+                task_id=task_id,
+            )
+        if result.get("_fallback", True):
+            return result, False
+        await db["articles"].update_one(
+            {"_id": article["_id"]},
+            {
+                "$set": {
+                    "product_relevance": result["product_relevance"],
+                    "event_impact": result["event_impact"],
+                    "pr_total_score": result["pr_total_score"],
+                    "score_reason": result.get("score_reason", ""),
+                }
+            },
+        )
+        return result, True
+
+    scored = 0
+    candidates = 0
+    futures = [asyncio.create_task(score_one(article)) for article in articles]
+    for completed, future in enumerate(asyncio.as_completed(futures), start=1):
+        result, updated = await future
+        scored += int(updated)
+        candidates += int(updated and result.get("is_pr_candidate", False))
+        remaining = total - completed
+        await _update_pipeline_task(
+            db,
+            task_id,
+            user_id,
+            status="running",
+            phase="score_v2",
+            current=completed,
+            total=total,
+            message=f"已打分 {completed} 篇，剩余 {remaining} 篇",
+        )
+
+    log.info("[score-v2] Scored: %d/%d, %d PR candidates", scored, total, candidates)
+    return {
+        "ok": True,
+        "total": total,
+        "scored": scored,
+        "candidates": candidates,
+    }
+
+
+async def _create_v2_batch_task(
+    request: Request,
+    user_id: str,
+    task_type: str,
+    total: int,
+) -> dict[str, Any]:
+    db = request.app.state.db
+    trace_id = generate_trace_id()
+    username = _request_username(request, user_id)
+    task = await _create_pipeline_task(
+        db,
+        user_id,
+        task_type,
+        trace_id=trace_id,
+        username=username,
+    )
+    action = "分类" if task_type == "classify-v2" else "打分"
+    await _update_pipeline_task(
+        db,
+        task["task_id"],
+        user_id,
+        status="pending",
+        phase=task_type.replace("-", "_"),
+        current=0,
+        total=total,
+        message=f"共 {total} 篇待{action}，等待执行...",
+    )
+    await _enqueue_pipeline_task(
+        request.app,
+        task["task_id"],
+        user_id,
+        task_type,
+        trace_id=trace_id,
+        username=username,
+        request_id=_request_id(request),
+    )
+    return {
+        "ok": True,
+        "data": {
+            "task_id": task["task_id"],
+            "trace_id": trace_id,
+            "total": total,
+            "message": f"任务已创建，共 {total} 篇待{action}",
+        },
+    }
+
+
+@router.post("/classify-v2/tasks", summary="创建 V2 批量分类后台任务")
+async def create_classify_v2_task(request: Request, user_id: str = Depends(get_current_user)):
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    if getattr(request.app.state, "classifier_v2", None) is None:
+        raise HTTPException(status_code=503, detail="ClassifierV2 not initialized")
+    total = min(
+        await db["articles"].count_documents(
+            {
+                "pipeline_status": {"$in": ["crawled", "classified"]},
+                "category_v2": {"$in": ["", None]},
+            }
+        ),
+        500,
+    )
+    return await _create_v2_batch_task(request, user_id, "classify-v2", total)
+
+
+@router.post("/score-v2/tasks", summary="创建 V2 批量打分后台任务")
+async def create_score_v2_task(request: Request, user_id: str = Depends(get_current_user)):
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    if getattr(request.app.state, "scorer_v2", None) is None:
+        raise HTTPException(status_code=503, detail="ScoringAgentV2 not initialized")
+    total = min(
+        await db["articles"].count_documents({"is_pr_eligible": True, "pr_total_score": None}),
+        500,
+    )
+    return await _create_v2_batch_task(request, user_id, "score-v2", total)
 
 
 @router.post("/classify-v2/{url_hash}", summary="单篇文章 V2 6分类")

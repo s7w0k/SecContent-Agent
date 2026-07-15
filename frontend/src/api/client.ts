@@ -269,6 +269,12 @@ export const pipelineApi = {
     return data;
   },
 
+  /** 创建 V2 批量打分后台任务 */
+  async scoreV2Task(): Promise<PipelineTaskResponse> {
+    const { data } = await client.post('/pipeline/score-v2/tasks');
+    return data;
+  },
+
   /** V2 双维度打分（单篇） */
   async scoreV2Single(urlHash: string): Promise<{
     ok: boolean;
@@ -334,6 +340,12 @@ export const pipelineApi = {
       url_hashes: urlHashes || null,
       force,
     });
+    return data;
+  },
+
+  /** 创建 V2 批量分类后台任务 */
+  async classifyV2Task(): Promise<PipelineTaskResponse> {
+    const { data } = await client.post('/pipeline/classify-v2/tasks');
     return data;
   },
 };

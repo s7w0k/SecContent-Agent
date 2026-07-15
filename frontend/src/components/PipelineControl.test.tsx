@@ -9,7 +9,9 @@ const apiMock = vi.hoisted(() => ({
   crawlWewe: vi.fn(),
   score: vi.fn(),
   scoreV2: vi.fn(),
+  scoreV2Task: vi.fn(),
   classifyV2: vi.fn(),
+  classifyV2Task: vi.fn(),
   runV2: vi.fn(),
   report: vi.fn(),
   getStatus: vi.fn().mockResolvedValue({
@@ -27,7 +29,6 @@ vi.mock('../api/client', () => ({
 describe('PipelineControl', () => {
   const defaultProps = {
     onComplete: vi.fn(),
-    onRefresh: vi.fn(),
   };
 
   beforeEach(() => {

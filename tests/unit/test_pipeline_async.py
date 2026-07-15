@@ -18,6 +18,9 @@ from api.pipeline import (
     _create_pipeline_task,
     _execute_pipeline_task,
     _read_task_checkpoints,
+    _run_classify_v2_batch,
+    _run_score_v2_batch,
+    create_classify_v2_task,
     get_pipeline_task,
     list_pipeline_tasks,
     list_task_checkpoints,
@@ -112,6 +115,22 @@ class FakeDatabase:
 
     def __getitem__(self, name: str):
         return self.collections[name]
+
+
+class FakeBatchArticleCollection:
+    def __init__(self, documents: list[dict]):
+        self.documents = deepcopy(documents)
+        self.update_calls: list[tuple[dict, dict]] = []
+
+    def find(self, _query: dict):
+        return FakeCursor(deepcopy(self.documents))
+
+    async def count_documents(self, _query: dict):
+        return len(self.documents)
+
+    async def update_one(self, query: dict, update: dict):
+        self.update_calls.append((deepcopy(query), deepcopy(update)))
+        return SimpleNamespace(modified_count=1)
 
 
 def _app(db, **values):
@@ -228,6 +247,119 @@ async def test_pipeline_task_failure_is_persisted():
     assert stored["status"] == "failed"
     assert stored["progress"]["phase"] == "failed"
     assert stored["error"] == "LLM unavailable"
+
+
+@pytest.mark.asyncio
+async def test_classify_v2_batch_persists_article_counts_after_each_completion():
+    tasks = FakeTaskCollection()
+    articles = FakeBatchArticleCollection(
+        [
+            {"_id": index, "title": f"article-{index}", "pipeline_status": "crawled"}
+            for index in range(3)
+        ]
+    )
+    db = FakeDatabase(pipeline_tasks=tasks, articles=articles)
+    classifier = MagicMock()
+    classifier.classify_single = AsyncMock(
+        return_value=SimpleNamespace(
+            category="热点事件",
+            confidence=0.9,
+            reason="relevant",
+            is_fallback=False,
+            is_pr_eligible=True,
+        )
+    )
+    app = _app(db, classifier_v2=classifier)
+    task = await _create_pipeline_task(db, "user-a", "classify-v2")
+
+    result = await _run_classify_v2_batch(
+        app,
+        "user-a",
+        task_id=task["task_id"],
+        trace_id="trace-a",
+    )
+
+    progress = [item["progress"] for item in tasks.history if "progress" in item]
+    assert result == {
+        "ok": True,
+        "total": 3,
+        "classified": 3,
+        "summary": {"热点事件": 3},
+    }
+    assert [item["current"] for item in progress] == [0, 1, 2, 3]
+    assert all(item["total"] == 3 for item in progress)
+    assert progress[-1]["message"] == "已分类 3 篇，剩余 0 篇"
+    assert classifier.classify_single.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_score_v2_batch_tracks_processed_and_remaining_articles():
+    tasks = FakeTaskCollection()
+    articles = FakeBatchArticleCollection(
+        [{"_id": index, "title": f"article-{index}"} for index in range(3)]
+    )
+    db = FakeDatabase(pipeline_tasks=tasks, articles=articles)
+    scorer = MagicMock()
+    scorer.score_single = AsyncMock(
+        side_effect=[
+            {
+                "_fallback": False,
+                "product_relevance": 90,
+                "event_impact": 80,
+                "pr_total_score": 170,
+                "score_reason": "candidate",
+                "is_pr_candidate": True,
+            },
+            {"_fallback": True, "is_pr_candidate": False},
+            {
+                "_fallback": False,
+                "product_relevance": 60,
+                "event_impact": 50,
+                "pr_total_score": 110,
+                "score_reason": "candidate",
+                "is_pr_candidate": True,
+            },
+        ]
+    )
+    app = _app(db, scorer_v2=scorer)
+    task = await _create_pipeline_task(db, "user-a", "score-v2")
+
+    result = await _run_score_v2_batch(
+        app,
+        "user-a",
+        task_id=task["task_id"],
+        trace_id="trace-a",
+    )
+
+    progress = [item["progress"] for item in tasks.history if "progress" in item]
+    assert result == {"ok": True, "total": 3, "scored": 2, "candidates": 2}
+    assert [item["current"] for item in progress] == [0, 1, 2, 3]
+    assert progress[1]["message"] == "已打分 1 篇，剩余 2 篇"
+    assert progress[-1]["message"] == "已打分 3 篇，剩余 0 篇"
+
+
+@pytest.mark.asyncio
+async def test_classify_v2_task_counts_articles_before_enqueue():
+    tasks = FakeTaskCollection()
+    articles = FakeBatchArticleCollection([{"_id": index} for index in range(4)])
+    db = FakeDatabase(pipeline_tasks=tasks, articles=articles)
+    arq_pool = MagicMock()
+    arq_pool.enqueue_job = AsyncMock(return_value=SimpleNamespace(job_id="queued"))
+    request = SimpleNamespace(
+        app=_app(db, arq_pool=arq_pool, classifier_v2=MagicMock()),
+    )
+
+    response = await create_classify_v2_task(request, user_id="user-a")
+
+    task = tasks.documents[response["data"]["task_id"]]
+    assert response["data"]["total"] == 4
+    assert task["progress"] == {
+        "phase": "classify_v2",
+        "current": 0,
+        "total": 4,
+        "message": "共 4 篇待分类，等待执行...",
+    }
+    arq_pool.enqueue_job.assert_awaited_once()
 
 
 @pytest.mark.asyncio

@@ -217,7 +217,7 @@ export default function Dashboard() {
       <StatsCards stats={stats} loading={loading} reportCount={reportCount} />
 
       {/* 流水线控制 */}
-      <PipelineControl onComplete={handlePipelineComplete} onRefresh={loadArticles} />
+      <PipelineControl onComplete={handlePipelineComplete} />
 
       {/* 批量补抓原文按钮 */}
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>

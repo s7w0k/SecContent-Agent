@@ -103,6 +103,7 @@ export default function PipelineTaskProgress({
   const phase = task?.progress?.phase || 'pending';
   const current = task?.progress?.current || 0;
   const total = task?.progress?.total || 0;
+  const isArticleBatch = task?.task_type === 'classify-v2' || task?.task_type === 'score-v2';
   return (
     <Card size="small" style={{ width: '100%', marginBottom: 16, background: '#f7faff' }}>
       <Space direction="vertical" size={8} style={{ width: '100%' }} aria-live="polite">
@@ -132,7 +133,9 @@ export default function PipelineTaskProgress({
           <Text>{task?.progress?.message || '任务已创建，等待执行...'}</Text>
           {total > 0 && (
             <Text type="secondary">
-              步骤 {Math.min(current + 1, total)} / {total}
+              {isArticleBatch
+                ? `已完成 ${current} 篇 · 剩余 ${Math.max(total - current, 0)} 篇 · 共 ${total} 篇`
+                : `步骤 ${Math.min(current + 1, total)} / ${total}`}
             </Text>
           )}
         </Space>

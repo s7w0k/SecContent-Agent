@@ -216,7 +216,7 @@ export interface PipelineTask {
   id?: string;
   task_id: string;
   user_id: string;
-  task_type: 'crawl' | 'classify' | 'score' | 'run-v2' | 'report';
+  task_type: 'crawl' | 'classify' | 'classify-v2' | 'score' | 'score-v2' | 'run-v2' | 'report';
   article_url_hash?: string | null;
   status: PipelineTaskStatus;
   progress: PipelineTaskProgress;
@@ -237,6 +237,7 @@ export interface PipelineTaskList {
 export interface PipelineTaskCreated {
   task_id: string;
   message: string;
+  total?: number;
 }
 
 export interface PipelineTaskResponse {
