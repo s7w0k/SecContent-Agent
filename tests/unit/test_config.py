@@ -56,6 +56,12 @@ class TestSettingsDefaults:
         s = Settings(DEEPSEEK_API_KEY="test")
         assert s.MCP_WEWE_URL == "http://mcp-wewe:8100"
         assert s.MCP_CRAWL_URL == "http://mcp-crawl:8101"
+        assert s.MCP_CRAWL_API_KEY.get_secret_value() == ""
+        assert s.MCP_CRAWL_CONNECT_TIMEOUT == 5.0
+        assert s.MCP_CRAWL_READ_TIMEOUT == 300.0
+        assert s.MCP_CRAWL_MAX_RETRIES == 2
+        assert s.MCP_CRAWL_MAX_RESPONSE_MB == 20
+        assert s.MCP_CRAWL_VERIFY_TLS is True
 
     def test_default_llm_config(self):
         from config import Settings
@@ -141,6 +147,28 @@ class TestSettingsCustomValues:
         assert s.DEEPSEEK_MODEL == "deepseek-reasoner"
         assert s.DEEPSEEK_BASE_URL == "https://custom.llm.com"
 
+    def test_custom_mcp_crawl_client_config(self):
+        from config import Settings
+
+        s = Settings(
+            DEEPSEEK_API_KEY="test",
+            MCP_CRAWL_URL="https://crawler.internal:8443/",
+            MCP_CRAWL_API_KEY="secret-token",
+            MCP_CRAWL_CONNECT_TIMEOUT=2.5,
+            MCP_CRAWL_READ_TIMEOUT=90,
+            MCP_CRAWL_MAX_RETRIES=1,
+            MCP_CRAWL_MAX_RESPONSE_MB=10,
+            MCP_CRAWL_VERIFY_TLS=False,
+            _env_file=None,
+        )
+        assert s.MCP_CRAWL_URL == "https://crawler.internal:8443"
+        assert s.MCP_CRAWL_API_KEY.get_secret_value() == "secret-token"
+        assert s.MCP_CRAWL_CONNECT_TIMEOUT == 2.5
+        assert s.MCP_CRAWL_READ_TIMEOUT == 90
+        assert s.MCP_CRAWL_MAX_RETRIES == 1
+        assert s.MCP_CRAWL_MAX_RESPONSE_MB == 10
+        assert s.MCP_CRAWL_VERIFY_TLS is False
+
     def test_custom_thresholds(self):
         from config import Settings
 
@@ -213,6 +241,29 @@ class TestSettingsValidation:
 
         with pytest.raises(ValidationError):
             Settings(DEEPSEEK_API_KEY="test", API_PAGE_SIZE_MAX=5)
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("MCP_CRAWL_CONNECT_TIMEOUT", 0),
+            ("MCP_CRAWL_READ_TIMEOUT", 0),
+            ("MCP_CRAWL_MAX_RETRIES", -1),
+            ("MCP_CRAWL_MAX_RETRIES", 6),
+            ("MCP_CRAWL_MAX_RESPONSE_MB", 0),
+            ("MCP_CRAWL_MAX_RESPONSE_MB", 101),
+        ],
+    )
+    def test_mcp_crawl_values_out_of_range(self, field, value):
+        from config import Settings
+
+        with pytest.raises(ValidationError):
+            Settings(DEEPSEEK_API_KEY="test", _env_file=None, **{field: value})
+
+    def test_mcp_crawl_url_requires_http(self):
+        from config import Settings
+
+        with pytest.raises(ValidationError):
+            Settings(DEEPSEEK_API_KEY="test", MCP_CRAWL_URL="ftp://crawler")
 
     @pytest.mark.parametrize("hours", [0, 721])
     def test_jwt_expire_hours_out_of_range(self, hours):

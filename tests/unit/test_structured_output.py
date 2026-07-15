@@ -62,7 +62,7 @@ class NativeStructuredLLM:
         self.result = result
         self.ainvoke = AsyncMock()
 
-    def with_structured_output(self, _schema):
+    def with_structured_output(self, _schema, **_kwargs):
         return StructuredRunnable(self.result)
 
 
@@ -77,7 +77,7 @@ class FallbackLLM:
             )
         )
 
-    def with_structured_output(self, _schema):
+    def with_structured_output(self, _schema, **_kwargs):
         raise NotImplementedError("provider does not support tool calling")
 
 

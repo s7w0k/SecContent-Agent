@@ -35,6 +35,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     from agent.scorer import ScoringAgent
     from agent.scorer_v2 import ScoringAgentV2
     from agent.tools import create_mcp_toolset
+    from clients.mcp_crawl import McpCrawlClient
     from db.mongo import MongoDB
 
     await MongoDB.connect(
@@ -76,6 +77,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         knowledge=knowledge,
         db=db,
     )
+    mcp_crawl_client = McpCrawlClient.from_settings(settings)
     app = SimpleNamespace(
         state=SimpleNamespace(
             db=db,
@@ -84,16 +86,27 @@ async def startup(ctx: dict[str, Any]) -> None:
             draft_gen=draft_gen,
             pipeline_v2=pipeline_v2,
             pipeline_manager=pipeline_manager,
+            mcp_crawl_client=mcp_crawl_client,
         )
     )
-    ctx.update({"app": app, "db": db, "pipeline_v2": pipeline_v2})
+    ctx.update(
+        {
+            "app": app,
+            "db": db,
+            "pipeline_v2": pipeline_v2,
+            "mcp_crawl_client": mcp_crawl_client,
+        }
+    )
     logger.info("ARQ worker runtime initialized")
 
 
-async def shutdown(_ctx: dict[str, Any]) -> None:
-    """Close the worker's MongoDB connection pool."""
+async def shutdown(ctx: dict[str, Any]) -> None:
+    """Close the worker's HTTP and MongoDB connection pools."""
     from db.mongo import MongoDB
 
+    client = ctx.get("mcp_crawl_client")
+    if client is not None:
+        await client.aclose()
     await MongoDB.disconnect()
     logger.info("ARQ worker stopped")
 

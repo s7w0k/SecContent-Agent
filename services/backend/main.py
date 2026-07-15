@@ -70,6 +70,9 @@ async def lifespan(app: FastAPI):
     """Startup: connect MongoDB + init Agent components. Shutdown: cleanup."""
     app.state.arq_pool = None
     settings = get_settings()
+    from clients.mcp_crawl import McpCrawlClient
+
+    app.state.mcp_crawl_client = McpCrawlClient.from_settings(settings)
     _log("INFO", "=" * 50)
     _log("INFO", "Backend starting...")
     _log("INFO", f"Python {sys.version}")
@@ -187,20 +190,22 @@ async def lifespan(app: FastAPI):
         app.state.llm = None
         app.state.style_profiler = None
 
-    yield
-
-    # Shutdown
-    _log("INFO", "Shutting down backend...")
-    arq_pool = getattr(app.state, "arq_pool", None)
-    if arq_pool is not None:
-        await arq_pool.aclose()
     try:
-        from db.mongo import MongoDB
+        yield
+    finally:
+        # Shutdown must also run when request handling or application teardown fails.
+        _log("INFO", "Shutting down backend...")
+        arq_pool = getattr(app.state, "arq_pool", None)
+        if arq_pool is not None:
+            await arq_pool.aclose()
+        await app.state.mcp_crawl_client.aclose()
+        try:
+            from db.mongo import MongoDB
 
-        await MongoDB.disconnect()
-    except Exception:
-        pass
-    _log("INFO", "Backend stopped")
+            await MongoDB.disconnect()
+        except Exception:
+            pass
+        _log("INFO", "Backend stopped")
 
 
 # ── FastAPI App ─────────────────────────────────────────

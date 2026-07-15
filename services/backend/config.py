@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -96,6 +96,38 @@ class Settings(BaseSettings):
     MCP_CRAWL_URL: str = Field(
         default="http://mcp-crawl:8101",
         description="mcp-crawl 服务地址",
+    )
+    MCP_CRAWL_API_KEY: SecretStr = Field(
+        default=SecretStr(""),
+        description="mcp-crawl 服务间认证 Token",
+    )
+    MCP_CRAWL_CONNECT_TIMEOUT: float = Field(
+        default=5.0,
+        gt=0,
+        le=60,
+        description="mcp-crawl TCP 建连超时秒数",
+    )
+    MCP_CRAWL_READ_TIMEOUT: float = Field(
+        default=300.0,
+        gt=0,
+        le=1800,
+        description="mcp-crawl 响应读取超时秒数",
+    )
+    MCP_CRAWL_MAX_RETRIES: int = Field(
+        default=2,
+        ge=0,
+        le=5,
+        description="mcp-crawl 可重试错误的最大重试次数",
+    )
+    MCP_CRAWL_MAX_RESPONSE_MB: int = Field(
+        default=20,
+        ge=1,
+        le=100,
+        description="mcp-crawl 最大响应体积（MiB）",
+    )
+    MCP_CRAWL_VERIFY_TLS: bool = Field(
+        default=True,
+        description="是否校验 mcp-crawl HTTPS 证书",
     )
 
     # ── LLM 配置 ─────────────────────────────────────
@@ -241,6 +273,15 @@ class Settings(BaseSettings):
         if not v.startswith("mongodb://") and not v.startswith("mongodb+srv://"):
             raise ValueError("Invalid MongoDB URI: must start with mongodb:// or mongodb+srv://")
         return v
+
+    @field_validator("MCP_CRAWL_URL")
+    @classmethod
+    def mcp_crawl_url_format(cls, v: str) -> str:
+        """只允许 HTTP(S) Bridge 地址，并统一去掉末尾斜杠。"""
+        normalized = v.strip().rstrip("/")
+        if not normalized.startswith(("http://", "https://")):
+            raise ValueError("MCP_CRAWL_URL must start with http:// or https://")
+        return normalized
 
 
 # ═══════════════════════════════════════════════════════════
