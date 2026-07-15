@@ -60,7 +60,7 @@ class LLMWrapper:
         result: T | None = None
 
         try:
-            structured_llm = self.llm.with_structured_output(output_schema)
+            structured_llm = self.llm.with_structured_output(output_schema, method="json_mode")
             raw_result = await structured_llm.ainvoke(self._messages(system_prompt, user_prompt))
             result = self._validate_result(raw_result, output_schema)
         except Exception as structured_exc:

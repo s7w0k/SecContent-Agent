@@ -25,6 +25,7 @@ import {
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import type { SorterResult } from 'antd/es/table/interface';
 import { useCallback, useState } from 'react';
+import type { Key } from 'react';
 import api from '../api/client';
 import type { Article } from '../types';
 
@@ -60,6 +61,8 @@ export default function ArticleTable({
   onRefresh,
 }: ArticleTableProps) {
   const [busy, setBusy] = useState<Set<string>>(new Set());
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
+  const [batchDeleting, setBatchDeleting] = useState(false);
 
   const handleFetch = useCallback(
     async (hash: string) => {
@@ -102,6 +105,23 @@ export default function ArticleTable({
     },
     [onRefresh],
   );
+
+  const handleBatchDelete = useCallback(async () => {
+    const hashes = articles
+      .filter((a) => selectedRowKeys.includes(a._id))
+      .map((a) => a.url_hash);
+    if (!hashes.length) return;
+    setBatchDeleting(true);
+    try {
+      const r = await api.batchDeleteArticles(hashes);
+      message.success(`已删除 ${r.deleted} 篇`);
+      setSelectedRowKeys([]);
+      onRefresh();
+    } catch {
+      message.error('批量删除失败');
+    }
+    setBatchDeleting(false);
+  }, [articles, selectedRowKeys, onRefresh]);
 
   const columns: ColumnsType<Article> = [
     {
@@ -349,23 +369,48 @@ export default function ArticleTable({
   };
 
   return (
-    <Table<Article>
-      columns={columns}
-      dataSource={articles}
-      rowKey="_id"
-      loading={loading}
-      onChange={handleTableChange}
-      pagination={{
-        current: page,
-        pageSize,
-        total,
-        showSizeChanger: true,
-        pageSizeOptions: ['10', '20', '50'],
-        showTotal: (t: number) => `total ${t}`,
-      }}
-      scroll={{ x: 1300 }}
-      size="small"
-      locale={{ emptyText: 'no data' }}
-    />
+    <>
+      {selectedRowKeys.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <Space>
+            <span>已选择 {selectedRowKeys.length} 项</span>
+            <Popconfirm
+              title={`确定删除选中的 ${selectedRowKeys.length} 篇文章？`}
+              onConfirm={handleBatchDelete}
+              disabled={batchDeleting}
+            >
+              <Button danger size="small" icon={<DeleteOutlined />} loading={batchDeleting}>
+                批量删除
+              </Button>
+            </Popconfirm>
+            <Button size="small" onClick={() => setSelectedRowKeys([])}>
+              取消选择
+            </Button>
+          </Space>
+        </div>
+      )}
+      <Table<Article>
+        columns={columns}
+        dataSource={articles}
+        rowKey="_id"
+        loading={loading}
+        onChange={handleTableChange}
+        rowSelection={{
+          selectedRowKeys,
+          onChange: (keys) => setSelectedRowKeys(keys),
+        }}
+        pagination={{
+          current: page,
+          pageSize,
+          total,
+          showSizeChanger: true,
+          pageSizeOptions: ['10', '20', '50'],
+          showTotal: (t: number) => `total ${t}`,
+        }}
+        scroll={{ x: 1300 }}
+        size="small"
+        locale={{ emptyText: 'no data' }}
+      />
+    </>
   );
 }

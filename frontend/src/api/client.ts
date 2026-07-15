@@ -168,6 +168,12 @@ export const dashboardApi = {
     return data;
   },
 
+  /** 批量删除文章 */
+  async batchDeleteArticles(hashes: string[]): Promise<{ ok: boolean; deleted: number }> {
+    const { data } = await client.delete('/articles/batch', { data: { url_hashes: hashes } });
+    return data;
+  },
+
   /** 获取推文原文 */
   async fetchContent(hash: string): Promise<{ ok: boolean; content: string }> {
     const { data } = await client.post(`/articles/${hash}/fetch-content`);

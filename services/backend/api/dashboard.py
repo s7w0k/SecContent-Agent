@@ -149,6 +149,21 @@ async def get_article(
     return article
 
 
+@router.delete("/articles/batch", summary="批量删除文章")
+async def batch_delete_articles(
+    request: Request,
+    _user_id: str = Depends(get_current_user),
+):
+    """批量删除文章。"""
+    body = await request.json()
+    url_hashes = body.get("url_hashes", [])
+    if not url_hashes:
+        raise HTTPException(status_code=400, detail="url_hashes is required")
+    db = _get_db(request)
+    result = await db["articles"].delete_many({"url_hash": {"$in": url_hashes}})
+    return {"ok": True, "deleted": result.deleted_count}
+
+
 @router.delete("/articles/{url_hash}", summary="删除文章")
 async def delete_article(
     url_hash: str,
