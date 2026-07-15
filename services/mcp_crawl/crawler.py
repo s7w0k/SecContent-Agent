@@ -21,11 +21,23 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import logging
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 logger = logging.getLogger("mcp-crawl.crawler")
+
+
+def _proxy_config() -> dict[str, str] | None:
+    """Return curl_cffi proxy settings without ever logging proxy credentials."""
+    proxy = (
+        os.environ.get("HTTPS_PROXY")
+        or os.environ.get("HTTP_PROXY")
+        or os.environ.get("https_proxy")
+        or os.environ.get("http_proxy")
+    )
+    return {"https": proxy, "http": proxy} if proxy else None
 
 
 # ═══════════════════════════════════════════════════════════
@@ -261,29 +273,28 @@ class NewsCrawler:
             # 随机延迟
             await asyncio.sleep(random.uniform(*delay_range))
 
-            async with global_sem:
-                async with domain_sems[domain]:
-                    for attempt in range(max_retries + 1):
-                        try:
-                            content = await self.fetch_fulltext(art.url)
-                            if content and len(content) >= 100:
-                                results[art.url_hash] = content
-                                success_count += 1
-                                logger.info("[fulltext] OK: %s (%d chars)",
-                                            art.title[:40], len(content))
-                                return
-                        except Exception as e:
-                            logger.warning("[fulltext] attempt %d failed: %s - %s",
-                                           attempt + 1, art.url[:50], e)
+            async with global_sem, domain_sems[domain]:
+                for attempt in range(max_retries + 1):
+                    try:
+                        content = await self.fetch_fulltext(art.url)
+                        if content and len(content) >= 100:
+                            results[art.url_hash] = content
+                            success_count += 1
+                            logger.info("[fulltext] OK: %s (%d chars)",
+                                        art.title[:40], len(content))
+                            return
+                    except Exception as e:
+                        logger.warning("[fulltext] attempt %d failed: %s - %s",
+                                       attempt + 1, art.url[:50], e)
 
-                        if attempt < max_retries:
-                            backoff = 2 ** attempt + random.uniform(0, 1)
-                            logger.info("[fulltext] retry in %.1fs: %s",
-                                        backoff, art.url[:50])
-                            await asyncio.sleep(backoff)
+                    if attempt < max_retries:
+                        backoff = 2 ** attempt + random.uniform(0, 1)
+                        logger.info("[fulltext] retry in %.1fs: %s",
+                                    backoff, art.url[:50])
+                        await asyncio.sleep(backoff)
 
-                    fail_count += 1
-                    logger.warning("[fulltext] GIVE UP: %s", art.url[:60])
+                fail_count += 1
+                logger.warning("[fulltext] GIVE UP: %s", art.url[:60])
 
         tasks = [_fetch_one(art) for art in articles]
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -304,7 +315,11 @@ class NewsCrawler:
             # 用线程池执行同步 HTTP 请求，避免阻塞事件循环
             import asyncio as _aio
             resp = await _aio.to_thread(
-                requests.get, url, impersonate="chrome124", timeout=15
+                requests.get,
+                url,
+                impersonate="chrome124",
+                timeout=15,
+                proxies=_proxy_config(),
             )
             if resp.status_code != 200:
                 return ""
@@ -318,7 +333,7 @@ class NewsCrawler:
             tag.decompose()
 
         # 定位正文容器：优先专用选择器，article 标签可能匹配到广告区域需过滤
-        _SELECTORS = [
+        selectors = [
             "div.post-body", "div#articlebody", "div.article-body",
             "div.article-content", "div.post-content", "div.entry-content",
             "div.body-post", "div.story-body", "div.article-text",
@@ -326,7 +341,7 @@ class NewsCrawler:
             "article",  # article 标签放最后，可能匹配到广告
         ]
         article = None
-        for sel in _SELECTORS:
+        for sel in selectors:
             for el in soup.select(sel):
                 text = el.get_text(strip=True)
                 if len(text) >= 500:  # 正文至少 500 字符，过滤广告/侧边栏
@@ -365,18 +380,11 @@ class NewsCrawler:
         if cfg.get("fallback"):
             feed_urls.append(cfg["fallback"])
 
-        # 代理支持：从环境变量读取 HTTP_PROXY / HTTPS_PROXY
-        import os
-
-        proxy = (
-            os.environ.get("HTTPS_PROXY")
-            or os.environ.get("HTTP_PROXY")
-            or os.environ.get("https_proxy")
-            or os.environ.get("http_proxy")
-        )
-        proxies = {"https": proxy, "http": proxy} if proxy else None
-        if proxy:
-            logger.info("  Using proxy: %s", proxy)
+        # 代理支持：从环境变量读取，但日志不输出代理地址和凭据
+        proxies = _proxy_config()
+        proxy = proxies["https"] if proxies else None
+        if proxies:
+            logger.info("  Using configured proxy")
 
         try:
             from curl_cffi import requests as cffi_requests

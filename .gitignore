@@ -32,6 +32,7 @@ yarn-error.log*
 .env
 .env.*
 !.env.example
+!deploy/crawler/.env.crawler.example
 *.key
 *.pem
 *.p12

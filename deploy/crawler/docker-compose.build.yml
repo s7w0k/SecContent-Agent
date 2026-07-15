@@ -1,0 +1,5 @@
+services:
+  mcp-crawl:
+    build:
+      context: ../../services/mcp_crawl
+      dockerfile: Dockerfile
