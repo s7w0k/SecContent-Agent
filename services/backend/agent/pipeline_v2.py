@@ -214,6 +214,7 @@ async def classify_v2_node(state: dict, classifier: Any, db: Any) -> dict:
             "$or": [
                 {"category_v2": {"$in": ["", None]}},
                 {"category_v2": {"$exists": False}},
+                {"is_ai_agent_security_relevant": {"$exists": False}},
             ],
         }
         cursor = db["articles"].find(query)
@@ -248,6 +249,21 @@ async def classify_v2_node(state: dict, classifier: Any, db: Any) -> dict:
                             "category_v2_fallback": result.is_fallback,
                             "category_v2_low_confidence": is_low_confidence,
                             "is_pr_eligible": result.is_pr_eligible,
+                            "is_ai_agent_security_relevant": getattr(
+                                result,
+                                "is_relevant",
+                                result.category != "不相关",
+                            ),
+                            "ai_agent_security_relevance_confidence": getattr(
+                                result,
+                                "relevance_confidence",
+                                result.confidence,
+                            ),
+                            "ai_agent_security_relevance_reason": getattr(
+                                result,
+                                "relevance_reason",
+                                result.reason,
+                            ),
                         }
                     },
                 )

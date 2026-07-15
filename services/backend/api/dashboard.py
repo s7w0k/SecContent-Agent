@@ -81,7 +81,7 @@ async def list_articles(
     if source_type:
         query["source_type"] = source_type
     if category:
-        query["category"] = category
+        query["category_v2"] = category
     if is_ai_security is not None:
         query["is_ai_security"] = is_ai_security
 
@@ -402,7 +402,9 @@ async def get_stats(
     db = _get_db(request)
 
     total = await db["articles"].count_documents({})
-    ai_security_count = await db["articles"].count_documents({"is_ai_security": True})
+    ai_security_count = await db["articles"].count_documents(
+        {"is_ai_agent_security_relevant": True}
+    )
     high_value_count = (
         await db["articles"].count_documents(
             {
@@ -433,8 +435,8 @@ async def get_stats(
 
     # 分类分布
     cat_pipeline = [
-        {"$match": {"is_ai_security": True, "category": {"$ne": ""}}},
-        {"$group": {"_id": "$category", "count": {"$sum": 1}}},
+        {"$match": {"category_v2": {"$nin": ["", None]}}},
+        {"$group": {"_id": "$category_v2", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
         {"$limit": 10},
     ]

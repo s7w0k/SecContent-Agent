@@ -1174,7 +1174,30 @@ def _classification_payload(article: dict, *, skipped: bool) -> dict:
         "category": article.get("category_v2", ""),
         "confidence": article.get("category_v2_confidence", 0),
         "is_pr_eligible": article.get("is_pr_eligible", False),
+        "is_ai_agent_security_relevant": article.get(
+            "is_ai_agent_security_relevant",
+            article.get("category_v2") != "不相关",
+        ),
+        "relevance_confidence": article.get("ai_agent_security_relevance_confidence", 0),
+        "relevance_reason": article.get("ai_agent_security_relevance_reason", ""),
         "skipped": skipped,
+    }
+
+
+def _classification_update_fields(result: Any) -> dict[str, Any]:
+    """Build persisted V2 category and AI/Agent security relevance fields."""
+    is_relevant = getattr(result, "is_relevant", result.category != "不相关")
+    return {
+        "category_v2": result.category,
+        "category_v2_confidence": result.confidence,
+        "category_v2_reason": result.reason,
+        "category_v2_fallback": result.is_fallback,
+        "is_pr_eligible": result.is_pr_eligible,
+        "is_ai_agent_security_relevant": is_relevant,
+        "ai_agent_security_relevance_confidence": getattr(
+            result, "relevance_confidence", result.confidence
+        ),
+        "ai_agent_security_relevance_reason": getattr(result, "relevance_reason", result.reason),
     }
 
 
@@ -1194,7 +1217,11 @@ async def _run_classify_v2_batch(
     log = logging.getLogger("backend.api.pipeline")
     query = {
         "pipeline_status": {"$in": ["crawled", "classified"]},
-        "category_v2": {"$in": ["", None]},
+        "$or": [
+            {"category_v2": {"$in": ["", None]}},
+            {"category_v2": {"$exists": False}},
+            {"is_ai_agent_security_relevant": {"$exists": False}},
+        ],
     }
     articles = await db["articles"].find(query).to_list(length=500)
     total = len(articles)
@@ -1224,15 +1251,7 @@ async def _run_classify_v2_batch(
         try:
             await db["articles"].update_one(
                 {"_id": article["_id"]},
-                {
-                    "$set": {
-                        "category_v2": result.category,
-                        "category_v2_confidence": result.confidence,
-                        "category_v2_reason": result.reason,
-                        "category_v2_fallback": result.is_fallback,
-                        "is_pr_eligible": result.is_pr_eligible,
-                    }
-                },
+                {"$set": _classification_update_fields(result)},
             )
             return result, True
         except Exception as exc:
@@ -1408,7 +1427,11 @@ async def create_classify_v2_task(request: Request, user_id: str = Depends(get_c
         await db["articles"].count_documents(
             {
                 "pipeline_status": {"$in": ["crawled", "classified"]},
-                "category_v2": {"$in": ["", None]},
+                "$or": [
+                    {"category_v2": {"$in": ["", None]}},
+                    {"category_v2": {"$exists": False}},
+                    {"is_ai_agent_security_relevant": {"$exists": False}},
+                ],
             }
         ),
         500,
@@ -1448,7 +1471,7 @@ async def classify_v2_single(
     article = await db["articles"].find_one({"url_hash": url_hash})
     if article is None:
         raise HTTPException(status_code=404, detail="Article not found")
-    if article.get("category_v2"):
+    if article.get("category_v2") and "is_ai_agent_security_relevant" in article:
         await _log_idempotent_skip(
             db, request, user_id, "classify_v2", url_hash, trace_id, "already_classified"
         )
@@ -1466,7 +1489,7 @@ async def classify_v2_single(
         if status == "timeout":
             raise _pipeline_timeout_error()
         article = await db["articles"].find_one({"url_hash": url_hash})
-        if article and article.get("category_v2"):
+        if article and article.get("category_v2") and "is_ai_agent_security_relevant" in article:
             await _log_idempotent_skip(
                 db, request, user_id, "classify_v2", url_hash, trace_id, "concurrent_result"
             )
@@ -1482,7 +1505,7 @@ async def classify_v2_single(
 
     try:
         article = await db["articles"].find_one({"url_hash": url_hash})
-        if article and article.get("category_v2"):
+        if article and article.get("category_v2") and "is_ai_agent_security_relevant" in article:
             await release_pipeline_lock(db, lock_key, success=True)
             await _log_idempotent_skip(
                 db, request, user_id, "classify_v2", url_hash, trace_id, "locked_recheck"
@@ -1494,13 +1517,7 @@ async def classify_v2_single(
             user_id=user_id,
             trace_id=trace_id,
         )
-        classified = {
-            "category_v2": result.category,
-            "category_v2_confidence": result.confidence,
-            "category_v2_reason": result.reason,
-            "category_v2_fallback": result.is_fallback,
-            "is_pr_eligible": result.is_pr_eligible,
-        }
+        classified = _classification_update_fields(result)
         await db["articles"].update_one(
             {
                 "url_hash": url_hash,
@@ -1562,7 +1579,11 @@ async def classify_v2(
         else:
             query["pipeline_status"] = {"$in": ["crawled", "classified"]}
             if not body.force:
-                query["category_v2"] = {"$in": ["", None]}
+                query["$or"] = [
+                    {"category_v2": {"$in": ["", None]}},
+                    {"category_v2": {"$exists": False}},
+                    {"is_ai_agent_security_relevant": {"$exists": False}},
+                ]
 
         cursor = db["articles"].find(query)
         articles = await cursor.to_list(length=500)
@@ -1580,15 +1601,7 @@ async def classify_v2(
             try:
                 await db["articles"].update_one(
                     {"_id": art["_id"]},
-                    {
-                        "$set": {
-                            "category_v2": result.category,
-                            "category_v2_confidence": result.confidence,
-                            "category_v2_reason": result.reason,
-                            "category_v2_fallback": result.is_fallback,
-                            "is_pr_eligible": result.is_pr_eligible,
-                        }
-                    },
+                    {"$set": _classification_update_fields(result)},
                 )
                 updated += 1
             except Exception as e:
@@ -1713,7 +1726,7 @@ async def _run_v2_single_workflow(
         action="start",
         detail={"article_url_hash": url_hash, "task_id": task_id},
     )
-    if article.get("category_v2"):
+    if article.get("category_v2") and "is_ai_agent_security_relevant" in article:
         category = article["category_v2"]
         confidence = article.get("category_v2_confidence", 0)
         is_pr_eligible = article.get("is_pr_eligible", False)
@@ -1731,15 +1744,7 @@ async def _run_v2_single_workflow(
         classification_skipped = False
         await db["articles"].update_one(
             {"url_hash": url_hash},
-            {
-                "$set": {
-                    "category_v2": category,
-                    "category_v2_confidence": confidence,
-                    "category_v2_reason": classify_result.reason,
-                    "category_v2_fallback": classify_result.is_fallback,
-                    "is_pr_eligible": is_pr_eligible,
-                }
-            },
+            {"$set": _classification_update_fields(classify_result)},
         )
     result["steps"].append(
         {

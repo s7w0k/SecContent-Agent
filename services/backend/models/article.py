@@ -19,16 +19,19 @@ from pydantic import BaseModel, Field, field_validator
 # 枚举
 # ═══════════════════════════════════════════════════════════
 
+
 class SourceType(StrEnum):
     """文章来源类型"""
-    OVERSEAS_NEWS = "overseas_news"    # 海外安全新闻
-    WECHAT_MP = "wechat_mp"             # 微信公众号
-    PAPER = "paper"                     # 学术论文
+
+    OVERSEAS_NEWS = "overseas_news"  # 海外安全新闻
+    WECHAT_MP = "wechat_mp"  # 微信公众号
+    PAPER = "paper"  # 学术论文
 
 
 # ═══════════════════════════════════════════════════════════
 # Article 模型
 # ═══════════════════════════════════════════════════════════
+
 
 class ArticleBase(BaseModel):
     """文章基础模型 — API 输入/输出共用的字段"""
@@ -97,6 +100,21 @@ class ArticleBase(BaseModel):
     )
     category_v2_reason: str = Field(default="", max_length=100, description="6分类理由")
     category_v2_fallback: bool = Field(default=False, description="6分类是否降级")
+    is_ai_agent_security_relevant: bool = Field(
+        default=False,
+        description="原文核心议题是否与 AI 安全或智能体安全直接相关",
+    )
+    ai_agent_security_relevance_confidence: int = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="AI/Agent 安全相关性判断置信度",
+    )
+    ai_agent_security_relevance_reason: str = Field(
+        default="",
+        max_length=200,
+        description="AI/Agent 安全相关性判断理由",
+    )
     is_pr_eligible: bool = Field(default=False, description="是否可进入PR流程（V2分类结果）")
 
     # V2 双维度评分

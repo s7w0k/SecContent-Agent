@@ -71,11 +71,17 @@ def mock_llm_breaking():
     """Mock LLM 返回爆点事件"""
     llm = MagicMock()
     llm.temperature = None
-    llm.ainvoke = AsyncMock(return_value=AIMessage(content=json.dumps({
-        "category": "爆点事件",
-        "confidence": 92,
-        "reason": "MCP RCE漏洞属于重大安全突发事件",
-    })))
+    llm.ainvoke = AsyncMock(
+        return_value=AIMessage(
+            content=json.dumps(
+                {
+                    "category": "爆点事件",
+                    "confidence": 92,
+                    "reason": "MCP RCE漏洞属于重大安全突发事件",
+                }
+            )
+        )
+    )
     return llm
 
 
@@ -84,11 +90,17 @@ def mock_llm_competitor():
     """Mock LLM 返回竞品信息"""
     llm = MagicMock()
     llm.temperature = None
-    llm.ainvoke = AsyncMock(return_value=AIMessage(content=json.dumps({
-        "category": "国内外竞品信息",
-        "confidence": 85,
-        "reason": "友商融资动态",
-    })))
+    llm.ainvoke = AsyncMock(
+        return_value=AIMessage(
+            content=json.dumps(
+                {
+                    "category": "国内外竞品信息",
+                    "confidence": 85,
+                    "reason": "友商融资动态",
+                }
+            )
+        )
+    )
     return llm
 
 
@@ -97,11 +109,17 @@ def mock_llm_ambiguous():
     """Mock LLM 返回模糊结果（低置信度）"""
     llm = MagicMock()
     llm.temperature = None
-    llm.ainvoke = AsyncMock(return_value=AIMessage(content=json.dumps({
-        "category": "不相关",
-        "confidence": 30,
-        "reason": "与AI/Agent安全无关",
-    })))
+    llm.ainvoke = AsyncMock(
+        return_value=AIMessage(
+            content=json.dumps(
+                {
+                    "category": "不相关",
+                    "confidence": 30,
+                    "reason": "与AI/Agent安全无关",
+                }
+            )
+        )
+    )
     return llm
 
 
@@ -109,6 +127,7 @@ def mock_llm_ambiguous():
 def classifier_breaking(mock_llm_breaking):
     """创建测试用 ClassifierV2（爆点事件 mock）"""
     from agent.classifier_v2 import ClassifierV2
+
     return ClassifierV2(llm=mock_llm_breaking)
 
 
@@ -116,6 +135,7 @@ def classifier_breaking(mock_llm_breaking):
 def classifier_competitor(mock_llm_competitor):
     """创建测试用 ClassifierV2（竞品 mock）"""
     from agent.classifier_v2 import ClassifierV2
+
     return ClassifierV2(llm=mock_llm_competitor)
 
 
@@ -129,6 +149,7 @@ class TestCategoryV2Enum:
 
     def test_all_six_categories_defined(self):
         from agent.classifier_v2 import CategoryV2
+
         values = CategoryV2.valid_values()
         assert len(values) == 6
         assert "爆点事件" in values
@@ -140,6 +161,7 @@ class TestCategoryV2Enum:
 
     def test_pr_eligible_categories(self):
         from agent.classifier_v2 import CategoryV2
+
         pr_eligible = CategoryV2.pr_eligible()
         assert len(pr_eligible) == 3
         assert "爆点事件" in pr_eligible
@@ -151,16 +173,19 @@ class TestCategoryV2Enum:
 
     def test_default_category(self):
         from agent.classifier_v2 import CategoryV2
+
         assert CategoryV2.default() == "不相关"
 
     def test_not_relevant_category(self):
         from agent.classifier_v2 import CategoryV2
+
         assert CategoryV2.NOT_RELEVANT.value == "不相关"
         assert "不相关" not in CategoryV2.valid_values()
         assert "不相关" not in CategoryV2.pr_eligible()
 
     def test_enum_values_match_chinese(self):
         from agent.classifier_v2 import CategoryV2
+
         assert CategoryV2.BREAKING_EVENT.value == "爆点事件"
         assert CategoryV2.LAW_AND_REGULATION.value == "法律法规/监管动态"
         assert CategoryV2.AI_TECH_PROGRESS.value == "AI技术重大进展"
@@ -179,6 +204,7 @@ class TestPromptBuilding:
 
     def test_system_prompt_contains_all_categories(self):
         from agent.classifier_v2 import SYSTEM_PROMPT
+
         assert "爆点事件" in SYSTEM_PROMPT
         assert "法律法规/监管动态" in SYSTEM_PROMPT
         assert "AI技术重大进展" in SYSTEM_PROMPT
@@ -188,6 +214,7 @@ class TestPromptBuilding:
 
     def test_system_prompt_has_output_format(self):
         from agent.classifier_v2 import SYSTEM_PROMPT
+
         assert "category" in SYSTEM_PROMPT
         assert "confidence" in SYSTEM_PROMPT
         assert "reason" in SYSTEM_PROMPT
@@ -195,11 +222,20 @@ class TestPromptBuilding:
 
     def test_system_prompt_has_validation_rule(self):
         from agent.classifier_v2 import SYSTEM_PROMPT
+
         assert "不相关" in SYSTEM_PROMPT
         assert "7个" in SYSTEM_PROMPT  # 6 categories + 不相关
 
+    def test_system_prompt_strictly_excludes_generic_cybersecurity(self):
+        from agent.classifier_v2 import SYSTEM_PROMPT
+
+        assert "仅涉及传统网络安全" in SYSTEM_PROMPT
+        assert "安全媒体并不等于相关" in SYSTEM_PROMPT
+        assert "必须与 AI 系统或智能体形成直接关系" in SYSTEM_PROMPT
+
     def test_user_prompt_contains_article_fields(self, sample_article):
         from agent.classifier_v2 import ClassifierV2
+
         prompt = ClassifierV2._build_user_prompt(sample_article)
         assert "Critical RCE Vulnerability" in prompt
         assert "The Hacker News" in prompt
@@ -207,6 +243,7 @@ class TestPromptBuilding:
 
     def test_user_prompt_handles_missing_fields(self):
         from agent.classifier_v2 import ClassifierV2
+
         minimal = {"title": "X", "source": "Y"}
         prompt = ClassifierV2._build_user_prompt(minimal)
         assert "X" in prompt
@@ -215,6 +252,7 @@ class TestPromptBuilding:
 
     def test_user_prompt_falls_back_to_english_summary(self):
         from agent.classifier_v2 import ClassifierV2
+
         article = {
             "title": "Test",
             "source": "Src",
@@ -225,6 +263,7 @@ class TestPromptBuilding:
 
     def test_user_prompt_prefers_chinese_summary(self):
         from agent.classifier_v2 import ClassifierV2
+
         article = {
             "title": "Test",
             "source": "Src",
@@ -247,6 +286,7 @@ class TestResponseParsing:
 
     def test_parse_json_code_block(self):
         from agent.classifier_v2 import ClassifierV2
+
         text = '```json\n{"category": "爆点事件", "confidence": 90, "reason": "重大漏洞"}\n```'
         result = ClassifierV2._parse_response(text)
         assert result["category"] == "爆点事件"
@@ -254,23 +294,27 @@ class TestResponseParsing:
 
     def test_parse_plain_json(self):
         from agent.classifier_v2 import ClassifierV2
+
         text = '{"category": "AI技术重大进展", "confidence": 75, "reason": "新模型发布"}'
         result = ClassifierV2._parse_response(text)
         assert result["category"] == "AI技术重大进展"
 
     def test_parse_json_in_text(self):
         from agent.classifier_v2 import ClassifierV2
+
         text = '分析结果：{"category": "法律法规/监管动态", "confidence": 88, "reason": "新法规出台"}。以上。'
         result = ClassifierV2._parse_response(text)
         assert result["category"] == "法律法规/监管动态"
 
     def test_parse_invalid_raises(self):
         from agent.classifier_v2 import ClassifierV2
+
         with pytest.raises(ValueError, match="Cannot extract"):
             ClassifierV2._parse_response("No JSON here at all")
 
     def test_parse_code_block_without_json_tag(self):
         from agent.classifier_v2 import ClassifierV2
+
         text = '```\n{"category": "运营商/行业事件", "confidence": 60, "reason": "电信安全"}\n```'
         result = ClassifierV2._parse_response(text)
         assert result["category"] == "运营商/行业事件"
@@ -286,6 +330,7 @@ class TestResultValidation:
 
     def test_valid_category_passes_through(self):
         from agent.classifier_v2 import ClassifierV2
+
         parsed = {"category": "爆点事件", "confidence": 85, "reason": "ok"}
         result = ClassifierV2._validate_and_fix(parsed)
         assert result["category"] == "爆点事件"
@@ -294,42 +339,49 @@ class TestResultValidation:
 
     def test_invalid_category_falls_back(self):
         from agent.classifier_v2 import ClassifierV2
+
         parsed = {"category": "不存在的类别", "confidence": 80, "reason": "..."}
         result = ClassifierV2._validate_and_fix(parsed)
         assert result["category"] == "不相关"  # default fallback
 
     def test_empty_category_falls_back(self):
         from agent.classifier_v2 import ClassifierV2
+
         parsed = {"category": "", "confidence": 80, "reason": "..."}
         result = ClassifierV2._validate_and_fix(parsed)
         assert result["category"] == "不相关"
 
     def test_confidence_clamped_to_max(self):
         from agent.classifier_v2 import ClassifierV2
+
         parsed = {"category": "爆点事件", "confidence": 999, "reason": "ok"}
         result = ClassifierV2._validate_and_fix(parsed)
         assert result["confidence"] == 100
 
     def test_confidence_clamped_to_min(self):
         from agent.classifier_v2 import ClassifierV2
+
         parsed = {"category": "爆点事件", "confidence": -50, "reason": "ok"}
         result = ClassifierV2._validate_and_fix(parsed)
         assert result["confidence"] == 0
 
     def test_missing_confidence_gets_default(self):
         from agent.classifier_v2 import ClassifierV2
+
         parsed = {"category": "国内外竞品信息", "reason": "ok"}
         result = ClassifierV2._validate_and_fix(parsed)
         assert result["confidence"] == 50
 
     def test_non_numeric_confidence_gets_default(self):
         from agent.classifier_v2 import ClassifierV2
+
         parsed = {"category": "国内外竞品信息", "confidence": "high", "reason": "ok"}
         result = ClassifierV2._validate_and_fix(parsed)
         assert result["confidence"] == 50
 
     def test_reason_truncated(self):
         from agent.classifier_v2 import ClassifierV2
+
         long_reason = "x" * 200
         parsed = {"category": "爆点事件", "confidence": 80, "reason": long_reason}
         result = ClassifierV2._validate_and_fix(parsed)
@@ -337,10 +389,28 @@ class TestResultValidation:
 
     def test_all_six_categories_validated(self):
         from agent.classifier_v2 import CategoryV2, ClassifierV2
+
         for cat in CategoryV2.valid_values():
             parsed = {"category": cat, "confidence": 70, "reason": "test"}
             result = ClassifierV2._validate_and_fix(parsed)
             assert result["category"] == cat
+
+    def test_relevance_gate_overrides_six_category(self):
+        from agent.classifier_v2 import ClassifierV2
+
+        parsed = {
+            "is_relevant": False,
+            "relevance_confidence": 96,
+            "relevance_reason": "仅为传统网络安全漏洞",
+            "category": "爆点事件",
+            "confidence": 80,
+            "reason": "普通漏洞",
+        }
+        result = ClassifierV2._validate_and_fix(parsed)
+        assert result["is_relevant"] is False
+        assert result["category"] == "不相关"
+        assert result["confidence"] == 96
+        assert result["reason"] == "仅为传统网络安全漏洞"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -353,31 +423,37 @@ class TestClassifyResultV2:
 
     def test_is_pr_eligible_breaking(self):
         from agent.classifier_v2 import ClassifyResultV2
+
         r = ClassifyResultV2(category="爆点事件", confidence=90, reason="test")
         assert r.is_pr_eligible is True
 
     def test_is_pr_eligible_law(self):
         from agent.classifier_v2 import ClassifyResultV2
+
         r = ClassifyResultV2(category="法律法规/监管动态", confidence=85, reason="test")
         assert r.is_pr_eligible is True
 
     def test_is_pr_eligible_ai_tech(self):
         from agent.classifier_v2 import ClassifyResultV2
+
         r = ClassifyResultV2(category="AI技术重大进展", confidence=80, reason="test")
         assert r.is_pr_eligible is True
 
     def test_is_pr_eligible_competitor_false(self):
         from agent.classifier_v2 import ClassifyResultV2
+
         r = ClassifyResultV2(category="国内外竞品信息", confidence=70, reason="test")
         assert r.is_pr_eligible is False
 
     def test_is_fallback_flag(self):
         from agent.classifier_v2 import ClassifyResultV2
+
         r = ClassifyResultV2(fallback=True)
         assert r.is_fallback is True
 
     def test_to_dict(self):
         from agent.classifier_v2 import ClassifyResultV2
+
         r = ClassifyResultV2(category="爆点事件", confidence=92, reason="重大漏洞", fallback=False)
         d = r.to_dict()
         assert d["category_v2"] == "爆点事件"
@@ -385,6 +461,9 @@ class TestClassifyResultV2:
         assert d["category_v2_reason"] == "重大漏洞"
         assert d["category_v2_fallback"] is False
         assert d["is_pr_eligible"] is True
+        assert d["is_ai_agent_security_relevant"] is True
+        assert d["ai_agent_security_relevance_confidence"] == 92
+        assert d["ai_agent_security_relevance_reason"] == "重大漏洞"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -404,7 +483,9 @@ class TestClassificationFlow:
         assert result.is_fallback is False
 
     @pytest.mark.asyncio
-    async def test_classify_single_competitor(self, classifier_competitor, sample_article_competitor):
+    async def test_classify_single_competitor(
+        self, classifier_competitor, sample_article_competitor
+    ):
         result = await classifier_competitor.classify_single(sample_article_competitor)
         assert result.category == "国内外竞品信息"
         assert result.confidence == 85
@@ -413,8 +494,7 @@ class TestClassificationFlow:
     @pytest.mark.asyncio
     async def test_classify_batch(self, classifier_breaking):
         articles = [
-            {"title": f"Article {i}", "source": "S", "summary": f"Summary {i}"}
-            for i in range(5)
+            {"title": f"Article {i}", "source": "S", "summary": f"Summary {i}"} for i in range(5)
         ]
         results = await classifier_breaking.classify_batch(articles)
         assert len(results) == 5
@@ -439,12 +519,19 @@ class TestClassificationFlow:
             for m in msgs:
                 if hasattr(m, "content") and "Article" in m.content:
                     import re as _re
+
                     idx_match = _re.search(r"Article (\d+)", m.content)
                     if idx_match:
                         call_order.append(int(idx_match.group(1)))
-            return AIMessage(content=json.dumps({
-                "category": "爆点事件", "confidence": 80, "reason": "test",
-            }))
+            return AIMessage(
+                content=json.dumps(
+                    {
+                        "category": "爆点事件",
+                        "confidence": 80,
+                        "reason": "test",
+                    }
+                )
+            )
 
         mock_llm_breaking.ainvoke = AsyncMock(side_effect=track_order)
         classifier = ClassifierV2(llm=mock_llm_breaking)
@@ -474,12 +561,20 @@ class TestClassificationFlow:
 
         mock_llm = MagicMock()
         mock_llm.temperature = None
-        mock_llm.ainvoke = AsyncMock(side_effect=[
-            Exception("Temporary error"),
-            AIMessage(content=json.dumps({
-                "category": "爆点事件", "confidence": 88, "reason": "恢复后分类",
-            })),
-        ])
+        mock_llm.ainvoke = AsyncMock(
+            side_effect=[
+                Exception("Temporary error"),
+                AIMessage(
+                    content=json.dumps(
+                        {
+                            "category": "爆点事件",
+                            "confidence": 88,
+                            "reason": "恢复后分类",
+                        }
+                    )
+                ),
+            ]
+        )
         classifier = ClassifierV2(llm=mock_llm)
         result = await classifier.classify_single(sample_article)
         assert result.is_fallback is False
@@ -508,12 +603,48 @@ class TestClassificationFlow:
     async def test_classify_ambiguous_content(self, mock_llm_ambiguous, sample_article_ambiguous):
         """LLM 判断非安全相关内容，直接返回'不相关'"""
         from agent.classifier_v2 import ClassifierV2
+
         classifier = ClassifierV2(llm=mock_llm_ambiguous)
         result = await classifier.classify_single(sample_article_ambiguous)
         assert result.category == "不相关"
         assert result.confidence == 30  # 来自 mock LLM
         assert result.is_pr_eligible is False
         assert result.is_fallback is False
+
+    @pytest.mark.asyncio
+    async def test_explicit_relevance_gate_marks_generic_security_as_not_relevant(self):
+        from agent.classifier_v2 import ClassifierV2
+
+        mock_llm = MagicMock()
+        mock_llm.temperature = None
+        mock_llm.ainvoke = AsyncMock(
+            return_value=AIMessage(
+                content=json.dumps(
+                    {
+                        "is_relevant": False,
+                        "relevance_confidence": 97,
+                        "relevance_reason": "传统服务器漏洞，不涉及AI或智能体",
+                        "category": "爆点事件",
+                        "confidence": 90,
+                        "reason": "重大漏洞",
+                    }
+                )
+            )
+        )
+        classifier = ClassifierV2(llm=mock_llm)
+
+        result = await classifier.classify_single(
+            {
+                "title": "Critical Apache server vulnerability",
+                "summary": "A remote code execution flaw affects web servers.",
+                "content_md": "The vulnerability has no AI or agent component.",
+            }
+        )
+
+        assert result.category == "不相关"
+        assert result.is_relevant is False
+        assert result.relevance_confidence == 97
+        assert result.is_pr_eligible is False
 
     @pytest.mark.asyncio
     async def test_batch_with_mixed_results(self, sample_article, sample_article_competitor):
@@ -528,13 +659,25 @@ class TestClassificationFlow:
                 if hasattr(m, "content"):
                     content_str += m.content
             if "Palo Alto" in content_str:
-                return AIMessage(content=json.dumps({
-                    "category": "国内外竞品信息", "confidence": 85, "reason": "融资",
-                }))
+                return AIMessage(
+                    content=json.dumps(
+                        {
+                            "category": "国内外竞品信息",
+                            "confidence": 85,
+                            "reason": "融资",
+                        }
+                    )
+                )
             else:
-                return AIMessage(content=json.dumps({
-                    "category": "爆点事件", "confidence": 92, "reason": "漏洞",
-                }))
+                return AIMessage(
+                    content=json.dumps(
+                        {
+                            "category": "爆点事件",
+                            "confidence": 92,
+                            "reason": "漏洞",
+                        }
+                    )
+                )
 
         mock_llm = MagicMock()
         mock_llm.temperature = None
@@ -558,13 +701,16 @@ class TestConstants:
 
     def test_default_temperature_low(self):
         from agent.classifier_v2 import DEFAULT_TEMPERATURE
+
         assert DEFAULT_TEMPERATURE == 0.1  # 分类需要低温度确保一致性
 
     def test_max_retries(self):
         from agent.classifier_v2 import MAX_RETRIES
+
         assert MAX_RETRIES >= 1
 
     def test_confidence_bounds(self):
         from agent.classifier_v2 import CONFIDENCE_MAX, CONFIDENCE_MIN
+
         assert CONFIDENCE_MIN == 0
         assert CONFIDENCE_MAX == 100

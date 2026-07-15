@@ -68,6 +68,9 @@ export interface Article {
   category_v2_confidence?: number;
   category_v2_reason?: string;
   category_v2_fallback?: boolean;
+  is_ai_agent_security_relevant?: boolean;
+  ai_agent_security_relevance_confidence?: number;
+  ai_agent_security_relevance_reason?: string;
   is_pr_eligible?: boolean;
   // V2 双维度评分
   product_relevance?: number;

@@ -107,9 +107,7 @@ export default function ArticleTable({
   );
 
   const handleBatchDelete = useCallback(async () => {
-    const hashes = articles
-      .filter((a) => selectedRowKeys.includes(a._id))
-      .map((a) => a.url_hash);
+    const hashes = articles.filter((a) => selectedRowKeys.includes(a._id)).map((a) => a.url_hash);
     if (!hashes.length) return;
     setBatchDeleting(true);
     try {
@@ -170,13 +168,31 @@ export default function ArticleTable({
         };
         const color = c ? colorMap[c] || 'default' : 'default';
         const icon = r.is_pr_eligible ? ' 🔥' : '';
-        return c ? (
+        const categoryTag = c ? (
           <Tag color={color}>
             {c}
             {icon}
           </Tag>
         ) : (
           <Tag color="default">-</Tag>
+        );
+        if (c !== '不相关') return categoryTag;
+        return (
+          <Popover
+            title="AI/智能体安全相关性判断"
+            content={
+              <Space direction="vertical" size={2} style={{ maxWidth: 320 }}>
+                <Typography.Text>
+                  {r.ai_agent_security_relevance_reason || '原文未发现直接相关内容'}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  置信度：{r.ai_agent_security_relevance_confidence || 0}%
+                </Typography.Text>
+              </Space>
+            }
+          >
+            {categoryTag}
+          </Popover>
         );
       },
     },

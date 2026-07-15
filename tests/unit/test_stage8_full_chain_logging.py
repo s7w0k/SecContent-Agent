@@ -36,6 +36,7 @@ async def test_single_workflow_uses_one_trace_and_records_idempotent_skips() -> 
         "title": "Existing article",
         "category_v2": "行业动态",
         "category_v2_confidence": 0.9,
+        "is_ai_agent_security_relevant": True,
         "is_pr_eligible": False,
     }
     articles = MagicMock()

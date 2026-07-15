@@ -30,6 +30,17 @@ _VALID_CATEGORIES = {
 class ClassifyResultSchema(BaseModel):
     """Validated output produced by the V2 classification agent."""
 
+    is_relevant: bool | None = Field(
+        default=None,
+        description="文章核心议题是否直接涉及 AI 安全或智能体安全",
+    )
+    relevance_confidence: int | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+        description="相关性判断置信度 0-100",
+    )
+    relevance_reason: str = Field(default="", max_length=200, description="相关性判断理由")
     category: CategoryName = Field(description="分类类别，必须是6类之一或不相关")
     confidence: int = Field(ge=0, le=100, description="分类置信度 0-100")
     reason: str = Field(max_length=200, description="分类理由")
@@ -50,7 +61,18 @@ class ClassifyResultSchema(BaseModel):
             confidence = 50
         return max(0, min(100, confidence))
 
-    @field_validator("reason", mode="before")
+    @field_validator("relevance_confidence", mode="before")
+    @classmethod
+    def clamp_relevance_confidence(cls, value: Any) -> int | None:
+        if value is None or value == "":
+            return None
+        try:
+            confidence = int(value)
+        except (TypeError, ValueError):
+            confidence = 50
+        return max(0, min(100, confidence))
+
+    @field_validator("reason", "relevance_reason", mode="before")
     @classmethod
     def truncate_reason(cls, value: Any) -> str:
         return str(value or "")[:200]
