@@ -21,6 +21,7 @@ import { Alert, Button, Card, Space, Steps, Tag, Typography, message } from 'ant
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../api/client';
 import type { PipelineState, PipelineStatus } from '../types';
+import LiveOperationProgress from './LiveOperationProgress';
 import PipelineTaskProgress from './PipelineTaskProgress';
 
 const { Text } = Typography;
@@ -38,13 +39,52 @@ interface PipelineControlProps {
   onRefresh: () => void | Promise<void>;
 }
 
+type ActionKey =
+  | 'run'
+  | 'crawl'
+  | 'score'
+  | 'overseas'
+  | 'wewe'
+  | 'score-v2'
+  | 'classify-v2'
+  | 'run-v2'
+  | 'report';
+
+interface ActiveOperation {
+  key: ActionKey;
+  label: string;
+  message: string;
+  startedAt: number;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : '未知错误';
+}
+
 export default function PipelineControl({ onComplete, onRefresh }: PipelineControlProps) {
   const [status, setStatus] = useState<PipelineStatus>('idle');
   const [state, setState] = useState<PipelineState | null>(null);
   const [running, setRunning] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
-  const [activeTask, setActiveTask] = useState<{ id: string; label: string } | null>(null);
+  const [activeTask, setActiveTask] = useState<{
+    id: string;
+    key: ActionKey;
+    label: string;
+  } | null>(null);
+  const [activeOperation, setActiveOperation] = useState<ActiveOperation | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const beginOperation = useCallback((key: ActionKey, label: string, operationMessage: string) => {
+    setRunning(true);
+    setStatus('running');
+    setErrors([]);
+    setActiveOperation({ key, label, message: operationMessage, startedAt: Date.now() });
+  }, []);
+
+  const endOperation = useCallback(() => {
+    setRunning(false);
+    setActiveOperation(null);
+  }, []);
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -66,7 +106,7 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
 
       if (s === 'completed' || s === 'failed' || s === 'cancelled') {
         stopPolling();
-        setRunning(false);
+        endOperation();
         if (s === 'completed') {
           message.success('流水线执行完成');
           onComplete();
@@ -77,7 +117,7 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
     } catch {
       // 轮询失败不影响继续尝试
     }
-  }, [stopPolling, onComplete]);
+  }, [endOperation, stopPolling, onComplete]);
 
   const startPolling = useCallback(() => {
     stopPolling();
@@ -94,49 +134,44 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
 
   const trigger = useCallback(
     async (action: 'run' | 'score' | 'report', label: string, days?: number) => {
-      console.log(`[Pipeline] Triggering ${action}...`);
-      setRunning(true);
-      setStatus('running');
-      setErrors([]);
+      beginOperation(action, label, `正在执行${label}，服务端完成后会自动刷新结果...`);
       message.loading({ content: `${label}中...`, key: 'pipeline', duration: 0 });
 
       try {
         if (action === 'run') await api.run(days || 1);
         else if (action === 'score') await api.score();
         else if (action === 'report') await api.report();
-        console.log(`[Pipeline] ${action} triggered successfully`);
         message.success({ content: `${label}已触发`, key: 'pipeline', duration: 2 });
         startPolling();
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : '未知错误';
         console.error(`[Pipeline] ${action} failed:`, e);
         message.error({ content: `${label}失败: ${msg}`, key: 'pipeline' });
-        setRunning(false);
+        endOperation();
         setStatus('failed');
       }
     },
-    [startPolling],
+    [beginOperation, endOperation, startPolling],
   );
 
   const handleRunFull = useCallback(() => trigger('run', '全流程', 1), [trigger]);
   const handleCrawl = useCallback(async () => {
     try {
-      setRunning(true);
-      setStatus('running');
-      setErrors([]);
+      beginOperation('crawl', '爬取+分类', '正在创建后台任务...');
       message.loading({ content: '正在创建爬取任务...', key: 'pipeline', duration: 0 });
       const res = await api.crawl(1);
-      setActiveTask({ id: res.data.task_id, label: '爬取+分类' });
+      setActiveTask({ id: res.data.task_id, key: 'crawl', label: '爬取+分类' });
+      setActiveOperation(null);
       message.success({ content: '爬取任务已创建', key: 'pipeline', duration: 2 });
     } catch (error) {
       const detail = error instanceof Error ? error.message : '未知错误';
-      setRunning(false);
+      endOperation();
       setStatus('failed');
       message.error({ content: `爬取任务创建失败: ${detail}`, key: 'pipeline' });
     }
-  }, []);
+  }, [beginOperation, endOperation]);
   const handleCrawlOverseas = useCallback(async () => {
-    setRunning(true);
+    beginOperation('overseas', '海外新闻', '正在连接海外新闻服务并抓取、解析、保存文章...');
     message.loading({ content: '海外新闻爬取中，预计 1-2 分钟...', key: 'overseas', duration: 0 });
     try {
       const res = await api.crawlOverseas(1);
@@ -151,30 +186,33 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
         key: 'overseas',
         duration: 6,
       });
+      setStatus('completed');
       onComplete();
-    } catch (e: any) {
-      message.error({ content: `海外爬取失败: ${e?.message || ''}`, key: 'overseas' });
+    } catch (error: unknown) {
+      setStatus('failed');
+      message.error({ content: `海外爬取失败: ${errorMessage(error)}`, key: 'overseas' });
     } finally {
-      setRunning(false);
+      endOperation();
     }
-  }, [onComplete]);
+  }, [beginOperation, endOperation, onComplete]);
   const handleCrawlWewe = useCallback(async () => {
-    setRunning(true);
+    beginOperation('wewe', '公众号', '正在读取公众号 RSS、解析文章并保存...');
     message.loading({ content: '公众号爬取中...', key: 'wewe', duration: 0 });
     try {
       const res = await api.crawlWewe();
       message.success({ content: `公众号: ${res.saved} 篇入库`, key: 'wewe', duration: 4 });
+      setStatus('completed');
       onComplete();
-    } catch (e: any) {
-      message.error({ content: `公众号爬取失败: ${e?.message || ''}`, key: 'wewe' });
+    } catch (error: unknown) {
+      setStatus('failed');
+      message.error({ content: `公众号爬取失败: ${errorMessage(error)}`, key: 'wewe' });
     } finally {
-      setRunning(false);
+      endOperation();
     }
-  }, [onComplete]);
+  }, [beginOperation, endOperation, onComplete]);
   const handleScoreV2 = useCallback(async () => {
     try {
-      setRunning(true);
-      setStatus('running');
+      beginOperation('score-v2', 'V2打分', '正在对候选文章进行产品相关度和事件影响度评估...');
       message.loading({ content: 'V2打分中...', key: 'scoreV2', duration: 0 });
       const res = await api.scoreV2();
       message.success({
@@ -182,17 +220,19 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
         key: 'scoreV2',
         duration: 4,
       });
+      setStatus('completed');
       await onRefresh();
     } catch {
+      setStatus('failed');
       message.error({ content: 'V2打分失败', key: 'scoreV2' });
     } finally {
-      setRunning(false);
+      endOperation();
     }
-  }, [onRefresh]);
+  }, [beginOperation, endOperation, onRefresh]);
   const handleReport = useCallback(() => trigger('report', '报道'), [trigger]);
   const handleClassifyV2 = useCallback(async () => {
     try {
-      setRunning(true);
+      beginOperation('classify-v2', 'V2分类', '正在使用六分类模型逐批分析文章...');
       message.loading({ content: '6分类中...', key: 'classifyV2', duration: 0 });
       const res = await api.classifyV2();
       message.success({
@@ -206,29 +246,31 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
         key: 'classifyV2',
         duration: 5,
       });
+      setStatus('completed');
       onComplete();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '未知错误';
+      setStatus('failed');
       message.error({ content: `6分类失败: ${msg}`, key: 'classifyV2' });
     } finally {
-      setRunning(false);
+      endOperation();
     }
-  }, [onComplete]);
+  }, [beginOperation, endOperation, onComplete]);
   const handleRunV2 = useCallback(async () => {
     try {
-      setRunning(true);
-      setStatus('running');
+      beginOperation('run-v2', '智能PR流水线', '正在创建后台任务...');
       message.loading({ content: '正在创建V2智能PR任务...', key: 'pipelineV2', duration: 0 });
       const res = await api.runV2(1);
-      setActiveTask({ id: res.data.task_id, label: 'V2智能PR流水线' });
+      setActiveTask({ id: res.data.task_id, key: 'run-v2', label: 'V2智能PR流水线' });
+      setActiveOperation(null);
       message.success({ content: 'V2任务已创建', key: 'pipelineV2', duration: 2 });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '未知错误';
       message.error({ content: `V2流水线失败: ${msg}`, key: 'pipelineV2' });
-      setRunning(false);
+      endOperation();
       setStatus('failed');
     }
-  }, []);
+  }, [beginOperation, endOperation]);
 
   // ── 当前阶段索引 ──────────────────────────────────────────
 
@@ -287,45 +329,84 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
           type="primary"
           icon={<PlayCircleOutlined />}
           onClick={handleRunFull}
-          loading={running}
+          loading={activeOperation?.key === 'run'}
+          disabled={running}
         >
           全流程
         </Button>
-        <Button icon={<CloudDownloadOutlined />} onClick={handleCrawl} disabled={running}>
+        <Button
+          icon={<CloudDownloadOutlined />}
+          onClick={handleCrawl}
+          disabled={running}
+          loading={activeOperation?.key === 'crawl'}
+        >
           爬取+分类
         </Button>
-        <Button onClick={handleCrawlOverseas} disabled={running} loading={running}>
+        <Button
+          onClick={handleCrawlOverseas}
+          disabled={running}
+          loading={activeOperation?.key === 'overseas'}
+        >
           海外新闻
         </Button>
-        <Button onClick={handleCrawlWewe} disabled={running} loading={running}>
+        <Button
+          onClick={handleCrawlWewe}
+          disabled={running}
+          loading={activeOperation?.key === 'wewe'}
+        >
           公众号
         </Button>
-        <Button icon={<ExperimentOutlined />} onClick={handleScoreV2} disabled={running}>
+        <Button
+          icon={<ExperimentOutlined />}
+          onClick={handleScoreV2}
+          disabled={running}
+          loading={activeOperation?.key === 'score-v2'}
+        >
           V2打分
         </Button>
-        <Button icon={<ExperimentOutlined />} onClick={handleClassifyV2} disabled={running}>
+        <Button
+          icon={<ExperimentOutlined />}
+          onClick={handleClassifyV2}
+          disabled={running}
+          loading={activeOperation?.key === 'classify-v2'}
+        >
           V2分类
         </Button>
         <Button
           type="primary"
           icon={<PlayCircleOutlined />}
           onClick={handleRunV2}
-          loading={running}
+          loading={activeOperation?.key === 'run-v2'}
+          disabled={running}
         >
           智能PR流水线
         </Button>
-        <Button icon={<FileTextOutlined />} onClick={handleReport} disabled={running}>
+        <Button
+          icon={<FileTextOutlined />}
+          onClick={handleReport}
+          disabled={running}
+          loading={activeOperation?.key === 'report'}
+        >
           仅报道
         </Button>
       </Space>
 
+      {activeOperation && (
+        <LiveOperationProgress
+          label={activeOperation.label}
+          message={activeOperation.message}
+          startedAt={activeOperation.startedAt}
+        />
+      )}
+
       {activeTask && (
         <PipelineTaskProgress
           taskId={activeTask.id}
+          label={activeTask.label}
           onCompleted={() => {
             const label = activeTask.label;
             setActiveTask(null);
-            setRunning(false);
+            endOperation();
             setStatus('completed');
             message.success(`${label}执行完成`);
             onComplete();
@@ -333,7 +414,7 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
           onFailed={(task) => {
             const label = activeTask.label;
             setActiveTask(null);
-            setRunning(false);
+            endOperation();
             setStatus('failed');
             setErrors([task.error || '未知错误']);
             message.error(`${label}失败: ${task.error || '未知错误'}`);
@@ -364,7 +445,7 @@ export default function PipelineControl({ onComplete, onRefresh }: PipelineContr
         <Alert
           type="error"
           message="执行错误"
-          description={errors.map((e, i) => <div key={i}>{e}</div>)}
+          description={Array.from(new Set(errors)).map((error) => <div key={error}>{error}</div>)}
           showIcon
           closable
           style={{ marginTop: 12 }}

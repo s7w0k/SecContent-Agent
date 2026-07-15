@@ -197,7 +197,13 @@ export interface PipelineStatusResponse {
   errors: string[];
 }
 
-export type PipelineTaskStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type PipelineTaskStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted';
 
 export interface PipelineTaskProgress {
   phase: string;
