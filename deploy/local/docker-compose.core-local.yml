@@ -1,0 +1,9 @@
+services:
+  backend:
+    image: "${CORE_BACKEND_IMAGE:-pr-agent-demo-backend:latest}"
+
+  backend-worker:
+    image: "${CORE_BACKEND_IMAGE:-pr-agent-demo-backend:latest}"
+
+  mcp-wewe:
+    image: "${CORE_WEWE_IMAGE:-pr-agent-demo-mcp-wewe:latest}"

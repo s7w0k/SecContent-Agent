@@ -22,7 +22,6 @@ services:
   # ──────────────────────────────────────────────────────────
   mongodb:
     image: mongo:7
-    container_name: pr-agent-mongo
     restart: unless-stopped
     # MongoDB 需要更多权限，不使用 common-security
     security_opt:
@@ -56,7 +55,6 @@ services:
   # ──────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    container_name: pr-agent-redis
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -88,7 +86,6 @@ services:
     build:
       context: ./services/mcp_wewe
       dockerfile: Dockerfile
-    container_name: pr-agent-wewe
     restart: unless-stopped
     <<: *common-security
     env_file:
@@ -119,7 +116,6 @@ services:
     build:
       context: ./services/mcp_crawl
       dockerfile: Dockerfile
-    container_name: pr-agent-crawl
     restart: unless-stopped
     <<: *common-security
     dns:
@@ -161,7 +157,6 @@ services:
     build:
       context: .
       dockerfile: services/backend/Dockerfile
-    container_name: pr-agent-backend
     restart: unless-stopped
     <<: *common-security
     ports:
@@ -175,6 +170,9 @@ services:
       REDIS_PORT: "6379"
       REDIS_DB: "1"
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      ARQ_MAX_JOBS: ${ARQ_MAX_JOBS:-3}
+      ARQ_JOB_TIMEOUT: ${ARQ_JOB_TIMEOUT:-600}
+      ARQ_MAX_RETRIES: ${ARQ_MAX_RETRIES:-3}
       MCP_WEWE_URL: http://mcp-wewe:8100
       MCP_CRAWL_URL: ${MCP_CRAWL_URL:-http://mcp-crawl:8101}
       MCP_CRAWL_API_KEY: ${MCP_CRAWL_API_KEY:-}
@@ -234,7 +232,6 @@ services:
     build:
       context: .
       dockerfile: services/backend/Dockerfile
-    container_name: pr-agent-worker
     restart: unless-stopped
     <<: *common-security
     env_file:
@@ -246,6 +243,9 @@ services:
       REDIS_PORT: "6379"
       REDIS_DB: "1"
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      ARQ_MAX_JOBS: ${ARQ_MAX_JOBS:-3}
+      ARQ_JOB_TIMEOUT: ${ARQ_JOB_TIMEOUT:-600}
+      ARQ_MAX_RETRIES: ${ARQ_MAX_RETRIES:-3}
       MCP_WEWE_URL: http://mcp-wewe:8100
       MCP_CRAWL_URL: ${MCP_CRAWL_URL:-http://mcp-crawl:8101}
       MCP_CRAWL_API_KEY: ${MCP_CRAWL_API_KEY:-}
@@ -297,6 +297,3 @@ volumes:
 networks:
   agent-net:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.28.0.0/16
