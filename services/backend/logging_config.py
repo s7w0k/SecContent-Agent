@@ -34,6 +34,7 @@ import threading
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import override
 
 # ── 上下文变量（trace_id / user_id 透传）─────────────────
 
@@ -93,7 +94,10 @@ class JSONFormatter(logging.Formatter):
     """将日志记录格式化为 JSON 单行，便于 ELK/Loki 采集"""
 
     # 标准 ISO 8601 时间戳，带时区
-    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+    @override
+    def formatTime(
+        self, record: logging.LogRecord, datefmt: str | None = None
+    ) -> str:
         tz = timezone(timedelta(hours=8))
         dt = datetime.fromtimestamp(record.created, tz=tz)
         return dt.isoformat()

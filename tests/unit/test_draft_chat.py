@@ -385,7 +385,7 @@ class TestStreamAnswer:
 
         async def _fake_astream_error(messages):
             raise RuntimeError("stream API timeout")
-            yield  # noqa: unreachable — 使函数成为 async generator
+            yield  # pragma: no cover — 使函数成为 async generator
 
         llm.astream = _fake_astream_error
         agent = DraftChatAgent(llm=llm, knowledge_loader=knowledge_loader)
