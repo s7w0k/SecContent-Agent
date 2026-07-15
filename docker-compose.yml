@@ -129,6 +129,12 @@ services:
       - .env
     environment:
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      MCP_CRAWL_API_KEY: ${MCP_CRAWL_API_KEY:-}
+      MCP_CRAWL_MAX_CONCURRENCY: ${MCP_CRAWL_MAX_CONCURRENCY:-2}
+      MCP_CRAWL_MAX_ARTICLES: ${MCP_CRAWL_MAX_ARTICLES:-500}
+      MCP_CRAWL_MAX_BATCH_URLS: ${MCP_CRAWL_MAX_BATCH_URLS:-100}
+      MCP_CRAWL_MAX_REQUEST_MB: ${MCP_CRAWL_MAX_REQUEST_MB:-5}
+      MCP_CRAWL_MAX_RESPONSE_MB: ${MCP_CRAWL_MAX_RESPONSE_MB:-20}
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
       RSSHUB_URL: http://rsshub:1200
@@ -170,7 +176,13 @@ services:
       REDIS_DB: "1"
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       MCP_WEWE_URL: http://mcp-wewe:8100
-      MCP_CRAWL_URL: http://mcp-crawl:8101
+      MCP_CRAWL_URL: ${MCP_CRAWL_URL:-http://mcp-crawl:8101}
+      MCP_CRAWL_API_KEY: ${MCP_CRAWL_API_KEY:-}
+      MCP_CRAWL_CONNECT_TIMEOUT: ${MCP_CRAWL_CONNECT_TIMEOUT:-5}
+      MCP_CRAWL_READ_TIMEOUT: ${MCP_CRAWL_READ_TIMEOUT:-300}
+      MCP_CRAWL_MAX_RETRIES: ${MCP_CRAWL_MAX_RETRIES:-2}
+      MCP_CRAWL_MAX_RESPONSE_MB: ${MCP_CRAWL_MAX_RESPONSE_MB:-20}
+      MCP_CRAWL_VERIFY_TLS: ${MCP_CRAWL_VERIFY_TLS:-true}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-24}
@@ -201,8 +213,6 @@ services:
       redis:
         condition: service_healthy
       mcp-wewe:
-        condition: service_started
-      mcp-crawl:
         condition: service_started
     healthcheck:
       test:
@@ -237,7 +247,13 @@ services:
       REDIS_DB: "1"
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       MCP_WEWE_URL: http://mcp-wewe:8100
-      MCP_CRAWL_URL: http://mcp-crawl:8101
+      MCP_CRAWL_URL: ${MCP_CRAWL_URL:-http://mcp-crawl:8101}
+      MCP_CRAWL_API_KEY: ${MCP_CRAWL_API_KEY:-}
+      MCP_CRAWL_CONNECT_TIMEOUT: ${MCP_CRAWL_CONNECT_TIMEOUT:-5}
+      MCP_CRAWL_READ_TIMEOUT: ${MCP_CRAWL_READ_TIMEOUT:-300}
+      MCP_CRAWL_MAX_RETRIES: ${MCP_CRAWL_MAX_RETRIES:-2}
+      MCP_CRAWL_MAX_RESPONSE_MB: ${MCP_CRAWL_MAX_RESPONSE_MB:-20}
+      MCP_CRAWL_VERIFY_TLS: ${MCP_CRAWL_VERIFY_TLS:-true}
       KNOWLEDGE_BASE_DIR: /app/documents
       LOG_DIR: /app/logs/worker
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -257,8 +273,6 @@ services:
       redis:
         condition: service_healthy
       mcp-wewe:
-        condition: service_started
-      mcp-crawl:
         condition: service_started
     command: ["python", "-m", "worker"]
     healthcheck:

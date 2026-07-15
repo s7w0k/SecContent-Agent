@@ -1,0 +1,29 @@
+services:
+  # 远程模式默认不启动内置爬虫；仅显式 --profile embedded-crawl 时启用。
+  mcp-crawl:
+    profiles:
+      - embedded-crawl
+
+  backend:
+    environment:
+      MCP_CRAWL_URL: "${MCP_CRAWL_URL:?MCP_CRAWL_URL must be set in remote mode}"
+      MCP_CRAWL_API_KEY: "${MCP_CRAWL_API_KEY:?MCP_CRAWL_API_KEY must be set in remote mode}"
+      MCP_CRAWL_CONNECT_TIMEOUT: "${MCP_CRAWL_CONNECT_TIMEOUT:-5}"
+      MCP_CRAWL_READ_TIMEOUT: "${MCP_CRAWL_READ_TIMEOUT:-300}"
+      MCP_CRAWL_MAX_RETRIES: "${MCP_CRAWL_MAX_RETRIES:-2}"
+      MCP_CRAWL_MAX_RESPONSE_MB: "${MCP_CRAWL_MAX_RESPONSE_MB:-20}"
+      MCP_CRAWL_VERIFY_TLS: "${MCP_CRAWL_VERIFY_TLS:-true}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  backend-worker:
+    environment:
+      MCP_CRAWL_URL: "${MCP_CRAWL_URL:?MCP_CRAWL_URL must be set in remote mode}"
+      MCP_CRAWL_API_KEY: "${MCP_CRAWL_API_KEY:?MCP_CRAWL_API_KEY must be set in remote mode}"
+      MCP_CRAWL_CONNECT_TIMEOUT: "${MCP_CRAWL_CONNECT_TIMEOUT:-5}"
+      MCP_CRAWL_READ_TIMEOUT: "${MCP_CRAWL_READ_TIMEOUT:-300}"
+      MCP_CRAWL_MAX_RETRIES: "${MCP_CRAWL_MAX_RETRIES:-2}"
+      MCP_CRAWL_MAX_RESPONSE_MB: "${MCP_CRAWL_MAX_RESPONSE_MB:-20}"
+      MCP_CRAWL_VERIFY_TLS: "${MCP_CRAWL_VERIFY_TLS:-true}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
