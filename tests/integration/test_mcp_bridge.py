@@ -17,10 +17,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services
 
 
 @pytest.fixture(autouse=True)
-def _setup_env():
+def _setup_env(monkeypatch):
     """确保测试环境变量就绪"""
-    os.environ.setdefault("TAVILY_API_KEY", "test-tavily-key")
-    os.environ.setdefault("DEEPSEEK_API_KEY", "test-deepseek-key")
+    monkeypatch.setenv("TAVILY_API_KEY", "test-tavily-key")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
+    monkeypatch.setenv("MCP_CRAWL_API_KEY", "test-machine-token")
+    if "http_bridge" in sys.modules:
+        sys.modules["http_bridge"].get_bridge_settings.cache_clear()
+
+
+CRAWL_AUTH_HEADERS = {"Authorization": "Bearer test-machine-token"}
 
 
 class TestMCPCrawlHTTPBridge:
@@ -50,7 +56,7 @@ class TestMCPCrawlHTTPBridge:
             transport=ASGITransport(app=app),
             base_url="http://test",
         ) as client:
-            resp = await client.get("/tools")
+            resp = await client.get("/tools", headers=CRAWL_AUTH_HEADERS)
             assert resp.status_code == 200
             data = resp.json()
             assert "tools" in data
@@ -64,7 +70,11 @@ class TestMCPCrawlHTTPBridge:
             transport=ASGITransport(app=app),
             base_url="http://test",
         ) as client:
-            resp = await client.post("/call/nonexistent", json={})
+            resp = await client.post(
+                "/call/nonexistent",
+                json={},
+                headers=CRAWL_AUTH_HEADERS,
+            )
             assert resp.status_code == 404
 
     @pytest.mark.asyncio
@@ -76,7 +86,7 @@ class TestMCPCrawlHTTPBridge:
             transport=ASGITransport(app=app),
             base_url="http://test",
         ) as client:
-            resp = await client.get("/stats")
+            resp = await client.get("/stats", headers=CRAWL_AUTH_HEADERS)
             # MCP未初始化时返回503，端点存在且路由正确即可
             assert resp.status_code in (200, 503)
 
