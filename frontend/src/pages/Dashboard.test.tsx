@@ -67,5 +67,6 @@ describe('Dashboard', () => {
     expect(screen.getByText('FilterBar Mock')).toBeDefined();
     expect(screen.getByText('ArticleTable Mock')).toBeDefined();
     expect(screen.getByText('PipelineControl Mock')).toBeDefined();
+    expect(screen.queryByText('API 抓取配置')).not.toBeInTheDocument();
   });
 });

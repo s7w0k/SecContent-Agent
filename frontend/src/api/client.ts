@@ -181,7 +181,10 @@ export const dashboardApi = {
   },
 
   /** 批量补抓原文 */
-  async batchFetchContent(): Promise<{ ok: boolean; data: { total: number; updated: number; message?: string } }> {
+  async batchFetchContent(): Promise<{
+    ok: boolean;
+    data: { total: number; updated: number; message?: string };
+  }> {
     const { data } = await client.post('/articles/batch-fetch-content');
     return data;
   },
@@ -257,12 +260,6 @@ export const pipelineApi = {
   /** 导入 WeWe RSS 全部文章 */
   async importWewe(): Promise<{ ok: boolean; saved: number; total_in_rss: number }> {
     const { data } = await client.post('/pipeline/import-wewe');
-    return data;
-  },
-
-  /** API 抓取公众号文章 (Just One API) */
-  async crawlApi(days = 1): Promise<{ ok: boolean; saved: number; total: number }> {
-    const { data } = await client.post('/pipeline/crawl-api', { days });
     return data;
   },
 

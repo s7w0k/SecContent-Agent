@@ -4,7 +4,6 @@ import {
   EditOutlined,
   FileTextOutlined,
   InfoCircleOutlined,
-  SearchOutlined,
   UserOutlined,
   WechatOutlined,
 } from '@ant-design/icons';
@@ -21,7 +20,6 @@ import DevLogsPage from './pages/DevLogsPage';
 import LoginPage from './pages/LoginPage';
 import LogsPage from './pages/LogsPage';
 import ProfilePage from './pages/ProfilePage';
-import SearchPage from './pages/SearchPage';
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
@@ -30,7 +28,6 @@ const baseMenuItems = [
   { key: 'dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
   { key: 'chat', icon: <EditOutlined />, label: '对话改稿' },
   { key: 'accounts', icon: <WechatOutlined />, label: '公众号账号' },
-  { key: 'search', icon: <SearchOutlined />, label: '海外搜索' },
   { key: 'profile', icon: <UserOutlined />, label: '用户画像' },
   { key: 'logs', icon: <FileTextOutlined />, label: '运行日志' },
   { key: 'about', icon: <InfoCircleOutlined />, label: '关于' },
@@ -75,7 +72,6 @@ export function MainLayout() {
         {tab === 'chat' && <ChatPage />}
         {tab === 'accounts' && <AccountPage />}
         {tab === 'logs' && <LogsPage />}
-        {tab === 'search' && <SearchPage />}
         {tab === 'profile' && <ProfilePage />}
         {tab === 'dev-logs' && user?.is_developer && <DevLogsPage />}
         {tab === 'about' && (

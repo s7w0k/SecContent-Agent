@@ -10,7 +10,6 @@ import { Button, Drawer, Space, Tag, Typography, message } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import api from '../api/client';
 import ArticleTable from '../components/ArticleTable';
-import CrawlConfig from '../components/CrawlConfig';
 import DraftViewer from '../components/DraftViewer';
 import FilterBar from '../components/FilterBar';
 import PipelineControl from '../components/PipelineControl';
@@ -213,15 +212,6 @@ export default function Dashboard() {
           导入 RSS
         </Button>
       </div>
-
-      {/* API 抓取配置 */}
-      <CrawlConfig
-        onCrawl={() => {
-          loadStats();
-          loadArticles();
-          loadReportCount();
-        }}
-      />
 
       {/* 统计卡片 */}
       <StatsCards stats={stats} loading={loading} reportCount={reportCount} />
