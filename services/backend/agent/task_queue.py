@@ -33,6 +33,7 @@ async def execute_pipeline(
     article_url_hash: str | None = None,
     trace_id: str = "",
     username: str = "",
+    request_id: str = "",
 ) -> dict[str, Any]:
     """Execute one persisted pipeline task inside the worker process."""
     state_manager = PipelineStateManager(ctx["db"])
@@ -53,6 +54,7 @@ async def execute_pipeline(
             article_url_hash=article_url_hash,
             trace_id=trace_id,
             username=username,
+            request_id=request_id,
             raise_errors=True,
         )
     except Exception as exc:
@@ -80,11 +82,20 @@ async def fetch_fulltext_batch(
     ctx: dict[str, Any],
     articles: list[dict[str, str]],
     trace_id: str = "",
+    user_id: str = "",
+    request_id: str = "",
 ) -> dict[str, int]:
     """Run the existing overseas full-text enrichment helper in ARQ."""
     from agent.pipeline import _fetch_fulltext_background
 
-    await _fetch_fulltext_background(ctx["db"], articles, trace_id)
+    await _fetch_fulltext_background(
+        ctx["db"],
+        articles,
+        trace_id,
+        client=ctx["mcp_crawl_client"],
+        user_id=user_id,
+        request_id=request_id,
+    )
     return {"requested": len(articles)}
 
 

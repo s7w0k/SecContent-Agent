@@ -82,6 +82,10 @@ def _request_username(request: Request, user_id: str) -> str:
     return getattr(getattr(request, "state", None), "username", None) or user_id
 
 
+def _request_id(request: Request) -> str:
+    return getattr(getattr(request, "state", None), "request_id", None) or ""
+
+
 async def _get_owned_pipeline_task(db: Any, task_id: str, user_id: str) -> dict[str, Any]:
     """Load one task and distinguish not-found from cross-tenant access."""
     task = await db["pipeline_tasks"].find_one({"task_id": task_id})
@@ -316,6 +320,7 @@ async def _enqueue_pipeline_task(
     article_url_hash: str | None = None,
     trace_id: str = "",
     username: str = "",
+    request_id: str = "",
 ) -> None:
     """Submit a persisted task to ARQ and fail clearly when Redis is unavailable."""
     pool = getattr(app.state, "arq_pool", None)
@@ -342,6 +347,7 @@ async def _enqueue_pipeline_task(
             article_url_hash=article_url_hash,
             trace_id=trace_id,
             username=username,
+            request_id=request_id,
             _job_id=task_id,
         )
     except Exception as exc:
@@ -370,6 +376,7 @@ async def _execute_pipeline_task(
     article_url_hash: str | None = None,
     trace_id: str | None = None,
     username: str | None = None,
+    request_id: str = "",
     raise_errors: bool = False,
 ) -> None:
     """后台执行流水线任务并持久化阶段进度、结果或错误。"""
@@ -419,6 +426,7 @@ async def _execute_pipeline_task(
                 user_id=user_id,
                 trace_id=trace_id,
                 username=username,
+                request_id=request_id,
                 task_id=task_id,
             )
         elif task_type == "crawl":
@@ -428,6 +436,7 @@ async def _execute_pipeline_task(
                 user_id,
                 trace_id,
                 username,
+                request_id,
             )
         else:
             raise ValueError(f"Unsupported pipeline task type: {task_type}")
@@ -540,6 +549,7 @@ async def pipeline_run(
         user_id=user_id,
         trace_id=trace_id,
         username=username,
+        request_id=_request_id(request),
     )
     await log_activity(
         getattr(request.app.state, "db", None),
@@ -576,6 +586,7 @@ async def pipeline_run_v2(
         crawl_days=body.crawl_days,
         trace_id=trace_id,
         username=username,
+        request_id=_request_id(request),
     )
     get_audit_logger().log(
         user_id=user_id,
@@ -598,6 +609,7 @@ async def _execute_crawl_pipeline(
     user_id: str,
     trace_id: str = "",
     username: str = "",
+    request_id: str = "",
 ) -> dict:
     """执行带共享锁的爬取和分类，供后台任务复用。"""
     manager = app.state.pipeline_manager
@@ -639,6 +651,7 @@ async def _execute_crawl_pipeline(
             user_id=user_id,
             trace_id=trace_id,
             username=username,
+            request_id=request_id,
         )
     except Exception:
         await release_pipeline_lock(db, lock_key, success=False)
@@ -708,6 +721,7 @@ async def pipeline_crawl(
         crawl_days=body.crawl_days,
         trace_id=trace_id,
         username=username,
+        request_id=_request_id(request),
     )
     get_audit_logger().log(
         user_id=user_id,
@@ -744,7 +758,20 @@ async def crawl_overseas_only(
         raise HTTPException(status_code=503, detail="Pipeline not initialized")
 
     try:
-        result = await tools.tools["crawl_overseas_news"].ainvoke({"payload": {"days": days}})
+        trace_id = generate_trace_id()
+        request_id = _request_id(request)
+        result = await tools.tools["crawl_overseas_news"].ainvoke(
+            {
+                "payload": {
+                    "days": days,
+                    "_request_context": {
+                        "request_id": request_id,
+                        "trace_id": trace_id,
+                        "initiator_user_id": _user_id,
+                    },
+                }
+            }
+        )
         data: dict[str, Any] = {}
         articles = []
         if result.get("ok") and result.get("data"):
@@ -780,7 +807,13 @@ async def crawl_overseas_only(
 
         # 全文抓取交由 ARQ Worker，API 进程不持有后台协程。
         if new_urls:
-            await arq_pool.enqueue_job("fetch_fulltext_batch", new_urls)
+            await arq_pool.enqueue_job(
+                "fetch_fulltext_batch",
+                new_urls,
+                trace_id=trace_id,
+                user_id=_user_id,
+                request_id=request_id,
+            )
 
         errors = data.get("errors", {}) if isinstance(data, dict) else {}
         per_site = data.get("per_site", {}) if isinstance(data, dict) else {}
@@ -872,6 +905,7 @@ async def pipeline_score(
         user_id=user_id,
         trace_id=trace_id,
         username=_request_username(request, user_id),
+        request_id=_request_id(request),
     )
     result["trace_id"] = trace_id
     return result
@@ -890,6 +924,7 @@ async def pipeline_report(
         user_id=user_id,
         trace_id=trace_id,
         username=_request_username(request, user_id),
+        request_id=_request_id(request),
     )
     result["trace_id"] = trace_id
     return result
@@ -1340,6 +1375,7 @@ async def run_v2_single(url_hash: str, request: Request, user_id: str = Depends(
         article_url_hash=url_hash,
         trace_id=trace_id,
         username=username,
+        request_id=_request_id(request),
     )
     get_audit_logger().log(
         user_id=user_id,

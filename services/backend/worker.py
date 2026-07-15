@@ -46,10 +46,11 @@ async def startup(ctx: dict[str, Any]) -> None:
     )
     db = MongoDB.get_db()
     await MongoDB.ensure_indexes()
+    mcp_crawl_client = McpCrawlClient.from_settings(settings)
 
     tools = create_mcp_toolset(
         wewe_url=settings.MCP_WEWE_URL,
-        crawl_url=settings.MCP_CRAWL_URL,
+        crawl_client=mcp_crawl_client,
     )
     knowledge = KnowledgeLoader(docs_dir=settings.KNOWLEDGE_BASE_DIR)
     await knowledge.load()
@@ -69,6 +70,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         draft_gen=draft_gen,
         knowledge=knowledge,
         db=db,
+        crawl_client=mcp_crawl_client,
     )
     pipeline_manager = PipelineManager(
         tools=tools,
@@ -76,8 +78,8 @@ async def startup(ctx: dict[str, Any]) -> None:
         reporter=ReportAgent(llm=llm, knowledge=knowledge._cache, db=db),
         knowledge=knowledge,
         db=db,
+        crawl_client=mcp_crawl_client,
     )
-    mcp_crawl_client = McpCrawlClient.from_settings(settings)
     app = SimpleNamespace(
         state=SimpleNamespace(
             db=db,

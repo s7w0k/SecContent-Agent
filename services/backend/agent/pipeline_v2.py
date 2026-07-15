@@ -32,6 +32,7 @@ from uuid import uuid4
 
 from agent.checkpointer import create_checkpointer, supports_mongodb_checkpoints
 from agent.pipeline_state import PipelineStateManager
+from clients.mcp_crawl import McpCrawlClient, RequestContext
 from langgraph.graph import END, StateGraph
 
 logger = logging.getLogger("backend.agent.pipeline_v2")
@@ -66,6 +67,7 @@ def create_state_v2(
     user_id: str = "",
     trace_id: str = "",
     username: str = "",
+    request_id: str = "",
 ) -> dict:
     """创建 V2 流水线初始状态"""
     return {
@@ -73,6 +75,7 @@ def create_state_v2(
         "user_id": user_id,
         "trace_id": trace_id,
         "username": username or user_id,
+        "request_id": request_id,
         "phases": [p.value for p in PipelinePhaseV2],
         "crawled_count": 0,
         "enriched_count": 0,
@@ -103,11 +106,16 @@ def create_state_v2(
 # ═══════════════════════════════════════════════════════════════
 
 
-async def crawl_node_v2(state: dict, tools: dict, db: Any) -> dict:
+async def crawl_node_v2(
+    state: dict,
+    tools: dict,
+    db: Any,
+    crawl_client: McpCrawlClient | None = None,
+) -> dict:
     """爬取阶段 — 复用 V1 crawl_node"""
     from agent.pipeline import crawl_node
 
-    state = await crawl_node(state, tools, db)
+    state = await crawl_node(state, tools, db, crawl_client)
     if db is not None:
         incomplete = await db["articles"].count_documents(_incomplete_article_query())
         state["needs_enrich"] = incomplete > 0 and not state.get("enriched", False)
@@ -129,25 +137,24 @@ def _incomplete_article_query() -> dict[str, Any]:
     }
 
 
-async def _fetch_fulltext_batch(articles: list[dict]) -> dict[str, str]:
+async def _fetch_fulltext_batch(
+    articles: list[dict],
+    crawl_client: McpCrawlClient | None = None,
+    context: RequestContext | None = None,
+) -> dict[str, str]:
     """Fetch full text from mcp-crawl and return a URL-to-content mapping."""
-    import httpx
-
     urls = [article["url"] for article in articles if article.get("url")]
-    if not urls:
+    if not urls or crawl_client is None:
         return {}
-    async with httpx.AsyncClient(timeout=180) as client:
-        response = await client.post(
-            "http://mcp-crawl:8101/fetch-fulltext-batch",
-            json=urls,
-        )
-    response.raise_for_status()
-    payload = response.json()
-    data = payload.get("data", {}) if isinstance(payload, dict) else {}
-    return data if isinstance(data, dict) else {}
+    return await crawl_client.fetch_fulltext_batch(urls, context)
 
 
-async def enrich_node(state: dict, tools: dict, db: Any) -> dict:
+async def enrich_node(
+    state: dict,
+    tools: dict,
+    db: Any,
+    crawl_client: McpCrawlClient | None = None,
+) -> dict:
     """补爬正文不足 200 字的文章，并在一次执行中最多触发一次。"""
     del tools  # Reserved for a future MCP tool abstraction.
     state["current_phase"] = PipelinePhaseV2.ENRICH.value
@@ -162,7 +169,12 @@ async def enrich_node(state: dict, tools: dict, db: Any) -> dict:
         return state
 
     try:
-        content_by_url = await _fetch_fulltext_batch(articles)
+        context = RequestContext.create(
+            request_id=state.get("request_id"),
+            trace_id=state.get("trace_id"),
+            initiator_user_id=state.get("user_id"),
+        )
+        content_by_url = await _fetch_fulltext_batch(articles, crawl_client, context)
         enriched_count = 0
         for article in articles:
             content = content_by_url.get(article.get("url", ""), "")
@@ -652,6 +664,7 @@ class PipelineManagerV2:
         draft_gen: Any,  # DraftGenerator
         knowledge: Any,  # KnowledgeLoader
         db: Any = None,  # AsyncIOMotorDatabase
+        crawl_client: McpCrawlClient | None = None,
     ):
         self.tools = tools
         self.classifier_v2 = classifier_v2
@@ -659,6 +672,7 @@ class PipelineManagerV2:
         self.draft_gen = draft_gen
         self.knowledge = knowledge
         self.db = db
+        self.crawl_client = crawl_client
         self._state_manager = PipelineStateManager(db) if db is not None else None
         self._graph = self._build_graph()
 
@@ -671,9 +685,10 @@ class PipelineManagerV2:
         trace_id: str = "",
         username: str = "",
         task_id: str = "",
+        request_id: str = "",
     ) -> dict:
         """执行全流程 V2 流水线，状态按 task_id 持久化。"""
-        return await self._run(crawl_days, user_id, trace_id, username, task_id)
+        return await self._run(crawl_days, user_id, trace_id, username, task_id, request_id)
 
     # ── 内部实现 ──────────────────────────────────────────────
 
@@ -685,15 +700,16 @@ class PipelineManagerV2:
         cscorer = self.scorer_v2
         cdraft_gen = self.draft_gen
         cknowledge = self.knowledge
+        crawl_client = self.crawl_client
 
         async def _crawl(state: dict) -> dict:
-            return await crawl_node_v2(state, ctools, cdb)
+            return await crawl_node_v2(state, ctools, cdb, crawl_client)
 
         async def _classify_v2(state: dict) -> dict:
             return await classify_v2_node(state, cclassifier, cdb)
 
         async def _enrich(state: dict) -> dict:
-            return await enrich_node(state, ctools, cdb)
+            return await enrich_node(state, ctools, cdb, crawl_client)
 
         async def _filter(state: dict) -> dict:
             return await filter_node(state, cdb)
@@ -755,6 +771,7 @@ class PipelineManagerV2:
         trace_id: str = "",
         username: str = "",
         task_id: str = "",
+        request_id: str = "",
     ) -> dict:
         pipeline_id = task_id or uuid4().hex[:8]
         state = create_state_v2(
@@ -762,6 +779,7 @@ class PipelineManagerV2:
             user_id=user_id,
             trace_id=trace_id,
             username=username,
+            request_id=request_id,
         )
         state["task_id"] = pipeline_id
         state["status"] = PipelineStatusV2.RUNNING.value

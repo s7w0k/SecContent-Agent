@@ -28,6 +28,7 @@ from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from typing import Any
 
+from clients.mcp_crawl import McpCrawlClient, RequestContext
 from langgraph.graph import END, StateGraph
 
 logger = logging.getLogger("backend.agent.pipeline")
@@ -59,6 +60,7 @@ def create_state(
     user_id: str = "",
     trace_id: str = "",
     username: str = "",
+    request_id: str = "",
 ) -> dict:
     """创建流水线初始状态（普通 dict，兼容 LangGraph）"""
     return {
@@ -66,6 +68,7 @@ def create_state(
         "user_id": user_id,
         "trace_id": trace_id,
         "username": username or user_id,
+        "request_id": request_id,
         "phases": phases or [p.value for p in PipelinePhase],
         "crawled_count": 0,
         "classified_count": 0,
@@ -84,7 +87,13 @@ _fulltext_tasks: set = set()
 
 
 async def _fetch_fulltext_background(
-    db: Any, articles: list[dict], trace_id: str
+    db: Any,
+    articles: list[dict],
+    trace_id: str,
+    *,
+    client: McpCrawlClient,
+    user_id: str = "",
+    request_id: str = "",
 ) -> None:
     """后台异步抓取海外新闻全文（不阻塞流水线）
 
@@ -93,27 +102,15 @@ async def _fetch_fulltext_background(
     - 随机延迟 1-3 秒
     - 失败重试 3 次（指数退避）
     """
-    import httpx
-
     urls = [a["url"] for a in articles]
-    logger.info(
-        "[fulltext-bg] Start: %d articles, trace=%s", len(urls), trace_id
-    )
+    logger.info("[fulltext-bg] Start: %d articles, trace=%s", len(urls), trace_id)
     try:
-        async with httpx.AsyncClient(timeout=180) as client:
-            resp = await client.post(
-                "http://mcp-crawl:8101/fetch-fulltext-batch",
-                json=urls,
-            )
-        if resp.status_code != 200:
-            logger.warning(
-                "[fulltext-bg] mcp-crawl returned %s, trace=%s",
-                resp.status_code,
-                trace_id,
-            )
-            return
-
-        data = resp.json().get("data", {})
+        context = RequestContext.create(
+            request_id=request_id,
+            trace_id=trace_id,
+            initiator_user_id=user_id,
+        )
+        data = await client.fetch_fulltext_batch(urls, context)
         updated = 0
         for art in articles:
             content = data.get(art["url"], "")
@@ -170,7 +167,20 @@ async def _log_stage(
 # ═══════════════════════════════════════════════════════════════
 
 
-async def crawl_node(state: dict, tools: dict, db: Any) -> dict:
+def _tool_request_context(state: dict) -> dict[str, str]:
+    return {
+        "request_id": state.get("request_id", ""),
+        "trace_id": state.get("trace_id", ""),
+        "initiator_user_id": state.get("user_id", ""),
+    }
+
+
+async def crawl_node(
+    state: dict,
+    tools: dict,
+    db: Any,
+    crawl_client: McpCrawlClient | None = None,
+) -> dict:
     """爬取阶段：调用 mcp-wewe + mcp-crawl 获取文章，存入 MongoDB。
 
     Args:
@@ -204,7 +214,12 @@ async def crawl_node(state: dict, tools: dict, db: Any) -> dict:
 
         # 1. 爬取海外安全新闻
         crawl_result = await tools["crawl_overseas_news"].ainvoke(
-            {"payload": {"days": state["crawl_days"]}}
+            {
+                "payload": {
+                    "days": state["crawl_days"],
+                    "_request_context": _tool_request_context(state),
+                }
+            }
         )
         if crawl_result.get("ok") and crawl_result.get("data"):
             data = crawl_result["data"]
@@ -326,9 +341,16 @@ async def crawl_node(state: dict, tools: dict, db: Any) -> dict:
                     if url:
                         overseas_urls.append({"url_hash": url_hash, "url": url})
 
-            if overseas_urls:
+            if overseas_urls and crawl_client is not None:
                 task = asyncio.create_task(
-                    _fetch_fulltext_background(db, overseas_urls, state.get("trace_id", ""))
+                    _fetch_fulltext_background(
+                        db,
+                        overseas_urls,
+                        state.get("trace_id", ""),
+                        client=crawl_client,
+                        user_id=state.get("user_id", ""),
+                        request_id=state.get("request_id", ""),
+                    )
                 )
                 _fulltext_tasks.add(task)
                 task.add_done_callback(_fulltext_tasks.discard)
@@ -420,7 +442,13 @@ async def classify_node(state: dict, tools: dict, db: Any) -> dict:
                         ensure_ascii=False,
                     )
                     r = await tools["classify_articles"].ainvoke(
-                        {"payload": {"articles_json": ajson, "batch_size": 1}}
+                        {
+                            "payload": {
+                                "articles_json": ajson,
+                                "batch_size": 1,
+                                "_request_context": _tool_request_context(state),
+                            }
+                        }
                     )
                     if r.get("ok") and r.get("data"):
                         data = r["data"]
@@ -689,12 +717,14 @@ class PipelineManager:
         reporter: Any,  # ReportAgent
         knowledge: Any,  # KnowledgeLoader
         db: Any = None,  # AsyncIOMotorDatabase
+        crawl_client: McpCrawlClient | None = None,
     ):
         self.tools = tools
         self.scorer = scorer
         self.reporter = reporter
         self.knowledge = knowledge
         self.db = db
+        self.crawl_client = crawl_client
 
         # 状态
         self._state: dict | None = None
@@ -709,6 +739,7 @@ class PipelineManager:
         user_id: str = "",
         trace_id: str = "",
         username: str = "",
+        request_id: str = "",
     ) -> dict:
         """执行全流程流水线。
 
@@ -719,7 +750,7 @@ class PipelineManager:
             {"pipeline_id": str, "status": str, "state": dict}
         """
         phases = [p.value for p in PipelinePhase]
-        return await self._run(crawl_days, phases, user_id, trace_id, username)
+        return await self._run(crawl_days, phases, user_id, trace_id, username, request_id)
 
     async def run_phase(
         self,
@@ -728,6 +759,7 @@ class PipelineManager:
         user_id: str = "",
         trace_id: str = "",
         username: str = "",
+        request_id: str = "",
     ) -> dict:
         """执行单个阶段（及其前置依赖）。
 
@@ -744,7 +776,7 @@ class PipelineManager:
 
         idx = phase_order.index(phase)
         phases = phase_order[: idx + 1]  # 包含该阶段及之前所有阶段
-        return await self._run(crawl_days, phases, user_id, trace_id, username)
+        return await self._run(crawl_days, phases, user_id, trace_id, username, request_id)
 
     def get_status(self) -> dict:
         """获取流水线当前状态。
@@ -785,10 +817,11 @@ class PipelineManager:
         scorer = self.scorer
         reporter = self.reporter
         knowledge = self.knowledge
+        crawl_client = self.crawl_client
 
         # 节点必须是 async 函数（不能用 lambda，因为 lambda 不支持 await）
         async def _crawl(state: dict) -> dict:
-            return await crawl_node(state, tools, db)
+            return await crawl_node(state, tools, db, crawl_client)
 
         async def _classify(state: dict) -> dict:
             return await classify_node(state, tools, db)
@@ -819,6 +852,7 @@ class PipelineManager:
         user_id: str,
         trace_id: str,
         username: str,
+        request_id: str,
     ) -> dict:
         """内部执行逻辑"""
         import uuid
@@ -839,6 +873,7 @@ class PipelineManager:
             user_id=user_id,
             trace_id=trace_id,
             username=username,
+            request_id=request_id,
         )
         self._state["status"] = PipelineStatus.RUNNING.value
         self._state["started_at"] = _now_iso()

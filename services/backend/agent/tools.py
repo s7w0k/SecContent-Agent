@@ -31,6 +31,7 @@ import logging
 from collections.abc import Callable
 
 import httpx
+from clients.mcp_crawl import McpCrawlClient, McpCrawlError, RequestContext
 from langchain_core.tools import tool
 
 logger = logging.getLogger("backend.agent.tools")
@@ -41,6 +42,7 @@ logger = logging.getLogger("backend.agent.tools")
 
 DEFAULT_TIMEOUT = 120.0
 MAX_RETRIES = 0
+MCP_REQUEST_CONTEXT_KEY = "_request_context"
 
 
 async def _http_call(
@@ -140,6 +142,73 @@ def _make_post_tool(
     return _tool
 
 
+def _extract_request_context(payload: dict | None) -> tuple[dict, RequestContext]:
+    """Remove internal attribution fields before forwarding the business payload."""
+    clean_payload = dict(payload or {})
+    raw_context = clean_payload.pop(MCP_REQUEST_CONTEXT_KEY, {})
+    if not isinstance(raw_context, dict):
+        raw_context = {}
+    return clean_payload, RequestContext.create(
+        request_id=raw_context.get("request_id"),
+        trace_id=raw_context.get("trace_id"),
+        initiator_user_id=raw_context.get("initiator_user_id"),
+    )
+
+
+def _crawl_error_result(exc: McpCrawlError) -> dict:
+    """Preserve the historical Tool result shape while exposing stable error metadata."""
+    return {
+        "ok": False,
+        "error": str(exc),
+        "code": exc.code,
+        "retryable": exc.retryable,
+        "request_id": exc.request_id,
+    }
+
+
+def _make_crawl_get_tool(
+    name: str,
+    description: str,
+    client: McpCrawlClient,
+    path: str,
+) -> Callable:
+    @tool(name, description=description)
+    async def _tool(payload: dict | None = None) -> dict:
+        _clean_payload, context = _extract_request_context(payload)
+        try:
+            return await client.call("GET", path, context=context)
+        except McpCrawlError as exc:
+            logger.warning("mcp-crawl tool failed: tool=%s code=%s", name, exc.code)
+            return _crawl_error_result(exc)
+
+    return _tool
+
+
+def _make_crawl_post_tool(
+    name: str,
+    description: str,
+    client: McpCrawlClient,
+    path: str,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> Callable:
+    @tool(name, description=description)
+    async def _tool(payload: dict | None = None) -> dict:
+        clean_payload, context = _extract_request_context(payload)
+        try:
+            return await client.call(
+                "POST",
+                path,
+                json_data=clean_payload,
+                context=context,
+                read_timeout=timeout,
+            )
+        except McpCrawlError as exc:
+            logger.warning("mcp-crawl tool failed: tool=%s code=%s", name, exc.code)
+            return _crawl_error_result(exc)
+
+    return _tool
+
+
 # ═══════════════════════════════════════════════════════════════
 # Toolset 构建 — 对外唯一入口
 # ═══════════════════════════════════════════════════════════════
@@ -147,18 +216,27 @@ def _make_post_tool(
 
 def create_mcp_toolset(
     wewe_url: str = "http://mcp-wewe:8100",
-    crawl_url: str = "http://mcp-crawl:8101",
+    crawl_url: str | None = None,
+    crawl_client: McpCrawlClient | None = None,
 ) -> dict[str, Callable]:
     """创建完整的 MCP Tool 集合。
 
     Args:
         wewe_url: mcp-wewe HTTP Bridge 地址
-        crawl_url: mcp-crawl HTTP Bridge 地址
+        crawl_url: 兼容旧调用的 mcp-crawl 地址；生产运行时应传 crawl_client
+        crawl_client: 由 API/Worker 生命周期管理的统一客户端
 
     Returns:
         {"tool_name": tool_callable, ...}  共 8 个工具
     """
     tools: dict[str, Callable] = {}
+    if crawl_client is None:
+        if crawl_url:
+            crawl_client = McpCrawlClient(base_url=crawl_url, max_retries=MAX_RETRIES)
+        else:
+            from config import get_settings
+
+            crawl_client = McpCrawlClient.from_settings(get_settings())
 
     # ── mcp-wewe: 微信公众号 RSS 工具（3 个）──────────────────
 
@@ -198,7 +276,7 @@ def create_mcp_toolset(
 
     # ── mcp-crawl: 海外安全新闻工具（5 个）────────────────────
 
-    tools["crawl_overseas_news"] = _make_post_tool(
+    tools["crawl_overseas_news"] = _make_crawl_post_tool(
         name="crawl_overseas_news",
         description=(
             "爬取海外安全新闻。从 The Hacker News、BleepingComputer、"
@@ -206,12 +284,12 @@ def create_mcp_toolset(
             "可选参数: days (天数，默认 1，最大 30)。"
             "返回: 文章列表，每项含 title/url/source/summary/published_at。"
         ),
-        base_url=crawl_url,
+        client=crawl_client,
         path="/crawl-news",
         timeout=300.0,
     )
 
-    tools["classify_articles"] = _make_post_tool(
+    tools["classify_articles"] = _make_crawl_post_tool(
         name="classify_articles",
         description=(
             "使用 AI 对文章进行 AI/Agent 安全话题分类。"
@@ -219,38 +297,38 @@ def create_mcp_toolset(
             "可选参数: batch_size (批量大小，默认 25)。"
             "返回: 分类结果，含 is_ai_security/is_agent_security/category/summary_cn。"
         ),
-        base_url=crawl_url,
+        client=crawl_client,
         path="/classify",
     )
 
-    tools["query_articles"] = _make_post_tool(
+    tools["query_articles"] = _make_crawl_post_tool(
         name="query_articles",
         description=(
             "查询已爬取的文章数据库。"
             "可选参数: category (分类过滤), days (天数，默认 7), keyword (关键词搜索)。"
             "返回: 匹配的文章列表。"
         ),
-        base_url=crawl_url,
+        client=crawl_client,
         path="/query",
     )
 
-    tools["get_crawl_stats"] = _make_get_tool(
+    tools["get_crawl_stats"] = _make_crawl_get_tool(
         name="get_crawl_stats",
         description=(
             "获取爬取统计信息：总文章数、来源分布、分类分布、评分分布。返回: 统计数据字典。"
         ),
-        base_url=crawl_url,
+        client=crawl_client,
         path="/stats",
     )
 
-    tools["export_articles_csv"] = _make_post_tool(
+    tools["export_articles_csv"] = _make_crawl_post_tool(
         name="export_articles_csv",
         description=(
             "将已分类的 AI 安全文章导出为 CSV 格式。"
             "可选参数: category (按分类筛选，留空则导出全部 AI 安全文章)。"
             "返回: CSV 文本内容。"
         ),
-        base_url=crawl_url,
+        client=crawl_client,
         path="/export-csv",
     )
 

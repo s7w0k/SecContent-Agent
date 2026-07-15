@@ -38,6 +38,21 @@ class RequestContext:
     trace_id: str | None = None
     initiator_user_id: str | None = None
 
+    @classmethod
+    def create(
+        cls,
+        *,
+        request_id: str | None = None,
+        trace_id: str | None = None,
+        initiator_user_id: str | None = None,
+    ) -> RequestContext:
+        """Create a context while generating a request ID when the caller has none."""
+        return cls(
+            request_id=request_id or str(uuid.uuid4()),
+            trace_id=trace_id or None,
+            initiator_user_id=initiator_user_id or None,
+        )
+
     def as_headers(self) -> dict[str, str]:
         headers = {HEADER_REQUEST_ID: self.request_id}
         if self.trace_id:
@@ -136,6 +151,25 @@ class McpCrawlClient:
             max_retries=0,
         )
         return self._require_dict(data, endpoint="/health")
+
+    async def call(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_data: Any = None,
+        context: RequestContext | None = None,
+        read_timeout: float | None = None,
+    ) -> dict[str, Any]:
+        """Call a compatibility Bridge endpoint using the shared client policy."""
+        data = await self._request(
+            method,
+            path,
+            json_data=json_data,
+            context=context,
+            read_timeout=read_timeout,
+        )
+        return self._require_dict(data, endpoint=path)
 
     async def crawl_news(
         self,

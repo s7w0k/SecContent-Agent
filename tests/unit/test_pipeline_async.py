@@ -256,6 +256,7 @@ async def test_run_v2_endpoint_enqueues_worker_job():
         article_url_hash=None,
         trace_id=response["data"]["trace_id"],
         username="user-a",
+        request_id="",
         _job_id=task_id,
     )
 

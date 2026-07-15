@@ -94,6 +94,7 @@ async def test_pipeline_task_is_enqueued_with_durable_job_id():
         crawl_days=3,
         trace_id="trace-a",
         username="alice",
+        request_id="request-a",
     )
 
     pool.enqueue_job.assert_awaited_once_with(
@@ -105,6 +106,7 @@ async def test_pipeline_task_is_enqueued_with_durable_job_id():
         article_url_hash=None,
         trace_id="trace-a",
         username="alice",
+        request_id="request-a",
         _job_id="task-a",
     )
 
@@ -198,15 +200,25 @@ async def test_fetch_fulltext_batch_delegates_to_background_service():
     db = SimpleNamespace()
     articles = [{"url": "https://example.com/a"}, {"url": "https://example.com/b"}]
     background_fetch = AsyncMock()
+    crawl_client = SimpleNamespace()
 
     with patch("agent.pipeline._fetch_fulltext_background", new=background_fetch):
         result = await fetch_fulltext_batch(
-            {"db": db},
+            {"db": db, "mcp_crawl_client": crawl_client},
             articles,
             trace_id="trace-a",
+            user_id="user-a",
+            request_id="request-a",
         )
 
-    background_fetch.assert_awaited_once_with(db, articles, "trace-a")
+    background_fetch.assert_awaited_once_with(
+        db,
+        articles,
+        "trace-a",
+        client=crawl_client,
+        user_id="user-a",
+        request_id="request-a",
+    )
     assert result == {"requested": 2}
 
 

@@ -49,25 +49,46 @@ MOCK_ARTICLES = [
 ]
 
 MOCK_CLASSIFIED = [
-    {**MOCK_ARTICLES[0], "is_ai_security": True, "is_agent_security": True, "category": "MCP协议漏洞", "summary_cn": "MCP漏洞"},
-    {**MOCK_ARTICLES[1], "is_ai_security": True, "is_agent_security": False, "category": "AI安全", "summary_cn": "AI框架"},
+    {
+        **MOCK_ARTICLES[0],
+        "is_ai_security": True,
+        "is_agent_security": True,
+        "category": "MCP协议漏洞",
+        "summary_cn": "MCP漏洞",
+    },
+    {
+        **MOCK_ARTICLES[1],
+        "is_ai_security": True,
+        "is_agent_security": False,
+        "category": "AI安全",
+        "summary_cn": "AI框架",
+    },
 ]
 
-SCORE_RESPONSE = AIMessage(content=json.dumps({
-    "ai_relevance_score": 92,
-    "reportability_score": 78,
-    "score_reason": "MCP协议认证缺陷直接涉及Agent安全核心",
-    "tags": ["MCP协议", "身份认证"],
-}))
+SCORE_RESPONSE = AIMessage(
+    content=json.dumps(
+        {
+            "ai_relevance_score": 92,
+            "reportability_score": 78,
+            "score_reason": "MCP协议认证缺陷直接涉及Agent安全核心",
+            "tags": ["MCP协议", "身份认证"],
+        }
+    )
+)
 
-SCORE_RESPONSE_LOW = AIMessage(content=json.dumps({
-    "ai_relevance_score": 40,
-    "reportability_score": 30,
-    "score_reason": "一般性框架发布，非安全事件",
-    "tags": ["AI框架"],
-}))
+SCORE_RESPONSE_LOW = AIMessage(
+    content=json.dumps(
+        {
+            "ai_relevance_score": 40,
+            "reportability_score": 30,
+            "score_reason": "一般性框架发布，非安全事件",
+            "tags": ["AI框架"],
+        }
+    )
+)
 
-REPORT_RESPONSE = AIMessage(content="""# [Critical MCP Protocol Vulnerability Discovered]
+REPORT_RESPONSE = AIMessage(
+    content="""# [Critical MCP Protocol Vulnerability Discovered]
 
 ## 导语
 近日发现MCP协议存在严重认证缺陷，直接影响智能体身份安全核心领域。
@@ -89,7 +110,8 @@ MCP协议是智能体间通信的核心标准，广泛应用于企业级AI部署
 3. 将案例纳入产品白皮书
 
 ## 关键词
-MCP协议、身份认证、漏洞披露""")
+MCP协议、身份认证、漏洞披露"""
+)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -117,10 +139,12 @@ def mock_tools():
 
     # crawl_overseas_news
     crawl_tool = MagicMock()
-    crawl_tool.ainvoke = AsyncMock(return_value={
-        "ok": True,
-        "data": {"articles": MOCK_ARTICLES, "count": len(MOCK_ARTICLES)},
-    })
+    crawl_tool.ainvoke = AsyncMock(
+        return_value={
+            "ok": True,
+            "data": {"articles": MOCK_ARTICLES, "count": len(MOCK_ARTICLES)},
+        }
+    )
     tools["crawl_overseas_news"] = crawl_tool
 
     # fetch_wewe_articles (empty)
@@ -130,15 +154,22 @@ def mock_tools():
 
     # classify_articles
     classify_tool = MagicMock()
-    classify_tool.ainvoke = AsyncMock(return_value={
-        "ok": True,
-        "data": {"classified": MOCK_CLASSIFIED},
-    })
+    classify_tool.ainvoke = AsyncMock(
+        return_value={
+            "ok": True,
+            "data": {"classified": MOCK_CLASSIFIED},
+        }
+    )
     tools["classify_articles"] = classify_tool
 
     # Other tools (not used in pipeline but required by create_mcp_toolset)
-    for name in ["query_articles", "get_crawl_stats", "export_articles_csv",
-                 "fetch_article_fulltext", "analyze_wewe_article"]:
+    for name in [
+        "query_articles",
+        "get_crawl_stats",
+        "export_articles_csv",
+        "fetch_article_fulltext",
+        "analyze_wewe_article",
+    ]:
         t = MagicMock()
         t.ainvoke = AsyncMock(return_value={"ok": True, "data": {}})
         tools[name] = t
@@ -332,7 +363,9 @@ class TestFullPipeline:
         scorer = ScoringAgent(llm=mock_llm, knowledge=knowledge)
         reporter = ReportAgent(llm=mock_llm, knowledge=knowledge, db=mock_db)
 
-        manager = PipelineManager(mock_tools, scorer, reporter, MagicMock(load=AsyncMock()), mock_db)
+        manager = PipelineManager(
+            mock_tools, scorer, reporter, MagicMock(load=AsyncMock()), mock_db
+        )
         await manager.run_full(crawl_days=1)
 
         # 检查 pipeline_status 字段
@@ -340,7 +373,9 @@ class TestFullPipeline:
         assert "scored" in statuses or "classified" in statuses or "crawled" in statuses
 
     @pytest.mark.asyncio
-    async def test_high_value_article_generates_report(self, mock_tools, mock_llm, knowledge, mock_db):
+    async def test_high_value_article_generates_report(
+        self, mock_tools, mock_llm, knowledge, mock_db
+    ):
         """高分文章（≥140）应生成报道"""
         from agent.pipeline import PipelineManager
         from agent.reporter import ReportAgent
@@ -349,7 +384,9 @@ class TestFullPipeline:
         scorer = ScoringAgent(llm=mock_llm, knowledge=knowledge)
         reporter = ReportAgent(llm=mock_llm, knowledge=knowledge, db=mock_db)
 
-        manager = PipelineManager(mock_tools, scorer, reporter, MagicMock(load=AsyncMock()), mock_db)
+        manager = PipelineManager(
+            mock_tools, scorer, reporter, MagicMock(load=AsyncMock()), mock_db
+        )
         result = await manager.run_full(crawl_days=1)
 
         # 至少生成一篇报道（第一批文章分数 92+78=170≥140）
@@ -365,7 +402,9 @@ class TestFullPipeline:
         scorer = ScoringAgent(llm=mock_llm, knowledge=knowledge)
         reporter = ReportAgent(llm=mock_llm, knowledge=knowledge, db=mock_db)
 
-        manager = PipelineManager(mock_tools, scorer, reporter, MagicMock(load=AsyncMock()), mock_db)
+        manager = PipelineManager(
+            mock_tools, scorer, reporter, MagicMock(load=AsyncMock()), mock_db
+        )
 
         # 初始状态 idle
         assert manager.get_status()["status"] == "idle"
@@ -386,7 +425,9 @@ class TestErrorRecovery:
     """异常场景恢复验证"""
 
     @pytest.mark.asyncio
-    async def test_crawl_failure_does_not_block_pipeline(self, mock_tools, mock_llm, knowledge, mock_db):
+    async def test_crawl_failure_does_not_block_pipeline(
+        self, mock_tools, mock_llm, knowledge, mock_db
+    ):
         """爬取失败不应阻塞分类/打分/报道阶段"""
         from agent.pipeline import PipelineManager
         from agent.reporter import ReportAgent
@@ -400,7 +441,9 @@ class TestErrorRecovery:
         scorer = ScoringAgent(llm=mock_llm, knowledge=knowledge)
         reporter = ReportAgent(llm=mock_llm, knowledge=knowledge, db=mock_db)
 
-        manager = PipelineManager(mock_tools, scorer, reporter, MagicMock(load=AsyncMock()), mock_db)
+        manager = PipelineManager(
+            mock_tools, scorer, reporter, MagicMock(load=AsyncMock()), mock_db
+        )
         result = await manager.run_full(crawl_days=1)
 
         # 应标记为 completed（非阻塞），但有错误记录
@@ -417,7 +460,9 @@ class TestErrorRecovery:
         scorer = ScoringAgent(llm=mock_llm, knowledge=knowledge)
         reporter = ReportAgent(llm=mock_llm, knowledge=knowledge, db=mock_db)
 
-        manager = PipelineManager(mock_tools, scorer, reporter, MagicMock(load=AsyncMock()), mock_db)
+        manager = PipelineManager(
+            mock_tools, scorer, reporter, MagicMock(load=AsyncMock()), mock_db
+        )
 
         # 阶段 1: 仅爬取
         r1 = await manager.run_phase("crawl")
@@ -445,9 +490,12 @@ class TestErrorRecovery:
         from agent.scorer import ScoringAgent
 
         # 返回空数据
-        mock_tools["crawl_overseas_news"].ainvoke = AsyncMock(return_value={
-            "ok": True, "data": {"articles": [], "count": 0},
-        })
+        mock_tools["crawl_overseas_news"].ainvoke = AsyncMock(
+            return_value={
+                "ok": True,
+                "data": {"articles": [], "count": 0},
+            }
+        )
 
         scorer = ScoringAgent(llm=mock_llm, knowledge=knowledge)
         reporter = ReportAgent(llm=mock_llm, knowledge=knowledge, db=mock_db)
@@ -459,7 +507,9 @@ class TestErrorRecovery:
             mock_httpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_httpx.return_value.__aexit__ = AsyncMock(return_value=None)
 
-            manager = PipelineManager(mock_tools, scorer, reporter, MagicMock(load=AsyncMock()), mock_db)
+            manager = PipelineManager(
+                mock_tools, scorer, reporter, MagicMock(load=AsyncMock()), mock_db
+            )
             result = await manager.run_full(crawl_days=1)
 
         assert result["status"] == "completed"
@@ -480,7 +530,7 @@ class TestToolIntegration:
 
         tools = create_mcp_toolset(
             wewe_url="http://test:8100",
-            crawl_url="http://test:8101",
+            crawl_client=MagicMock(),
         )
         assert len(tools) == 8
         assert "crawl_overseas_news" in tools
@@ -492,20 +542,13 @@ class TestToolIntegration:
         """Tool → HTTP 调用可以 mock"""
         from agent.tools import create_mcp_toolset
 
-        with patch("agent.tools.httpx.AsyncClient") as mock_cls:
-            mock_client = MagicMock()
-            mock_resp = MagicMock()
-            mock_resp.raise_for_status = MagicMock()
-            mock_resp.json.return_value = {"ok": True, "data": {"total": 42}}
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client.get = AsyncMock(return_value=mock_resp)
-            mock_cls.return_value = mock_client
-
-            tools = create_mcp_toolset(crawl_url="http://test:8101")
-            result = await tools["get_crawl_stats"].ainvoke({"payload": {}})
-            assert result["ok"] is True
-            assert result["data"]["total"] == 42
+        crawl_client = MagicMock()
+        crawl_client.call = AsyncMock(return_value={"ok": True, "data": {"total": 42}})
+        tools = create_mcp_toolset(crawl_client=crawl_client)
+        result = await tools["get_crawl_stats"].ainvoke({"payload": {}})
+        assert result["ok"] is True
+        assert result["data"]["total"] == 42
+        assert crawl_client.call.await_args.args == ("GET", "/stats")
 
 
 # ═══════════════════════════════════════════════════════════════

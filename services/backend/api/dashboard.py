@@ -9,11 +9,16 @@
 
 from __future__ import annotations
 
+import logging
+
 from auth.deps import get_current_user
+from clients.mcp_crawl import RequestContext
 from config import get_settings
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from logging_config import get_trace_id
 
 router = APIRouter(prefix="/api", tags=["Dashboard"])
+logger = logging.getLogger("backend.api.dashboard")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -51,7 +56,9 @@ async def list_articles(
     request: Request,
     page: int = Query(default=1, ge=1, description="页码"),
     page_size: int = Query(default=20, ge=1, le=100, description="每页条数"),
-    source_type: str | None = Query(default=None, description="来源类型: overseas_news / wechat_mp"),
+    source_type: str | None = Query(
+        default=None, description="来源类型: overseas_news / wechat_mp"
+    ),
     category: str | None = Query(default=None, description="分类筛选"),
     min_score: int | None = Query(default=None, ge=0, le=200, description="最低综合分"),
     is_ai_security: bool | None = Query(default=None, description="是否AI安全相关"),
@@ -80,7 +87,13 @@ async def list_articles(
 
     # 排序
     sort_order = -1 if order == "desc" else 1
-    allowed_sort_fields = {"added_at", "title", "source", "ai_relevance_score", "reportability_score"}
+    allowed_sort_fields = {
+        "added_at",
+        "title",
+        "source",
+        "ai_relevance_score",
+        "reportability_score",
+    }
     if sort_by not in allowed_sort_fields:
         sort_by = "added_at"
 
@@ -186,6 +199,7 @@ async def fetch_article_content(
 ):
     """抓取文章原文并保存（支持公众号和海外新闻）。"""
     import httpx as _httpx
+
     db = _get_db(request)
     article = await db["articles"].find_one({"url_hash": url_hash})
     if not article:
@@ -201,22 +215,41 @@ async def fetch_article_content(
         if source_type == "overseas_news":
             # 海外新闻：用 httpx + BeautifulSoup 抓取
             from api.overseas_crawl import _fetch_fulltext
-            content = await _fetch_fulltext(url)
+
+            context = RequestContext.create(
+                request_id=getattr(request.state, "request_id", None),
+                trace_id=get_trace_id() or getattr(request.state, "request_id", None),
+                initiator_user_id=_user_id,
+            )
+            content = await _fetch_fulltext(
+                url,
+                request.app.state.mcp_crawl_client,
+                context,
+            )
         else:
             # 公众号：调用 mcp-wewe 抓取全文
             async with _httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post("http://mcp-wewe:8100/fetch-article",
-                                         json={"link": url})
+                resp = await client.post("http://mcp-wewe:8100/fetch-article", json={"link": url})
                 resp.raise_for_status()
                 data = resp.json()
             if isinstance(data, dict):
-                content = data.get("text", "") or data.get("content_md", "") or data.get("content", "") or data.get("fulltext", "")
+                content = (
+                    data.get("text", "")
+                    or data.get("content_md", "")
+                    or data.get("content", "")
+                    or data.get("fulltext", "")
+                )
                 if not content and "result" in data:
-                    content = data["result"].get("content", "") if isinstance(data["result"], dict) else data["result"]
+                    content = (
+                        data["result"].get("content", "")
+                        if isinstance(data["result"], dict)
+                        else data["result"]
+                    )
             if not content:
                 # fallback: 直接 requests 抓取
                 import requests as _req
                 from bs4 import BeautifulSoup
+
                 r = _req.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
                 soup = BeautifulSoup(r.text, "html.parser")
                 el = soup.select_one("#js_content") or soup.select_one(".rich_media_content")
@@ -244,10 +277,14 @@ async def batch_fetch_content(
 ):
     """批量抓取 content_md 为空的文章全文，支持海外新闻和公众号。"""
     db = _get_db(request)
-    cursor = db["articles"].find(
-        {"$or": [{"content_md": ""}, {"content_md": {"$exists": False}}]},
-        {"url_hash": 1, "url": 1, "title": 1, "source": 1, "source_type": 1},
-    ).limit(50)
+    cursor = (
+        db["articles"]
+        .find(
+            {"$or": [{"content_md": ""}, {"content_md": {"$exists": False}}]},
+            {"url_hash": 1, "url": 1, "title": 1, "source": 1, "source_type": 1},
+        )
+        .limit(50)
+    )
     articles = await cursor.to_list(length=50)
 
     if not articles:
@@ -261,21 +298,26 @@ async def batch_fetch_content(
     # 海外新闻：调用 mcp-crawl 批量抓取
     if overseas:
         try:
-            import httpx as _httpx
             urls = [a["url"] for a in overseas]
-            async with _httpx.AsyncClient(timeout=180) as client:
-                resp = await client.post("http://mcp-crawl:8101/fetch-fulltext-batch", json=urls)
-            if resp.status_code == 200:
-                data = resp.json().get("data", {})
-                for art in overseas:
-                    content = data.get(art["url"], "")
-                    if content:
-                        await db["articles"].update_one(
-                            {"url_hash": art["url_hash"]},
-                            {"$set": {"content_md": content[:50000]}},
-                        )
-                        updated += 1
-                        logger.info("Batch fetch: %s -> %d chars", art.get("title", "")[:40], len(content))
+            context = RequestContext.create(
+                request_id=getattr(request.state, "request_id", None),
+                trace_id=get_trace_id() or getattr(request.state, "request_id", None),
+                initiator_user_id=_user_id,
+            )
+            data = await request.app.state.mcp_crawl_client.fetch_fulltext_batch(urls, context)
+            for art in overseas:
+                content = data.get(art["url"], "")
+                if content:
+                    await db["articles"].update_one(
+                        {"url_hash": art["url_hash"]},
+                        {"$set": {"content_md": content[:50000]}},
+                    )
+                    updated += 1
+                    logger.info(
+                        "Batch fetch: %s -> %d chars",
+                        art.get("title", "")[:40],
+                        len(content),
+                    )
         except Exception as e:
             logger.warning("Overseas batch fetch failed: %s", e)
 
@@ -284,13 +326,16 @@ async def batch_fetch_content(
         url = art.get("url", "")
         try:
             import httpx as _httpx2
+
             async with _httpx2.AsyncClient(timeout=30) as client:
                 resp = await client.post("http://mcp-wewe:8100/fetch-article", json={"link": url})
                 resp.raise_for_status()
                 data = resp.json()
             content = ""
             if isinstance(data, dict):
-                content = data.get("text", "") or data.get("content_md", "") or data.get("content", "")
+                content = (
+                    data.get("text", "") or data.get("content_md", "") or data.get("content", "")
+                )
             if content:
                 await db["articles"].update_one(
                     {"url_hash": art["url_hash"]},
@@ -329,10 +374,12 @@ async def summarize_article(
         )
         resp = client.chat.completions.create(
             model="deepseek-chat",
-            messages=[{
-                "role": "user",
-                "content": f"请用150个汉字以内的篇幅总结以下文章的核心内容：\n\n{content[:4000]}",
-            }],
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"请用150个汉字以内的篇幅总结以下文章的核心内容：\n\n{content[:4000]}",
+                }
+            ],
             max_tokens=300,
             temperature=0.3,
         )
@@ -356,14 +403,20 @@ async def get_stats(
 
     total = await db["articles"].count_documents({})
     ai_security_count = await db["articles"].count_documents({"is_ai_security": True})
-    high_value_count = await db["articles"].count_documents({
-        "$expr": {
-            "$gte": [
-                {"$add": ["$ai_relevance_score", "$reportability_score"]},
-                140,
-            ]
-        }
-    }) if total > 0 else 0
+    high_value_count = (
+        await db["articles"].count_documents(
+            {
+                "$expr": {
+                    "$gte": [
+                        {"$add": ["$ai_relevance_score", "$reportability_score"]},
+                        140,
+                    ]
+                }
+            }
+        )
+        if total > 0
+        else 0
+    )
 
     # 来源分布（聚合）
     source_pipeline = [

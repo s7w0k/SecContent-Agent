@@ -128,7 +128,7 @@ async def lifespan(app: FastAPI):
 
         tools = create_mcp_toolset(
             wewe_url=settings.MCP_WEWE_URL,
-            crawl_url=settings.MCP_CRAWL_URL,
+            crawl_client=app.state.mcp_crawl_client,
         )
         _log("INFO", f"MCP tools initialized: {len(tools)} tools")
 
@@ -180,6 +180,7 @@ async def lifespan(app: FastAPI):
             reporter=reporter,
             knowledge=knowledge_loader,
             db=app.state.db,
+            crawl_client=app.state.mcp_crawl_client,
         )
         app.state.pipeline_manager = pipeline_manager
         _log("INFO", "Agent pipeline initialized (V1)")
