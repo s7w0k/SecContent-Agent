@@ -8,11 +8,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 from agent.template_repository import (
+    TemplateNotFoundError,
     TemplateRepository,
     TemplateVersionConflictError,
 )
 from db.mongo import MongoDB
 from models.pr_template import TemplateSource, UserPRTemplateUpdate
+from pymongo.errors import DuplicateKeyError
 
 
 def _matches(document: dict[str, Any], query: dict[str, Any]) -> bool:
@@ -171,6 +173,46 @@ async def test_template_overrides_are_isolated_by_user_id() -> None:
 
 
 @pytest.mark.asyncio
+async def test_two_users_modify_same_slot_with_independent_versions_and_history() -> None:
+    repository = TemplateRepository(FakeDatabase())
+
+    user_a = await repository.save("user-a", "breaking_a", _update(name="用户 A 模板"))
+    user_b = await repository.save("user-b", "breaking_a", _update(name="用户 B 模板"))
+    user_a_v2 = await repository.save(
+        "user-a",
+        "breaking_a",
+        _update(expected_version=user_a.version, name="用户 A 第二版"),
+    )
+
+    assert user_b.version == 1
+    assert user_a_v2.version == 2
+    assert [
+        item.snapshot.name for item in await repository.list_versions("user-a", "breaking_a")
+    ] == [
+        "用户 A 第二版",
+        "用户 A 模板",
+    ]
+    assert [
+        item.snapshot.name for item in await repository.list_versions("user-b", "breaking_a")
+    ] == ["用户 B 模板"]
+
+
+@pytest.mark.asyncio
+async def test_user_cannot_read_or_restore_another_users_history() -> None:
+    repository = TemplateRepository(FakeDatabase())
+    await repository.save("user-a", "breaking_a", _update(name="用户 A 私有模板"))
+
+    with pytest.raises(TemplateNotFoundError, match="unknown template version"):
+        await repository.get_version("user-b", "breaking_a", 1)
+    with pytest.raises(TemplateNotFoundError, match="unknown template version"):
+        await repository.restore("user-b", "breaking_a", 1)
+
+    effective = await repository.get_effective("user-b", "breaking_a")
+    assert effective.source == TemplateSource.SYSTEM
+    assert await repository.count_versions("user-b", "breaking_a") == 0
+
+
+@pytest.mark.asyncio
 async def test_save_updates_version_and_reads_tenant_history() -> None:
     repository = TemplateRepository(FakeDatabase())
     created = await repository.save("user-a", "breaking_a", _update())
@@ -207,6 +249,33 @@ async def test_stale_save_is_rejected_and_reset_restores_system_default() -> Non
 
     assert restored.source == TemplateSource.SYSTEM
     assert await repository.get_override("user-a", "breaking_a") is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_create_duplicate_key_maps_to_version_conflict() -> None:
+    database = FakeDatabase()
+    repository = TemplateRepository(database)
+    database["user_pr_templates"].insert_one = AsyncMock(
+        side_effect=DuplicateKeyError("duplicate tenant template")
+    )
+
+    with pytest.raises(TemplateVersionConflictError, match="created concurrently"):
+        await repository.save("user-a", "breaking_a", _update())
+
+
+@pytest.mark.asyncio
+async def test_compare_and_swap_failure_maps_to_version_conflict() -> None:
+    database = FakeDatabase()
+    repository = TemplateRepository(database)
+    await repository.save("user-a", "breaking_a", _update())
+    database["user_pr_templates"].find_one_and_update = AsyncMock(return_value=None)
+
+    with pytest.raises(TemplateVersionConflictError, match="reload before saving"):
+        await repository.save(
+            "user-a",
+            "breaking_a",
+            _update(expected_version=1, name="并发修改"),
+        )
 
 
 @pytest.mark.asyncio

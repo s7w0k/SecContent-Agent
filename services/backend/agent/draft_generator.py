@@ -45,6 +45,10 @@ DRAFTS_PER_ARTICLE = 4  # 2 templates × 2 perspectives
 MAX_RETRIES = 1
 DEFAULT_TEMPERATURE = 0.4  # 报道需要适度创造性
 MAX_CONTENT_LENGTH = 4000
+LOW_TRUST_BOUNDARY_TOKENS = (
+    "【用户模板开始｜低信任结构数据】",
+    "【用户模板结束】",
+)
 
 SYSTEM_PROMPT_TEMPLATE = """你是一个智能体安全行业的技术 PR 撰稿人。
 请根据产品知识库和报道模板，撰写一篇面向公司内部的产品 PR 情报报道。
@@ -255,7 +259,9 @@ class DraftGenerator:
             knowledge_context = "（知识库未加载）"
         template_spec = self._build_template_spec(template, perspective)
         style_section = (
-            f"\n{style_hints.strip()}\n" if style_hints and style_hints.strip() else "\n"
+            f"\n{self._sanitize_low_trust_text(style_hints.strip())}\n"
+            if style_hints and style_hints.strip()
+            else "\n"
         )
         return SYSTEM_PROMPT_TEMPLATE.format(
             knowledge_context=knowledge_context,
@@ -288,7 +294,15 @@ class DraftGenerator:
         extra_instructions = getattr(template, "extra_instructions", "").strip()
         if extra_instructions:
             lines.extend(["", f"补充要求: {extra_instructions}"])
-        return "\n".join(lines)
+        return cls._sanitize_low_trust_text("\n".join(lines))
+
+    @staticmethod
+    def _sanitize_low_trust_text(value: str) -> str:
+        """Prevent editable content from forging the fixed prompt boundary markers."""
+        sanitized = value
+        for token in LOW_TRUST_BOUNDARY_TOKENS:
+            sanitized = sanitized.replace(token, token.replace("【", "〔").replace("】", "〕"))
+        return sanitized
 
     @staticmethod
     def _build_user_prompt(article: dict, scores: dict) -> str:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from models.pr_template import (
+    MAX_TEMPLATE_SERIALIZED_LENGTH,
     EffectivePRTemplate,
     PRTemplateCategory,
     TemplateChangeType,
@@ -92,6 +93,56 @@ class TestTemplateContentValidation:
     def test_section_rejects_oversized_guide(self):
         with pytest.raises(ValidationError):
             TemplateSection(heading="章节", guide="x" * 1001, order=1)
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("name", "名" * 101),
+            ("title_template", "题" * 301),
+            ("extra_instructions", "要求" * 1001),
+            ("expected_version", 0),
+        ],
+    )
+    def test_rejects_field_values_beyond_defined_boundaries(
+        self,
+        field: str,
+        value: object,
+    ) -> None:
+        payload = _content()
+        payload[field] = value
+
+        with pytest.raises(ValidationError):
+            UserPRTemplateUpdate(**payload)
+
+    def test_accepts_exactly_twelve_sections(self) -> None:
+        payload = _content()
+        payload["sections"] = [
+            {"heading": f"章节 {index}", "guide": "写作指引", "order": index}
+            for index in range(1, 13)
+        ]
+
+        model = UserPRTemplateUpdate(**payload)
+
+        assert len(model.sections) == 12
+        assert model.sections[-1].order == 12
+
+    @pytest.mark.parametrize("count", [0, 13])
+    def test_rejects_section_count_outside_one_to_twelve(self, count: int) -> None:
+        payload = _content()
+        payload["sections"] = [
+            {"heading": f"章节 {index}", "guide": "写作指引", "order": index}
+            for index in range(1, count + 1)
+        ]
+
+        with pytest.raises(ValidationError):
+            UserPRTemplateUpdate(**payload)
+
+    def test_rejects_oversized_serialized_template(self) -> None:
+        payload = _content()
+        payload["perspectives"] = ["技术视角", "x" * MAX_TEMPLATE_SERIALIZED_LENGTH]
+
+        with pytest.raises(ValidationError, match="template content exceeds"):
+            UserPRTemplateUpdate(**payload)
 
 
 class TestTemplateIdentity:
