@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from agent.template_repository import (
@@ -41,8 +42,9 @@ class FakeCursor:
         self.documents = self.documents[:count]
         return self
 
-    async def to_list(self, length: int) -> list[dict[str, Any]]:
-        return deepcopy(self.documents[:length])
+    async def to_list(self, length: int | None) -> list[dict[str, Any]]:
+        documents = self.documents if length is None else self.documents[:length]
+        return deepcopy(documents)
 
 
 class FakeCollection:
@@ -86,6 +88,14 @@ class FakeCollection:
             if _matches(document, query):
                 return self.documents.pop(index)
         return None
+
+    async def count_documents(self, query: dict[str, Any]) -> int:
+        self.queries.append(deepcopy(query))
+        return sum(1 for document in self.documents if _matches(document, query))
+
+    async def delete_many(self, query: dict[str, Any]) -> None:
+        self.queries.append(deepcopy(query))
+        self.documents = [document for document in self.documents if not _matches(document, query)]
 
 
 class FakeDatabase:
@@ -197,6 +207,52 @@ async def test_stale_save_is_rejected_and_reset_restores_system_default() -> Non
 
     assert restored.source == TemplateSource.SYSTEM
     assert await repository.get_override("user-a", "breaking_a") is None
+
+
+@pytest.mark.asyncio
+async def test_reset_rejects_a_concurrent_template_change() -> None:
+    database = FakeDatabase()
+    repository = TemplateRepository(database)
+    await repository.save("user-a", "breaking_a", _update())
+    database["user_pr_templates"].find_one_and_delete = AsyncMock(return_value=None)
+
+    with pytest.raises(TemplateVersionConflictError, match="changed during reset"):
+        await repository.reset("user-a", "breaking_a")
+
+
+@pytest.mark.asyncio
+async def test_restore_creates_a_new_monotonic_version_after_reset() -> None:
+    repository = TemplateRepository(FakeDatabase())
+    await repository.save("user-a", "breaking_a", _update(name="第一版"))
+    await repository.save("user-a", "breaking_a", _update(expected_version=1, name="第二版"))
+    await repository.reset("user-a", "breaking_a")
+
+    restored = await repository.restore("user-a", "breaking_a", 1)
+    versions = await repository.list_versions("user-a", "breaking_a")
+
+    assert restored.version == 4
+    assert restored.name == "第一版"
+    assert [item.version for item in versions] == [4, 3, 2, 1]
+    assert versions[0].change_type == "restore"
+    assert versions[1].change_type == "reset"
+
+
+@pytest.mark.asyncio
+async def test_history_is_limited_to_twenty_versions() -> None:
+    repository = TemplateRepository(FakeDatabase())
+    current = await repository.save("user-a", "breaking_a", _update(name="版本 1"))
+    for version in range(2, 23):
+        current = await repository.save(
+            "user-a",
+            "breaking_a",
+            _update(expected_version=current.version, name=f"版本 {version}"),
+        )
+
+    versions = await repository.list_versions("user-a", "breaking_a", limit=100)
+
+    assert len(versions) == 20
+    assert versions[0].version == 22
+    assert versions[-1].version == 3
 
 
 @pytest.mark.asyncio

@@ -326,6 +326,7 @@ from api.logs import router as logs_router
 from api.overseas_crawl import router as overseas_router
 from api.pipeline import llm_router
 from api.pipeline import router as pipeline_router
+from api.pr_templates import router as pr_templates_router
 from api.profile import router as profile_router
 from api.reports import router as reports_router
 
@@ -337,6 +338,7 @@ app.include_router(chat_router)
 app.include_router(feedback_router)
 app.include_router(activity_router)
 app.include_router(profile_router)
+app.include_router(pr_templates_router)
 app.include_router(auth_router)
 app.include_router(accounts_router)
 app.include_router(logs_router)

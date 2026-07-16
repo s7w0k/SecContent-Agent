@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -20,6 +21,9 @@ from models.pr_template import (
 )
 from pymongo import DESCENDING, ReturnDocument
 from pymongo.errors import DuplicateKeyError
+
+MAX_TEMPLATE_VERSIONS = 20
+logger = logging.getLogger("backend.agent.template_repository")
 
 
 class TemplateNotFoundError(LookupError):
@@ -82,6 +86,16 @@ class TemplateRepository:
         document = await self._templates.find_one({"user_id": user_id, "template_key": key})
         return self._document_to_user_template(document) if document else None
 
+    async def get_effective(
+        self,
+        user_id: str,
+        template_key: str | TemplateKey,
+    ) -> EffectivePRTemplate:
+        """Return one tenant's effective template, including system fallback."""
+        system = self._require_system_template(template_key)
+        override = await self.get_override(user_id, system.template_key)
+        return self._to_effective(override, system)
+
     async def save(
         self,
         user_id: str,
@@ -101,6 +115,7 @@ class TemplateRepository:
                 raise TemplateVersionConflictError(
                     f"template {system.template_key} version changed; reload before saving"
                 )
+            latest = await self._latest_version(user_id, system.template_key)
             category, slot = TEMPLATE_IDENTITY[TemplateKey(system.template_key)]
             override = UserPRTemplate(
                 user_id=user_id,
@@ -108,10 +123,11 @@ class TemplateRepository:
                 base_system_version=system.system_version,
                 category_v2=category,
                 slot=slot,
-                version=1,
+                version=latest.version + 1 if latest else 1,
                 created_at=now,
                 updated_at=now,
                 **self._content_values(update),
+                **({"template_id": latest.template_id} if latest else {}),
             )
             try:
                 await self._templates.insert_one(self._mongo_document(override))
@@ -165,10 +181,34 @@ class TemplateRepository:
         """Delete only this tenant's override and return the current system default."""
         user_id = self._require_user_id(user_id)
         system = self._require_system_template(template_key)
-        await self._templates.find_one_and_delete(
-            {"user_id": user_id, "template_key": system.template_key}
-        )
+        current = await self.get_override(user_id, system.template_key)
+        if current is not None:
+            deleted = await self._templates.find_one_and_delete(
+                {
+                    "user_id": user_id,
+                    "template_key": system.template_key,
+                    "version": current.version,
+                }
+            )
+            if deleted is None:
+                raise TemplateVersionConflictError(
+                    f"template {system.template_key} version changed during reset"
+                )
+            reset_snapshot = current.model_copy(
+                update={"version": current.version + 1, "updated_at": datetime.now(UTC)}
+            )
+            await self._record_version(reset_snapshot, TemplateChangeType.RESET)
         return self._to_effective(None, system)
+
+    async def count_versions(
+        self,
+        user_id: str,
+        template_key: str | TemplateKey,
+    ) -> int:
+        """Count retained history rows for one tenant and stable template key."""
+        user_id = self._require_user_id(user_id)
+        key = self._require_system_template(template_key).template_key
+        return await self._versions.count_documents({"user_id": user_id, "template_key": key})
 
     async def list_versions(
         self,
@@ -196,6 +236,104 @@ class TemplateRepository:
             UserPRTemplateVersion.model_validate(self._normalize_document(document))
             for document in documents
         ]
+
+    async def get_version(
+        self,
+        user_id: str,
+        template_key: str | TemplateKey,
+        version: int,
+    ) -> UserPRTemplateVersion:
+        """Read a retained history version within the current tenant."""
+        user_id = self._require_user_id(user_id)
+        key = self._require_system_template(template_key).template_key
+        if version < 1:
+            raise TemplateNotFoundError(f"unknown template version: {version}")
+        cursor = (
+            self._versions.find({"user_id": user_id, "template_key": key, "version": version})
+            .sort("created_at", DESCENDING)
+            .limit(1)
+        )
+        documents = await cursor.to_list(length=1)
+        if not documents:
+            raise TemplateNotFoundError(f"unknown template version: {version}")
+        return UserPRTemplateVersion.model_validate(self._normalize_document(documents[0]))
+
+    async def restore(
+        self,
+        user_id: str,
+        template_key: str | TemplateKey,
+        version: int,
+    ) -> EffectivePRTemplate:
+        """Restore a historical snapshot as a new monotonically increasing version."""
+        user_id = self._require_user_id(user_id)
+        system = self._require_system_template(template_key)
+        historical = await self.get_version(user_id, system.template_key, version)
+        current = await self.get_override(user_id, system.template_key)
+        now = datetime.now(UTC)
+
+        if current is None:
+            latest = await self._latest_version(user_id, system.template_key)
+            restored = UserPRTemplate(
+                template_id=latest.template_id if latest else historical.template_id,
+                user_id=user_id,
+                template_key=historical.template_key,
+                base_system_version=system.system_version,
+                category_v2=historical.snapshot.category_v2,
+                slot=historical.snapshot.slot,
+                version=(latest.version if latest else historical.version) + 1,
+                created_at=now,
+                updated_at=now,
+                **self._content_values(historical.snapshot),
+            )
+            try:
+                await self._templates.insert_one(self._mongo_document(restored))
+            except DuplicateKeyError as exc:
+                raise TemplateVersionConflictError(
+                    f"template {system.template_key} was restored concurrently"
+                ) from exc
+        else:
+            restored_document = await self._templates.find_one_and_update(
+                {
+                    "user_id": user_id,
+                    "template_key": system.template_key,
+                    "version": current.version,
+                },
+                {
+                    "$set": {
+                        **self._content_values(historical.snapshot),
+                        "base_system_version": system.system_version,
+                        "enabled": True,
+                        "updated_at": now,
+                    },
+                    "$inc": {"version": 1},
+                },
+                return_document=ReturnDocument.AFTER,
+            )
+            if restored_document is None:
+                raise TemplateVersionConflictError(
+                    f"template {system.template_key} version changed during restore"
+                )
+            restored = self._document_to_user_template(restored_document)
+
+        await self._record_version(restored, TemplateChangeType.RESTORE)
+        return self._to_effective(restored, system)
+
+    async def save_override(
+        self,
+        user_id: str,
+        template_key: str | TemplateKey,
+        payload: UserPRTemplateUpdate,
+    ) -> EffectivePRTemplate:
+        """Compatibility name used by the template-management API design."""
+        return await self.save(user_id, template_key, payload)
+
+    async def reset_override(
+        self,
+        user_id: str,
+        template_key: str | TemplateKey,
+    ) -> EffectivePRTemplate:
+        """Compatibility name used by the template-management API design."""
+        return await self.reset(user_id, template_key)
 
     @staticmethod
     def to_snapshot(template: EffectivePRTemplate | UserPRTemplate) -> TemplateSnapshot:
@@ -228,7 +366,48 @@ class TemplateRepository:
             snapshot=self.to_snapshot(template),
             change_type=change_type,
         )
-        await self._versions.insert_one(self._mongo_document(version))
+        try:
+            await self._versions.insert_one(self._mongo_document(version))
+            await self._trim_versions(template.user_id, template.template_id)
+        except Exception:
+            logger.exception(
+                "Failed to persist PR template history: user_id=%s template_key=%s version=%s",
+                template.user_id,
+                template.template_key,
+                template.version,
+            )
+
+    async def _latest_version(
+        self,
+        user_id: str,
+        template_key: str,
+    ) -> UserPRTemplateVersion | None:
+        cursor = (
+            self._versions.find({"user_id": user_id, "template_key": template_key})
+            .sort("version", DESCENDING)
+            .limit(1)
+        )
+        documents = await cursor.to_list(length=1)
+        if not documents:
+            return None
+        return UserPRTemplateVersion.model_validate(self._normalize_document(documents[0]))
+
+    async def _trim_versions(self, user_id: str, template_id: str) -> None:
+        cursor = (
+            self._versions.find({"user_id": user_id, "template_id": template_id})
+            .sort("version", DESCENDING)
+            .skip(MAX_TEMPLATE_VERSIONS)
+        )
+        stale = await cursor.to_list(length=None)
+        version_ids = [item["version_id"] for item in stale]
+        if version_ids:
+            await self._versions.delete_many(
+                {
+                    "user_id": user_id,
+                    "template_id": template_id,
+                    "version_id": {"$in": version_ids},
+                }
+            )
 
     @staticmethod
     def _to_effective(
