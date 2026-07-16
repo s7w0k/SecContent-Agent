@@ -30,6 +30,8 @@ PRIVATE_USER_COLLECTIONS = (
     "chat_sessions",
     "pipeline_tasks",
     "pipeline_logs",
+    "user_pr_templates",
+    "user_pr_template_versions",
 )
 
 

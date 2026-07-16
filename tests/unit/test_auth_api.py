@@ -193,6 +193,7 @@ async def test_disabled_account_cannot_login(app, db):
 
 @pytest.mark.asyncio
 async def test_delete_account_cascades_private_data(app, db):
+    assert {"user_pr_templates", "user_pr_template_versions"}.issubset(PRIVATE_USER_COLLECTIONS)
     await _register(app)
     login = await _login(app)
     token = login.json()["data"]["access_token"]

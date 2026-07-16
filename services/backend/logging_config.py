@@ -212,15 +212,15 @@ class AuditLogger:
 
 # ── 归档压缩（轮转后自动 gzip）──────────────────────────
 
-def _compress_rotated_log(deleted_path: str) -> None:
-    """TimedRotatingFileHandler 的 rotator 回调：压缩旧日志"""
-    if not os.path.exists(deleted_path):
+def _compress_rotated_log(source_path: str, destination_path: str) -> None:
+    """TimedRotatingFileHandler rotator：将当前日志压缩到轮转目标。"""
+    if not os.path.exists(source_path):
         return
-    gz_path = deleted_path + ".gz"
+    gz_path = destination_path + ".gz"
     try:
-        with open(deleted_path, "rb") as src, gzip.open(gz_path, "wb") as dst:
+        with open(source_path, "rb") as src, gzip.open(gz_path, "wb") as dst:
             shutil.copyfileobj(src, dst)
-        os.remove(deleted_path)
+        os.remove(source_path)
     except Exception:
         pass  # 压缩失败不影响主流程
 

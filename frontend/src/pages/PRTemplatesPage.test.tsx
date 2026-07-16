@@ -68,6 +68,19 @@ describe('PRTemplatesPage', () => {
       page: 1,
       page_size: 10,
     });
+    vi.mocked(prTemplateApi.reset).mockResolvedValue({
+      ...templates[0],
+      template_id: 'system:breaking_a',
+      name: '系统爆点 A',
+      source: 'system',
+      version: 1,
+      updated_at: null,
+    });
+    vi.mocked(prTemplateApi.restore).mockResolvedValue({
+      ...templates[0],
+      name: '历史爆点模板',
+      version: 4,
+    });
   });
 
   it('loads six templates and switches category cards', async () => {
@@ -111,5 +124,78 @@ describe('PRTemplatesPage', () => {
 
     await waitFor(() => expect(prTemplateApi.preview).toHaveBeenCalledTimes(1));
     expect((await screen.findAllByText('模板骨架预览')).length).toBeGreaterThan(1);
+  });
+
+  it('resets only the selected user template after confirmation', async () => {
+    render(<PRTemplatesPage />);
+
+    await screen.findByText('用户爆点 A');
+    fireEvent.click(screen.getAllByRole('button', { name: /恢复默认/ })[0]);
+    fireEvent.click(await screen.findByRole('button', { name: '恢复默认' }));
+
+    await waitFor(() => expect(prTemplateApi.reset).toHaveBeenCalledWith('breaking_a'));
+    expect(await screen.findByText('系统爆点 A')).toBeInTheDocument();
+    expect(screen.queryByText('用户爆点 A')).not.toBeInTheDocument();
+  });
+
+  it('loads history and restores a snapshot as a new version', async () => {
+    vi.mocked(prTemplateApi.versions).mockResolvedValue({
+      items: [
+        {
+          version_id: 'version-1',
+          template_id: 'tpl-breaking-a',
+          template_key: 'breaking_a',
+          version: 1,
+          change_type: 'create',
+          created_at: '2026-07-15T08:00:00Z',
+          snapshot: {
+            template_key: 'breaking_a',
+            category_v2: '爆点事件',
+            slot: 'A',
+            name: '历史爆点模板',
+            title_template: '# 历史标题',
+            sections: [{ heading: '历史章节', guide: '历史指引', order: 1 }],
+            perspectives: ['技术视角', '市场视角'],
+            extra_instructions: '',
+          },
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 10,
+    });
+    render(<PRTemplatesPage />);
+
+    await screen.findByText('用户爆点 A');
+    fireEvent.click(screen.getAllByRole('button', { name: /历史/ })[0]);
+    expect(await screen.findByText('历史爆点模板')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /恢复此版本/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认恢复' }));
+
+    await waitFor(() => expect(prTemplateApi.restore).toHaveBeenCalledWith('breaking_a', 1));
+    expect((await screen.findAllByText('v4')).length).toBeGreaterThan(0);
+  });
+
+  it('does not close the editor without warning when changes are unsaved', async () => {
+    render(<PRTemplatesPage />);
+
+    await screen.findByText('用户爆点 A');
+    fireEvent.click(screen.getAllByRole('button', { name: /编辑/ })[0]);
+    fireEvent.change(await screen.findByLabelText('模板名称'), {
+      target: { value: '未保存模板' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect((await screen.findAllByText('放弃未保存的修改？')).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: '继续编辑' }));
+    expect(screen.getByLabelText('模板名称')).toHaveValue('未保存模板');
+  });
+
+  it('renders list API failures without exposing an empty success state', async () => {
+    vi.mocked(prTemplateApi.list).mockRejectedValue(new Error('network unavailable'));
+    render(<PRTemplatesPage />);
+
+    expect(await screen.findByText('模板操作失败')).toBeInTheDocument();
+    expect(screen.getByText('network unavailable')).toBeInTheDocument();
   });
 });

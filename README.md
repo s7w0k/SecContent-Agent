@@ -106,6 +106,18 @@ docker compose -p pr-core -f docker-compose.yml -f deploy/core/docker-compose.re
 
 流水线和单篇草稿生成通过 Redis + ARQ 提交给独立 `backend-worker` 进程：触发接口立即返回 `task_id`，前端轮询 MongoDB 中的持久化任务状态，展示 `crawl -> enrich -> classify_v2 -> filter -> score_v2 -> draft -> quality_check -> rewrite` 进度。任务执行状态、LangGraph 检查点和 LLM 调用元数据均持久化；服务重启后可查询状态并从最近检查点恢复，不依赖 FastAPI 进程内内存。
 
+### 多租户自定义 PR 模板
+
+登录后点击顶部菜单 **“PR 模板”**，可以按账号维护三个 PR 分类下的六套 A/B 模板：
+
+1. 选择“爆点事件”“法律法规 / 监管”或“AI 技术重大进展”。
+2. 点击模板卡片的“编辑”，修改模板名称、标题骨架、章节、两个生成视角和补充要求。
+3. 章节支持新增、删除、拖拽及上下移动；“预览骨架”只渲染 Markdown，不调用 LLM。
+4. 保存后生成用户独立版本；后续 V2 流水线和单篇生成会冻结本次任务使用的模板版本。
+5. “历史”可查看并恢复旧版本，恢复操作会创建新版本；“恢复默认”仅停用当前用户覆盖，不影响其他用户。
+
+卡片上的“系统默认 / 用户自定义”、版本号和更新时间表示当前账号实际生效的模板。编辑未保存时，关闭抽屉、切换分类或离开页面都会弹出确认提示。
+
 ### 数据源
 
 | 来源 | 方式 | 状态 |
@@ -182,6 +194,7 @@ services/backend/agent/
 ├── classifier_v2.py    # 6分类（LLM 判断关联性 + 归类）
 ├── scorer_v2.py        # 双维度打分（产品相关度 + 事件影响力）
 ├── pr_templates.py     # 6 套 PR 模板（3 类 × 2 套）
+├── template_repository.py # 多租户模板覆盖、版本、回滚与默认回退
 ├── draft_generator.py  # 草稿生成器（每文 4 稿，支持风格偏好注入）
 ├── draft_chat.py       # 对话改稿 Agent（问答 + 改稿）
 ├── style_profiler.py   # 风格画像管理 Agent（偏好提取 + 画像构建）
@@ -210,7 +223,7 @@ pr-agent-demo/
 │   ├── mcp_crawl/           # 海外新闻 RSS 爬虫
 │   └── mcp_wewe/            # 微信公众号 MCP 服务
 ├── frontend/                # React + Ant Design 仪表盘
-├── tests/                   # 后端与前端自动化测试（680+ 用例）
+├── tests/                   # 后端与前端自动化测试（800+ 用例）
 ├── docs/                    # 文档
 │   └── 部署文档.md
 └── docker-compose.yml       # 容器编排
@@ -272,6 +285,13 @@ make lint                             # 代码检查
 | `GET /api/activities/stats` | 操作统计（按类型/模板/日期分组） |
 | `GET /api/profile/style` | 获取用户风格画像 |
 | `POST /api/profile/rebuild` | 重建用户风格画像 |
+| `GET /api/pr-templates` | 查询当前用户六套有效模板；支持 `category_v2` 筛选 |
+| `GET /api/pr-templates/{template_key}` | 查询当前用户单套有效模板 |
+| `PUT /api/pr-templates/{template_key}` | 保存用户模板覆盖，支持 `expected_version` 乐观锁 |
+| `POST /api/pr-templates/{template_key}/preview` | 生成 Markdown 骨架预览，不调用 LLM |
+| `POST /api/pr-templates/{template_key}/reset` | 恢复当前用户的系统默认模板 |
+| `GET /api/pr-templates/{template_key}/versions` | 分页查询当前用户模板历史 |
+| `POST /api/pr-templates/{template_key}/versions/{version}/restore` | 将历史快照恢复为新版本 |
 | `GET /api/dev/logs` | 开发者跨用户日志查询（筛选+分页） |
 | `GET /api/dev/logs/dates` | 开发者日志日期列表 |
 | `GET /api/dev/logs/trace/{trace_id}` | 开发者查看完整 Trace 链路 |
@@ -292,6 +312,8 @@ make lint                             # 代码检查
 | `feedbacks` | 用户反馈记录（评分+文字+标签） |
 | `user_activities` | 用户操作记录（下载/改稿/应用等） |
 | `user_profiles` | 用户风格画像（偏好模板/视角/语气等） |
+| `user_pr_templates` | 当前用户对六套系统模板的有效覆盖；按 `user_id + template_key` 唯一 |
+| `user_pr_template_versions` | 用户模板不可变历史快照；按用户、模板和版本隔离，最多保留 20 版 |
 | `pipeline_tasks` | 异步流水线任务状态和结果 |
 | `pipeline_checkpoints` | LangGraph 节点级状态快照 |
 | `pipeline_checkpoint_writes` | LangGraph 检查点中间写入 |

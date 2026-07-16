@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { MainLayout } from './App';
 import { AuthContext, type AuthContextValue } from './auth/AuthContext';
@@ -9,6 +9,13 @@ vi.mock('./pages/Dashboard', () => ({
 }));
 vi.mock('./pages/DevLogsPage', () => ({
   default: () => <div>Developer Logs Page</div>,
+}));
+vi.mock('./pages/PRTemplatesPage', () => ({
+  default: ({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) => (
+    <button type="button" onClick={() => onDirtyChange?.(true)}>
+      模拟未保存模板
+    </button>
+  ),
 }));
 
 describe('App', () => {
@@ -68,5 +75,17 @@ describe('App', () => {
       </AuthContext.Provider>,
     );
     expect(screen.getByText('开发者日志')).toBeInTheDocument();
+  });
+
+  it('warns before navigating away from unsaved template changes', async () => {
+    renderApp();
+    fireEvent.click(screen.getByText('PR 模板'));
+    fireEvent.click(await screen.findByText('模拟未保存模板'));
+    fireEvent.click(screen.getByText('仪表盘'));
+
+    expect((await screen.findAllByText('离开模板编辑页面？')).length).toBeGreaterThan(0);
+    expect(screen.getByText('模拟未保存模板')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '继续编辑' }));
+    expect(screen.getByText('模拟未保存模板')).toBeInTheDocument();
   });
 });
