@@ -46,6 +46,30 @@ class TestPRTemplates:
                 assert len(tpl.sections) >= 4, f"{tpl.name} needs >=4 sections"
                 assert len(tpl.perspectives) == 2, f"{tpl.name} needs 2 perspectives"
 
+    def test_system_templates_have_stable_identity(self):
+        from agent.pr_templates import PR_TEMPLATES, SYSTEM_TEMPLATES_BY_KEY
+
+        expected = {
+            "breaking_a": ("爆点事件", "A"),
+            "breaking_b": ("爆点事件", "B"),
+            "law_a": ("法律法规/监管动态", "A"),
+            "law_b": ("法律法规/监管动态", "B"),
+            "ai_a": ("AI技术重大进展", "A"),
+            "ai_b": ("AI技术重大进展", "B"),
+        }
+
+        assert set(SYSTEM_TEMPLATES_BY_KEY) == set(expected)
+        for templates in PR_TEMPLATES.values():
+            for template in templates:
+                assert (template.category, template.slot) == expected[template.template_key]
+                assert template.system_version == 1
+
+    def test_get_system_template_by_key(self):
+        from agent.pr_templates import get_system_template
+
+        assert get_system_template("breaking_a").name == "爆点A"
+        assert get_system_template("missing") is None
+
     def test_template_sections_have_headings(self):
         from agent.pr_templates import PR_TEMPLATES
 
