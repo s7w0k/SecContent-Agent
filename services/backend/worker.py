@@ -34,6 +34,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     from agent.reporter import ReportAgent
     from agent.scorer import ScoringAgent
     from agent.scorer_v2 import ScoringAgentV2
+    from agent.template_repository import TemplateRepository
     from agent.tools import create_mcp_toolset
     from clients.mcp_crawl import McpCrawlClient
     from db.mongo import MongoDB
@@ -46,6 +47,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     )
     db = MongoDB.get_db()
     await MongoDB.ensure_indexes()
+    template_repository = TemplateRepository(db)
     mcp_crawl_client = McpCrawlClient.from_settings(settings)
 
     tools = create_mcp_toolset(
@@ -89,6 +91,7 @@ async def startup(ctx: dict[str, Any]) -> None:
             pipeline_v2=pipeline_v2,
             pipeline_manager=pipeline_manager,
             mcp_crawl_client=mcp_crawl_client,
+            template_repository=template_repository,
         )
     )
     ctx.update(
@@ -97,6 +100,7 @@ async def startup(ctx: dict[str, Any]) -> None:
             "db": db,
             "pipeline_v2": pipeline_v2,
             "mcp_crawl_client": mcp_crawl_client,
+            "template_repository": template_repository,
         }
     )
     logger.info("ARQ worker runtime initialized")

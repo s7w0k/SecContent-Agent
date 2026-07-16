@@ -98,10 +98,14 @@ async def lifespan(app: FastAPI):
         )
         app.state.db = MongoDB.get_db()
         await MongoDB.ensure_indexes()
+        from agent.template_repository import TemplateRepository
+
+        app.state.template_repository = TemplateRepository(app.state.db)
         _log("INFO", f"MongoDB connected: {settings.MONGODB_DB}")
     except Exception as e:
         _log("ERROR", f"MongoDB connection failed: {e}")
         app.state.db = None
+        app.state.template_repository = None
 
     # Redis / ARQ
     try:

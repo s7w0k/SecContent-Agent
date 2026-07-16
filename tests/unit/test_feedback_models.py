@@ -317,6 +317,8 @@ class TestMongoDBIndexes:
             "user_profiles",
             "chat_sessions",
             "user_drafts",
+            "user_pr_templates",
+            "user_pr_template_versions",
             "pipeline_locks",
             "pipeline_tasks",
             "pipeline_logs",
@@ -416,5 +418,5 @@ class TestMongoDBIndexes:
             second = await MongoDB.ensure_indexes()
 
         assert first == second
-        assert collection.create_indexes.await_count == 26
+        assert collection.create_indexes.await_count == 30
         assert collection.drop_index.await_count == 2

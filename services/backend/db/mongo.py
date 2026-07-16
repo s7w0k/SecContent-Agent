@@ -222,6 +222,37 @@ class MongoDB:
                     name="idx_user_draft_user_updated",
                 ),
             ],
+            "user_pr_templates": [
+                IndexModel(
+                    [("user_id", ASCENDING), ("template_key", ASCENDING)],
+                    unique=True,
+                    name="uq_user_template_key",
+                ),
+                IndexModel(
+                    [
+                        ("user_id", ASCENDING),
+                        ("category_v2", ASCENDING),
+                        ("slot", ASCENDING),
+                    ],
+                    unique=True,
+                    name="uq_user_category_slot",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("updated_at", DESCENDING)],
+                    name="idx_user_template_updated",
+                ),
+            ],
+            "user_pr_template_versions": [
+                IndexModel(
+                    [
+                        ("user_id", ASCENDING),
+                        ("template_id", ASCENDING),
+                        ("version", DESCENDING),
+                    ],
+                    unique=True,
+                    name="uq_user_template_version",
+                ),
+            ],
             "pipeline_locks": [
                 IndexModel(
                     [("lock_key", ASCENDING)],
