@@ -701,3 +701,71 @@ export interface ProfileRebuildResponse {
   version: number;
   updated_at: string;
 }
+
+// ────────────────────────────────────────────────────────────
+// PR Templates（多租户用户模板）
+// ────────────────────────────────────────────────────────────
+export type PRTemplateKey = 'breaking_a' | 'breaking_b' | 'law_a' | 'law_b' | 'ai_a' | 'ai_b';
+
+export type PRTemplateCategory = '爆点事件' | '法律法规/监管动态' | 'AI技术重大进展';
+
+export type PRTemplateSource = 'system' | 'user';
+
+export interface PRTemplateSection {
+  heading: string;
+  guide: string;
+  order: number;
+}
+
+export interface PRTemplateContent {
+  name: string;
+  title_template: string;
+  sections: PRTemplateSection[];
+  perspectives: [string, string];
+  extra_instructions: string;
+}
+
+export interface EffectivePRTemplate extends PRTemplateContent {
+  template_id: string;
+  template_key: PRTemplateKey;
+  category_v2: PRTemplateCategory;
+  slot: 'A' | 'B';
+  source: PRTemplateSource;
+  version: number;
+  system_version: number;
+  updated_at?: string | null;
+}
+
+export interface PRTemplateUpdate extends PRTemplateContent {
+  expected_version?: number;
+}
+
+export interface PRTemplateSnapshot extends PRTemplateContent {
+  template_key: PRTemplateKey;
+  category_v2: PRTemplateCategory;
+  slot: 'A' | 'B';
+}
+
+export type PRTemplateChangeType = 'create' | 'update' | 'reset' | 'restore';
+
+export interface PRTemplateVersion {
+  version_id: string;
+  template_id: string;
+  template_key: PRTemplateKey;
+  version: number;
+  snapshot: PRTemplateSnapshot;
+  change_type: PRTemplateChangeType;
+  created_at: string;
+}
+
+export interface PRTemplateListResponse {
+  items: EffectivePRTemplate[];
+  total: number;
+}
+
+export interface PRTemplateVersionListResponse {
+  items: PRTemplateVersion[];
+  total: number;
+  page: number;
+  page_size: number;
+}

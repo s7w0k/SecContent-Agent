@@ -780,3 +780,66 @@ describe('Developer Logs API', () => {
     expect(statsResult.error_count).toBe(1);
   });
 });
+
+describe('PR Template API', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await setupApi();
+  });
+
+  it('lists and reads tenant templates', async () => {
+    mockGet
+      .mockResolvedValueOnce({ data: { data: { items: [], total: 0 } } })
+      .mockResolvedValueOnce({ data: { data: { template_key: 'breaking_a' } } });
+    const { prTemplateApi } = await import('./client');
+
+    await prTemplateApi.list('爆点事件');
+    await prTemplateApi.get('breaking_a');
+
+    expect(mockGet).toHaveBeenNthCalledWith(1, '/pr-templates', {
+      params: { category_v2: '爆点事件' },
+    });
+    expect(mockGet).toHaveBeenNthCalledWith(2, '/pr-templates/breaking_a');
+  });
+
+  it('saves and previews without invoking a generation endpoint', async () => {
+    const payload = {
+      name: '自定义模板',
+      title_template: '# 标题',
+      sections: [{ heading: '概述', guide: '说明', order: 1 }],
+      perspectives: ['技术视角', '市场视角'] as [string, string],
+      extra_instructions: '',
+      expected_version: 2,
+    };
+    mockPut.mockResolvedValueOnce({ data: { data: { version: 3 } } });
+    mockPost.mockResolvedValueOnce({ data: { data: { content_md: '# 预览' } } });
+    const { prTemplateApi } = await import('./client');
+
+    await prTemplateApi.save('breaking_a', payload);
+    const preview = await prTemplateApi.preview('breaking_a', payload);
+
+    expect(mockPut).toHaveBeenCalledWith('/pr-templates/breaking_a', payload);
+    expect(mockPost).toHaveBeenCalledWith('/pr-templates/breaking_a/preview', payload);
+    expect(preview).toBe('# 预览');
+  });
+
+  it('resets, lists versions and restores a selected version', async () => {
+    mockPost
+      .mockResolvedValueOnce({ data: { data: { source: 'system' } } })
+      .mockResolvedValueOnce({ data: { data: { version: 5 } } });
+    mockGet.mockResolvedValueOnce({
+      data: { data: { items: [], total: 0, page: 2, page_size: 10 } },
+    });
+    const { prTemplateApi } = await import('./client');
+
+    await prTemplateApi.reset('breaking_a');
+    await prTemplateApi.versions('breaking_a', 2, 10);
+    await prTemplateApi.restore('breaking_a', 3);
+
+    expect(mockPost).toHaveBeenNthCalledWith(1, '/pr-templates/breaking_a/reset');
+    expect(mockGet).toHaveBeenCalledWith('/pr-templates/breaking_a/versions', {
+      params: { page: 2, page_size: 10 },
+    });
+    expect(mockPost).toHaveBeenNthCalledWith(2, '/pr-templates/breaking_a/versions/3/restore');
+  });
+});

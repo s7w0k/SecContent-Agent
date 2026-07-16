@@ -30,6 +30,7 @@ import type {
   DevLogTrace,
   DraftReviseRequest,
   DraftReviseResponse,
+  EffectivePRTemplate,
   FeedbackCreate,
   FeedbackCreateResponse,
   FeedbackDeleteResponse,
@@ -40,6 +41,11 @@ import type {
   FeedbackUpdateResponse,
   KnowledgeSummary,
   LoginRequest,
+  PRTemplateCategory,
+  PRTemplateKey,
+  PRTemplateListResponse,
+  PRTemplateUpdate,
+  PRTemplateVersionListResponse,
   PaginatedResponse,
   PipelineLogsResponse,
   PipelineResult,
@@ -761,6 +767,54 @@ export const profileApi = {
   },
 };
 
+// ────────────────────────────────────────────────────────────
+// PR Template API（当前用户隔离）
+// ────────────────────────────────────────────────────────────
+export const prTemplateApi = {
+  async list(category?: PRTemplateCategory): Promise<PRTemplateListResponse> {
+    const { data } = await client.get('/pr-templates', {
+      params: category ? { category_v2: category } : undefined,
+    });
+    return data.data;
+  },
+
+  async get(templateKey: PRTemplateKey): Promise<EffectivePRTemplate> {
+    const { data } = await client.get(`/pr-templates/${templateKey}`);
+    return data.data;
+  },
+
+  async save(templateKey: PRTemplateKey, payload: PRTemplateUpdate): Promise<EffectivePRTemplate> {
+    const { data } = await client.put(`/pr-templates/${templateKey}`, payload);
+    return data.data;
+  },
+
+  async preview(templateKey: PRTemplateKey, payload: PRTemplateUpdate): Promise<string> {
+    const { data } = await client.post(`/pr-templates/${templateKey}/preview`, payload);
+    return data.data.content_md;
+  },
+
+  async reset(templateKey: PRTemplateKey): Promise<EffectivePRTemplate> {
+    const { data } = await client.post(`/pr-templates/${templateKey}/reset`);
+    return data.data;
+  },
+
+  async versions(
+    templateKey: PRTemplateKey,
+    page = 1,
+    pageSize = 20,
+  ): Promise<PRTemplateVersionListResponse> {
+    const { data } = await client.get(`/pr-templates/${templateKey}/versions`, {
+      params: { page, page_size: pageSize },
+    });
+    return data.data;
+  },
+
+  async restore(templateKey: PRTemplateKey, version: number): Promise<EffectivePRTemplate> {
+    const { data } = await client.post(`/pr-templates/${templateKey}/versions/${version}/restore`);
+    return data.data;
+  },
+};
+
 // ═══════════════════════════════════════════════════════════
 // 统一导出
 // ═══════════════════════════════════════════════════════════
@@ -777,6 +831,7 @@ const api = {
   ...profileApi,
   ...logsApi,
   devLogs: devLogsApi,
+  prTemplates: prTemplateApi,
 };
 
 export default api;

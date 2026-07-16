@@ -45,6 +45,7 @@ describe('App', () => {
     renderApp();
     expect(screen.getByText('仪表盘')).toBeDefined();
     expect(screen.getByText('关于')).toBeDefined();
+    expect(screen.getByText('PR 模板')).toBeDefined();
     expect(screen.queryByText('海外搜索')).not.toBeInTheDocument();
   });
 

@@ -4,10 +4,11 @@ import {
   EditOutlined,
   FileTextOutlined,
   InfoCircleOutlined,
+  SnippetsOutlined,
   UserOutlined,
   WechatOutlined,
 } from '@ant-design/icons';
-import { Layout, Menu, Typography } from 'antd';
+import { Layout, Menu, Modal, Typography } from 'antd';
 import { useState } from 'react';
 import { AuthProvider } from './auth/AuthContext';
 import ProtectedRoute from './auth/ProtectedRoute';
@@ -19,6 +20,7 @@ import Dashboard from './pages/Dashboard';
 import DevLogsPage from './pages/DevLogsPage';
 import LoginPage from './pages/LoginPage';
 import LogsPage from './pages/LogsPage';
+import PRTemplatesPage from './pages/PRTemplatesPage';
 import ProfilePage from './pages/ProfilePage';
 
 const { Header, Content } = Layout;
@@ -29,12 +31,14 @@ const baseMenuItems = [
   { key: 'chat', icon: <EditOutlined />, label: '对话改稿' },
   { key: 'accounts', icon: <WechatOutlined />, label: '公众号账号' },
   { key: 'profile', icon: <UserOutlined />, label: '用户画像' },
+  { key: 'pr-templates', icon: <SnippetsOutlined />, label: 'PR 模板' },
   { key: 'logs', icon: <FileTextOutlined />, label: '运行日志' },
   { key: 'about', icon: <InfoCircleOutlined />, label: '关于' },
 ];
 
 export function MainLayout() {
   const [tab, setTab] = useState('dashboard');
+  const [templateDirty, setTemplateDirty] = useState(false);
   const { user } = useAuth();
   const menuItems = user?.is_developer
     ? [
@@ -43,6 +47,24 @@ export function MainLayout() {
         baseMenuItems[baseMenuItems.length - 1],
       ]
     : baseMenuItems;
+
+  const switchTab = (nextTab: string) => {
+    if (tab === 'pr-templates' && nextTab !== tab && templateDirty) {
+      Modal.confirm({
+        title: '离开模板编辑页面？',
+        content: '当前模板还有未保存内容，离开后修改将丢失。',
+        okText: '放弃并离开',
+        cancelText: '继续编辑',
+        okButtonProps: { danger: true },
+        onOk: () => {
+          setTemplateDirty(false);
+          setTab(nextTab);
+        },
+      });
+      return;
+    }
+    setTab(nextTab);
+  };
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -61,7 +83,7 @@ export function MainLayout() {
           theme="dark"
           mode="horizontal"
           selectedKeys={[tab]}
-          onClick={({ key }) => setTab(key)}
+          onClick={({ key }) => switchTab(key)}
           items={menuItems}
           style={{ flex: 1, minWidth: 0 }}
         />
@@ -73,6 +95,7 @@ export function MainLayout() {
         {tab === 'accounts' && <AccountPage />}
         {tab === 'logs' && <LogsPage />}
         {tab === 'profile' && <ProfilePage />}
+        {tab === 'pr-templates' && <PRTemplatesPage onDirtyChange={setTemplateDirty} />}
         {tab === 'dev-logs' && user?.is_developer && <DevLogsPage />}
         {tab === 'about' && (
           <div style={{ padding: 48, maxWidth: 800, margin: '0 auto' }}>
