@@ -126,3 +126,28 @@ async def test_run_v2_single_uses_default_prompt_without_profile():
     assert draft_gen.generate.await_args.kwargs["style_hints"] is None
     query = collections["user_drafts"].update_one.await_args.args[0]
     assert query["user_id"] == "first-time-user"
+
+
+@pytest.mark.asyncio
+async def test_run_v2_single_resolves_templates_for_current_user():
+    request, _, draft_gen = _build_request(None)
+    template_a = SimpleNamespace(
+        template_key="breaking_a",
+        template_id="tpl-user-a",
+        version=4,
+        source="user",
+    )
+    template_b = SimpleNamespace(
+        template_key="breaking_b",
+        template_id="system:breaking_b",
+        version=1,
+        source="system",
+    )
+    repository = MagicMock()
+    repository.resolve = AsyncMock(return_value=[template_a, template_b])
+    request.app.state.template_repository = repository
+
+    await _run_v2_single_workflow(request.app, ARTICLE_HASH, user_id="user-a")
+
+    repository.resolve.assert_awaited_once_with("user-a", "热点事件")
+    assert draft_gen.generate.await_args.kwargs["templates"] == [template_a, template_b]

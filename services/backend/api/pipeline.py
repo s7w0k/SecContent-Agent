@@ -1746,6 +1746,9 @@ async def _run_v2_single_workflow(
             {"url_hash": url_hash},
             {"$set": _classification_update_fields(classify_result)},
         )
+    article["category_v2"] = category
+    article["category_v2_confidence"] = confidence
+    article["is_pr_eligible"] = is_pr_eligible
     result["steps"].append(
         {
             "phase": "classify_v2",
@@ -1875,6 +1878,32 @@ async def _run_v2_single_workflow(
                 draft_gen = getattr(app.state, "draft_gen", None)
                 if draft_gen:
                     style_hints = await load_style_hints(db, user_id)
+                    template_repository = getattr(app.state, "template_repository", None)
+                    effective_templates = None
+                    if template_repository is not None:
+                        effective_templates = await template_repository.resolve(user_id, category)
+                        await log_pipeline(
+                            db,
+                            "INFO",
+                            "draft",
+                            "PR templates resolved for single article",
+                            user_id=user_id,
+                            username=username,
+                            trace_id=trace_id,
+                            action="template_resolve",
+                            detail={
+                                "article_url_hash": url_hash,
+                                "templates": [
+                                    {
+                                        "template_key": str(template.template_key),
+                                        "template_id": template.template_id,
+                                        "version": template.version,
+                                        "source": str(template.source),
+                                    }
+                                    for template in effective_templates
+                                ],
+                            },
+                        )
                     log.info(
                         "[run-v2-single] style_hints injected=%s user_id=%s",
                         bool(style_hints),
@@ -1884,6 +1913,7 @@ async def _run_v2_single_workflow(
                         dict(article),
                         scores,
                         style_hints=style_hints,
+                        templates=effective_templates,
                     )
                     if drafts["ok"]:
                         now = datetime.now(UTC)
