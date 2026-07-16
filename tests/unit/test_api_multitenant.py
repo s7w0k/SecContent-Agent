@@ -114,7 +114,9 @@ async def test_dashboard_attaches_only_current_users_drafts():
 
     result = await _attach_user_drafts(db, article, "user-b")
 
-    assert result["pr_drafts"] == [{"title": "B draft"}]
+    assert result["pr_drafts"][0]["title"] == "B draft"
+    assert result["pr_drafts"][0]["template_key"] == "legacy:unknown"
+    assert result["pr_drafts"][0]["template_source"] == "legacy"
     assert result["can_generate"] is False
     user_drafts.find_one.assert_awaited_once_with(
         {"user_id": "user-b", "article_url_hash": "a" * 32}

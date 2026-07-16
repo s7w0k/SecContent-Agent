@@ -73,6 +73,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         knowledge=knowledge,
         db=db,
         crawl_client=mcp_crawl_client,
+        template_repository=template_repository,
     )
     pipeline_manager = PipelineManager(
         tools=tools,

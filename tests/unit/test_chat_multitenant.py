@@ -19,7 +19,9 @@ async def test_load_user_drafts_filters_by_user():
 
     drafts = await _load_user_drafts(db, "user-a", ARTICLE_HASH)
 
-    assert drafts == [{"title": "A"}]
+    assert drafts[0]["title"] == "A"
+    assert drafts[0]["template_key"] == "legacy:unknown"
+    assert drafts[0]["template_source"] == "legacy"
     collection.find_one.assert_awaited_once_with(
         {"user_id": "user-a", "article_url_hash": ARTICLE_HASH}
     )

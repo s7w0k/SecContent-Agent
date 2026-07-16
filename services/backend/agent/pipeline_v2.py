@@ -34,6 +34,7 @@ from agent.checkpointer import create_checkpointer, supports_mongodb_checkpoints
 from agent.pipeline_state import PipelineStateManager
 from clients.mcp_crawl import McpCrawlClient, RequestContext
 from langgraph.graph import END, StateGraph
+from models.pr_template import EffectivePRTemplate
 
 logger = logging.getLogger("backend.agent.pipeline_v2")
 
@@ -93,6 +94,7 @@ def create_state_v2(
         "score_anomaly": False,
         "score_retried": False,
         "needs_rewrite": [],
+        "frozen_templates": {},
         "errors": [],
         "status": PipelineStatusV2.IDLE.value,
         "current_phase": "",
@@ -459,7 +461,13 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
     return state
 
 
-async def draft_node(state: dict, draft_gen: Any, knowledge: Any, db: Any) -> dict:
+async def draft_node(
+    state: dict,
+    draft_gen: Any,
+    knowledge: Any,
+    db: Any,
+    template_repository: Any = None,
+) -> dict:
     """PR 草稿生成阶段：对高分文章生成 4 篇草稿"""
 
     from agent.pipeline import _log_stage
@@ -487,6 +495,7 @@ async def draft_node(state: dict, draft_gen: Any, knowledge: Any, db: Any) -> di
             return state
 
         draft_count = 0
+        logged_categories: set[str] = set()
         for art in articles:
             v2_scores = {
                 "product_relevance": art.get("product_relevance", 0),
@@ -494,7 +503,31 @@ async def draft_node(state: dict, draft_gen: Any, knowledge: Any, db: Any) -> di
                 "pr_total_score": art.get("pr_total_score", 0),
                 "score_reason": art.get("score_reason", ""),
             }
-            result = await draft_gen.generate(art, v2_scores, style_hints=style_hints)
+            category_v2 = art.get("category_v2", "")
+            templates = await _templates_for_category(
+                state,
+                template_repository,
+                category_v2,
+            )
+            if templates is not None and category_v2 not in logged_categories:
+                await _log_stage(
+                    state,
+                    db,
+                    "draft",
+                    "frozen PR templates selected",
+                    action="template_resolve",
+                    detail={
+                        "category_v2": category_v2,
+                        "templates": _template_log_metadata(templates),
+                    },
+                )
+                logged_categories.add(category_v2)
+            result = await draft_gen.generate(
+                art,
+                v2_scores,
+                style_hints=style_hints,
+                templates=templates,
+            )
             if result["ok"] and result["drafts"]:
                 now = datetime.now(UTC)
                 await db["user_drafts"].update_one(
@@ -587,6 +620,7 @@ async def rewrite_node(
     draft_gen: Any,
     knowledge: Any,
     db: Any,
+    template_repository: Any = None,
 ) -> dict:
     """重新生成质量不达标的草稿，并替换原数组中的对应版本。"""
     state["current_phase"] = PipelinePhaseV2.REWRITE.value
@@ -612,10 +646,16 @@ async def rewrite_node(
             "请补全标题和正文，并确保正文不少于300字。"
         )
         style_hints = "\n".join(part for part in [base_style_hints, reflection] if part)
+        templates = await _templates_for_category(
+            state,
+            template_repository,
+            article.get("category_v2", ""),
+        )
         generated = await draft_gen.generate(
             article,
             scores,
             style_hints=style_hints,
+            templates=templates,
         )
         if not generated.get("ok") or not generated.get("drafts"):
             continue
@@ -635,6 +675,36 @@ async def rewrite_node(
     state["rewritten_count"] = rewritten_count
     logger.info("[rewrite] Rewritten %d drafts", rewritten_count)
     return state
+
+
+async def _templates_for_category(
+    state: dict,
+    template_repository: Any,
+    category_v2: str,
+) -> list[EffectivePRTemplate] | None:
+    """Return task-frozen templates, resolving and caching only for standalone node calls."""
+    if template_repository is None:
+        return None
+    frozen = state.setdefault("frozen_templates", {})
+    documents = frozen.get(category_v2)
+    if documents is None:
+        resolved = await template_repository.resolve(state["user_id"], category_v2)
+        documents = [template.model_dump(mode="json") for template in resolved]
+        frozen[category_v2] = documents
+    return [EffectivePRTemplate.model_validate(document) for document in documents]
+
+
+def _template_log_metadata(templates: list[EffectivePRTemplate]) -> list[dict[str, Any]]:
+    """Return identifiers safe for execution logs; template content is deliberately excluded."""
+    return [
+        {
+            "template_key": str(template.template_key),
+            "template_id": template.template_id,
+            "version": template.version,
+            "source": str(template.source),
+        }
+        for template in templates
+    ]
 
 
 async def _load_style_hints(db: Any, user_id: str) -> str | None:
@@ -681,6 +751,7 @@ class PipelineManagerV2:
         knowledge: Any,  # KnowledgeLoader
         db: Any = None,  # AsyncIOMotorDatabase
         crawl_client: McpCrawlClient | None = None,
+        template_repository: Any = None,
     ):
         self.tools = tools
         self.classifier_v2 = classifier_v2
@@ -689,6 +760,7 @@ class PipelineManagerV2:
         self.knowledge = knowledge
         self.db = db
         self.crawl_client = crawl_client
+        self.template_repository = template_repository
         self._state_manager = PipelineStateManager(db) if db is not None else None
         self._graph = self._build_graph()
 
@@ -717,6 +789,7 @@ class PipelineManagerV2:
         cdraft_gen = self.draft_gen
         cknowledge = self.knowledge
         crawl_client = self.crawl_client
+        template_repository = self.template_repository
 
         async def _crawl(state: dict) -> dict:
             return await crawl_node_v2(state, ctools, cdb, crawl_client)
@@ -734,13 +807,25 @@ class PipelineManagerV2:
             return await score_v2_node(state, cscorer, cknowledge, cdb)
 
         async def _draft(state: dict) -> dict:
-            return await draft_node(state, cdraft_gen, cknowledge, cdb)
+            return await draft_node(
+                state,
+                cdraft_gen,
+                cknowledge,
+                cdb,
+                template_repository,
+            )
 
         async def _quality_check(state: dict) -> dict:
             return await quality_check_node(state, cdb)
 
         async def _rewrite(state: dict) -> dict:
-            return await rewrite_node(state, cdraft_gen, cknowledge, cdb)
+            return await rewrite_node(
+                state,
+                cdraft_gen,
+                cknowledge,
+                cdb,
+                template_repository,
+            )
 
         graph.add_node("crawl", _crawl)
         graph.add_node("enrich", _enrich)
@@ -832,6 +917,14 @@ class PipelineManagerV2:
             )
 
         try:
+            if self.template_repository is not None:
+                templates = await self.template_repository.list_effective_templates(user_id)
+                grouped: dict[str, list[dict[str, Any]]] = {}
+                for template in templates:
+                    grouped.setdefault(str(template.category_v2), []).append(
+                        template.model_dump(mode="json")
+                    )
+                state["frozen_templates"] = grouped
             config = {"configurable": {"thread_id": f"thread-{pipeline_id}"}}
             final_state = await self._graph.ainvoke(state, config=config)
             final_state["status"] = PipelineStatusV2.COMPLETED.value

@@ -9,6 +9,7 @@ PR 报道 REST API — 报道列表、详情、知识库
 
 from __future__ import annotations
 
+from agent.template_compat import normalize_legacy_template_metadata
 from fastapi import APIRouter, HTTPException, Query, Request
 
 router = APIRouter(prefix="/api", tags=["Reports"])
@@ -56,7 +57,7 @@ async def list_reports(
     items = []
     for r in reports:
         r["_id"] = str(r["_id"])
-        items.append(r)
+        items.append(normalize_legacy_template_metadata(r))
 
     return {
         "items": items,
@@ -74,11 +75,14 @@ async def get_report(report_id: str, request: Request):
 
     # 验证 ID 格式（MongoDB ObjectId: 24 字符 hex）
     if len(report_id) != 24 or not all(c in "0123456789abcdefABCDEF" for c in report_id):
-        raise HTTPException(status_code=400, detail="Invalid report ID format (expected 24-char hex)")
+        raise HTTPException(
+            status_code=400, detail="Invalid report ID format (expected 24-char hex)"
+        )
 
     # 延迟导入 ObjectId
     try:
         from bson import ObjectId
+
         oid = ObjectId(report_id)
     except ImportError:
         # 无 bson 时回退到字符串查询
@@ -86,14 +90,14 @@ async def get_report(report_id: str, request: Request):
         if report is None:
             raise HTTPException(status_code=404, detail="Report not found")
         report["_id"] = str(report["_id"]) if "_id" in report else report_id
-        return report
+        return normalize_legacy_template_metadata(report)
 
     report = await db["reports"].find_one({"_id": oid})
     if report is None:
         raise HTTPException(status_code=404, detail="Report not found")
 
     report["_id"] = str(report["_id"])
-    return report
+    return normalize_legacy_template_metadata(report)
 
 
 @router.get("/knowledge", summary="知识库摘要")

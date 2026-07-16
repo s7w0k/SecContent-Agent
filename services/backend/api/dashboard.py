@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 
+from agent.template_compat import normalize_legacy_drafts
 from auth.deps import get_current_user
 from clients.mcp_crawl import RequestContext
 from config import get_settings
@@ -39,7 +40,7 @@ async def _attach_user_drafts(db, article: dict, user_id: str) -> dict:
     user_draft = await db["user_drafts"].find_one(
         {"user_id": user_id, "article_url_hash": article["url_hash"]}
     )
-    drafts = user_draft.get("drafts", []) if user_draft else []
+    drafts = normalize_legacy_drafts(user_draft.get("drafts", [])) if user_draft else []
     article.pop("pr_drafts", None)
     article["pr_drafts"] = drafts
     article["can_generate"] = not bool(drafts)

@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from agent.style_profiler import load_style_hints
+from agent.template_compat import normalize_legacy_drafts
 from api.activity import log_activity
 from api.logs import build_log_error, generate_trace_id, log_pipeline
 from auth.deps import get_current_user
@@ -49,7 +50,7 @@ async def _load_user_drafts(db, user_id: str, url_hash: str) -> list[dict]:
     user_draft = await db["user_drafts"].find_one(
         {"user_id": user_id, "article_url_hash": url_hash}
     )
-    return user_draft.get("drafts", []) if user_draft else []
+    return normalize_legacy_drafts(user_draft.get("drafts", [])) if user_draft else []
 
 
 def _get_draft_chat_agent(request: Request):

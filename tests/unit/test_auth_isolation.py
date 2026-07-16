@@ -136,8 +136,10 @@ async def test_drafts_are_isolated_when_switching_users():
     result_a = await _attach_user_drafts(db, deepcopy(article), "user-a")
     result_b = await _attach_user_drafts(db, deepcopy(article), "user-b")
 
-    assert result_a["pr_drafts"] == [{"title": "A draft"}]
-    assert result_b["pr_drafts"] == [{"title": "B draft"}]
+    assert result_a["pr_drafts"][0]["title"] == "A draft"
+    assert result_b["pr_drafts"][0]["title"] == "B draft"
+    assert result_a["pr_drafts"][0]["template_source"] == "legacy"
+    assert result_b["pr_drafts"][0]["template_source"] == "legacy"
 
 
 @pytest.mark.asyncio
