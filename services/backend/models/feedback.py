@@ -95,6 +95,10 @@ class ActivityTarget(BaseModel):
     article_url_hash: UrlHash | None = None
     draft_index: int | None = Field(default=None, ge=0)
     template: str | None = Field(default=None, max_length=100)
+    template_id: str | None = Field(default=None, min_length=1, max_length=100)
+    template_key: str | None = Field(default=None, min_length=1, max_length=100)
+    template_version: int | None = Field(default=None, ge=0)
+    template_name: str | None = Field(default=None, max_length=100)
     perspective: str | None = Field(default=None, max_length=200)
     revision_id: str | None = Field(default=None, min_length=1, max_length=100)
     pipeline_id: str | None = Field(default=None, min_length=1, max_length=100)
@@ -127,6 +131,11 @@ class Feedback(FeedbackCreate):
     id: str | None = Field(default=None, alias="_id")
     feedback_id: str = Field(default_factory=_uuid)
     user_id: str = Field(..., min_length=1, max_length=100)
+    template_id: str | None = Field(default=None, min_length=1, max_length=100)
+    template_key: str | None = Field(default=None, min_length=1, max_length=100)
+    template_version: int | None = Field(default=None, ge=0)
+    template_name: str | None = Field(default=None, max_length=100)
+    perspective: str | None = Field(default=None, max_length=200)
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
     status: FeedbackStatus = FeedbackStatus.ACTIVE
@@ -180,6 +189,11 @@ class PreferenceMetric(BaseModel):
     download_count: int = Field(default=0, ge=0)
     apply_count: int = Field(default=0, ge=0)
     revise_count: int = Field(default=0, ge=0)
+    template_id: str | None = None
+    template_key: str | None = None
+    display_name: str | None = None
+    historical_names: list[str] = Field(default_factory=list)
+    legacy: bool = False
 
 
 class PreferenceScores(BaseModel):

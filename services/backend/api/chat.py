@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from agent.style_profiler import load_style_hints
-from agent.template_compat import normalize_legacy_drafts
+from agent.template_compat import normalize_legacy_drafts, template_reference
 from api.activity import log_activity
 from api.logs import build_log_error, generate_trace_id, log_pipeline
 from auth.deps import get_current_user
@@ -576,6 +576,7 @@ async def revise_draft(
             "article_url_hash": url_hash,
             "draft_index": draft_index,
             "template": draft.get("template"),
+            **template_reference(draft),
             "perspective": draft.get("perspective"),
             "revision_id": revision_id if saved else None,
         },
@@ -725,6 +726,7 @@ async def revise_draft_stream(
                     "article_url_hash": url_hash,
                     "draft_index": draft_index,
                     "template": draft.get("template"),
+                    **template_reference(draft),
                     "perspective": draft.get("perspective"),
                     "revision_id": revision_id if saved else None,
                 },
@@ -843,6 +845,7 @@ async def apply_revision(
             "article_url_hash": url_hash,
             "draft_index": draft_index,
             "template": drafts[draft_index].get("template"),
+            **template_reference(drafts[draft_index]),
             "perspective": drafts[draft_index].get("perspective"),
             "revision_id": revision_id,
         },

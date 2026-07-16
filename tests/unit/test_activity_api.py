@@ -95,6 +95,10 @@ def _activity_payload(**overrides):
             "article_url_hash": ARTICLE_HASH,
             "draft_index": 0,
             "template": "爆点A",
+            "template_id": "tpl-user-breaking-a",
+            "template_key": "breaking_a",
+            "template_version": 3,
+            "template_name": "爆点A",
             "perspective": "产品能力视角",
         },
         "context": {"article_title": "测试文章"},
@@ -127,6 +131,7 @@ class TestActivityCreate:
         assert data["activity_id"]
         assert len(db.activities.documents) == 1
         assert db.activities.documents[0]["action"] == "draft_download"
+        assert db.activities.documents[0]["target"]["template_id"] == "tpl-user-breaking-a"
 
     @pytest.mark.asyncio
     async def test_create_pipeline_activity_without_article(self, app, db):

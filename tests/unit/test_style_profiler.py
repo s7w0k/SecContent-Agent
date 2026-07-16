@@ -143,10 +143,11 @@ def sample_db():
                 "tags": [],
             },
         ],
-        articles=[
+        user_drafts=[
             {
-                "url_hash": ARTICLE_HASH,
-                "pr_drafts": [
+                "user_id": "local-user",
+                "article_url_hash": ARTICLE_HASH,
+                "drafts": [
                     {"template": "爆点A", "perspective": "市场传播视角"},
                     {"template": "爆点B", "perspective": "技术深度视角"},
                 ],
@@ -250,7 +251,7 @@ class TestAggregation:
                     "tags": [],
                 }
             ],
-            articles=[],
+            user_drafts=[],
         )
         result = await StyleProfiler(None, db).aggregate_feedbacks("local-user")
 
@@ -341,6 +342,54 @@ class TestPreferenceRules:
             )
             == []
         )
+
+    def test_template_rename_keeps_one_stable_preference_bucket(self):
+        profiler = StyleProfiler(None, FakeDatabase())
+        feedbacks = [
+            {
+                "template_id": "tpl-user-a",
+                "template_key": "breaking_a",
+                "template_name": "old name",
+                "rating": 5,
+            },
+            {
+                "template_id": "tpl-user-a",
+                "template_key": "breaking_a",
+                "template_name": "intermediate name",
+                "rating": 4,
+            },
+        ]
+        activities = [
+            {
+                "action": "draft_download",
+                "target": {
+                    "template_id": "tpl-user-a",
+                    "template_key": "breaking_a",
+                    "template_name": "old name",
+                },
+            }
+        ]
+
+        scores = profiler.calculate_preference_scores(
+            feedbacks,
+            activities,
+            {
+                "tpl-user-a": {
+                    "name": "current name",
+                    "template_key": "breaking_a",
+                }
+            },
+        )
+
+        assert list(scores["template_scores"]) == ["tpl-user-a"]
+        metric = scores["template_scores"]["tpl-user-a"]
+        assert metric["count"] == 2
+        assert metric["avg_rating"] == 4.5
+        assert metric["download_count"] == 1
+        assert metric["display_name"] == "current name"
+        assert metric["historical_names"] == ["old name", "intermediate name"]
+        assert metric["legacy"] is False
+        assert profiler._rank_preferences(scores["template_scores"]) == ["current name"]
 
 
 class TestLLMAnalysis:

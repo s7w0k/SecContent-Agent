@@ -115,6 +115,9 @@ def article():
         "pr_drafts": [
             {
                 "template": "爆点A",
+                "template_id": "tpl-user-breaking-a",
+                "template_key": "breaking_a",
+                "template_version": 3,
                 "perspective": "产品能力视角",
                 "title": "草稿一",
                 "content_md": "# 草稿一",
@@ -198,8 +201,17 @@ class TestCreateFeedback:
         assert data["ok"] is True
         assert data["data"]["feedback_id"]
         assert len(db["feedbacks"].documents) == 1
+        feedback = db["feedbacks"].documents[0]
+        assert feedback["template_id"] == "tpl-user-breaking-a"
+        assert feedback["template_key"] == "breaking_a"
+        assert feedback["template_version"] == 3
+        assert feedback["template_name"] == "爆点A"
         assert len(db["user_activities"].documents) == 1
         assert db["user_activities"].documents[0]["action"] == "feedback_submit"
+        assert (
+            db["user_activities"].documents[0]["target"]["template_id"]
+            == "tpl-user-breaking-a"
+        )
         log_document = db["pipeline_logs"].documents[0]
         assert log_document["phase"] == "feedback_submit"
         assert log_document["detail"]["rating"] == 5

@@ -92,6 +92,10 @@ class TestFeedbackModels:
         feedback = Feedback(
             _id="mongo-id",
             user_id="test-user",
+            template_id="tpl-user-breaking-a",
+            template_key="breaking_a",
+            template_version=3,
+            template_name="我的模板",
             **_feedback_payload(),
         )
 
@@ -99,6 +103,10 @@ class TestFeedbackModels:
         assert feedback.user_id == "test-user"
         assert feedback.status == "active"
         assert feedback.feedback_id
+        assert feedback.template_id == "tpl-user-breaking-a"
+        assert feedback.template_key == "breaking_a"
+        assert feedback.template_version == 3
+        assert feedback.template_name == "我的模板"
         assert feedback.created_at.tzinfo is UTC
         assert feedback.updated_at.tzinfo is UTC
 
@@ -133,6 +141,10 @@ class TestActivityAndProfileModels:
                 "article_url_hash": ARTICLE_HASH,
                 "draft_index": 0,
                 "template": "爆点A",
+                "template_id": "tpl-user-breaking-a",
+                "template_key": "breaking_a",
+                "template_version": 3,
+                "template_name": "爆点A",
             },
             metadata={"file_format": "md"},
         )
@@ -140,6 +152,7 @@ class TestActivityAndProfileModels:
         assert activity.action == "draft_download"
         assert activity.user_id == "test-user"
         assert activity.activity_id
+        assert activity.target.template_id == "tpl-user-breaking-a"
         assert activity.context == {}
         assert activity.metadata == {"file_format": "md"}
         assert activity.created_at.tzinfo is UTC

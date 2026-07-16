@@ -31,12 +31,17 @@ const mockProfile: StyleProfile = {
   },
   preference_scores: {
     template_scores: {
-      爆点A: {
+      'tpl-user-breaking-a': {
         count: 4,
         avg_rating: 4.5,
         download_count: 3,
         apply_count: 2,
         revise_count: 1,
+        template_id: 'tpl-user-breaking-a',
+        template_key: 'breaking_a',
+        display_name: '我的爆点模板',
+        historical_names: ['爆点A'],
+        legacy: false,
       },
     },
     perspective_scores: {
@@ -146,6 +151,8 @@ describe('ProfilePage', () => {
     });
 
     expect(screen.getAllByText('爆点A').length).toBeGreaterThan(0);
+    expect(screen.getByText('我的爆点模板')).toBeDefined();
+    expect(screen.getByText('历史名称：爆点A')).toBeDefined();
     expect(screen.getAllByText('产品能力视角').length).toBeGreaterThan(0);
     expect(screen.getByText('市场传播向')).toBeDefined();
     expect(screen.getByText('结构清晰')).toBeDefined();

@@ -9,6 +9,7 @@ from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
 
+from agent.template_compat import template_reference
 from langchain_core.messages import HumanMessage, SystemMessage
 from models.feedback import (
     ActionType,
@@ -86,23 +87,28 @@ class StyleProfiler:
             "feedbacks",
             {"user_id": user_id, "status": "active"},
         )
-        article_cache: dict[str, dict | None] = {}
+        draft_cache: dict[str, dict | None] = {}
         enriched: list[dict] = []
         for feedback in feedbacks:
             item = dict(feedback)
             target = item.get("target_ref", {})
             article_hash = target.get("article_url_hash")
             draft_index = target.get("draft_index")
-            if article_hash and isinstance(draft_index, int):
-                if article_hash not in article_cache:
-                    article_cache[article_hash] = await self.db["articles"].find_one(
-                        {"url_hash": article_hash},
+            has_template_reference = bool(item.get("template_id") or item.get("template_name"))
+            if not has_template_reference and article_hash and isinstance(draft_index, int):
+                if article_hash not in draft_cache:
+                    draft_cache[article_hash] = await self.db["user_drafts"].find_one(
+                        {"user_id": user_id, "article_url_hash": article_hash},
                     )
-                article = article_cache[article_hash]
-                drafts = article.get("pr_drafts", []) if article else []
+                user_draft = draft_cache[article_hash]
+                drafts = user_draft.get("drafts", []) if user_draft else []
                 if 0 <= draft_index < len(drafts):
-                    item["template"] = drafts[draft_index].get("template")
-                    item["perspective"] = drafts[draft_index].get("perspective")
+                    draft = drafts[draft_index]
+                    item.update(template_reference(draft))
+                    item["template"] = draft.get("template")
+                    item["perspective"] = draft.get("perspective")
+            elif item.get("template_name"):
+                item.setdefault("template", item["template_name"])
             enriched.append(item)
 
         ratings = [item["rating"] for item in enriched if isinstance(item.get("rating"), int)]
@@ -182,16 +188,102 @@ class StyleProfiler:
         self,
         feedbacks: list[dict],
         activities: list[dict],
+        template_catalog: dict[str, dict[str, str]] | None = None,
     ) -> dict:
         """分别计算模板和视角的反馈及行为指标。"""
         return {
-            "template_scores": self._calculate_dimension(feedbacks, activities, "template"),
+            "template_scores": self._calculate_template_dimension(
+                feedbacks,
+                activities,
+                template_catalog or {},
+            ),
             "perspective_scores": self._calculate_dimension(
                 feedbacks,
                 activities,
                 "perspective",
             ),
         }
+
+    def _calculate_template_dimension(
+        self,
+        feedbacks: list[dict],
+        activities: list[dict],
+        template_catalog: dict[str, dict[str, str]],
+    ) -> dict[str, dict]:
+        """Group modern signals by immutable template ID and legacy signals by name."""
+
+        def values(
+            item: dict,
+            *,
+            activity: bool = False,
+        ) -> tuple[str, str, str | None, str | None]:
+            source = item.get("target", {}) if activity else item
+            name = str(source.get("template_name") or source.get("template") or "").strip()
+            raw_template_id = str(source.get("template_id") or "").strip()
+            is_modern = raw_template_id and not raw_template_id.startswith("legacy:")
+            template_id = raw_template_id if is_modern else ""
+            template_key = str(source.get("template_key") or "").strip() or None
+            return template_id or name, name, template_key, template_id or None
+
+        identities = {
+            identity
+            for item in feedbacks
+            if (identity := values(item)[0])
+        } | {
+            identity
+            for item in activities
+            if (identity := values(item, activity=True)[0])
+        }
+        result: dict[str, dict] = {}
+        for identity in identities:
+            matching_feedbacks = [item for item in feedbacks if values(item)[0] == identity]
+            matching_activities = [
+                item for item in activities if values(item, activity=True)[0] == identity
+            ]
+            signals = [(item, False) for item in matching_feedbacks] + [
+                (item, True) for item in matching_activities
+            ]
+            ratings = [
+                item["rating"]
+                for item in matching_feedbacks
+                if isinstance(item.get("rating"), int)
+            ]
+            actions = Counter(str(item.get("action", "")) for item in matching_activities)
+            observed_names = list(
+                dict.fromkeys(
+                    name
+                    for item, activity in signals
+                    if (name := values(item, activity=activity)[1])
+                )
+            )
+            catalog_item = template_catalog.get(identity, {})
+            display_name = catalog_item.get("name") or (
+                observed_names[-1] if observed_names else identity
+            )
+            template_key = catalog_item.get("template_key") or next(
+                (
+                    key
+                    for item, activity in signals
+                    if (key := values(item, activity=activity)[2])
+                ),
+                None,
+            )
+            modern = any(values(item)[3] for item in matching_feedbacks) or any(
+                values(item, activity=True)[3] for item in matching_activities
+            )
+            result[identity] = {
+                "count": len(ratings),
+                "avg_rating": round(sum(ratings) / len(ratings), 2) if ratings else 0,
+                "download_count": actions[ActionType.DRAFT_DOWNLOAD],
+                "apply_count": actions[ActionType.REVISION_APPLY],
+                "revise_count": actions[ActionType.DRAFT_REVISE],
+                "template_id": identity if modern else None,
+                "template_key": template_key,
+                "display_name": display_name,
+                "historical_names": [name for name in observed_names if name != display_name],
+                "legacy": not modern,
+            }
+        return dict(sorted(result.items()))
 
     def _calculate_dimension(
         self,
@@ -240,7 +332,32 @@ class StyleProfiler:
             for name, metric in metrics.items()
         ]
         ranked.sort(key=lambda item: (-item[1], item[0]))
-        return [name for name, score in ranked if score > 0][:2]
+        return [
+            str(metrics[name].get("display_name") or name)
+            for name, score in ranked
+            if score > 0
+        ][:2]
+
+    async def _current_template_catalog(self, user_id: str) -> dict[str, dict[str, str]]:
+        """Resolve current tenant template names without making profile rebuild dependent on it."""
+        try:
+            from agent.template_repository import TemplateRepository
+
+            templates = await TemplateRepository(self.db).list_effective_templates(user_id)
+            return {
+                template.template_id: {
+                    "name": template.name,
+                    "template_key": str(template.template_key),
+                }
+                for template in templates
+            }
+        except Exception as exc:
+            logger.warning(
+                "Failed to resolve current template catalog: user_id=%s: %s",
+                user_id,
+                exc,
+            )
+            return {}
 
     async def extract_revise_patterns(self, instructions: list[str]) -> dict:
         """使用 LLM 提取改稿偏好；样本不足或调用失败时返回默认值。"""
@@ -326,9 +443,11 @@ class StyleProfiler:
         feedback_data = await self.aggregate_feedbacks(user_id)
         activity_data = await self.aggregate_activities(user_id)
         instructions = await self.aggregate_revise_instructions(user_id)
+        template_catalog = await self._current_template_catalog(user_id)
         preference_scores = self.calculate_preference_scores(
             feedback_data["items"],
             activity_data["items"],
+            template_catalog,
         )
         patterns = await self.extract_revise_patterns(instructions)
         pattern_counts = [

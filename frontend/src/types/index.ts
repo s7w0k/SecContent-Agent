@@ -151,6 +151,10 @@ export interface Report {
 
 export interface DraftItem {
   template: string;
+  template_id?: string;
+  template_key?: string;
+  template_version?: number;
+  template_source?: 'system' | 'user' | 'legacy';
   perspective: string;
   content_md: string;
   title: string;
@@ -474,6 +478,11 @@ export interface FeedbackTargetRef {
 export interface Feedback {
   feedback_id: string;
   user_id: string;
+  template_id?: string | null;
+  template_key?: string | null;
+  template_version?: number | null;
+  template_name?: string | null;
+  perspective?: string | null;
   target_type: TargetType;
   target_ref: FeedbackTargetRef;
   rating: number;
@@ -557,6 +566,10 @@ export interface ActivityTarget {
   article_url_hash?: string;
   draft_index?: number;
   template?: string;
+  template_id?: string;
+  template_key?: string;
+  template_version?: number;
+  template_name?: string;
   perspective?: string;
   revision_id?: string;
   pipeline_id?: string;
@@ -634,6 +647,11 @@ export interface PreferenceMetric {
   download_count: number;
   apply_count: number;
   revise_count: number;
+  template_id?: string | null;
+  template_key?: string | null;
+  display_name?: string | null;
+  historical_names?: string[];
+  legacy?: boolean;
 }
 
 export interface PreferenceScores {

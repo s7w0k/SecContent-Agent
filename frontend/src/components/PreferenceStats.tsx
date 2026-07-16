@@ -1,5 +1,5 @@
 import { BarChartOutlined } from '@ant-design/icons';
-import { Card, Col, Empty, List, Progress, Row, Space, Typography } from 'antd';
+import { Card, Col, Empty, List, Progress, Row, Space, Tag, Typography } from 'antd';
 import type { PreferenceMetric, PreferenceScores } from '../types';
 
 const { Text } = Typography;
@@ -35,7 +35,10 @@ function renderMetricList(title: string, data: Record<string, PreferenceMetric>)
             <List.Item>
               <Space direction="vertical" size={4} style={{ width: '100%' }}>
                 <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                  <Text strong>{name}</Text>
+                  <Space size={4} wrap>
+                    <Text strong>{metric.display_name || name}</Text>
+                    {metric.legacy && <Tag color="default">历史名称兼容</Tag>}
+                  </Space>
                   <Text type="secondary">
                     {metric.count} 评 / {metric.avg_rating.toFixed(1)} 星
                   </Text>
@@ -47,6 +50,9 @@ function renderMetricList(title: string, data: Record<string, PreferenceMetric>)
                     `下载 ${metric.download_count} · 应用 ${metric.apply_count} · 改稿 ${metric.revise_count}`
                   }
                 />
+                {!!metric.historical_names?.length && (
+                  <Text type="secondary">历史名称：{metric.historical_names.join('、')}</Text>
+                )}
               </Space>
             </List.Item>
           )}

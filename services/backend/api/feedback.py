@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Literal
 
+from agent.template_compat import template_reference
 from api.activity import log_activity
 from api.logs import generate_trace_id, log_pipeline
 from auth.deps import get_current_user
@@ -121,6 +122,7 @@ async def _log_feedback_activity(
     draft: dict | None,
 ) -> None:
     """写入 feedback_submit 操作记录。"""
+    template = template_reference(draft)
     await log_activity(
         db,
         feedback.user_id,
@@ -129,6 +131,7 @@ async def _log_feedback_activity(
             "article_url_hash": feedback.target_ref.article_url_hash,
             "draft_index": feedback.target_ref.draft_index,
             "template": draft.get("template") if draft else None,
+            **template,
             "perspective": draft.get("perspective") if draft else None,
             "revision_id": feedback.target_ref.revision_id,
         },
@@ -161,7 +164,13 @@ async def create_feedback(
     )
     draft_source = {"pr_drafts": user_draft.get("drafts", []) if user_draft else []}
     draft = _validate_feedback_target(body, draft_source)
-    feedback = Feedback(**body.model_dump(), user_id=user_id)
+    reference = template_reference(draft)
+    feedback = Feedback(
+        **body.model_dump(),
+        user_id=user_id,
+        **reference,
+        perspective=draft.get("perspective") if draft else None,
+    )
     await db["feedbacks"].insert_one(
         feedback.model_dump(exclude={"id"}, mode="python"),
     )
@@ -192,6 +201,7 @@ async def create_feedback(
             },
             "rating": feedback.rating,
             "tags": feedback.tags,
+            **reference,
         },
     )
     get_audit_logger().log(

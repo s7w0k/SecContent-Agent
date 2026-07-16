@@ -53,6 +53,10 @@ export default function DraftViewer({ article, onClose }: DraftViewerProps) {
           article_url_hash: article.url_hash,
           draft_index: index,
           template: current.template,
+          template_id: current.template_id,
+          template_key: current.template_key,
+          template_version: current.template_version,
+          template_name: current.template,
           perspective: current.perspective,
         },
         context: {
