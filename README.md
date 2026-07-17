@@ -32,28 +32,22 @@ docker compose up -d
 > 详细部署说明见 [部署文档](docs/部署文档.md)
 
 
-### 4. 分机部署
-该目录用于在一台机器上模拟“主体服务器 + 海外新闻爬虫服务器”。两个 Compose Project 使用独立容器、网络和生命周期，主体通过宿主机端口 `18101` 访问爬虫。
+### 4. 首次拉取代码：分机部署构建
 
-## 1. 准备配置
+当前项目支持将项目主体和海外新闻爬虫部署为两个独立的 Compose Project。两台服务器均可拉取完整仓库，但分别只启动自身需要的服务；也可以先在同一台电脑上按相同方式测试。
+
+#### 4.1 项目主体服务器
 
 ```powershell
-Copy-Item deploy/local/.env.crawler-local.example deploy/local/.env.crawler-local
+git clone https://gitee.com/s7w0k/pr-agent-demo.git
+cd pr-agent-demo
+Copy-Item .env.example .env
 Copy-Item deploy/local/.env.core-local.example deploy/local/.env.core-local
 ```
 
-将两个文件中的 `MCP_CRAWL_API_KEY` 改为同一个、至少 32 字节的随机 Token。项目根目录 `.env` 仍负责 MongoDB、Redis、JWT、模型等主体配置。
+编辑 `.env`，至少配置 `JWT_SECRET`、模型 API Key、MongoDB 和 Redis 密码。编辑 `deploy/local/.env.core-local`，将 `MCP_CRAWL_URL` 设置为爬虫服务器地址，例如 `http://192.168.1.20:18101`，并设置 `MCP_CRAWL_API_KEY`。
 
-## 2. 启动独立爬虫
-
-```powershell
-docker compose -p pr-crawler `
-  --env-file deploy/local/.env.crawler-local `
-  -f deploy/crawler/docker-compose.yml `
-  up -d
-```
-
-## 3. 启动主体
+首次构建并启动项目主体：
 
 ```powershell
 docker compose -p pr-core `
@@ -62,20 +56,57 @@ docker compose -p pr-core `
   -f docker-compose.yml `
   -f deploy/core/docker-compose.remote-crawl.yml `
   -f deploy/local/docker-compose.core-local.yml `
-  up -d
+  up -d --build
 ```
 
-不要添加 `--profile embedded-crawl`，否则主体会同时启动内置爬虫。主体页面地址为 `http://127.0.0.1:18000`，主体 MongoDB 的 Compass 地址为 `mongodb://127.0.0.1:37017`。
+不要添加 `--profile embedded-crawl`，否则主体会同时启动内置爬虫。默认页面地址为 `http://项目主体服务器IP:18000`，MongoDB Compass 地址为 `mongodb://项目主体服务器IP:37017`。
 
-## 4. 独立启停
+#### 4.2 海外新闻爬虫服务器
 
 ```powershell
-docker compose -p pr-crawler -f deploy/crawler/docker-compose.yml restart
-docker compose -p pr-core -f docker-compose.yml -f deploy/core/docker-compose.remote-crawl.yml -f deploy/local/docker-compose.core-local.yml restart backend backend-worker
+git clone https://gitee.com/s7w0k/pr-agent-demo.git
+cd pr-agent-demo
+Copy-Item deploy/local/.env.crawler-local.example deploy/local/.env.crawler-local
 ```
 
-执行命令时需继续传入相同的 `--env-file` 参数。停止爬虫后，主体页面和非爬虫 API 应继续可用；恢复爬虫后，新建海外新闻任务应恢复执行。
-参考文档：.\deploy\local\README.md
+编辑 `deploy/local/.env.crawler-local`，配置代理和 `MCP_CRAWL_API_KEY`。该密钥必须与项目主体服务器中的值完全相同，建议使用至少 32 字节的随机 Token。
+
+首次构建并启动独立爬虫：
+
+```powershell
+docker compose -p pr-crawler `
+  --env-file deploy/local/.env.crawler-local `
+  -f deploy/crawler/docker-compose.yml `
+  up -d --build
+```
+
+确保爬虫服务器防火墙允许项目主体服务器访问 TCP `18101` 端口。
+
+#### 4.3 检查状态
+
+项目主体服务器执行：
+
+```powershell
+docker compose -p pr-core `
+  --env-file .env `
+  --env-file deploy/local/.env.core-local `
+  -f docker-compose.yml `
+  -f deploy/core/docker-compose.remote-crawl.yml `
+  -f deploy/local/docker-compose.core-local.yml `
+  ps
+```
+
+爬虫服务器执行：
+
+```powershell
+docker compose -p pr-crawler `
+  --env-file deploy/local/.env.crawler-local `
+  -f deploy/crawler/docker-compose.yml `
+  ps
+```
+
+所有服务应显示为 `Up` 或 `healthy`。后续更新代码时，项目主体通常只需重新构建 `backend` 和 `backend-worker`；爬虫代码没有变化时不需要重建 `pr-crawler`。完整的本地模拟、启停和故障排查说明见 [分离部署说明](deploy/local/README.md)。
+
 ---
 
 ## 核心功能
