@@ -39,6 +39,8 @@ import type {
   FeedbackStats,
   FeedbackUpdate,
   FeedbackUpdateResponse,
+  HotArticle,
+  HotRankingQuery,
   KnowledgeSummary,
   LoginRequest,
   PRTemplateCategory,
@@ -205,6 +207,15 @@ export const dashboardApi = {
   async getStats(): Promise<StatsData> {
     const { data } = await client.get('/stats');
     return data;
+  },
+
+  /** 热点文章排行 */
+  async getHotRanking(query: HotRankingQuery = {}): Promise<HotArticle[]> {
+    const { limit = 10, category = 'all', date_range = '7d' } = query;
+    const { data } = await client.get('/articles/hot', {
+      params: { limit, category, date_range },
+    });
+    return data.data.items;
   },
 };
 

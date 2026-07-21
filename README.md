@@ -77,6 +77,7 @@ Copy-Item deploy/local/.env.crawler-local.example deploy/local/.env.crawler-loca
 docker compose -p pr-crawler `
   --env-file deploy/local/.env.crawler-local `
   -f deploy/crawler/docker-compose.yml `
+  -f deploy/crawler/docker-compose.build.yml `
   up -d --build
 ```
 

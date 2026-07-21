@@ -197,12 +197,66 @@ describe('Dashboard API', () => {
   });
 
   it('getStats returns stats data', async () => {
-    const stats = { total_articles: 42, ai_security_count: 10, high_value_count: 5 };
+    const stats = {
+      total_articles: 42,
+      ai_security_count: 10,
+      high_value_count: 5,
+      source_distribution: {},
+      category_distribution: {},
+      today_count: 3,
+      today_ai_security_count: 2,
+      today_high_value_count: 1,
+    };
     mockGet.mockResolvedValueOnce({ data: stats });
 
     const result = await api.getStats();
     expect(mockGet).toHaveBeenCalledWith('/stats');
     expect(result.total_articles).toBe(42);
+    expect(result.today_count).toBe(3);
+  });
+
+  it('getHotRanking sends defaults and unwraps items', async () => {
+    const items = [
+      {
+        url_hash: 'hot-1',
+        title: '热点文章',
+        url: 'https://example.com/hot-1',
+        pr_total_score: 188,
+        category_v2: 'AI安全漏洞与攻击',
+        added_at: '2026-07-21T08:30:00Z',
+        source_type: 'overseas_news',
+      },
+    ];
+    mockGet.mockResolvedValueOnce({
+      data: { ok: true, data: { items, total: 1 } },
+    });
+
+    const result = await api.getHotRanking();
+
+    expect(mockGet).toHaveBeenCalledWith('/articles/hot', {
+      params: { limit: 10, category: 'all', date_range: '7d' },
+    });
+    expect(result).toEqual(items);
+  });
+
+  it('getHotRanking forwards custom filters', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: { ok: true, data: { items: [], total: 0 } },
+    });
+
+    await api.getHotRanking({
+      limit: 5,
+      category: 'AI安全漏洞与攻击',
+      date_range: '1d',
+    });
+
+    expect(mockGet).toHaveBeenCalledWith('/articles/hot', {
+      params: {
+        limit: 5,
+        category: 'AI安全漏洞与攻击',
+        date_range: '1d',
+      },
+    });
   });
 });
 

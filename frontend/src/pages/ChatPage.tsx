@@ -10,6 +10,7 @@ import {
   CopyOutlined,
   DownloadOutlined,
   EditOutlined,
+  ExpandAltOutlined,
   QuestionCircleOutlined,
   SendOutlined,
 } from '@ant-design/icons';
@@ -17,6 +18,8 @@ import {
   Alert,
   Button,
   Card,
+  Collapse,
+  Drawer,
   Empty,
   Input,
   Layout,
@@ -48,6 +51,14 @@ const modeOptions = [
   { value: '改稿', label: '改稿', icon: <EditOutlined /> },
 ];
 
+function getRequestErrorMessage(error: unknown, fallback: string): string {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const response = (error as { response?: { data?: { detail?: unknown } } }).response;
+    if (typeof response?.data?.detail === 'string') return response.data.detail;
+  }
+  return error instanceof Error ? error.message : fallback;
+}
+
 export default function ChatPage() {
   // ── 文章 & 草稿 ──────────────────────────────────────────
   const [articles, setArticles] = useState<Article[]>([]);
@@ -64,6 +75,7 @@ export default function ChatPage() {
   // ── 修订稿预览 ───────────────────────────────────────────
   const [revisionResult, setRevisionResult] = useState<DraftReviseResponse | null>(null);
   const [viewingRevision, setViewingRevision] = useState<DraftRevision | null>(null);
+  const [draftFullscreen, setDraftFullscreen] = useState(false);
 
   // ── 应用修订 ─────────────────────────────────────────────
   const [applying, setApplying] = useState(false);
@@ -109,6 +121,7 @@ export default function ChatPage() {
   }, []);
 
   // ── 消息列表滚动到底部 ────────────────────────────────────
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 消息内容变化时需要触发滚动。
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (container) {
@@ -123,6 +136,7 @@ export default function ChatPage() {
     setDraftIndex(0);
     setRevisionResult(null);
     setViewingRevision(null);
+    setDraftFullscreen(false);
     setError(null);
     // 加载新文章+草稿0的对话历史
     if (article) {
@@ -137,6 +151,7 @@ export default function ChatPage() {
     setDraftIndex(index);
     setRevisionResult(null);
     setViewingRevision(null);
+    setDraftFullscreen(false);
     // 加载新草稿的对话历史
     if (selectedArticle) {
       loadChatHistory(selectedArticle.url_hash, index);
@@ -251,8 +266,8 @@ export default function ChatPage() {
           },
         );
       }
-    } catch (err: any) {
-      const errMsg = err?.response?.data?.detail || err?.message || '请求失败';
+    } catch (err: unknown) {
+      const errMsg = getRequestErrorMessage(err, '请求失败');
       setError(errMsg);
       setMessages([...newMessages, { role: 'assistant', content: `错误：${errMsg}` }]);
     } finally {
@@ -288,8 +303,8 @@ export default function ChatPage() {
       await refreshArticle();
       setViewingRevision(null);
       setRevisionResult(null);
-    } catch (err: any) {
-      const errMsg = err?.response?.data?.detail || err?.message || '应用失败';
+    } catch (err: unknown) {
+      const errMsg = getRequestErrorMessage(err, '应用失败');
       message.error(errMsg);
     } finally {
       setApplying(false);
@@ -298,7 +313,7 @@ export default function ChatPage() {
 
   // ── 复制修订稿 ────────────────────────────────────────────
   const handleCopy = () => {
-    const content = viewingRevision?.content_md || revisionResult?.revised_content_md;
+    const content = previewContent;
     if (!content) return;
     navigator.clipboard
       .writeText(content)
@@ -308,8 +323,8 @@ export default function ChatPage() {
 
   // ── 下载修订稿 ────────────────────────────────────────────
   const handleDownload = () => {
-    const content = viewingRevision?.content_md || revisionResult?.revised_content_md;
-    const revId = viewingRevision?.revision_id || revisionResult?.revision_id || 'revision';
+    const content = previewContent;
+    const revId = viewingRevision?.revision_id || revisionResult?.revision_id || 'original';
     if (!content) return;
     const blob = new Blob([content], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
@@ -373,259 +388,320 @@ export default function ChatPage() {
     (revisionResult?.saved ? revisionResult.revision_id : undefined);
 
   return (
-    <Layout className={styles.layout}>
-      {/* ── 左栏：选择 + 预览 + 修订记录 ── */}
-      <Sider width={420} className={styles.sider}>
-        {/* 文章选择 */}
-        <Card className={styles.card} size="small">
-          <Card.Meta
-            title={
-              <Text strong className={styles.cardHeader}>
-                文章选择
-              </Text>
-            }
-          />
-          {articlesLoading ? (
-            <div className={styles.loadingIndicator}>
-              <Spin size="small" />
-              <span>加载中...</span>
-            </div>
-          ) : (
-            <Select
-              showSearch
-              placeholder="选择有草稿的文章"
-              style={{ width: '100%' }}
-              value={selectedArticle?.url_hash}
-              onChange={handleArticleChange}
-              options={articles.map((a) => ({
-                label: a.title?.slice(0, 50),
-                value: a.url_hash,
-              }))}
-              optionFilterProp="label"
-              size="small"
-            />
-          )}
-        </Card>
-
-        {selectedArticle && currentDraft && (
-          <>
-            {/* 草稿信息 */}
-            <Card className={styles.card} size="small">
-              <Card.Meta
-                title={
+    <>
+      <Layout className={styles.layout}>
+        {/* ── 左栏：选择 + 预览 + 修订记录 ── */}
+        <Sider width={520} className={styles.sider}>
+          <Collapse
+            ghost
+            className={styles.selectorCollapse}
+            defaultActiveKey={['article-selection', 'draft-selection']}
+            items={[
+              {
+                key: 'article-selection',
+                label: (
                   <Text strong className={styles.cardHeader}>
-                    草稿选择
+                    文章选择
                   </Text>
-                }
-              />
-              <Select
-                style={{ width: '100%', marginBottom: 8 }}
-                value={draftIndex}
-                onChange={handleDraftChange}
-                options={selectedArticle.pr_drafts?.map((d, i) => ({
-                  label: `${d.template}-${d.index} (${d.perspective})`,
-                  value: i,
-                }))}
-                size="small"
-              />
-              <Space>
-                <Tag color="blue">{currentDraft.template}</Tag>
-                <Tag>{currentDraft.perspective}</Tag>
-              </Space>
-            </Card>
-
-            {/* 草稿预览 */}
-            <Card className={styles.card} size="small">
-              <Card.Meta
-                title={
-                  <Text strong className={styles.cardHeader}>
-                    {previewTitle}
-                  </Text>
-                }
-              />
-              <div className={styles.previewArea}>
-                {previewContent ? (
-                  <div className={styles.markdownContent}>
-                    <ReactMarkdown>{previewContent}</ReactMarkdown>
+                ),
+                children: articlesLoading ? (
+                  <div className={styles.loadingIndicator}>
+                    <Spin size="small" />
+                    <span>加载中...</span>
                   </div>
                 ) : (
-                  <Empty description="草稿内容不可用" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                )}
-              </div>
-              {(viewingRevision || revisionResult) && (
-                <Space style={{ marginTop: 12 }}>
-                  <Button size="small" icon={<CopyOutlined />} onClick={handleCopy}>
-                    复制
-                  </Button>
-                  <Button size="small" icon={<DownloadOutlined />} onClick={handleDownload}>
-                    下载
-                  </Button>
-                  {viewingRevision && !viewingRevision.applied && (
-                    <Button
-                      size="small"
-                      type="primary"
-                      onClick={() => handleApplyRevision(viewingRevision)}
-                      loading={applying}
-                    >
-                      应用为当前稿
-                    </Button>
-                  )}
-                </Space>
-              )}
-              {feedbackRevisionId && (
-                <DraftFeedback
-                  articleUrlHash={selectedArticle.url_hash}
-                  draftIndex={draftIndex}
-                  template={currentDraft.template}
-                  perspective={currentDraft.perspective}
-                  revisionId={feedbackRevisionId}
-                  compact
-                  onSubmitted={() => {
-                    void refreshArticle();
-                  }}
-                />
-              )}
-            </Card>
+                  <Select
+                    showSearch
+                    aria-label="选择有草稿的文章"
+                    placeholder="选择有草稿的文章"
+                    style={{ width: '100%' }}
+                    value={selectedArticle?.url_hash}
+                    onChange={handleArticleChange}
+                    options={articles.map((a) => ({
+                      label: a.title?.slice(0, 50),
+                      value: a.url_hash,
+                    }))}
+                    optionFilterProp="label"
+                    size="small"
+                  />
+                ),
+              },
+              ...(selectedArticle && currentDraft
+                ? [
+                    {
+                      key: 'draft-selection',
+                      label: (
+                        <Text strong className={styles.cardHeader}>
+                          草稿选择
+                        </Text>
+                      ),
+                      children: (
+                        <>
+                          <Select
+                            aria-label="选择草稿"
+                            style={{ width: '100%', marginBottom: 8 }}
+                            value={draftIndex}
+                            onChange={handleDraftChange}
+                            options={selectedArticle.pr_drafts?.map((draft, index) => ({
+                              label: `${draft.template}-${draft.index} (${draft.perspective})`,
+                              value: index,
+                            }))}
+                            size="small"
+                          />
+                          <Space>
+                            <Tag color="blue">{currentDraft.template}</Tag>
+                            <Tag>{currentDraft.perspective}</Tag>
+                          </Space>
+                        </>
+                      ),
+                    },
+                  ]
+                : []),
+            ]}
+          />
 
-            {/* 修订记录 */}
-            <Card className={styles.card} size="small">
-              <Card.Meta
-                title={
-                  <Text strong className={styles.cardHeader}>
-                    修订记录 ({revisions.length})
-                  </Text>
+          {selectedArticle && currentDraft && (
+            <>
+              {/* 草稿预览 */}
+              <Card
+                className={styles.card}
+                size="small"
+                title={<Text className={styles.cardHeader}>{previewTitle}</Text>}
+                extra={
+                  <Button
+                    type="text"
+                    size="small"
+                    aria-label="全屏预览"
+                    icon={<ExpandAltOutlined />}
+                    onClick={() => setDraftFullscreen(true)}
+                    disabled={!previewContent}
+                  >
+                    全屏预览
+                  </Button>
                 }
-              />
-              <div className={styles.revisionsArea}>
-                <RevisionList
-                  revisions={revisions}
-                  selectedRevisionId={viewingRevision?.revision_id || null}
-                  onSelect={handleSelectRevision}
-                  onApply={handleApplyRevision}
-                  applying={applying}
-                />
-              </div>
-            </Card>
-          </>
-        )}
-
-        {!selectedArticle && !articlesLoading && (
-          <div className={styles.emptyState}>
-            <div className={styles.emptyIcon}>📝</div>
-            <div className={styles.emptyText}>请选择文章开始对话改稿</div>
-          </div>
-        )}
-      </Sider>
-
-      {/* ── 右栏：对话区 ── */}
-      <Content className={styles.content}>
-        {/* 模式切换 */}
-        <div className={styles.modeSwitch}>
-          <Radio.Group
-            value={mode}
-            onChange={(e) => setMode(e.target.value as ChatMode)}
-            options={modeOptions}
-            buttonStyle="solid"
-            size="large"
-          />
-          {mode === '改稿' && (
-            <Text type="secondary" style={{ marginLeft: 12 }}>
-              {selectedArticle ? `将对草稿 ${draftIndex + 1} 进行改稿` : '请先选择文章和草稿'}
-            </Text>
-          )}
-          {messages.length > 0 && selectedArticle && (
-            <Button
-              size="small"
-              icon={<ClearOutlined />}
-              onClick={handleClearHistory}
-              style={{ marginLeft: 'auto' }}
-            >
-              清空对话
-            </Button>
-          )}
-        </div>
-
-        {/* 错误提示 */}
-        {error && (
-          <Alert
-            message={error}
-            type="error"
-            closable
-            onClose={() => setError(null)}
-            className={styles.errorAlert}
-          />
-        )}
-
-        {/* 消息列表 */}
-        <div className={styles.messagesContainer} ref={messagesContainerRef}>
-          <div className={styles.messagesList}>
-            {historyLoading ? (
-              <div className={styles.loadingIndicator}>
-                <Spin size="small" />
-                <span>加载对话历史...</span>
-              </div>
-            ) : messages.length === 0 ? (
-              <div className={styles.emptyState}>
-                <div className={styles.emptyIcon}>💬</div>
-                <div className={styles.emptyText}>
-                  {mode === '问答' ? '输入问题开始对话' : '输入修改意见生成修订稿'}
+              >
+                <div className={styles.previewArea}>
+                  {previewContent ? (
+                    <div className={styles.markdownContent}>
+                      <ReactMarkdown>{previewContent}</ReactMarkdown>
+                    </div>
+                  ) : (
+                    <Empty description="草稿内容不可用" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  )}
                 </div>
-              </div>
-            ) : (
-              messages.map((msg, i) => <ChatBubble key={i} message={msg} index={i} />)
+                {(viewingRevision || revisionResult) && (
+                  <Space style={{ marginTop: 12 }}>
+                    <Button size="small" icon={<CopyOutlined />} onClick={handleCopy}>
+                      复制
+                    </Button>
+                    <Button size="small" icon={<DownloadOutlined />} onClick={handleDownload}>
+                      下载
+                    </Button>
+                    {viewingRevision && !viewingRevision.applied && (
+                      <Button
+                        size="small"
+                        type="primary"
+                        onClick={() => handleApplyRevision(viewingRevision)}
+                        loading={applying}
+                      >
+                        应用为当前稿
+                      </Button>
+                    )}
+                  </Space>
+                )}
+                {feedbackRevisionId && (
+                  <DraftFeedback
+                    articleUrlHash={selectedArticle.url_hash}
+                    draftIndex={draftIndex}
+                    template={currentDraft.template}
+                    perspective={currentDraft.perspective}
+                    revisionId={feedbackRevisionId}
+                    compact
+                    onSubmitted={() => {
+                      void refreshArticle();
+                    }}
+                  />
+                )}
+              </Card>
+
+              {/* 修订记录 */}
+              <Card className={styles.card} size="small">
+                <Card.Meta
+                  title={
+                    <Text strong className={styles.cardHeader}>
+                      修订记录 ({revisions.length})
+                    </Text>
+                  }
+                />
+                <div className={styles.revisionsArea}>
+                  <RevisionList
+                    revisions={revisions}
+                    selectedRevisionId={viewingRevision?.revision_id || null}
+                    onSelect={handleSelectRevision}
+                    onApply={handleApplyRevision}
+                    applying={applying}
+                  />
+                </div>
+              </Card>
+            </>
+          )}
+
+          {!selectedArticle && !articlesLoading && (
+            <div className={styles.emptyState}>
+              <div className={styles.emptyIcon}>📝</div>
+              <div className={styles.emptyText}>请选择文章开始对话改稿</div>
+            </div>
+          )}
+        </Sider>
+
+        {/* ── 右栏：对话区 ── */}
+        <Content className={styles.content}>
+          {/* 模式切换 */}
+          <div className={styles.modeSwitch}>
+            <Radio.Group
+              value={mode}
+              onChange={(e) => setMode(e.target.value as ChatMode)}
+              options={modeOptions}
+              buttonStyle="solid"
+              size="large"
+            />
+            {mode === '改稿' && (
+              <Text type="secondary" style={{ marginLeft: 12 }}>
+                {selectedArticle ? `将对草稿 ${draftIndex + 1} 进行改稿` : '请先选择文章和草稿'}
+              </Text>
             )}
-            {sending &&
-              !(
-                messages.length > 0 &&
-                messages[messages.length - 1]?.role === 'assistant' &&
-                messages[messages.length - 1]?.content
-              ) && (
+            {messages.length > 0 && selectedArticle && (
+              <Button
+                size="small"
+                icon={<ClearOutlined />}
+                onClick={handleClearHistory}
+                style={{ marginLeft: 'auto' }}
+              >
+                清空对话
+              </Button>
+            )}
+          </div>
+
+          {/* 错误提示 */}
+          {error && (
+            <Alert
+              message={error}
+              type="error"
+              closable
+              onClose={() => setError(null)}
+              className={styles.errorAlert}
+            />
+          )}
+
+          {/* 消息列表 */}
+          <div className={styles.messagesContainer} ref={messagesContainerRef}>
+            <div className={styles.messagesList}>
+              {historyLoading ? (
                 <div className={styles.loadingIndicator}>
                   <Spin size="small" />
-                  <span>{mode === '问答' ? '思考中...' : '生成修订稿中...'}</span>
+                  <span>加载对话历史...</span>
                 </div>
+              ) : messages.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <div className={styles.emptyIcon}>💬</div>
+                  <div className={styles.emptyText}>
+                    {mode === '问答' ? '输入问题开始对话' : '输入修改意见生成修订稿'}
+                  </div>
+                </div>
+              ) : (
+                messages.map((msg, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: 消息没有稳定 ID，且列表只追加不重排。
+                  <ChatBubble key={i} message={msg} index={i} />
+                ))
               )}
-            <div ref={messagesEndRef} />
+              {sending &&
+                !(
+                  messages.length > 0 &&
+                  messages[messages.length - 1]?.role === 'assistant' &&
+                  messages[messages.length - 1]?.content
+                ) && (
+                  <div className={styles.loadingIndicator}>
+                    <Spin size="small" />
+                    <span>{mode === '问答' ? '思考中...' : '生成修订稿中...'}</span>
+                  </div>
+                )}
+              <div ref={messagesEndRef} />
+            </div>
           </div>
-        </div>
 
-        {/* 输入区 */}
-        <div className={styles.inputArea}>
-          <div className={styles.inputWrapper}>
-            <TextArea
-              className={styles.textArea}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={
-                mode === '问答'
-                  ? '输入问题...'
-                  : '输入修改意见，如：标题更有冲击力，减少技术细节...'
-              }
-              autoSize={{ minRows: 2, maxRows: 4 }}
-              onPressEnter={(e) => {
-                if (!e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
+          {/* 输入区 */}
+          <div className={styles.inputArea}>
+            <div className={styles.inputWrapper}>
+              <TextArea
+                className={styles.textArea}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={
+                  mode === '问答'
+                    ? '输入问题...'
+                    : '输入修改意见，如：标题更有冲击力，减少技术细节...'
                 }
-              }}
-              disabled={sending}
-              variant="borderless"
-            />
-            <Button
-              className={styles.sendButton}
-              type="primary"
-              icon={<SendOutlined />}
-              onClick={handleSend}
-              loading={sending}
-              disabled={!input.trim()}
-              size="large"
-            >
-              发送
-            </Button>
+                autoSize={{ minRows: 2, maxRows: 4 }}
+                onPressEnter={(e) => {
+                  if (!e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                disabled={sending}
+                variant="borderless"
+              />
+              <Button
+                className={styles.sendButton}
+                type="primary"
+                icon={<SendOutlined />}
+                onClick={handleSend}
+                loading={sending}
+                disabled={!input.trim()}
+                size="large"
+              >
+                发送
+              </Button>
+            </div>
+            <div className={styles.hintText}>Shift + Enter 换行，Enter 发送</div>
           </div>
-          <div className={styles.hintText}>Shift + Enter 换行，Enter 发送</div>
-        </div>
-      </Content>
-    </Layout>
+        </Content>
+      </Layout>
+
+      <Drawer
+        title={`${selectedArticle?.title || '稿件'} - ${currentDraft?.template || '预览'}`}
+        open={draftFullscreen}
+        onClose={() => setDraftFullscreen(false)}
+        width={typeof window !== 'undefined' && window.innerWidth < 768 ? '95%' : '60%'}
+        destroyOnHidden
+        footer={
+          <Space wrap>
+            <Button icon={<CopyOutlined />} onClick={handleCopy} disabled={!previewContent}>
+              复制
+            </Button>
+            <Button icon={<DownloadOutlined />} onClick={handleDownload} disabled={!previewContent}>
+              下载
+            </Button>
+            {viewingRevision && !viewingRevision.applied && (
+              <Button
+                type="primary"
+                onClick={() => handleApplyRevision(viewingRevision)}
+                loading={applying}
+              >
+                应用为当前稿
+              </Button>
+            )}
+          </Space>
+        }
+      >
+        {previewContent ? (
+          <div className={styles.fullscreenMarkdown}>
+            <ReactMarkdown>{previewContent}</ReactMarkdown>
+          </div>
+        ) : (
+          <Empty description="草稿内容不可用" />
+        )}
+      </Drawer>
+    </>
   );
 }

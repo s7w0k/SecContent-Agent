@@ -103,6 +103,23 @@ export interface ArticleQuery {
   order?: 'asc' | 'desc';
 }
 
+/** 热点排行文章条目，仅包含排行面板需要的字段。 */
+export interface HotArticle {
+  url_hash: string;
+  title: string;
+  url: string;
+  pr_total_score: number;
+  category_v2: string;
+  added_at: string;
+  source_type: SourceType;
+}
+
+export interface HotRankingQuery {
+  limit?: number;
+  category?: string;
+  date_range?: '1d' | '7d' | '30d' | 'all';
+}
+
 // ═══════════════════════════════════════════════════════════
 // Pagination（分页）
 // ═══════════════════════════════════════════════════════════
@@ -125,6 +142,9 @@ export interface StatsData {
   high_value_count: number;
   source_distribution: Record<string, number>;
   category_distribution: Record<string, number>;
+  today_count: number;
+  today_ai_security_count: number;
+  today_high_value_count: number;
 }
 
 // ═══════════════════════════════════════════════════════════

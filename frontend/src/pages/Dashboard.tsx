@@ -6,19 +6,30 @@
  */
 
 import { ImportOutlined } from '@ant-design/icons';
-import { Button, Drawer, Space, Tag, Typography, message } from 'antd';
+import { Button, Col, Drawer, Row, Space, Tag, Typography, message } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import api from '../api/client';
 import ArticleTable from '../components/ArticleTable';
+import CategoryBreakdown from '../components/CategoryBreakdown';
 import DraftViewer from '../components/DraftViewer';
 import FilterBar from '../components/FilterBar';
+import HotRankingPanel from '../components/HotRankingPanel';
 import PipelineControl from '../components/PipelineControl';
 import PipelineTaskProgress from '../components/PipelineTaskProgress';
 import ReportViewer from '../components/ReportViewer';
 import StatsCards from '../components/StatsCards';
+import TodayStatsRow from '../components/TodayStatsRow';
 import type { Article, ArticleQuery, FilterValues, StatsData } from '../types';
 
 const { Title, Paragraph, Text } = Typography;
+
+function getRequestErrorMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const response = (error as { response?: { data?: { detail?: unknown } } }).response;
+    if (typeof response?.data?.detail === 'string') return response.data.detail;
+  }
+  return error instanceof Error ? error.message : '未知错误';
+}
 
 export default function Dashboard() {
   // ── 数据状态 ──────────────────────────────────────────────
@@ -91,8 +102,8 @@ export default function Dashboard() {
   // ── 初始加载 ─────────────────────────────────────────────
   useEffect(() => {
     setLoading(true);
-    Promise.all([loadStats(), loadArticles(), loadReportCount()]).finally(() => setLoading(false));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    Promise.all([loadStats(), loadReportCount()]).finally(() => setLoading(false));
+  }, [loadStats, loadReportCount]);
 
   // ── 筛选 / 分页 / 排序变更时重新加载文章 ─────────────────
   useEffect(() => {
@@ -120,6 +131,11 @@ export default function Dashboard() {
   // ── 筛选变更 → 重置到第一页 ─────────────────────────────
   const handleFilterChange = useCallback((values: FilterValues) => {
     setFilter(values);
+    setPage(1);
+  }, []);
+
+  const handleCategoryClick = useCallback((category: string) => {
+    setFilter((current) => ({ ...current, category }));
     setPage(1);
   }, []);
 
@@ -204,8 +220,8 @@ export default function Dashboard() {
               message.success(`RSS 导入: ${res.saved} 篇`);
               loadStats();
               loadArticles();
-            } catch (e: any) {
-              message.error(`导入失败: ${e?.response?.data?.detail || e.message}`);
+            } catch (error: unknown) {
+              message.error(`导入失败: ${getRequestErrorMessage(error)}`);
             }
           }}
         >
@@ -215,6 +231,7 @@ export default function Dashboard() {
 
       {/* 统计卡片 */}
       <StatsCards stats={stats} loading={loading} reportCount={reportCount} />
+      <TodayStatsRow stats={stats} loading={loading} />
 
       {/* 流水线控制 */}
       <PipelineControl onComplete={handlePipelineComplete} />
@@ -271,25 +288,42 @@ export default function Dashboard() {
         categories={stats?.category_distribution ? Object.keys(stats.category_distribution) : []}
       />
 
-      {/* 文章表格 */}
-      <ArticleTable
-        articles={articles}
-        total={totalArticles}
-        loading={tableLoading}
-        page={page}
-        pageSize={pageSize}
-        onPageChange={(p, ps) => {
-          setPage(p);
-          setPageSize(ps);
-        }}
-        onSortChange={handleSortChange}
-        onViewReport={handleViewReport}
-        onViewDetail={handleViewDetail}
-        onViewDrafts={handleViewDrafts}
-        onRunV2Single={handleRunV2Single}
-        onScoreV2Single={handleScoreV2Single}
-        onRefresh={loadArticles}
-      />
+      <Row style={{ marginBottom: 16 }}>
+        <Col span={24}>
+          <CategoryBreakdown
+            distribution={stats?.category_distribution ?? {}}
+            loading={loading}
+            onCategoryClick={handleCategoryClick}
+          />
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} align="stretch">
+        {/* 文章表格 */}
+        <Col xs={24} sm={24} lg={16} data-testid="article-table-column">
+          <ArticleTable
+            articles={articles}
+            total={totalArticles}
+            loading={tableLoading}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={(p, ps) => {
+              setPage(p);
+              setPageSize(ps);
+            }}
+            onSortChange={handleSortChange}
+            onViewReport={handleViewReport}
+            onViewDetail={handleViewDetail}
+            onViewDrafts={handleViewDrafts}
+            onRunV2Single={handleRunV2Single}
+            onScoreV2Single={handleScoreV2Single}
+            onRefresh={loadArticles}
+          />
+        </Col>
+        <Col xs={24} sm={24} lg={8} data-testid="hot-ranking-column">
+          <HotRankingPanel />
+        </Col>
+      </Row>
 
       {/* 报道查看器 Modal */}
       <ReportViewer

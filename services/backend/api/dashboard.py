@@ -3,6 +3,7 @@
 
 端点:
   GET /api/articles            文章列表（分页+筛选+排序）
+  GET /api/articles/hot        热点文章排行
   GET /api/articles/{hash}     单篇文章详情
   GET /api/stats               统计概览
 """
@@ -10,6 +11,8 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Literal
 
 from agent.template_compat import normalize_legacy_drafts
 from auth.deps import get_current_user
@@ -20,6 +23,8 @@ from logging_config import get_trace_id
 
 router = APIRouter(prefix="/api", tags=["Dashboard"])
 logger = logging.getLogger("backend.api.dashboard")
+
+DateRange = Literal["1d", "7d", "30d", "all"]
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -33,6 +38,30 @@ def _get_db(request: Request):
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
     return db
+
+
+def _today_start_utc(now: datetime | None = None) -> datetime:
+    """返回 UTC+8 当日零点对应的 UTC 时间。"""
+    utc_now = now or datetime.now(UTC)
+    if utc_now.tzinfo is None:
+        utc_now = utc_now.replace(tzinfo=UTC)
+    utc8_now = utc_now.astimezone(timezone(timedelta(hours=8)))
+    return utc8_now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
+
+
+def _date_range_start(date_range: DateRange, now: datetime | None = None) -> datetime | None:
+    """将热点排行时间范围转换为 UTC 起始时间。"""
+    utc_now = now or datetime.now(UTC)
+    if utc_now.tzinfo is None:
+        utc_now = utc_now.replace(tzinfo=UTC)
+    utc_now = utc_now.astimezone(UTC)
+    if date_range == "1d":
+        return _today_start_utc(utc_now)
+    if date_range == "7d":
+        return utc_now - timedelta(days=7)
+    if date_range == "30d":
+        return utc_now - timedelta(days=30)
+    return None
 
 
 async def _attach_user_drafts(db, article: dict, user_id: str) -> dict:
@@ -94,6 +123,7 @@ async def list_articles(
         "source",
         "ai_relevance_score",
         "reportability_score",
+        "pr_total_score",
     }
     if sort_by not in allowed_sort_fields:
         sort_by = "added_at"
@@ -139,6 +169,40 @@ async def list_articles(
         "page_size": page_size,
         "pages": max(1, (total + page_size - 1) // page_size),
     }
+
+
+@router.get("/articles/hot", summary="热点文章排行")
+async def hot_articles(
+    request: Request,
+    limit: int = Query(default=10, ge=1, le=20, description="返回条数"),
+    category: str = Query(default="all", description="category_v2 分类，all 表示全部"),
+    date_range: DateRange = Query(default="7d", description="1d / 7d / 30d / all"),
+    _user_id: str = Depends(get_current_user),
+):
+    """返回指定分类和时间范围内按综合分降序排列的热点文章。"""
+    db = _get_db(request)
+
+    query: dict = {"pr_total_score": {"$gt": 0}}
+    if category != "all":
+        query["category_v2"] = category
+    since = _date_range_start(date_range)
+    if since is not None:
+        query["added_at"] = {"$gte": since}
+
+    projection = {
+        "_id": 0,
+        "url_hash": 1,
+        "title": 1,
+        "url": 1,
+        "pr_total_score": 1,
+        "category_v2": 1,
+        "added_at": 1,
+        "source_type": 1,
+    }
+    cursor = db["articles"].find(query, projection).sort("pr_total_score", -1).limit(limit)
+    items = await cursor.to_list(length=limit)
+
+    return {"ok": True, "data": {"items": items, "total": len(items)}}
 
 
 @router.get("/articles/{url_hash}", summary="文章详情")
@@ -399,7 +463,7 @@ async def get_stats(
     request: Request,
     _user_id: str = Depends(get_current_user),
 ):
-    """返回仪表盘统计数据：总数、分类分布、来源分布、评分分布"""
+    """返回仪表盘统计数据，包括以 UTC+8 为基准的今日统计。"""
     db = _get_db(request)
 
     total = await db["articles"].count_documents({})
@@ -419,6 +483,23 @@ async def get_stats(
         )
         if total > 0
         else 0
+    )
+
+    today_filter = {"added_at": {"$gte": _today_start_utc()}}
+    today_count = await db["articles"].count_documents(today_filter)
+    today_ai_security_count = await db["articles"].count_documents(
+        {**today_filter, "is_ai_agent_security_relevant": True}
+    )
+    today_high_value_count = await db["articles"].count_documents(
+        {
+            **today_filter,
+            "$expr": {
+                "$gte": [
+                    {"$add": ["$ai_relevance_score", "$reportability_score"]},
+                    140,
+                ]
+            },
+        }
     )
 
     # 来源分布（聚合）
@@ -455,4 +536,7 @@ async def get_stats(
         "high_value_count": high_value_count,
         "source_distribution": source_dist,
         "category_distribution": cat_dist,
+        "today_count": today_count,
+        "today_ai_security_count": today_ai_security_count,
+        "today_high_value_count": today_high_value_count,
     }

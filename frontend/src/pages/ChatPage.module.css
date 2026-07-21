@@ -11,6 +11,12 @@
   border-right: 1px solid #f0f0f0;
 }
 
+.selectorCollapse {
+  margin-bottom: 16px;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
 .content {
   padding: 20px;
   display: flex;
@@ -30,7 +36,7 @@
 }
 
 .previewArea {
-  max-height: 320px;
+  max-height: 500px;
   overflow: auto;
   padding: 12px;
   background: #fafafa;
@@ -95,8 +101,62 @@
 }
 
 .revisionsArea {
-  max-height: 280px;
+  max-height: 360px;
   overflow: auto;
+}
+
+.fullscreenMarkdown {
+  max-width: 960px;
+  margin: 0 auto;
+  font-size: 15px;
+  line-height: 1.8;
+  color: #262626;
+}
+
+.fullscreenMarkdown h1 {
+  margin: 0 0 24px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e8e8e8;
+  font-size: 30px;
+  line-height: 1.3;
+}
+
+.fullscreenMarkdown h2 {
+  margin: 28px 0 14px;
+  font-size: 24px;
+  line-height: 1.4;
+}
+
+.fullscreenMarkdown h3 {
+  margin: 22px 0 12px;
+  font-size: 19px;
+  line-height: 1.5;
+}
+
+.fullscreenMarkdown p {
+  margin: 12px 0;
+}
+
+.fullscreenMarkdown ul,
+.fullscreenMarkdown ol {
+  padding-left: 28px;
+}
+
+.fullscreenMarkdown pre {
+  overflow-x: auto;
+  padding: 16px;
+  border-radius: 8px;
+  background: #1f1f1f;
+  color: #d4d4d4;
+}
+
+@media (max-width: 1199px) {
+  .sider {
+    flex: 0 0 420px !important;
+    width: 420px !important;
+    min-width: 420px !important;
+    max-width: 420px !important;
+  }
 }
 
 .messagesContainer {

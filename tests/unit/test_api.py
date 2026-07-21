@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -278,19 +279,129 @@ class TestDashboardAPI:
             assert resp.status_code == 200
 
     @pytest.mark.asyncio
+    async def test_list_articles_sorts_by_pr_total_score(self, app, mock_db):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/articles?sort_by=pr_total_score&order=desc")
+
+        assert resp.status_code == 200
+        mock_db["articles"].find.return_value.sort.assert_called_with("pr_total_score", -1)
+
+    @pytest.mark.asyncio
     async def test_article_detail_not_found(self, app):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/api/articles/nonexistent_hash_1234567890ab")
             assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_get_stats(self, app):
+    async def test_get_stats(self, app, mock_db):
+        articles = mock_db["articles"]
+        articles.count_documents.side_effect = [12, 5, 2, 3, 1, 1]
+
+        source_cursor = MagicMock()
+        source_cursor.__aiter__.return_value = iter(
+            [{"_id": "overseas_news", "count": 7}, {"_id": "wechat_mp", "count": 5}]
+        )
+        category_cursor = MagicMock()
+        category_cursor.__aiter__.return_value = iter(
+            [{"_id": "AI安全漏洞与攻击", "count": 8}]
+        )
+        articles.aggregate.side_effect = [source_cursor, category_cursor]
+
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/api/stats")
-            assert resp.status_code == 200
-            data = resp.json()
-            assert "total_articles" in data
-            assert "ai_security_count" in data
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_articles"] == 12
+        assert data["category_distribution"] == {"AI安全漏洞与攻击": 8}
+        assert data["today_count"] == 3
+        assert data["today_ai_security_count"] == 1
+        assert data["today_high_value_count"] == 1
+
+        today_start = articles.count_documents.await_args_list[3].args[0]["added_at"]["$gte"]
+        assert today_start.astimezone(timezone(timedelta(hours=8))).hour == 0
+        assert articles.count_documents.await_args_list[4].args[0] == {
+            "added_at": {"$gte": today_start},
+            "is_ai_agent_security_relevant": True,
+        }
+
+    @pytest.mark.asyncio
+    async def test_hot_articles_returns_ranked_projection(self, app, mock_db):
+        items = [
+            {
+                "url_hash": "hot-1",
+                "title": "热点一",
+                "url": "https://example.com/hot-1",
+                "pr_total_score": 188,
+                "category_v2": "AI安全漏洞与攻击",
+                "added_at": "2026-07-21T08:30:00Z",
+                "source_type": "overseas_news",
+            },
+            {
+                "url_hash": "hot-2",
+                "title": "热点二",
+                "url": "https://example.com/hot-2",
+                "pr_total_score": 160,
+                "category_v2": "AI安全漏洞与攻击",
+                "added_at": "2026-07-20T08:30:00Z",
+                "source_type": "wechat_mp",
+            },
+        ]
+        articles = mock_db["articles"]
+        articles.find.return_value.to_list = AsyncMock(return_value=items)
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get(
+                "/api/articles/hot?limit=5&category=AI安全漏洞与攻击&date_range=all"
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True, "data": {"items": items, "total": 2}}
+        query, projection = articles.find.call_args.args
+        assert query == {
+            "pr_total_score": {"$gt": 0},
+            "category_v2": "AI安全漏洞与攻击",
+        }
+        assert projection["_id"] == 0
+        articles.find.return_value.sort.assert_called_with("pr_total_score", -1)
+        articles.find.return_value.limit.assert_called_with(5)
+        articles.find.return_value.to_list.assert_awaited_with(length=5)
+
+    @pytest.mark.asyncio
+    async def test_hot_articles_1d_uses_utc8_today(self, app, mock_db):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/articles/hot?date_range=1d")
+
+        assert resp.status_code == 200
+        query = mock_db["articles"].find.call_args.args[0]
+        since = query["added_at"]["$gte"]
+        since_utc8 = since.astimezone(timezone(timedelta(hours=8)))
+        assert (since_utc8.hour, since_utc8.minute, since_utc8.second) == (0, 0, 0)
+
+    @pytest.mark.asyncio
+    async def test_hot_articles_validates_query_bounds(self, app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            invalid_limit = await client.get("/api/articles/hot?limit=21")
+            invalid_range = await client.get("/api/articles/hot?date_range=yesterday")
+
+        assert invalid_limit.status_code == 422
+        assert invalid_range.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_hot_articles_requires_authentication(self, app):
+        from auth.deps import get_current_user
+
+        auth_override = app.dependency_overrides.pop(get_current_user, None)
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get("/api/articles/hot")
+        finally:
+            if auth_override is not None:
+                app.dependency_overrides[get_current_user] = auth_override
+
+        assert resp.status_code == 401
 
     @pytest.mark.asyncio
     async def test_db_not_available(self):
