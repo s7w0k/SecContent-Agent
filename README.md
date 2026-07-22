@@ -1,6 +1,6 @@
 # PR Agent Demo
 
-智能体安全 PR 情报 Agent 系统 - 从**内容爬取 -> AI 分类 -> 双维度打分 -> PR 草稿生成 -> 对话改稿 -> 用户反馈与风格学习**的端到端自动化系统。
+智能体安全 PR 情报 Agent 系统 - 从**内容爬取 -> AI 分类 -> 双维度打分 -> PR 草稿生成 -> 内容与话术检查 -> 对话改稿 -> 用户反馈与风格学习**的端到端自动化系统。
 
 - **仓库**: https://gitee.com/s7w0k/pr-agent-demo
 - **部署**: Docker Compose 一键启动
@@ -17,6 +17,7 @@ git clone https://gitee.com/s7w0k/pr-agent-demo.git
 cd pr-agent-demo
 cp .env.example .env
 # 编辑 .env，填入 DEEPSEEK_API_KEY，并将 JWT_SECRET 替换为 32 字符以上随机强密钥
+# 稿件内容与话术检查复用这组模型配置，不需要新增审核环境变量
 ```
 
 ### 2. 启动
@@ -123,7 +124,7 @@ docker compose -p pr-crawler `
 ### V2 智能 PR 流水线
 
 ```
-文章入库 -> 6分类 -> 双维度打分 -> PR 草稿生成 -> 对话改稿 -> 用户反馈 -> 风格学习
+文章入库 -> 6分类 -> 双维度打分 -> PR 草稿生成 -> 内容与话术检查 -> 对话改稿 -> 用户反馈 -> 风格学习
 ```
 
 | 阶段 | 说明 | 产品知识库 |
@@ -132,11 +133,23 @@ docker compose -p pr-crawler `
 | **筛选** | 仅前 3 类（PR 候选）进入后续流程 | - |
 | **双维度打分** | 产品能力相关度 + 事件影响面与传播力（各 0-100） | ✅ 读取 `agent-security-briefs/` |
 | **PR 草稿** | 综合分 ≥ 80 -> 4 篇草稿（2 套模板 × 2 个角度） | ✅ |
+| **内容与话术检查** | 对照原文检查事实表述，并识别“业内第一”“领先于某公司”等高风险宣传话术，输出高/中/低三级问题与修改建议 | ✅ |
 | **对话改稿** | 问答模式咨询 + 改稿模式修订，支持修订记录和应用 | ✅ |
 | **用户反馈** | 对草稿/修订稿 1-5 星评分 + 文字反馈 + 标签 | ✅ |
 | **风格学习** | 基于反馈和操作记录学习用户偏好，注入草稿生成 Prompt | ✅ |
 
-流水线和单篇草稿生成通过 Redis + ARQ 提交给独立 `backend-worker` 进程：触发接口立即返回 `task_id`，前端轮询 MongoDB 中的持久化任务状态，展示 `crawl -> enrich -> classify_v2 -> filter -> score_v2 -> draft -> quality_check -> rewrite` 进度。任务执行状态、LangGraph 检查点和 LLM 调用元数据均持久化；服务重启后可查询状态并从最近检查点恢复，不依赖 FastAPI 进程内内存。
+流水线和单篇草稿生成通过 Redis + ARQ 提交给独立 `backend-worker` 进程：触发接口立即返回 `task_id`，前端轮询 MongoDB 中的持久化任务状态，展示 `crawl -> enrich -> classify_v2 -> filter -> score_v2 -> draft -> quality_check -> rewrite -> review` 进度。任务执行状态、LangGraph 检查点和 LLM 调用元数据均持久化；服务重启后可查询状态并从最近检查点恢复，不依赖 FastAPI 进程内内存。
+
+### 稿件内容与话术检查
+
+每篇最终稿生成后会自动执行检查，结果随用户草稿一起保存并显示在“对话改稿”页面：
+
+1. **事实内容**：仅根据已入库的原文核对稿件中的数据、时间、主体、因果关系和归属表述；缺少原文时会明确标记事实检查不完整。
+2. **宣传话术**：识别“业内第一”“唯一”“遥遥领先”“超过/强于某公司”等缺少充分支撑或容易造成误导的表达。
+3. **分级建议**：每个问题标记高、中、低等级，展示原句、问题说明和可直接采用的修改建议；系统只输出内容问题，不给出法务确认或可发布结论。
+4. **状态与重检**：检查失败不会阻断草稿保存；内容变更后旧结果会标记为已过期。用户可手动重新检查，应用修订稿后系统会自动重检。
+
+检查功能复用主体服务 `.env` 中的 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL` 和 `DEEPSEEK_MODEL`，不需要规则 YAML、公司敏感配置或额外审核服务。
 
 ### 多租户自定义 PR 模板
 
@@ -184,9 +197,10 @@ docker compose -p pr-crawler `
 1. **选择文章和草稿** - 左栏选择有 PR 草稿的文章，切换查看 4 篇草稿
 2. **问答模式** - 输入问题，AI 基于文章和草稿上下文回答（如"这个标题够不够吸引人？"）
 3. **改稿模式** - 输入修改意见，AI 生成修订稿并自动保存（如"标题更有冲击力，减少技术细节"）
-4. **修订记录** - 左栏底部显示历史修订记录，可点击查看任意版本
-5. **应用修订** - 选择满意的修订稿，点击"应用为当前稿"将其设为主稿
-6. **复制/下载** - 修订稿支持复制到剪贴板和下载 `.md` 文件
+4. **内容与话术检查** - 查看事实内容和宣传话术问题、风险等级与修改建议，也可手动重新检查
+5. **修订记录** - 左栏底部显示历史修订记录，可点击查看任意版本
+6. **应用修订** - 选择满意的修订稿，点击"应用为当前稿"将其设为主稿并自动重检
+7. **复制/下载** - 修订稿支持复制到剪贴板和下载 `.md` 文件
 
 ### 用户反馈与风格学习
 
@@ -248,6 +262,7 @@ services/backend/agent/
 ├── pr_templates.py     # 6 套 PR 模板（3 类 × 2 套）
 ├── template_repository.py # 多租户模板覆盖、版本、回滚与默认回退
 ├── draft_generator.py  # 草稿生成器（每文 4 稿，支持风格偏好注入）
+├── draft_reviewer.py   # 稿件事实内容与高风险宣传话术检查
 ├── draft_chat.py       # 对话改稿 Agent（问答 + 改稿）
 ├── style_profiler.py   # 风格画像管理 Agent（偏好提取 + 画像构建）
 ├── pipeline_v2.py      # LangGraph 条件路由流水线编排
@@ -320,11 +335,13 @@ make lint                             # 代码检查
 | `POST /api/pipeline/score-v2/{hash}` | V2 单篇打分 |
 | `POST /api/pipeline/crawl-overseas` | 爬取海外新闻 |
 | `GET /api/articles` | 文章列表 |
+| `GET /api/articles/hot` | 热点排行（兼容历史评分和时间格式） |
 | `GET /api/articles/{url_hash}` | 文章详情 |
 | `POST /api/chat/ask` | 对话问答（文章/草稿上下文） |
 | `POST /api/chat/ask_stream?token={jwt}` | SSE 流式对话 |
 | `POST /api/articles/{url_hash}/drafts/{draft_index}/revise` | 改稿（生成修订稿） |
 | `POST /api/articles/{url_hash}/drafts/{draft_index}/revise_stream?token={jwt}` | SSE 流式改稿 |
+| `POST /api/articles/{url_hash}/drafts/{draft_index}/review` | 手动重新检查稿件内容与宣传话术 |
 | `POST /api/articles/{url_hash}/drafts/{draft_index}/revisions/{revision_id}/apply` | 应用修订为当前稿 |
 | `POST /api/feedback` | 提交反馈（评分+文字+标签） |
 | `GET /api/feedback` | 查询反馈列表（支持筛选） |

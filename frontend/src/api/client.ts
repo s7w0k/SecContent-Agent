@@ -28,6 +28,7 @@ import type {
   DevLogQueryResult,
   DevLogStats,
   DevLogTrace,
+  DraftReview,
   DraftReviseRequest,
   DraftReviseResponse,
   EffectivePRTemplate,
@@ -691,6 +692,12 @@ export const chatApi = {
     const { data } = await client.post(
       `/articles/${urlHash}/drafts/${draftIndex}/revisions/${revisionId}/apply`,
     );
+    return data.data;
+  },
+
+  /** 重新检查稿件内容与宣传话术 */
+  async reviewDraft(urlHash: string, draftIndex: number): Promise<DraftReview> {
+    const { data } = await client.post(`/articles/${urlHash}/drafts/${draftIndex}/review`);
     return data.data;
   },
 

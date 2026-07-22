@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -20,6 +21,7 @@ from api.pipeline import (
     _read_task_checkpoints,
     _run_classify_v2_batch,
     _run_score_v2_batch,
+    _serialize_pipeline_task,
     create_classify_v2_task,
     get_pipeline_task,
     list_pipeline_tasks,
@@ -30,6 +32,41 @@ from api.pipeline import (
 )
 
 ARTICLE_HASH = "d41d8cd98f00b204e9800998ecf8427e"
+
+
+def test_pipeline_task_serializer_marks_utc_and_calculates_running_elapsed():
+    created_at = datetime(2026, 7, 22, 8, 0)  # MongoDB 读出的无时区 UTC
+    result = _serialize_pipeline_task(
+        {
+            "task_id": "task-running",
+            "status": "running",
+            "created_at": created_at,
+            "updated_at": created_at,
+            "expires_at": created_at + timedelta(hours=1),
+        },
+        now=datetime(2026, 7, 22, 8, 0, 5, tzinfo=UTC),
+    )
+
+    assert result["created_at"] == "2026-07-22T08:00:00Z"
+    assert result["updated_at"] == "2026-07-22T08:00:00Z"
+    assert result["expires_at"] == "2026-07-22T09:00:00Z"
+    assert result["elapsed_seconds"] == 5
+
+
+def test_pipeline_task_serializer_freezes_terminal_elapsed_at_updated_time():
+    created_at = datetime(2026, 7, 22, 8, 0, tzinfo=UTC)
+    result = _serialize_pipeline_task(
+        {
+            "task_id": "task-completed",
+            "status": "completed",
+            "created_at": created_at,
+            "updated_at": created_at + timedelta(seconds=125),
+            "expires_at": created_at + timedelta(hours=1),
+        },
+        now=created_at + timedelta(hours=8),
+    )
+
+    assert result["elapsed_seconds"] == 125
 
 
 class FakeCursor:
@@ -220,7 +257,7 @@ async def test_single_pipeline_task_persists_progress_and_result():
     assert stored["progress"]["phase"] == "completed"
     assert stored["result"]["ok"] is True
     phases = [item["progress"]["phase"] for item in tasks.history if "progress" in item]
-    assert phases == ["classify", "classify", "score", "draft", "completed"]
+    assert phases == ["classify", "classify", "score", "draft", "review", "completed"]
     assert drafts.update_calls[0][0] == {
         "user_id": "user-a",
         "article_url_hash": ARTICLE_HASH,

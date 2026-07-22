@@ -12,6 +12,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "backend"))
 
 from api.pipeline import _run_v2_single_workflow
+from models.draft_review import DraftReview
 
 ARTICLE_HASH = "d41d8cd98f00b204e9800998ecf8427e"
 
@@ -181,3 +182,30 @@ async def test_run_v2_single_resolves_templates_for_current_user():
 
     repository.resolve.assert_awaited_once_with("user-a", "热点事件")
     assert draft_gen.generate.await_args.kwargs["templates"] == [template_a, template_b]
+
+
+@pytest.mark.asyncio
+async def test_run_v2_single_reviews_generated_drafts_before_persisting():
+    request, collections, _draft_gen = _build_request(None)
+    reviewer = MagicMock()
+    reviewer.review = AsyncMock(
+        return_value=DraftReview(
+            status="completed",
+            content_hash="a" * 64,
+            summary="未发现需要修改的问题",
+            issues=[],
+            counts={"high": 0, "medium": 0, "low": 0},
+            fact_check_available=True,
+        )
+    )
+    request.app.state.draft_reviewer = reviewer
+
+    result = await _run_v2_single_workflow(request.app, ARTICLE_HASH, user_id="user-a")
+
+    reviewer.review.assert_awaited_once()
+    saved_draft = collections["user_drafts"].update_one.await_args.args[1]["$set"]["drafts"][0]
+    assert saved_draft["review"]["status"] == "completed"
+    assert any(
+        step == {"phase": "review", "review_count": 1, "review_failed_count": 0}
+        for step in result["steps"]
+    )

@@ -32,12 +32,23 @@ import {
   message,
 } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from 'react';
 import ReactMarkdown from 'react-markdown';
 import api, { chatApi } from '../api/client';
 import ChatBubble from '../components/ChatBubble';
 import DraftFeedback from '../components/DraftFeedback';
+import DraftReviewPanel from '../components/DraftReviewPanel';
 import RevisionList from '../components/RevisionList';
-import type { Article, ChatMessage, DraftReviseResponse, DraftRevision } from '../types';
+import type {
+  Article,
+  ChatMessage,
+  DraftReview,
+  DraftReviseResponse,
+  DraftRevision,
+} from '../types';
 import styles from './ChatPage.module.css';
 
 const { Sider, Content } = Layout;
@@ -45,6 +56,38 @@ const { Text } = Typography;
 const { TextArea } = Input;
 
 type ChatMode = '问答' | '改稿';
+
+const SIDER_WIDTH_STORAGE_KEY = 'chat-page-sider-width';
+const DEFAULT_SIDER_WIDTH = 760;
+const MIN_SIDER_WIDTH = 420;
+const MIN_CONTENT_WIDTH = 280;
+const RESIZE_HANDLE_WIDTH = 10;
+const STACKED_BREAKPOINT = 992;
+
+function getMaximumSiderWidth(layoutWidth?: number) {
+  const availableWidth =
+    layoutWidth && layoutWidth > 0
+      ? layoutWidth
+      : typeof window !== 'undefined'
+        ? window.innerWidth
+        : DEFAULT_SIDER_WIDTH + MIN_CONTENT_WIDTH + RESIZE_HANDLE_WIDTH;
+  return Math.max(
+    MIN_SIDER_WIDTH,
+    availableWidth - MIN_CONTENT_WIDTH - RESIZE_HANDLE_WIDTH,
+  );
+}
+
+function clampSiderWidth(width: number, layoutWidth?: number) {
+  return Math.round(
+    Math.min(Math.max(width, MIN_SIDER_WIDTH), getMaximumSiderWidth(layoutWidth)),
+  );
+}
+
+function getInitialSiderWidth() {
+  if (typeof window === 'undefined') return DEFAULT_SIDER_WIDTH;
+  const storedWidth = Number(window.localStorage.getItem(SIDER_WIDTH_STORAGE_KEY));
+  return clampSiderWidth(Number.isFinite(storedWidth) && storedWidth > 0 ? storedWidth : DEFAULT_SIDER_WIDTH);
+}
 
 const modeOptions = [
   { value: '问答', label: '问答', icon: <QuestionCircleOutlined /> },
@@ -60,6 +103,9 @@ function getRequestErrorMessage(error: unknown, fallback: string): string {
 }
 
 export default function ChatPage() {
+  const [siderWidth, setSiderWidth] = useState(getInitialSiderWidth);
+  const [resizing, setResizing] = useState(false);
+
   // ── 文章 & 草稿 ──────────────────────────────────────────
   const [articles, setArticles] = useState<Article[]>([]);
   const [articlesLoading, setArticlesLoading] = useState(true);
@@ -79,6 +125,7 @@ export default function ChatPage() {
 
   // ── 应用修订 ─────────────────────────────────────────────
   const [applying, setApplying] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
 
   // ── 错误 ─────────────────────────────────────────────────
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +135,77 @@ export default function ChatPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const resizeStartRef = useRef<{ pointerX: number; width: number } | null>(null);
+  const resizeWidthRef = useRef(siderWidth);
+
+  const getLayoutWidth = useCallback(
+    () => layoutRef.current?.getBoundingClientRect().width || window.innerWidth,
+    [],
+  );
+
+  const persistSiderWidth = useCallback((width: number) => {
+    window.localStorage.setItem(SIDER_WIDTH_STORAGE_KEY, String(width));
+  }, []);
+
+  const applySiderWidth = (handle: HTMLDivElement, width: number) => {
+    const sider = handle.previousElementSibling as HTMLElement | null;
+    if (!sider) return;
+    const cssWidth = `${width}px`;
+    sider.style.flex = `0 0 ${cssWidth}`;
+    sider.style.width = cssWidth;
+    sider.style.minWidth = cssWidth;
+    sider.style.maxWidth = cssWidth;
+    handle.setAttribute('aria-valuenow', String(width));
+  };
+
+  const handleResizeStart = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || window.innerWidth < STACKED_BREAKPOINT) return;
+    event.preventDefault();
+    resizeStartRef.current = { pointerX: event.clientX, width: siderWidth };
+    resizeWidthRef.current = siderWidth;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setResizing(true);
+  };
+
+  const handleResizeMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = resizeStartRef.current;
+    if (!start) return;
+    const nextWidth = clampSiderWidth(
+      start.width + event.clientX - start.pointerX,
+      getLayoutWidth(),
+    );
+    resizeWidthRef.current = nextWidth;
+    applySiderWidth(event.currentTarget, nextWidth);
+  };
+
+  const handleResizeEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!resizeStartRef.current) return;
+    resizeStartRef.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    setResizing(false);
+    setSiderWidth(resizeWidthRef.current);
+    persistSiderWidth(resizeWidthRef.current);
+  };
+
+  const handleResizeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    let nextWidth: number | null = null;
+    if (event.key === 'ArrowLeft') nextWidth = siderWidth - 20;
+    if (event.key === 'ArrowRight') nextWidth = siderWidth + 20;
+    if (event.key === 'Home') nextWidth = MIN_SIDER_WIDTH;
+    if (event.key === 'End') nextWidth = getMaximumSiderWidth(getLayoutWidth());
+    if (nextWidth === null) return;
+    event.preventDefault();
+    const clampedWidth = clampSiderWidth(nextWidth, getLayoutWidth());
+    setSiderWidth(clampedWidth);
+    persistSiderWidth(clampedWidth);
+  };
+
+  const resetSiderWidth = () => {
+    const defaultWidth = clampSiderWidth(DEFAULT_SIDER_WIDTH, getLayoutWidth());
+    setSiderWidth(defaultWidth);
+    persistSiderWidth(defaultWidth);
+  };
 
   // ── 加载有草稿的文章列表 ──────────────────────────────────
   const loadArticles = useCallback(async () => {
@@ -311,6 +429,31 @@ export default function ChatPage() {
     }
   };
 
+  const handleReviewDraft = async () => {
+    if (!selectedArticle || !currentDraft) return;
+    setReviewing(true);
+    try {
+      const review = await chatApi.reviewDraft(selectedArticle.url_hash, draftIndex);
+      const withReview = (article: Article): Article => ({
+        ...article,
+        pr_drafts: article.pr_drafts?.map((draft, index) =>
+          index === draftIndex ? { ...draft, review: review as DraftReview } : draft,
+        ),
+      });
+      setSelectedArticle((current) => (current ? withReview(current) : current));
+      setArticles((current) =>
+        current.map((article) =>
+          article.url_hash === selectedArticle.url_hash ? withReview(article) : article,
+        ),
+      );
+      message.success('稿件检查完成');
+    } catch (err: unknown) {
+      message.error(getRequestErrorMessage(err, '稿件检查失败'));
+    } finally {
+      setReviewing(false);
+    }
+  };
+
   // ── 复制修订稿 ────────────────────────────────────────────
   const handleCopy = () => {
     const content = previewContent;
@@ -389,9 +532,9 @@ export default function ChatPage() {
 
   return (
     <>
-      <Layout className={styles.layout}>
+      <Layout ref={layoutRef} className={`${styles.layout} ${resizing ? styles.resizing : ''}`}>
         {/* ── 左栏：选择 + 预览 + 修订记录 ── */}
-        <Sider width={520} className={styles.sider}>
+        <Sider width={siderWidth} className={styles.sider}>
           <Collapse
             ghost
             className={styles.selectorCollapse}
@@ -524,6 +667,14 @@ export default function ChatPage() {
                 )}
               </Card>
 
+              <DraftReviewPanel
+                review={currentDraft.review}
+                contentMd={currentDraft.content_md}
+                reviewing={reviewing}
+                onReview={handleReviewDraft}
+                compact
+              />
+
               {/* 修订记录 */}
               <Card className={styles.card} size="small">
                 <Card.Meta
@@ -553,6 +704,24 @@ export default function ChatPage() {
             </div>
           )}
         </Sider>
+
+        <div
+          className={styles.resizeHandle}
+          role="separator"
+          aria-label="调整文章选择栏宽度"
+          aria-orientation="vertical"
+          aria-valuemin={MIN_SIDER_WIDTH}
+          aria-valuemax={getMaximumSiderWidth(getLayoutWidth())}
+          aria-valuenow={siderWidth}
+          tabIndex={0}
+          title="拖动调整宽度，双击恢复默认"
+          onPointerDown={handleResizeStart}
+          onPointerMove={handleResizeMove}
+          onPointerUp={handleResizeEnd}
+          onPointerCancel={handleResizeEnd}
+          onKeyDown={handleResizeKeyDown}
+          onDoubleClick={resetSiderWidth}
+        />
 
         {/* ── 右栏：对话区 ── */}
         <Content className={styles.content}>

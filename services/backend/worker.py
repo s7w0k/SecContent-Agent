@@ -28,6 +28,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     """Initialize MongoDB and all pipeline dependencies in the worker process."""
     from agent.classifier_v2 import ClassifierV2
     from agent.draft_generator import DraftGenerator
+    from agent.draft_reviewer import DraftReviewer
     from agent.knowledge import KnowledgeLoader
     from agent.pipeline import PipelineManager
     from agent.pipeline_v2 import PipelineManagerV2
@@ -65,6 +66,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     classifier_v2 = ClassifierV2(llm=llm, db=db)
     scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge, db=db)
     draft_gen = DraftGenerator(llm=llm, knowledge=knowledge._cache)
+    draft_reviewer = DraftReviewer(llm=llm)
     pipeline_v2 = PipelineManagerV2(
         tools=tools,
         classifier_v2=classifier_v2,
@@ -74,6 +76,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         db=db,
         crawl_client=mcp_crawl_client,
         template_repository=template_repository,
+        reviewer=draft_reviewer,
     )
     pipeline_manager = PipelineManager(
         tools=tools,
@@ -89,6 +92,7 @@ async def startup(ctx: dict[str, Any]) -> None:
             classifier_v2=classifier_v2,
             scorer_v2=scorer_v2,
             draft_gen=draft_gen,
+            draft_reviewer=draft_reviewer,
             pipeline_v2=pipeline_v2,
             pipeline_manager=pipeline_manager,
             mcp_crawl_client=mcp_crawl_client,

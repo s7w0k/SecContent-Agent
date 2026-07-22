@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HotArticle } from '../types';
 import HotRankingPanel from './HotRankingPanel';
@@ -40,6 +40,16 @@ const articles: HotArticle[] = [
     source_type: 'paper',
   },
 ];
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 describe('HotRankingPanel', () => {
   beforeEach(() => {
@@ -116,5 +126,55 @@ describe('HotRankingPanel', () => {
     const { container } = render(<HotRankingPanel />);
 
     expect(container.querySelector('.ant-spin-spinning')).toBeInTheDocument();
+  });
+
+  it('distinguishes a request failure from a real empty result', async () => {
+    getHotRankingMock.mockRejectedValue(new Error('network unavailable'));
+    render(<HotRankingPanel />);
+
+    expect(await screen.findByText('热点排行加载失败')).toBeInTheDocument();
+    expect(screen.getByText('热点排行加载失败，请检查网络或稍后重试')).toBeInTheDocument();
+    expect(screen.queryByText('暂无高价值文章，可尝试扩大时间范围或分类')).not.toBeInTheDocument();
+  });
+
+  it('recovers from an error when retry succeeds', async () => {
+    getHotRankingMock
+      .mockRejectedValueOnce(new Error('temporary failure'))
+      .mockResolvedValueOnce([articles[0]]);
+    render(<HotRankingPanel />);
+
+    await screen.findByText('热点排行加载失败');
+    fireEvent.click(screen.getByRole('button', { name: '重试热点排行' }));
+
+    expect(await screen.findByRole('link', { name: '热点文章一' })).toBeInTheDocument();
+    expect(screen.queryByText('热点排行加载失败')).not.toBeInTheDocument();
+  });
+
+  it('keeps the newest result during rapid filter changes', async () => {
+    const first = deferred<HotArticle[]>();
+    const second = deferred<HotArticle[]>();
+    const third = deferred<HotArticle[]>();
+    getHotRankingMock
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+      .mockReturnValueOnce(third.promise);
+    render(<HotRankingPanel />);
+    await waitFor(() => expect(getHotRankingMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByLabelText('今日'));
+    await waitFor(() => expect(getHotRankingMock).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByLabelText('近30天'));
+    await waitFor(() => expect(getHotRankingMock).toHaveBeenCalledTimes(3));
+
+    await act(async () => third.resolve([articles[2]]));
+    expect(await screen.findByRole('link', { name: '热点文章三' })).toBeInTheDocument();
+
+    await act(async () => {
+      first.resolve([articles[0]]);
+      second.resolve([articles[1]]);
+    });
+    expect(screen.getByRole('link', { name: '热点文章三' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '热点文章一' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '热点文章二' })).not.toBeInTheDocument();
   });
 });

@@ -35,6 +35,7 @@ def _make_app(db=None, knowledge_loader=None, draft_gen=None):
     _app.state.db = db
     _app.state.knowledge_loader = knowledge_loader
     _app.state.draft_gen = draft_gen
+    _app.state.draft_reviewer = None
     # 清除缓存的 agent，确保每次测试独立
     if hasattr(_app.state, "draft_chat_agent"):
         delattr(_app.state, "draft_chat_agent")

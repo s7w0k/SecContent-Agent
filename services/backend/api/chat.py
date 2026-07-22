@@ -5,6 +5,7 @@
   POST /api/chat/ask                                          问答模式
   POST /api/articles/{url_hash}/drafts/{draft_index}/revise   生成修订稿
   POST /api/articles/{url_hash}/drafts/{draft_index}/revisions/{revision_id}/apply  应用修订
+  POST /api/articles/{url_hash}/drafts/{draft_index}/review   手动重新检查稿件
   GET  /api/articles/{url_hash}/drafts/{draft_index}/chat-history  获取对话历史
   DELETE /api/articles/{url_hash}/drafts/{draft_index}/chat-history  清空对话历史
 """
@@ -17,6 +18,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from agent.draft_reviewer import DraftReviewer, compute_content_hash
 from agent.style_profiler import load_style_hints
 from agent.template_compat import normalize_legacy_drafts, template_reference
 from api.activity import log_activity
@@ -25,6 +27,7 @@ from auth.deps import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from logging_config import get_audit_logger
+from models.draft_review import DraftReview
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api", tags=["Chat"])
@@ -76,6 +79,46 @@ def _get_draft_chat_agent(request: Request):
     )
     request.app.state.draft_chat_agent = agent
     return agent
+
+
+def _get_draft_reviewer(request: Request) -> DraftReviewer | None:
+    """获取共享审核器；兼容只注入 draft_gen 的测试和轻量运行环境。"""
+
+    reviewer = getattr(request.app.state, "draft_reviewer", None)
+    if reviewer is not None:
+        return reviewer
+    draft_gen = getattr(request.app.state, "draft_gen", None)
+    llm = getattr(draft_gen, "llm", None)
+    if llm is None:
+        return None
+    reviewer = DraftReviewer(llm=llm)
+    request.app.state.draft_reviewer = reviewer
+    return reviewer
+
+
+async def _review_draft_safely(
+    request: Request,
+    article: dict[str, Any],
+    draft: dict[str, Any],
+) -> DraftReview:
+    """审核失败时返回可存储的失败状态，不影响稿件本身。"""
+
+    reviewer = _get_draft_reviewer(request)
+    try:
+        if reviewer is None:
+            raise RuntimeError("Draft reviewer not initialized")
+        result = await reviewer.review(article, draft)
+        return result if isinstance(result, DraftReview) else DraftReview.model_validate(result)
+    except Exception as exc:
+        return DraftReview(
+            status="failed",
+            content_hash=compute_content_hash(str(draft.get("content_md") or "")),
+            summary="稿件检查失败",
+            issues=[],
+            counts={"high": 0, "medium": 0, "low": 0},
+            fact_check_available=bool(article.get("content_md")),
+            error=str(exc).strip() or type(exc).__name__,
+        )
 
 
 def _now_cn() -> str:
@@ -797,6 +840,40 @@ async def revise_draft_stream(
 
 
 @router.post(
+    "/articles/{url_hash}/drafts/{draft_index}/review",
+    summary="重新检查稿件内容与宣传话术",
+)
+async def review_draft(
+    request: Request,
+    url_hash: str,
+    draft_index: int,
+    user_id: str = Depends(get_current_user),
+):
+    """手动重查当前草稿，并用新结果覆盖该草稿原有审核结果。"""
+
+    db = _get_db(request)
+    article = await db["articles"].find_one({"url_hash": url_hash})
+    if article is None:
+        raise HTTPException(status_code=404, detail="Article not found")
+    drafts = await _load_user_drafts(db, user_id, url_hash)
+    if draft_index < 0 or draft_index >= len(drafts):
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    result = await _review_draft_safely(request, article, drafts[draft_index])
+    result_data = result.model_dump(mode="json")
+    await db["user_drafts"].update_one(
+        {"user_id": user_id, "article_url_hash": url_hash},
+        {
+            "$set": {
+                f"drafts.{draft_index}.review": result_data,
+                "updated_at": _now_cn(),
+            }
+        },
+    )
+    return {"ok": True, "data": result_data}
+
+
+@router.post(
     "/articles/{url_hash}/drafts/{draft_index}/revisions/{revision_id}/apply",
     summary="应用修订稿",
 )
@@ -832,6 +909,8 @@ async def apply_revision(
 
     drafts[draft_index]["content_md"] = target_revision["content_md"]
     target_revision["applied"] = True
+    review = await _review_draft_safely(request, article, drafts[draft_index])
+    drafts[draft_index]["review"] = review.model_dump(mode="json")
 
     await db["user_drafts"].update_one(
         {"user_id": user_id, "article_url_hash": url_hash},
@@ -879,6 +958,7 @@ async def apply_revision(
             "draft_index": draft_index,
             "revision_id": revision_id,
             "applied": True,
+            "review": drafts[draft_index]["review"],
             "trace_id": trace_id,
         },
     }

@@ -7,7 +7,6 @@ import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from langgraph.graph import END
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "backend"))
 
@@ -33,7 +32,7 @@ def test_route_decisions_are_bounded():
     assert route_after_score({"score_anomaly": True, "score_retried": False}) == "score_v2"
     assert route_after_score({"score_anomaly": True, "score_retried": True}) == "draft"
     assert route_after_quality_check({"needs_rewrite": [{"index": 1}]}) == "rewrite"
-    assert route_after_quality_check({"needs_rewrite": []}) == END
+    assert route_after_quality_check({"needs_rewrite": []}) == "review"
 
 
 @pytest.mark.asyncio

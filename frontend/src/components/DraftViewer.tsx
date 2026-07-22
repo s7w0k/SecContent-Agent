@@ -12,6 +12,7 @@ import ReactMarkdown from 'react-markdown';
 import api from '../api/client';
 import type { Article, DraftItem } from '../types';
 import DraftFeedback from './DraftFeedback';
+import DraftReviewPanel from './DraftReviewPanel';
 
 const { Paragraph } = Typography;
 
@@ -113,7 +114,7 @@ export default function DraftViewer({ article, onClose }: DraftViewerProps) {
         size="small"
       >
         {drafts.map((d, i) => (
-          <Radio.Button key={i} value={i}>
+          <Radio.Button key={`${d.template_id || d.template}-${d.index}`} value={i}>
             {d.template}-{d.index}
           </Radio.Button>
         ))}
@@ -129,6 +130,7 @@ export default function DraftViewer({ article, onClose }: DraftViewerProps) {
           <Paragraph type="secondary">草稿内容不可用</Paragraph>
         )}
       </div>
+      <DraftReviewPanel review={current.review} contentMd={current.content_md} compact />
       <DraftFeedback
         articleUrlHash={article.url_hash}
         draftIndex={index}

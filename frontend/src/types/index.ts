@@ -185,6 +185,43 @@ export interface Report {
 // Draft（V2 PR 草稿）
 // ═══════════════════════════════════════════════════════════
 
+export type DraftReviewSeverity = 'high' | 'medium' | 'low';
+
+export type DraftReviewIssueCategory =
+  | 'fact_mismatch'
+  | 'unsupported_claim'
+  | 'internal_conflict'
+  | 'absolute_claim'
+  | 'competitor_comparison'
+  | 'competitor_disparagement'
+  | 'guarantee_claim'
+  | 'unsupported_data'
+  | 'exaggerated_claim'
+  | 'ambiguous_expression';
+
+export type DraftReviewStatus = 'completed' | 'failed' | 'partial';
+
+export interface DraftReviewIssue {
+  issue_id: string;
+  category: DraftReviewIssueCategory;
+  severity: DraftReviewSeverity;
+  quote: string;
+  reason: string;
+  suggestion: string;
+  suggested_rewrite?: string | null;
+}
+
+export interface DraftReview {
+  status: DraftReviewStatus;
+  content_hash: string;
+  summary: string;
+  issues: DraftReviewIssue[];
+  counts: Record<DraftReviewSeverity, number>;
+  fact_check_available: boolean;
+  error?: string | null;
+  reviewed_at: string;
+}
+
 export interface DraftItem {
   template: string;
   template_id?: string;
@@ -195,6 +232,7 @@ export interface DraftItem {
   content_md: string;
   title: string;
   index: number;
+  review?: DraftReview;
   revisions?: DraftRevision[];
   feedback_summary?: {
     avg_rating: number;
@@ -268,6 +306,7 @@ export interface PipelineTask {
   created_at: string;
   updated_at: string;
   expires_at: string;
+  elapsed_seconds?: number;
 }
 
 export interface PipelineTaskList {
@@ -494,6 +533,7 @@ export interface ApplyRevisionResponse {
   draft_index: number;
   revision_id: string;
   applied: boolean;
+  review?: DraftReview;
 }
 
 // ═══════════════════════════════════════════════════════════

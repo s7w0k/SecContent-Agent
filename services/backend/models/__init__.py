@@ -1,5 +1,14 @@
 """MongoDB 数据模型。"""
 
+from .draft_review import (
+    ISSUE_CATEGORIES,
+    ISSUE_SEVERITIES,
+    DraftReview,
+    DraftReviewIssue,
+    DraftReviewStatus,
+    IssueCategory,
+    IssueSeverity,
+)
 from .execution_log import (
     EventLevel,
     EventType,
@@ -38,7 +47,12 @@ from .pr_template import (
 from .user_prompt import EffectivePrompt, UserPromptUpdate
 
 __all__ = [
+    "ISSUE_CATEGORIES",
+    "ISSUE_SEVERITIES",
     "ActionType",
+    "DraftReview",
+    "DraftReviewIssue",
+    "DraftReviewStatus",
     "EffectivePRTemplate",
     "EffectivePrompt",
     "EventLevel",
@@ -50,6 +64,8 @@ __all__ = [
     "FeedbackCreate",
     "FeedbackTargetRef",
     "FeedbackUpdate",
+    "IssueCategory",
+    "IssueSeverity",
     "LogService",
     "PRTemplateCategory",
     "RunStatus",

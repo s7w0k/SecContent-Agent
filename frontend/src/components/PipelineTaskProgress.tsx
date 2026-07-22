@@ -22,6 +22,7 @@ const PHASE_LABELS: Record<string, string> = {
   score: '内容打分',
   score_v2: '智能打分',
   draft: '生成草稿',
+  review: '内容与话术检查',
   report: '生成报道',
   completed: '任务完成',
   failed: '任务失败',
@@ -32,7 +33,23 @@ const PHASE_LABELS: Record<string, string> = {
 function formatElapsed(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  return minutes > 0 ? `${minutes}分${seconds.toString().padStart(2, '0')}秒` : `${seconds}秒`;
+  return `${minutes}分${seconds.toString().padStart(2, '0')}秒`;
+}
+
+function parseUtcTimestamp(value: string) {
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
+  return new Date(hasTimezone ? value : `${value}Z`).getTime();
+}
+
+function getPersistedElapsed(task: PipelineTask) {
+  if (Number.isFinite(task.elapsed_seconds)) {
+    return Math.max(0, Math.floor(task.elapsed_seconds || 0));
+  }
+  const startedAt = parseUtcTimestamp(task.created_at);
+  if (!Number.isFinite(startedAt)) return 0;
+  const terminal = ['completed', 'failed', 'cancelled', 'interrupted'].includes(task.status);
+  const endAt = terminal ? parseUtcTimestamp(task.updated_at) : Date.now();
+  return Number.isFinite(endAt) ? Math.max(0, Math.floor((endAt - startedAt) / 1000)) : 0;
 }
 
 export default function PipelineTaskProgress({
@@ -83,14 +100,20 @@ export default function PipelineTaskProgress({
   }, [taskId]);
 
   useEffect(() => {
-    const updateElapsed = () => {
-      const startedAt = task?.created_at ? new Date(task.created_at).getTime() : Date.now();
-      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
-    };
-    updateElapsed();
-    const timer = setInterval(updateElapsed, 1000);
+    if (!task) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const persistedElapsed = getPersistedElapsed(task);
+    setElapsedSeconds(persistedElapsed);
+    if (['completed', 'failed', 'cancelled', 'interrupted'].includes(task.status)) return;
+
+    const synchronizedAt = Date.now();
+    const timer = setInterval(() => {
+      setElapsedSeconds(persistedElapsed + Math.floor((Date.now() - synchronizedAt) / 1000));
+    }, 1000);
     return () => clearInterval(timer);
-  }, [task?.created_at]);
+  }, [task]);
 
   const percent = useMemo(() => {
     if (!task) return 0;

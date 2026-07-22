@@ -101,9 +101,7 @@ async def import_article(art: ArticleImport, request: Request):
             "source_type": art.source_type,
             "published_at": art.published_at,
             "summary": art.summary,
-            "added_at": datetime.now(timezone(timedelta(hours=8))).strftime(
-                "%Y-%m-%dT%H:%M:%S+08:00"
-            ),
+            "added_at": datetime.now(UTC),
             "content_md": content_md,
             "pipeline_status": "crawled",
         }
@@ -178,7 +176,7 @@ async def crawl_overseas(request: Request, hours: int = Query(default=24, le=72)
                     "source": art["source"],
                     "source_type": "overseas_news",
                     "published_at": art["published_at"],
-                    "added_at": datetime.now(tz_cst).strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+                    "added_at": datetime.now(UTC),
                     "summary": art["summary"],
                     "content_md": "",
                     "pipeline_status": "crawled",

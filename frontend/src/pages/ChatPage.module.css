@@ -8,7 +8,47 @@
   padding: 16px;
   overflow-y: auto;
   height: 100%;
-  border-right: 1px solid #f0f0f0;
+  transition: none !important;
+}
+
+.resizeHandle {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 10px;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  background: #f5f7fa;
+  outline: none;
+}
+
+.resizeHandle::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  content: '';
+  background: #d9d9d9;
+  transition:
+    width 0.2s,
+    left 0.2s,
+    background 0.2s;
+}
+
+.resizeHandle:hover::after,
+.resizeHandle:focus-visible::after,
+.resizing .resizeHandle::after {
+  left: 3px;
+  width: 4px;
+  background: #1677ff;
+}
+
+.resizing,
+.resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 .selectorCollapse {
@@ -18,6 +58,7 @@
 }
 
 .content {
+  min-width: 280px;
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -150,12 +191,41 @@
   color: #d4d4d4;
 }
 
-@media (max-width: 1199px) {
+@media (max-width: 991px) {
+  .layout {
+    height: auto;
+    min-height: calc(100vh - 64px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    flex-direction: column !important;
+  }
+
   .sider {
-    flex: 0 0 420px !important;
-    width: 420px !important;
-    min-width: 420px !important;
-    max-width: 420px !important;
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: auto;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid #f0f0f0;
+  }
+
+  .resizeHandle {
+    display: none;
+  }
+
+  .content {
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    min-height: 600px;
+    overflow: visible;
+  }
+
+  .messagesContainer {
+    flex: 0 0 420px;
+    min-height: 420px;
   }
 }
 

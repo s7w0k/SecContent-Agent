@@ -818,7 +818,7 @@ async def crawl_overseas_only(
                     "source": art.get("source", ""),
                     "source_type": "overseas_news",
                     "published_at": art.get("published_at", ""),
-                    "added_at": datetime.now(tz).strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+                    "added_at": datetime.now(UTC),
                     "summary": art.get("summary", ""),
                     "content_md": "",
                     "pipeline_status": "crawled",
@@ -900,7 +900,7 @@ async def crawl_wewe_only(request: Request, _user_id: str = Depends(get_current_
                     "source": source,
                     "source_type": "wechat_mp",
                     "published_at": pub,
-                    "added_at": datetime.now(tz).strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+                    "added_at": datetime.now(UTC),
                     "summary": "",
                     "content_md": "",
                     "pipeline_status": "crawled",
@@ -1042,7 +1042,7 @@ async def crawl_via_api(request: Request, days: int = 1, _user_id: str = Depends
                         "source": source,
                         "source_type": "wechat_mp",
                         "published_at": pub,
-                        "added_at": datetime.now(tz).strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+                        "added_at": datetime.now(UTC),
                         "summary": art.get(
                             "digest", art.get("summary", art.get("description", ""))
                         ),
@@ -1130,7 +1130,7 @@ async def import_wewe_articles(request: Request, _user_id: str = Depends(get_cur
                 "source": source_name,
                 "source_type": "wechat_mp",
                 "published_at": pub_date,
-                "added_at": datetime.now(tz).strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+                "added_at": datetime.now(UTC),
                 "summary": "",
                 "summary_cn": "",
                 "content_md": "",
@@ -1935,16 +1935,6 @@ async def _run_v2_single_workflow(
                         templates=effective_templates,
                         system_prompt_template=system_prompt_template,
                     )
-                    if drafts["ok"]:
-                        now = datetime.now(UTC)
-                        await db["user_drafts"].update_one(
-                            {"user_id": user_id, "article_url_hash": url_hash},
-                            {
-                                "$set": {"drafts": drafts["drafts"], "updated_at": now},
-                                "$setOnInsert": {"created_at": now},
-                            },
-                            upsert=True,
-                        )
                     result["steps"].append(
                         {
                             "phase": "draft",
@@ -1972,6 +1962,93 @@ async def _run_v2_single_workflow(
                         },
                     )
 
+                    if drafts["ok"]:
+                        from agent.draft_reviewer import compute_content_hash
+                        from models.draft_review import DraftReview
+
+                        await update_progress("review", 3, "正在检查稿件内容与宣传话术...")
+                        review_started = time.perf_counter()
+                        await log_pipeline(
+                            db,
+                            "INFO",
+                            "review",
+                            "single article draft review started",
+                            user_id=user_id,
+                            username=username,
+                            trace_id=trace_id,
+                            action="start",
+                            detail={"article_url_hash": url_hash},
+                        )
+                        reviewer = getattr(app.state, "draft_reviewer", None)
+                        semaphore = asyncio.Semaphore(2)
+
+                        async def review_generated_draft(draft: dict) -> DraftReview:
+                            async with semaphore:
+                                try:
+                                    if reviewer is None:
+                                        raise RuntimeError("Draft reviewer not initialized")
+                                    review = await reviewer.review(article, draft)
+                                    if not isinstance(review, DraftReview):
+                                        review = DraftReview.model_validate(review)
+                                    return review
+                                except Exception as exc:
+                                    log.warning(
+                                        "[run-v2-single] Review failed for %s: %s",
+                                        url_hash,
+                                        exc,
+                                    )
+                                    return DraftReview(
+                                        status="failed",
+                                        content_hash=compute_content_hash(
+                                            str(draft.get("content_md") or "")
+                                        ),
+                                        summary="稿件检查失败",
+                                        issues=[],
+                                        counts={"high": 0, "medium": 0, "low": 0},
+                                        fact_check_available=bool(article.get("content_md")),
+                                        error=str(exc),
+                                    )
+
+                        reviews = await asyncio.gather(
+                            *(review_generated_draft(draft) for draft in drafts["drafts"])
+                        )
+                        for draft, review in zip(drafts["drafts"], reviews, strict=True):
+                            draft["review"] = review.model_dump(mode="json")
+
+                        now = datetime.now(UTC)
+                        await db["user_drafts"].update_one(
+                            {"user_id": user_id, "article_url_hash": url_hash},
+                            {
+                                "$set": {"drafts": drafts["drafts"], "updated_at": now},
+                                "$setOnInsert": {"created_at": now},
+                            },
+                            upsert=True,
+                        )
+                        failed_reviews = sum(review.status == "failed" for review in reviews)
+                        result["steps"].append(
+                            {
+                                "phase": "review",
+                                "review_count": len(reviews),
+                                "review_failed_count": failed_reviews,
+                            }
+                        )
+                        await log_pipeline(
+                            db,
+                            "INFO",
+                            "review",
+                            "single article drafts reviewed",
+                            user_id=user_id,
+                            username=username,
+                            trace_id=trace_id,
+                            action="complete" if failed_reviews == 0 else "degraded",
+                            duration_ms=int((time.perf_counter() - review_started) * 1000),
+                            detail={
+                                "article_url_hash": url_hash,
+                                "review_count": len(reviews),
+                                "review_failed_count": failed_reviews,
+                            },
+                        )
+
     completed_phases = {step["phase"] for step in result["steps"]}
     if "score_v2" not in completed_phases:
         await log_pipeline(
@@ -1996,6 +2073,18 @@ async def _run_v2_single_workflow(
             trace_id=trace_id,
             action="skip",
             detail={"article_url_hash": url_hash, "reason": "not_candidate_or_generator_missing"},
+        )
+    if "review" not in completed_phases:
+        await log_pipeline(
+            db,
+            "INFO",
+            "review",
+            "single article draft review skipped",
+            user_id=user_id,
+            username=username,
+            trace_id=trace_id,
+            action="skip",
+            detail={"article_url_hash": url_hash, "reason": "no_generated_drafts"},
         )
     result["trace_id"] = trace_id
     result["ok"] = True
@@ -2180,12 +2269,39 @@ async def score_v2_single(
     return _score_payload(scored, skipped=False)
 
 
-def _serialize_pipeline_task(document: dict) -> dict:
-    """将 MongoDB 任务文档转换为可 JSON 序列化的响应。"""
+def _as_utc(value: datetime) -> datetime:
+    """MongoDB 默认返回无 tzinfo 的 UTC datetime；统一补齐为显式 UTC。"""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _serialize_pipeline_task(document: dict, *, now: datetime | None = None) -> dict:
+    """序列化任务时间，并返回不受浏览器时区影响的真实已耗时秒数。"""
     result = dict(document)
     object_id = result.pop("_id", None)
     if object_id is not None:
         result["id"] = str(object_id)
+
+    created_at = result.get("created_at")
+    updated_at = result.get("updated_at")
+    created_utc = _as_utc(created_at) if isinstance(created_at, datetime) else None
+    updated_utc = _as_utc(updated_at) if isinstance(updated_at, datetime) else None
+    terminal = str(result.get("status")) in {
+        "completed",
+        "failed",
+        "cancelled",
+        "interrupted",
+    }
+    end_utc = updated_utc if terminal and updated_utc is not None else _as_utc(now or datetime.now(UTC))
+    result["elapsed_seconds"] = (
+        max(0, int((end_utc - created_utc).total_seconds())) if created_utc is not None else 0
+    )
+
+    for field in ("created_at", "updated_at", "expires_at"):
+        value = result.get(field)
+        if isinstance(value, datetime):
+            result[field] = _as_utc(value).isoformat().replace("+00:00", "Z")
     return result
 
 

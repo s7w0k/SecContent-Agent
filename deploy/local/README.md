@@ -9,7 +9,7 @@ Copy-Item deploy/local/.env.crawler-local.example deploy/local/.env.crawler-loca
 Copy-Item deploy/local/.env.core-local.example deploy/local/.env.core-local
 ```
 
-将两个文件中的 `MCP_CRAWL_API_KEY` 改为同一个、至少 32 字节的随机 Token。项目根目录 `.env` 仍负责 MongoDB、Redis、JWT、模型等主体配置。
+将两个文件中的 `MCP_CRAWL_API_KEY` 改为同一个、至少 32 字节的随机 Token。项目根目录 `.env` 仍负责 MongoDB、Redis、JWT、模型等主体配置。稿件生成、改稿和内容与宣传话术检查共用 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`，不需要新增审核变量；这些变量只属于项目主体，独立爬虫无需配置。
 
 ## 2. 启动独立爬虫
 

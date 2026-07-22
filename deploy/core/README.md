@@ -1,5 +1,19 @@
 # 主体远程爬虫模式
 
+## 模型与稿件检查配置
+
+主体服务的草稿生成、对话改稿以及稿件内容与宣传话术检查共用根目录 `.env` 中的模型配置：
+
+```ini
+DEEPSEEK_API_KEY=sk-your-key
+DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+DEEPSEEK_MODEL=deepseek-chat
+```
+
+`backend` 和 `backend-worker` 都通过同一 `.env` 读取这些值。本阶段不新增审核环境变量，不需要规则 YAML、公司敏感配置或独立审核服务；更新代码后需要同时重建这两个主体镜像。
+
+## 远程爬虫配置
+
 在主体服务器 `.env` 中配置远程爬虫地址和与爬虫节点一致的机器 Token：
 
 ```ini

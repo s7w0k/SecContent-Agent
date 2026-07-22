@@ -1,5 +1,5 @@
 import { FireOutlined, SyncOutlined } from '@ant-design/icons';
-import { Button, Card, Empty, List, Radio, Select, Space, Spin, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Empty, List, Radio, Select, Space, Spin, Tag, Typography } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../api/client';
 import type { HotArticle, HotRankingQuery } from '../types';
@@ -31,16 +31,23 @@ export default function HotRankingPanel() {
   const [dateRange, setDateRange] = useState<DateRange>('7d');
   const [items, setItems] = useState<HotArticle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
 
   const loadRanking = useCallback(async () => {
     const currentRequest = ++requestId.current;
     setLoading(true);
+    setError(null);
     try {
       const result = await api.getHotRanking({ limit: 10, category, date_range: dateRange });
-      if (currentRequest === requestId.current) setItems(result);
+      if (currentRequest === requestId.current) {
+        setItems(result);
+        setError(null);
+      }
     } catch {
-      if (currentRequest === requestId.current) setItems([]);
+      if (currentRequest === requestId.current) {
+        setError('热点排行加载失败，请检查网络或稍后重试');
+      }
     } finally {
       if (currentRequest === requestId.current) setLoading(false);
     }
@@ -90,7 +97,24 @@ export default function HotRankingPanel() {
         />
 
         <Spin spinning={loading}>
-          {!loading && items.length === 0 ? (
+          {!loading && error ? (
+            <Alert
+              type="error"
+              showIcon
+              message="热点排行加载失败"
+              description={error}
+              action={
+                <Button
+                  size="small"
+                  danger
+                  aria-label="重试热点排行"
+                  onClick={() => void loadRanking()}
+                >
+                  重试
+                </Button>
+              }
+            />
+          ) : !loading && items.length === 0 ? (
             <Empty
               description="暂无高价值文章，可尝试扩大时间范围或分类"
               image={Empty.PRESENTED_IMAGE_SIMPLE}

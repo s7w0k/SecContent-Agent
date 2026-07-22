@@ -9,6 +9,43 @@ vi.mock('../api/client', () => ({
 }));
 
 describe('PipelineTaskProgress', () => {
+  it('starts a newly created task at zero instead of applying a timezone offset', async () => {
+    getTaskStatus.mockResolvedValue({
+      task_id: 'new-task',
+      user_id: 'user-1',
+      task_type: 'run-v2',
+      status: 'running',
+      progress: { phase: 'draft', current: 0, total: 4, message: '正在生成草稿...' },
+      // 即使历史响应不带时区，也应优先使用后端的 elapsed_seconds。
+      created_at: '2026-07-22T08:00:00',
+      updated_at: '2026-07-22T08:00:00',
+      expires_at: '2026-07-22T09:00:00',
+      elapsed_seconds: 0,
+    });
+
+    render(<PipelineTaskProgress taskId="new-task" label="草稿生成" onCompleted={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText(/已耗时 0分00秒/)).toBeDefined());
+  });
+
+  it('uses and freezes the persisted elapsed time after completion', async () => {
+    getTaskStatus.mockResolvedValue({
+      task_id: 'completed-task',
+      user_id: 'user-1',
+      task_type: 'run-v2',
+      status: 'completed',
+      progress: { phase: 'completed', current: 4, total: 4, message: '任务完成' },
+      created_at: '2026-07-22T08:00:00Z',
+      updated_at: '2026-07-22T08:02:05Z',
+      expires_at: '2026-07-22T09:00:00Z',
+      elapsed_seconds: 125,
+    });
+
+    render(<PipelineTaskProgress taskId="completed-task" label="草稿生成" onCompleted={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText(/已耗时 2分05秒/)).toBeDefined());
+  });
+
   it('renders persisted task phase and real percentage', async () => {
     getTaskStatus.mockResolvedValue({
       task_id: 'task-1',

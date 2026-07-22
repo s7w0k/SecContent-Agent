@@ -158,7 +158,7 @@ class TestCreateStateV2:
         from agent.pipeline_v2 import create_state_v2
 
         state = create_state_v2()
-        assert len(state["phases"]) == 8
+        assert len(state["phases"]) == 9
         assert "crawl" in state["phases"]
         assert "enrich" in state["phases"]
         assert "classify_v2" in state["phases"]
@@ -167,6 +167,7 @@ class TestCreateStateV2:
         assert "draft" in state["phases"]
         assert "quality_check" in state["phases"]
         assert "rewrite" in state["phases"]
+        assert "review" in state["phases"]
         assert state["crawl_days"] == 1
 
 
@@ -419,6 +420,162 @@ class TestDraftNode:
             "article_url_hash": "a" * 32,
         }
         assert user_drafts_collection.update_one.await_args.kwargs == {"upsert": True}
+
+
+class TestReviewNode:
+    @pytest.mark.asyncio
+    async def test_missing_reviewer_stores_failed_status_instead_of_losing_draft(self):
+        from agent.pipeline_v2 import create_state_v2, review_node
+
+        user_drafts = MagicMock()
+        user_drafts.find.return_value.to_list = AsyncMock(
+            return_value=[
+                {
+                    "article_url_hash": "hash-1",
+                    "drafts": [{"title": "Draft", "content_md": "正文"}],
+                }
+            ]
+        )
+        user_drafts.update_one = AsyncMock()
+        articles = MagicMock()
+        articles.find_one = AsyncMock(return_value={"content_md": "原文"})
+        pipeline_logs = MagicMock()
+        pipeline_logs.insert_one = AsyncMock()
+        db = {
+            "user_drafts": user_drafts,
+            "articles": articles,
+            "pipeline_logs": pipeline_logs,
+        }
+
+        result = await review_node(create_state_v2(user_id="user-a"), None, db)
+
+        assert result["review_count"] == 1
+        assert result["review_failed_count"] == 1
+        stored = user_drafts.update_one.await_args.args[1]["$set"]["drafts.0.review"]
+        assert stored["status"] == "failed"
+        assert stored["error"] == "Draft reviewer not initialized"
+
+    @pytest.mark.asyncio
+    async def test_review_limits_concurrency_reuses_hash_and_persists_results(self):
+        import asyncio
+
+        from agent.draft_reviewer import compute_content_hash
+        from agent.pipeline_v2 import create_state_v2, review_node
+        from models.draft_review import DraftReview
+
+        drafts = [
+            {"title": f"Draft {index}", "content_md": f"正文 {index}"} for index in range(4)
+        ]
+        drafts[0]["review"] = {
+            "status": "completed",
+            "content_hash": compute_content_hash(drafts[0]["content_md"]),
+        }
+        user_drafts = MagicMock()
+        user_drafts.find.return_value.to_list = AsyncMock(
+            return_value=[{"article_url_hash": "hash-1", "drafts": drafts}]
+        )
+        user_drafts.update_one = AsyncMock()
+        articles = MagicMock()
+        articles.find_one = AsyncMock(
+            return_value={"title": "Source", "content_md": "原文内容"}
+        )
+        pipeline_logs = MagicMock()
+        pipeline_logs.insert_one = AsyncMock()
+        db = {
+            "user_drafts": user_drafts,
+            "articles": articles,
+            "pipeline_logs": pipeline_logs,
+        }
+
+        active = 0
+        max_active = 0
+
+        async def review(_article, draft):
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return DraftReview(
+                status="completed",
+                content_hash=compute_content_hash(draft["content_md"]),
+                summary="未发现问题",
+                issues=[],
+                counts={"high": 0, "medium": 0, "low": 0},
+                fact_check_available=True,
+            )
+
+        reviewer = MagicMock()
+        reviewer.review = AsyncMock(side_effect=review)
+        result = await review_node(create_state_v2(user_id="user-a"), reviewer, db)
+
+        assert result["review_count"] == 3
+        assert result["review_reused_count"] == 1
+        assert result["review_failed_count"] == 0
+        assert max_active == 2
+        assert user_drafts.update_one.await_count == 3
+        persisted_paths = {
+            next(key for key in call.args[1]["$set"] if key.startswith("drafts."))
+            for call in user_drafts.update_one.await_args_list
+        }
+        assert persisted_paths == {
+            "drafts.1.review",
+            "drafts.2.review",
+            "drafts.3.review",
+        }
+
+    @pytest.mark.asyncio
+    async def test_review_failure_is_stored_without_stopping_other_drafts(self):
+        from agent.draft_reviewer import compute_content_hash
+        from agent.pipeline_v2 import create_state_v2, review_node
+        from models.draft_review import DraftReview
+
+        drafts = [
+            {"title": "Bad", "content_md": "失败稿件"},
+            {"title": "Good", "content_md": "正常稿件"},
+        ]
+        user_drafts = MagicMock()
+        user_drafts.find.return_value.to_list = AsyncMock(
+            return_value=[{"article_url_hash": "hash-1", "drafts": drafts}]
+        )
+        user_drafts.update_one = AsyncMock()
+        articles = MagicMock()
+        articles.find_one = AsyncMock(return_value={"content_md": "原文"})
+        pipeline_logs = MagicMock()
+        pipeline_logs.insert_one = AsyncMock()
+        db = {
+            "user_drafts": user_drafts,
+            "articles": articles,
+            "pipeline_logs": pipeline_logs,
+        }
+
+        async def review(_article, draft):
+            if draft["title"] == "Bad":
+                raise RuntimeError("review unavailable")
+            return DraftReview(
+                status="completed",
+                content_hash=compute_content_hash(draft["content_md"]),
+                summary="未发现问题",
+                issues=[],
+                counts={"high": 0, "medium": 0, "low": 0},
+                fact_check_available=True,
+            )
+
+        reviewer = MagicMock()
+        reviewer.review = AsyncMock(side_effect=review)
+        result = await review_node(create_state_v2(user_id="user-a"), reviewer, db)
+
+        assert result["review_count"] == 2
+        assert result["review_failed_count"] == 1
+        stored_statuses = [
+            next(
+                value["status"]
+                for key, value in call.args[1]["$set"].items()
+                if key.startswith("drafts.")
+            )
+            for call in user_drafts.update_one.await_args_list
+        ]
+        assert sorted(stored_statuses) == ["completed", "failed"]
 
 
 # ═══════════════════════════════════════════════════════════════

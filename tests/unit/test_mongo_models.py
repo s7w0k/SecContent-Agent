@@ -28,7 +28,8 @@ class TestSettings:
     def test_default_values(self):
         from config import Settings
 
-        s = Settings(DEEPSEEK_API_KEY="test-key")
+        # 默认值测试不能读取开发机根目录的 .env，否则本地模型配置会污染断言。
+        s = Settings(DEEPSEEK_API_KEY="test-key", _env_file=None)
         assert s.MONGODB_URI == "mongodb://admin:pr_agent_2024@mongodb:27017"
         assert s.MONGODB_DB == "pr_agent"
         assert s.MONGODB_MAX_POOL_SIZE == 20

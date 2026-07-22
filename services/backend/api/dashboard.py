@@ -182,24 +182,63 @@ async def hot_articles(
     """返回指定分类和时间范围内按综合分降序排列的热点文章。"""
     db = _get_db(request)
 
-    query: dict = {"pr_total_score": {"$gt": 0}}
+    # 历史文章可能只有双维度评分，added_at 也可能是 ISO 字符串。
+    # 在数据库侧统一出兼容字段，避免因数据版本不同导致排行为空。
+    pipeline: list[dict] = []
     if category != "all":
-        query["category_v2"] = category
+        pipeline.append({"$match": {"category_v2": category}})
+    pipeline.append(
+        {
+            "$set": {
+                "_hot_score": {
+                    "$cond": [
+                        {"$gt": [{"$ifNull": ["$pr_total_score", 0]}, 0]},
+                        {"$ifNull": ["$pr_total_score", 0]},
+                        {
+                            "$add": [
+                                {"$ifNull": ["$ai_relevance_score", 0]},
+                                {"$ifNull": ["$reportability_score", 0]},
+                            ]
+                        },
+                    ]
+                },
+                "_hot_added_at": {
+                    "$convert": {
+                        "input": "$added_at",
+                        "to": "date",
+                        "onError": None,
+                        "onNull": None,
+                    }
+                },
+            }
+        }
+    )
+
+    match: dict = {"_hot_score": {"$gt": 0}}
     since = _date_range_start(date_range)
     if since is not None:
-        query["added_at"] = {"$gte": since}
-
-    projection = {
-        "_id": 0,
-        "url_hash": 1,
-        "title": 1,
-        "url": 1,
-        "pr_total_score": 1,
-        "category_v2": 1,
-        "added_at": 1,
-        "source_type": 1,
-    }
-    cursor = db["articles"].find(query, projection).sort("pr_total_score", -1).limit(limit)
+        match["_hot_added_at"] = {"$gte": since}
+    pipeline.extend(
+        [
+            {"$match": match},
+            # 分数相同时按入库时间和文章哈希固定顺序，保证分页/刷新结果稳定。
+            {"$sort": {"_hot_score": -1, "_hot_added_at": -1, "url_hash": 1}},
+            {"$limit": limit},
+            {
+                "$project": {
+                    "_id": 0,
+                    "url_hash": 1,
+                    "title": 1,
+                    "url": 1,
+                    "pr_total_score": "$_hot_score",
+                    "category_v2": 1,
+                    "added_at": "$_hot_added_at",
+                    "source_type": 1,
+                }
+            },
+        ]
+    )
+    cursor = db["articles"].aggregate(pipeline)
     items = await cursor.to_list(length=limit)
 
     return {"ok": True, "data": {"items": items, "total": len(items)}}

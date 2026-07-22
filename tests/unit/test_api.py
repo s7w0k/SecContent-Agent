@@ -357,7 +357,7 @@ class TestDashboardAPI:
             },
         ]
         articles = mock_db["articles"]
-        articles.find.return_value.to_list = AsyncMock(return_value=items)
+        articles.aggregate.return_value.to_list = AsyncMock(return_value=items)
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get(
@@ -366,24 +366,28 @@ class TestDashboardAPI:
 
         assert resp.status_code == 200
         assert resp.json() == {"ok": True, "data": {"items": items, "total": 2}}
-        query, projection = articles.find.call_args.args
-        assert query == {
-            "pr_total_score": {"$gt": 0},
-            "category_v2": "AI安全漏洞与攻击",
+        pipeline = articles.aggregate.call_args.args[0]
+        assert pipeline[0] == {
+            "$match": {"category_v2": "AI安全漏洞与攻击"},
         }
-        assert projection["_id"] == 0
-        articles.find.return_value.sort.assert_called_with("pr_total_score", -1)
-        articles.find.return_value.limit.assert_called_with(5)
-        articles.find.return_value.to_list.assert_awaited_with(length=5)
+        assert pipeline[1]["$set"]["_hot_added_at"]["$convert"]["to"] == "date"
+        assert pipeline[2] == {"$match": {"_hot_score": {"$gt": 0}}}
+        assert pipeline[3] == {
+            "$sort": {"_hot_score": -1, "_hot_added_at": -1, "url_hash": 1}
+        }
+        assert pipeline[4] == {"$limit": 5}
+        assert pipeline[5]["$project"]["_id"] == 0
+        articles.aggregate.return_value.to_list.assert_awaited_with(length=5)
 
     @pytest.mark.asyncio
     async def test_hot_articles_1d_uses_utc8_today(self, app, mock_db):
+        mock_db["articles"].aggregate.return_value.to_list = AsyncMock(return_value=[])
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/api/articles/hot?date_range=1d")
 
         assert resp.status_code == 200
-        query = mock_db["articles"].find.call_args.args[0]
-        since = query["added_at"]["$gte"]
+        pipeline = mock_db["articles"].aggregate.call_args.args[0]
+        since = pipeline[1]["$match"]["_hot_added_at"]["$gte"]
         since_utc8 = since.astimezone(timezone(timedelta(hours=8)))
         assert (since_utc8.hour, since_utc8.minute, since_utc8.second) == (0, 0, 0)
 

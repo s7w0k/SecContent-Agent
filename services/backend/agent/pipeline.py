@@ -24,7 +24,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from enum import StrEnum
 from typing import Any
 
@@ -310,7 +310,7 @@ async def crawl_node(
                         "score_reason": "",
                         "has_report": False,
                         "report_id": None,
-                        "added_at": _now_iso(),
+                        "added_at": datetime.now(UTC),
                         "pipeline_status": "crawled",
                         "batch_id": state.get("batch_id", ""),
                     }

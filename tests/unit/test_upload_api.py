@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -83,6 +84,8 @@ async def test_upload_supported_text_and_docx_files(filename: str, content: byte
     assert document["original_filename"] == filename
     assert document["pipeline_status"] == "pending"
     assert document["content_md"]
+    assert isinstance(document["added_at"], datetime)
+    assert document["added_at"].tzinfo is not None
     activities.insert_one.assert_awaited_once()
 
 

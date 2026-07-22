@@ -515,6 +515,28 @@ describe('Chat API', () => {
     expect(result.applied).toBe(true);
   });
 
+  it('reviewDraft calls POST /articles/:hash/drafts/:index/review', async () => {
+    const mockResponse = {
+      ok: true,
+      data: {
+        status: 'completed',
+        content_hash: 'a'.repeat(64),
+        summary: '未发现需要修改的问题',
+        issues: [],
+        counts: { high: 0, medium: 0, low: 0 },
+        fact_check_available: true,
+        reviewed_at: '2026-07-22T08:00:00Z',
+      },
+    };
+    mockPost.mockResolvedValueOnce({ data: mockResponse });
+
+    const { chatApi } = await import('./client');
+    const result = await chatApi.reviewDraft('abc123', 0);
+
+    expect(mockPost).toHaveBeenCalledWith('/articles/abc123/drafts/0/review');
+    expect(result.status).toBe('completed');
+  });
+
   it('getChatHistory calls GET /articles/:hash/drafts/:index/chat-history', async () => {
     const mockResponse = {
       ok: true,

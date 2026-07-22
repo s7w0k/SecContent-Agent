@@ -69,6 +69,7 @@ def _log(level: str, msg: str):
 async def lifespan(app: FastAPI):
     """Startup: connect MongoDB + init Agent components. Shutdown: cleanup."""
     app.state.arq_pool = None
+    app.state.draft_reviewer = None
     settings = get_settings()
     from clients.mcp_crawl import McpCrawlClient
 
@@ -170,12 +171,15 @@ async def lifespan(app: FastAPI):
 
         # V2 打分 + 草稿（完整流水线仅在 ARQ Worker 中构建）
         from agent.draft_generator import DraftGenerator
+        from agent.draft_reviewer import DraftReviewer
         from agent.scorer_v2 import ScoringAgentV2
 
         scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge_loader, db=app.state.db)
         draft_gen = DraftGenerator(llm=llm, knowledge=knowledge_loader._cache)
+        draft_reviewer = DraftReviewer(llm=llm)
         app.state.scorer_v2 = scorer_v2
         app.state.draft_gen = draft_gen
+        app.state.draft_reviewer = draft_reviewer
         _log("INFO", "V2 agents initialized; pipeline execution delegated to ARQ Worker")
 
         pipeline_manager = PipelineManager(
@@ -194,6 +198,7 @@ async def lifespan(app: FastAPI):
         app.state.knowledge_loader = None
         app.state.llm = None
         app.state.style_profiler = None
+        app.state.draft_reviewer = None
 
     try:
         yield

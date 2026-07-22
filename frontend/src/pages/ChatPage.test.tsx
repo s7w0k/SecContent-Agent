@@ -5,9 +5,12 @@
  *   cd frontend && npx vitest run src/pages/ChatPage.test.tsx
  */
 
+import { readFileSync } from 'node:fs';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatPage from './ChatPage';
+
+const chatPageCss = readFileSync('src/pages/ChatPage.module.css', 'utf8');
 
 // Mock API client
 vi.mock('../api/client', () => ({
@@ -22,6 +25,7 @@ vi.mock('../api/client', () => ({
     reviseDraft: vi.fn(),
     reviseDraftStream: vi.fn(),
     applyRevision: vi.fn(),
+    reviewDraft: vi.fn(),
     getChatHistory: vi.fn().mockResolvedValue([]),
     clearChatHistory: vi.fn().mockResolvedValue({ cleared: true }),
   },
@@ -61,6 +65,24 @@ const mockArticle = {
       content_md: '# [原标题]\n\n## 导语\n草稿内容',
       title: 'Critical MCP Vulnerability',
       index: 1,
+      review: {
+        status: 'completed' as const,
+        content_hash: '0'.repeat(64),
+        summary: '发现 1 个建议修改问题',
+        issues: [
+          {
+            issue_id: 'issue-001',
+            category: 'absolute_claim' as const,
+            severity: 'medium' as const,
+            quote: '业内第一',
+            reason: '缺少排名依据',
+            suggestion: '删除绝对化表达',
+          },
+        ],
+        counts: { high: 0, medium: 1, low: 0 },
+        fact_check_available: true,
+        reviewed_at: '2026-07-22T08:00:00Z',
+      },
       revisions: [
         {
           revision_id: 'rev-001',
@@ -79,6 +101,12 @@ const mockArticle = {
 describe('ChatPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 });
+    Object.defineProperty(window, 'PointerEvent', {
+      configurable: true,
+      value: MouseEvent,
+    });
     vi.mocked(api.getArticles).mockResolvedValue({
       items: [mockArticle],
       total: 1,
@@ -233,12 +261,16 @@ describe('ChatPage', () => {
 
   // ── 阶段八稿件区域扩展 ──
 
-  it('uses a 520px sider and provides collapsible article and draft selectors', async () => {
+  it('uses a resizable default sider and provides collapsible article and draft selectors', async () => {
     const { container } = render(<ChatPage />);
     await selectArticle();
 
     const sider = container.querySelector('.ant-layout-sider');
-    expect(sider).toHaveStyle({ flex: '0 0 520px', maxWidth: '520px', minWidth: '520px' });
+    expect(sider).toHaveStyle({ flex: '0 0 760px', maxWidth: '760px', minWidth: '760px' });
+    expect(screen.getByRole('separator', { name: '调整文章选择栏宽度' })).toHaveAttribute(
+      'aria-valuenow',
+      '760',
+    );
 
     const articleHeader = screen.getByRole('button', { name: /文章选择/ });
     const draftHeader = screen.getByRole('button', { name: /草稿选择/ });
@@ -249,6 +281,57 @@ describe('ChatPage', () => {
     fireEvent.click(draftHeader);
     expect(articleHeader).toHaveAttribute('aria-expanded', 'false');
     expect(draftHeader).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('supports pointer and keyboard resizing and persists the selected width', async () => {
+    const { container, unmount } = render(<ChatPage />);
+    await waitFor(() => expect(api.getArticles).toHaveBeenCalled());
+    const handle = screen.getByRole('separator', { name: '调整文章选择栏宽度' });
+
+    fireEvent.pointerDown(handle, { button: 0, clientX: 760, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 900, pointerId: 1 });
+
+    expect(container.querySelector('.ant-layout-sider')).toHaveStyle({ width: '900px' });
+    expect(handle).toHaveAttribute('aria-valuenow', '900');
+    expect(window.localStorage.getItem('chat-page-sider-width')).toBeNull();
+
+    fireEvent.pointerUp(handle, { clientX: 900, pointerId: 1 });
+
+    expect(container.querySelector('.ant-layout-sider')).toHaveStyle({ width: '900px' });
+    expect(handle).toHaveAttribute('aria-valuenow', '900');
+    expect(window.localStorage.getItem('chat-page-sider-width')).toBe('900');
+
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+    expect(handle).toHaveAttribute('aria-valuenow', '880');
+    expect(window.localStorage.getItem('chat-page-sider-width')).toBe('880');
+
+    unmount();
+    const restored = render(<ChatPage />);
+    await waitFor(() => expect(api.getArticles).toHaveBeenCalled());
+    expect(restored.container.querySelector('.ant-layout-sider')).toHaveStyle({ width: '880px' });
+  });
+
+  it('uses the available layout width instead of a fixed 1000px sider limit', async () => {
+    const { container } = render(<ChatPage />);
+    await waitFor(() => expect(api.getArticles).toHaveBeenCalled());
+    const handle = screen.getByRole('separator', { name: '调整文章选择栏宽度' });
+
+    fireEvent.pointerDown(handle, { button: 0, clientX: 760, pointerId: 2 });
+    fireEvent.pointerMove(handle, { clientX: 1600, pointerId: 2 });
+    fireEvent.pointerUp(handle, { clientX: 1600, pointerId: 2 });
+
+    expect(container.querySelector('.ant-layout-sider')).toHaveStyle({ width: '1150px' });
+    expect(handle).toHaveAttribute('aria-valuemax', '1150');
+    expect(handle).toHaveAttribute('aria-valuenow', '1150');
+  });
+
+  it('keeps the stacked responsive layout and hides the desktop resize handle', () => {
+    expect(chatPageCss).toContain('@media (max-width: 991px)');
+    expect(chatPageCss).toContain('flex-direction: column !important');
+    expect(chatPageCss).toContain('min-width: 280px');
+    expect(chatPageCss).toContain('transition: none !important');
+    expect(chatPageCss).toContain('.resizeHandle');
+    expect(chatPageCss).toContain('display: none');
   });
 
   it('opens a 60% full-preview drawer and supports copying and downloading the current draft', async () => {
@@ -274,6 +357,18 @@ describe('ChatPage', () => {
     expect(URL.createObjectURL).toHaveBeenCalled();
     expect(api.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'draft_download' }));
     anchorClick.mockRestore();
+  });
+
+  it('shows the review panel and supports manually rechecking the current draft', async () => {
+    vi.mocked(chatApi.reviewDraft).mockResolvedValue(mockArticle.pr_drafts[0].review);
+    render(<ChatPage />);
+    await selectArticle();
+
+    expect(screen.getByText('内容与话术检查')).toBeInTheDocument();
+    expect(screen.getByText('建议修改 1')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /重新检查/ }));
+
+    await waitFor(() => expect(chatApi.reviewDraft).toHaveBeenCalledWith(mockArticle.url_hash, 0));
   });
 
   it('shows and executes apply revision from the full-preview drawer', async () => {

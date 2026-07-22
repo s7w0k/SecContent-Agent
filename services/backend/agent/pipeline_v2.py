@@ -3,7 +3,7 @@ Agent 流水线编排 V2 — LangGraph StateGraph
 
 V2 流水线:
   crawl → [enrich] → classify_v2 → filter → score_v2 → draft
-  → quality_check → [rewrite] → END
+  → quality_check → [rewrite] → review → END
 
 与 V1 差异:
   - 使用 ClassifierV2 替代 V1 classify_articles MCP 工具
@@ -31,9 +31,11 @@ from typing import Any
 from uuid import uuid4
 
 from agent.checkpointer import create_checkpointer, supports_mongodb_checkpoints
+from agent.draft_reviewer import compute_content_hash
 from agent.pipeline_state import PipelineStateManager
 from clients.mcp_crawl import McpCrawlClient, RequestContext
 from langgraph.graph import END, StateGraph
+from models.draft_review import DraftReview
 from models.pr_template import EffectivePRTemplate
 
 logger = logging.getLogger("backend.agent.pipeline_v2")
@@ -53,6 +55,7 @@ class PipelinePhaseV2(StrEnum):
     DRAFT = "draft"
     QUALITY_CHECK = "quality_check"
     REWRITE = "rewrite"
+    REVIEW = "review"
 
 
 class PipelineStatusV2(StrEnum):
@@ -86,6 +89,9 @@ def create_state_v2(
         "scored_v2_count": 0,
         "draft_count": 0,
         "rewritten_count": 0,
+        "review_count": 0,
+        "review_failed_count": 0,
+        "review_reused_count": 0,
         "score_threshold": 80,
         "threshold_adjustment": 0,
         "needs_enrich": False,
@@ -681,6 +687,110 @@ async def rewrite_node(
     return state
 
 
+async def review_node(state: dict, reviewer: Any, db: Any) -> dict:
+    """并发检查最终稿并把结果写入对应 drafts 数组位置。"""
+
+    from agent.pipeline import _log_stage
+
+    started = time.perf_counter()
+    state["current_phase"] = PipelinePhaseV2.REVIEW.value
+    state["review_count"] = 0
+    state["review_failed_count"] = 0
+    state["review_reused_count"] = 0
+    await _log_stage(state, db, "review", "draft review started", action="start")
+
+    if db is None:
+        await _log_stage(state, db, "review", "draft review skipped: no database", action="skip")
+        return state
+    if reviewer is None:
+        state["errors"].append("review: reviewer not initialized")
+        await _log_stage(
+            state,
+            db,
+            "review",
+            "draft reviewer not initialized; failed statuses will be stored",
+            action="degraded",
+        )
+
+    cursor = db["user_drafts"].find({"user_id": state["user_id"]})
+    documents = await cursor.to_list(length=30)
+    jobs: list[tuple[str, int, dict[str, Any], dict[str, Any]]] = []
+    reused_count = 0
+    for document in documents:
+        url_hash = str(document.get("article_url_hash") or "")
+        article = await db["articles"].find_one({"url_hash": url_hash}) or {}
+        for position, draft in enumerate(document.get("drafts", [])):
+            current_hash = compute_content_hash(str(draft.get("content_md") or ""))
+            existing_review = draft.get("review") or {}
+            if (
+                existing_review.get("status") == "completed"
+                and existing_review.get("content_hash") == current_hash
+            ):
+                reused_count += 1
+                continue
+            jobs.append((url_hash, position, article, draft))
+
+    semaphore = asyncio.Semaphore(2)
+
+    async def review_one(
+        url_hash: str,
+        position: int,
+        article: dict[str, Any],
+        draft: dict[str, Any],
+    ) -> str:
+        async with semaphore:
+            try:
+                if reviewer is None:
+                    raise RuntimeError("Draft reviewer not initialized")
+                result = await reviewer.review(article, draft)
+            except Exception as exc:
+                logger.warning("[review] Draft review failed for %s/%d: %s", url_hash, position, exc)
+                result = DraftReview(
+                    status="failed",
+                    content_hash=compute_content_hash(str(draft.get("content_md") or "")),
+                    summary="稿件检查失败",
+                    issues=[],
+                    counts={"high": 0, "medium": 0, "low": 0},
+                    fact_check_available=bool(article.get("content_md")),
+                    error=str(exc).strip() or type(exc).__name__,
+                )
+        await db["user_drafts"].update_one(
+            {"user_id": state["user_id"], "article_url_hash": url_hash},
+            {
+                "$set": {
+                    f"drafts.{position}.review": result.model_dump(mode="json"),
+                    "updated_at": datetime.now(UTC),
+                }
+            },
+        )
+        return result.status
+
+    statuses = await asyncio.gather(*(review_one(*job) for job in jobs)) if jobs else []
+    state["review_count"] = len(statuses)
+    state["review_failed_count"] = sum(status == "failed" for status in statuses)
+    state["review_reused_count"] = reused_count
+    duration_ms = int((time.perf_counter() - started) * 1000)
+    logger.info(
+        "[review] Reviewed %d drafts, reused %d, failed %d",
+        state["review_count"],
+        reused_count,
+        state["review_failed_count"],
+    )
+    await _log_stage(
+        state,
+        db,
+        "review",
+        f"reviewed {state['review_count']} drafts, reused {reused_count}",
+        duration_ms=duration_ms,
+        detail={
+            "review_count": state["review_count"],
+            "review_failed_count": state["review_failed_count"],
+            "review_reused_count": reused_count,
+        },
+    )
+    return state
+
+
 async def _load_custom_system_prompt(db: Any, user_id: str) -> str | None:
     """Load an optional user override and safely fall back when unavailable."""
     try:
@@ -745,7 +855,7 @@ def route_after_score(state: dict) -> str:
 
 def route_after_quality_check(state: dict) -> str:
     """Route low-quality drafts through one reflection rewrite pass."""
-    return "rewrite" if state.get("needs_rewrite") else END
+    return "rewrite" if state.get("needs_rewrite") else "review"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -758,7 +868,7 @@ class PipelineManagerV2:
 
     V2 流水线:
       crawl → [enrich] → classify_v2 → filter → score_v2 → draft
-      → quality_check → [rewrite]
+      → quality_check → [rewrite] → review
     """
 
     def __init__(
@@ -771,6 +881,7 @@ class PipelineManagerV2:
         db: Any = None,  # AsyncIOMotorDatabase
         crawl_client: McpCrawlClient | None = None,
         template_repository: Any = None,
+        reviewer: Any = None,
     ):
         self.tools = tools
         self.classifier_v2 = classifier_v2
@@ -780,6 +891,7 @@ class PipelineManagerV2:
         self.db = db
         self.crawl_client = crawl_client
         self.template_repository = template_repository
+        self.reviewer = reviewer
         self._state_manager = PipelineStateManager(db) if db is not None else None
         self._graph = self._build_graph()
 
@@ -809,6 +921,7 @@ class PipelineManagerV2:
         cknowledge = self.knowledge
         crawl_client = self.crawl_client
         template_repository = self.template_repository
+        reviewer = self.reviewer
 
         async def _crawl(state: dict) -> dict:
             return await crawl_node_v2(state, ctools, cdb, crawl_client)
@@ -846,6 +959,9 @@ class PipelineManagerV2:
                 template_repository,
             )
 
+        async def _review(state: dict) -> dict:
+            return await review_node(state, reviewer, cdb)
+
         graph.add_node("crawl", _crawl)
         graph.add_node("enrich", _enrich)
         graph.add_node("classify_v2", _classify_v2)
@@ -854,6 +970,7 @@ class PipelineManagerV2:
         graph.add_node("draft", _draft)
         graph.add_node("quality_check", _quality_check)
         graph.add_node("rewrite", _rewrite)
+        graph.add_node("review", _review)
 
         graph.set_entry_point("crawl")
         graph.add_conditional_edges(
@@ -873,9 +990,10 @@ class PipelineManagerV2:
         graph.add_conditional_edges(
             "quality_check",
             route_after_quality_check,
-            {"rewrite": "rewrite", END: END},
+            {"rewrite": "rewrite", "review": "review"},
         )
-        graph.add_edge("rewrite", END)
+        graph.add_edge("rewrite", "review")
+        graph.add_edge("review", END)
 
         checkpointer = None
         if supports_mongodb_checkpoints(self.db):
@@ -922,7 +1040,7 @@ class PipelineManagerV2:
                 progress={
                     "phase": "crawl",
                     "current": 0,
-                    "total": 8,
+                    "total": 9,
                     "message": "正在启动流水线...",
                 },
                 state=dict(state),
@@ -971,8 +1089,8 @@ class PipelineManagerV2:
                 status,
                 progress={
                     "phase": status,
-                    "current": 8 if status == PipelineStatusV2.COMPLETED.value else 0,
-                    "total": 8,
+                    "current": 9 if status == PipelineStatusV2.COMPLETED.value else 0,
+                    "total": 9,
                     "message": "任务完成"
                     if status == PipelineStatusV2.COMPLETED.value
                     else "任务已结束",
@@ -1011,7 +1129,7 @@ class PipelineManagerV2:
                 progress={
                     "phase": "resume",
                     "current": 0,
-                    "total": 8,
+                    "total": 9,
                     "message": "正在从检查点恢复...",
                 },
             )
@@ -1034,8 +1152,8 @@ class PipelineManagerV2:
                 PipelineStatusV2.COMPLETED.value,
                 progress={
                     "phase": "completed",
-                    "current": 8,
-                    "total": 8,
+                    "current": 9,
+                    "total": 9,
                     "message": "任务恢复完成",
                 },
                 last_node=final_state.get("current_phase", ""),
