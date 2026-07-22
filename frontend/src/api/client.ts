@@ -31,6 +31,7 @@ import type {
   DraftReviseRequest,
   DraftReviseResponse,
   EffectivePRTemplate,
+  EffectivePrompt,
   FeedbackCreate,
   FeedbackCreateResponse,
   FeedbackDeleteResponse,
@@ -62,6 +63,7 @@ import type {
   Report,
   StatsData,
   StyleProfile,
+  UploadArticleResult,
   User,
   UserActivityCreate,
 } from '../types';
@@ -101,6 +103,17 @@ const client: AxiosInstance = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+/** 上传本地文章并返回入库结果。 */
+export async function uploadArticle(file: File, title?: string): Promise<UploadArticleResult> {
+  const form = new FormData();
+  form.append('file', file);
+  if (title?.trim()) form.append('title', title.trim());
+  const { data } = await client.post('/upload/article', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data.data;
+}
 
 // 请求拦截器：自动携带 JWT
 client.interceptors.request.use((config) => {
@@ -158,6 +171,8 @@ export const authApi = {
 // ═══════════════════════════════════════════════════════════
 
 export const dashboardApi = {
+  uploadArticle,
+
   /** 文章列表（分页+筛选+排序） */
   async getArticles(query: ArticleQuery = {}): Promise<PaginatedResponse<Article>> {
     const { data } = await client.get('/articles', { params: query });
@@ -826,6 +841,26 @@ export const prTemplateApi = {
   },
 };
 
+// ────────────────────────────────────────────────────────────
+// User Prompt API（当前用户隔离）
+// ────────────────────────────────────────────────────────────
+export const promptApi = {
+  async getDraftPrompt(): Promise<EffectivePrompt> {
+    const { data } = await client.get('/user-prompts/draft-system');
+    return data.data;
+  },
+
+  async saveDraftPrompt(content: string): Promise<EffectivePrompt> {
+    const { data } = await client.put('/user-prompts/draft-system', { content });
+    return data.data;
+  },
+
+  async resetDraftPrompt(): Promise<EffectivePrompt> {
+    const { data } = await client.post('/user-prompts/draft-system/reset');
+    return data.data;
+  },
+};
+
 // ═══════════════════════════════════════════════════════════
 // 统一导出
 // ═══════════════════════════════════════════════════════════
@@ -843,6 +878,7 @@ const api = {
   ...logsApi,
   devLogs: devLogsApi,
   prTemplates: prTemplateApi,
+  prompts: promptApi,
 };
 
 export default api;

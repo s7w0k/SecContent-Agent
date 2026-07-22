@@ -243,6 +243,29 @@ class TestClassifyV2Node:
         assert result["classified_v2_count"] == 2
         assert result["low_confidence_count"] == 0
 
+    @pytest.mark.asyncio
+    async def test_classify_v2_includes_pending_user_uploads(self, mock_classifier, mock_db):
+        from agent.pipeline_v2 import classify_v2_node, create_state_v2
+
+        mock_db["articles"].find.return_value.to_list = AsyncMock(
+            return_value=[
+                {
+                    "_id": "upload-1",
+                    "url_hash": "a" * 32,
+                    "title": "Uploaded article",
+                    "source_type": "user_upload",
+                    "pipeline_status": "pending",
+                    "category_v2": "",
+                }
+            ]
+        )
+
+        result = await classify_v2_node(create_state_v2(), mock_classifier, mock_db)
+
+        query = mock_db["articles"].find.call_args.args[0]
+        assert "pending" in query["pipeline_status"]["$in"]
+        assert result["classified_v2_count"] == 1
+
 
 class TestScoreV2Node:
     @pytest.mark.asyncio

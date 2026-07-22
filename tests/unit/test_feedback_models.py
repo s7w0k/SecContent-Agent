@@ -41,6 +41,7 @@ class TestFeedbackModels:
             "revision_apply",
             "feedback_submit",
             "pipeline_run",
+            "article_upload",
         }
 
     def test_feedback_create_valid(self):
@@ -332,6 +333,7 @@ class TestMongoDBIndexes:
             "user_drafts",
             "user_pr_templates",
             "user_pr_template_versions",
+            "user_prompts",
             "pipeline_locks",
             "pipeline_tasks",
             "pipeline_logs",
@@ -346,6 +348,7 @@ class TestMongoDBIndexes:
         assert len(result["user_profiles"]) == 2
         assert len(result["chat_sessions"]) == 1
         assert len(result["user_drafts"]) == 2
+        assert len(result["user_prompts"]) == 1
         assert len(result["pipeline_locks"]) == 2
         assert len(result["pipeline_tasks"]) == 4
         assert len(result["pipeline_logs"]) == 5
@@ -394,6 +397,12 @@ class TestMongoDBIndexes:
             "article_url_hash_1_draft_index_1"
         )
 
+        prompt_indexes = {
+            index.document["name"]: index.document
+            for index in collections["user_prompts"].received_indexes
+        }
+        assert prompt_indexes["uq_user_prompt_key"]["unique"] is True
+
         lock_indexes = {
             index.document["name"]: index.document
             for index in collections["pipeline_locks"].received_indexes
@@ -431,5 +440,5 @@ class TestMongoDBIndexes:
             second = await MongoDB.ensure_indexes()
 
         assert first == second
-        assert collection.create_indexes.await_count == 30
+        assert collection.create_indexes.await_count == 32
         assert collection.drop_index.await_count == 2

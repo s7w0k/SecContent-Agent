@@ -187,6 +187,28 @@ describe('Dashboard API', () => {
     expect(mockGet).toHaveBeenCalledWith('/articles', { params: {} });
   });
 
+  it('uploadArticle sends multipart form data and unwraps the result', async () => {
+    const response = {
+      url_hash: 'hash-1',
+      title: '上传文章',
+      source_type: 'user_upload' as const,
+      content_length: 120,
+      message: '文章已入库',
+    };
+    mockPost.mockResolvedValueOnce({ data: { ok: true, data: response } });
+    const file = new File(['content'], 'article.md', { type: 'text/markdown' });
+
+    const result = await api.uploadArticle(file, ' 上传文章 ');
+
+    expect(mockPost).toHaveBeenCalledWith('/upload/article', expect.any(FormData), {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    const form = mockPost.mock.calls[0][1] as FormData;
+    expect(form.get('file')).toBe(file);
+    expect(form.get('title')).toBe('上传文章');
+    expect(result).toEqual(response);
+  });
+
   it('getArticle calls GET /articles/:hash', async () => {
     const article = { _id: '1', title: 'Test', url_hash: 'abc' } as Article;
     mockGet.mockResolvedValueOnce({ data: article });
@@ -895,5 +917,48 @@ describe('PR Template API', () => {
       params: { page: 2, page_size: 10 },
     });
     expect(mockPost).toHaveBeenNthCalledWith(2, '/pr-templates/breaking_a/versions/3/restore');
+  });
+});
+
+describe('User Prompt API', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await setupApi();
+  });
+
+  it('gets the effective draft prompt', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: { data: { prompt_key: 'draft_system', content: 'default', is_custom: false } },
+    });
+    const { promptApi } = await import('./client');
+
+    const result = await promptApi.getDraftPrompt();
+
+    expect(mockGet).toHaveBeenCalledWith('/user-prompts/draft-system');
+    expect(result.is_custom).toBe(false);
+  });
+
+  it('saves a custom draft prompt', async () => {
+    mockPut.mockResolvedValueOnce({
+      data: { data: { prompt_key: 'draft_system', content: 'custom', is_custom: true } },
+    });
+    const { promptApi } = await import('./client');
+
+    const result = await promptApi.saveDraftPrompt('custom');
+
+    expect(mockPut).toHaveBeenCalledWith('/user-prompts/draft-system', { content: 'custom' });
+    expect(result.is_custom).toBe(true);
+  });
+
+  it('resets the custom draft prompt', async () => {
+    mockPost.mockResolvedValueOnce({
+      data: { data: { prompt_key: 'draft_system', content: 'default', is_custom: false } },
+    });
+    const { promptApi } = await import('./client');
+
+    const result = await promptApi.resetDraftPrompt();
+
+    expect(mockPost).toHaveBeenCalledWith('/user-prompts/draft-system/reset');
+    expect(result.is_custom).toBe(false);
   });
 });

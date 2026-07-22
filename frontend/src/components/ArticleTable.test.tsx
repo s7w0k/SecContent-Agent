@@ -78,4 +78,24 @@ describe('ArticleTable', () => {
     render(<ArticleTable {...defaultProps} articles={[]} total={0} />);
     expect(screen.getByText('no data')).toBeDefined();
   });
+
+  it('renders a purple user upload source tag', () => {
+    render(
+      <ArticleTable
+        {...defaultProps}
+        articles={[
+          {
+            ...mockArticle,
+            _id: 'upload-1',
+            url: 'upload://user-a/article.md',
+            source: '用户上传',
+            source_type: 'user_upload',
+          },
+        ]}
+      />,
+    );
+
+    const tag = screen.getByText('用户上传');
+    expect(tag).toHaveClass('ant-tag-purple');
+  });
 });

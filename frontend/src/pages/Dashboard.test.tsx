@@ -69,6 +69,20 @@ vi.mock('../components/FilterBar', () => ({
 vi.mock('../components/ArticleTable', () => ({
   default: () => <div>ArticleTable Mock</div>,
 }));
+vi.mock('../components/ArticleUpload', () => ({
+  default: ({
+    open,
+    onUploaded,
+  }: {
+    open: boolean;
+    onUploaded: () => void | Promise<void>;
+  }) =>
+    open ? (
+      <button type="button" onClick={() => onUploaded()}>
+        ArticleUpload Mock
+      </button>
+    ) : null,
+}));
 vi.mock('../components/PipelineControl', () => ({
   default: () => <div>PipelineControl Mock</div>,
 }));
@@ -132,5 +146,16 @@ describe('Dashboard', () => {
 
     await waitFor(() => expect(api.getStats).toHaveBeenCalledTimes(1));
     expect(api.getArticles).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the upload modal and refreshes articles and stats after upload', async () => {
+    render(<Dashboard />);
+    await waitFor(() => expect(api.getStats).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: /上传文章/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'ArticleUpload Mock' }));
+
+    await waitFor(() => expect(api.getStats).toHaveBeenCalledTimes(2));
+    expect(api.getArticles).toHaveBeenCalledTimes(2);
   });
 });

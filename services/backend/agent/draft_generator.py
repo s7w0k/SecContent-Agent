@@ -129,6 +129,7 @@ class DraftGenerator:
         v2_scores: dict | None = None,
         style_hints: str | None = None,
         templates: list[EffectivePRTemplate] | None = None,
+        system_prompt_template: str | None = None,
     ) -> dict:
         """为单篇文章生成 4 篇 PR 草稿。
 
@@ -137,6 +138,7 @@ class DraftGenerator:
             v2_scores: V2 打分结果（含 product_relevance / event_impact / pr_total_score）
             style_hints: 用户风格偏好提示词（可选）
             templates: 已按当前用户解析并冻结的有效模板；None 时使用系统默认模板
+            system_prompt_template: 当前用户的 System Prompt 模板覆盖；None 时使用系统默认
 
         Returns:
             {
@@ -177,6 +179,7 @@ class DraftGenerator:
                         perspective,
                         len(tasks) + 1,
                         style_hints,
+                        system_prompt_template,
                     ),
                 )
 
@@ -210,9 +213,15 @@ class DraftGenerator:
         perspective: str,
         index: int,
         style_hints: str | None = None,
+        system_prompt_template: str | None = None,
     ) -> dict | None:
         """生成单篇草稿（含重试）。"""
-        system_prompt = self._build_system_prompt(template, perspective, style_hints)
+        system_prompt = self._build_system_prompt(
+            template,
+            perspective,
+            style_hints,
+            template_override=system_prompt_template,
+        )
         user_prompt = self._build_user_prompt(article, scores)
 
         for attempt in range(MAX_RETRIES + 1):
@@ -253,6 +262,7 @@ class DraftGenerator:
         template: PRTemplate | EffectivePRTemplate,
         perspective: str,
         style_hints: str | None = None,
+        template_override: str | None = None,
     ) -> str:
         knowledge_context = self.knowledge.as_system_prompt()
         if not knowledge_context:
@@ -263,11 +273,19 @@ class DraftGenerator:
             if style_hints and style_hints.strip()
             else "\n"
         )
-        return SYSTEM_PROMPT_TEMPLATE.format(
-            knowledge_context=knowledge_context,
-            template_spec=template_spec,
-            style_hints=style_section,
-        )
+        values = {
+            "knowledge_context": knowledge_context,
+            "template_spec": template_spec,
+            "style_hints": style_section,
+        }
+        selected_template = template_override or SYSTEM_PROMPT_TEMPLATE
+        try:
+            return selected_template.format(**values)
+        except (KeyError, IndexError, ValueError) as exc:
+            if template_override is None:
+                raise
+            logger.warning("用户自定义提示词渲染失败，降级默认: %s", exc)
+            return SYSTEM_PROMPT_TEMPLATE.format(**values)
 
     @classmethod
     def _build_template_spec(

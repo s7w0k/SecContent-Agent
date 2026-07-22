@@ -263,6 +263,9 @@ class TestArticleModel:
         art2 = self._make_article(source_type="paper")
         assert art2.source_type == "paper"
 
+        uploaded = self._make_article(source_type=SourceType.USER_UPLOAD)
+        assert uploaded.source_type == "user_upload"
+
     def test_invalid_source_type(self):
 
         with pytest.raises(ValidationError):

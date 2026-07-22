@@ -23,7 +23,7 @@ import {
   message,
 } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
-import type { SorterResult } from 'antd/es/table/interface';
+import type { FilterValue, SorterResult } from 'antd/es/table/interface';
 import { useCallback, useState } from 'react';
 import type { Key } from 'react';
 import api from '../api/client';
@@ -128,9 +128,15 @@ export default function ArticleTable({
       key: 'source',
       width: 120,
       ellipsis: true,
-      render: (s: string, r: Article) => (
-        <Tag color={r.source_type === 'wechat_mp' ? 'green' : 'blue'}>{s}</Tag>
-      ),
+      render: (s: string, r: Article) => {
+        const sourceStyle = {
+          overseas_news: { color: 'blue', label: s },
+          wechat_mp: { color: 'green', label: s },
+          paper: { color: 'default', label: s },
+          user_upload: { color: 'purple', label: '用户上传' },
+        }[r.source_type];
+        return <Tag color={sourceStyle.color}>{sourceStyle.label}</Tag>;
+      },
     },
     {
       title: '时间',
@@ -289,7 +295,7 @@ export default function ArticleTable({
             >
               打分
             </Button>
-            {record.source_type !== 'overseas_news' && !hasContent && (
+            {record.source_type === 'wechat_mp' && !hasContent && (
               <Button
                 type="link"
                 size="small"
@@ -372,7 +378,7 @@ export default function ArticleTable({
 
   const handleTableChange = (
     p: TablePaginationConfig,
-    _f: any,
+    _f: Record<string, FilterValue | null>,
     s: SorterResult<Article> | SorterResult<Article>[],
   ) => {
     if (p.current && p.pageSize) onPageChange(p.current, p.pageSize);

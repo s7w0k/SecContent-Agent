@@ -35,10 +35,12 @@ from .pr_template import (
     UserPRTemplateUpdate,
     UserPRTemplateVersion,
 )
+from .user_prompt import EffectivePrompt, UserPromptUpdate
 
 __all__ = [
     "ActionType",
     "EffectivePRTemplate",
+    "EffectivePrompt",
     "EventLevel",
     "EventType",
     "ExecutionEvent",
@@ -65,5 +67,6 @@ __all__ = [
     "UserPRTemplate",
     "UserPRTemplateUpdate",
     "UserPRTemplateVersion",
+    "UserPromptUpdate",
     "validate_run_status_transition",
 ]

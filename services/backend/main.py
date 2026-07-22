@@ -329,6 +329,8 @@ from api.pipeline import router as pipeline_router
 from api.pr_templates import router as pr_templates_router
 from api.profile import router as profile_router
 from api.reports import router as reports_router
+from api.upload import router as upload_router
+from api.user_prompts import router as user_prompts_router
 
 app.include_router(pipeline_router)
 app.include_router(llm_router)
@@ -345,6 +347,8 @@ app.include_router(logs_router)
 app.include_router(dev_logs_router)
 app.include_router(crawl_config_router)
 app.include_router(overseas_router)
+app.include_router(upload_router)
+app.include_router(user_prompts_router)
 
 
 # ── System endpoints ────────────────────────────────────

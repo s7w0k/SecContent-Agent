@@ -212,7 +212,7 @@ async def classify_v2_node(state: dict, classifier: Any, db: Any) -> dict:
             return state
 
         query = {
-            "pipeline_status": {"$in": ["crawled", "classified"]},
+            "pipeline_status": {"$in": ["pending", "crawled", "classified"]},
             "$or": [
                 {"category_v2": {"$in": ["", None]}},
                 {"category_v2": {"$exists": False}},
@@ -485,6 +485,7 @@ async def draft_node(
         await knowledge.load()
         score_threshold = int(state.get("score_threshold", 80))
         style_hints = await _load_style_hints(db, state["user_id"])
+        system_prompt_template = await _load_custom_system_prompt(db, state["user_id"])
 
         cursor = db["articles"].find({"pr_total_score": {"$gte": score_threshold}})
         articles = await cursor.to_list(length=30)
@@ -527,6 +528,7 @@ async def draft_node(
                 v2_scores,
                 style_hints=style_hints,
                 templates=templates,
+                system_prompt_template=system_prompt_template,
             )
             if result["ok"] and result["drafts"]:
                 now = datetime.now(UTC)
@@ -630,6 +632,7 @@ async def rewrite_node(
 
     await knowledge.load()
     base_style_hints = await _load_style_hints(db, state["user_id"])
+    system_prompt_template = await _load_custom_system_prompt(db, state["user_id"])
     rewritten_count = 0
     for item in state.get("needs_rewrite", []):
         article = await db["articles"].find_one({"url_hash": item["url_hash"]})
@@ -656,6 +659,7 @@ async def rewrite_node(
             scores,
             style_hints=style_hints,
             templates=templates,
+            system_prompt_template=system_prompt_template,
         )
         if not generated.get("ok") or not generated.get("drafts"):
             continue
@@ -675,6 +679,21 @@ async def rewrite_node(
     state["rewritten_count"] = rewritten_count
     logger.info("[rewrite] Rewritten %d drafts", rewritten_count)
     return state
+
+
+async def _load_custom_system_prompt(db: Any, user_id: str) -> str | None:
+    """Load an optional user override and safely fall back when unavailable."""
+    try:
+        from api.user_prompts import DRAFT_SYSTEM_PROMPT_KEY, get_effective_prompt
+
+        prompt = await get_effective_prompt(db, user_id, DRAFT_SYSTEM_PROMPT_KEY)
+    except Exception as exc:
+        logger.warning("[draft] Failed to load custom prompt for user_id=%s: %s", user_id, exc)
+        return None
+    if not prompt.is_custom:
+        return None
+    logger.info("[draft] 使用自定义提示词: %s", user_id)
+    return prompt.content
 
 
 async def _templates_for_category(

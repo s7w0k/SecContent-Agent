@@ -121,11 +121,14 @@ class FakeBatchArticleCollection:
     def __init__(self, documents: list[dict]):
         self.documents = deepcopy(documents)
         self.update_calls: list[tuple[dict, dict]] = []
+        self.queries: list[dict] = []
 
-    def find(self, _query: dict):
+    def find(self, query: dict):
+        self.queries.append(deepcopy(query))
         return FakeCursor(deepcopy(self.documents))
 
-    async def count_documents(self, _query: dict):
+    async def count_documents(self, query: dict):
+        self.queries.append(deepcopy(query))
         return len(self.documents)
 
     async def update_one(self, query: dict, update: dict):
@@ -254,7 +257,12 @@ async def test_classify_v2_batch_persists_article_counts_after_each_completion()
     tasks = FakeTaskCollection()
     articles = FakeBatchArticleCollection(
         [
-            {"_id": index, "title": f"article-{index}", "pipeline_status": "crawled"}
+            {
+                "_id": index,
+                "title": f"article-{index}",
+                "source_type": "user_upload" if index == 0 else "overseas_news",
+                "pipeline_status": "pending" if index == 0 else "crawled",
+            }
             for index in range(3)
         ]
     )
@@ -290,6 +298,7 @@ async def test_classify_v2_batch_persists_article_counts_after_each_completion()
     assert all(item["total"] == 3 for item in progress)
     assert progress[-1]["message"] == "已分类 3 篇，剩余 0 篇"
     assert classifier.classify_single.await_count == 3
+    assert "pending" in articles.queries[0]["pipeline_status"]["$in"]
 
 
 @pytest.mark.asyncio
@@ -359,6 +368,7 @@ async def test_classify_v2_task_counts_articles_before_enqueue():
         "total": 4,
         "message": "共 4 篇待分类，等待执行...",
     }
+    assert "pending" in articles.queries[0]["pipeline_status"]["$in"]
     arq_pool.enqueue_job.assert_awaited_once()
 
 

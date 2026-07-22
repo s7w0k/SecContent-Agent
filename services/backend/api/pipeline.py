@@ -1216,7 +1216,7 @@ async def _run_classify_v2_batch(
     classifier = app.state.classifier_v2
     log = logging.getLogger("backend.api.pipeline")
     query = {
-        "pipeline_status": {"$in": ["crawled", "classified"]},
+        "pipeline_status": {"$in": ["pending", "crawled", "classified"]},
         "$or": [
             {"category_v2": {"$in": ["", None]}},
             {"category_v2": {"$exists": False}},
@@ -1426,7 +1426,7 @@ async def create_classify_v2_task(request: Request, user_id: str = Depends(get_c
     total = min(
         await db["articles"].count_documents(
             {
-                "pipeline_status": {"$in": ["crawled", "classified"]},
+                "pipeline_status": {"$in": ["pending", "crawled", "classified"]},
                 "$or": [
                     {"category_v2": {"$in": ["", None]}},
                     {"category_v2": {"$exists": False}},
@@ -1558,7 +1558,7 @@ async def classify_v2(
 ):
     """对文章执行6分类（爆点事件/法律法规/AI进展/竞品/行业/学术）。
 
-    读取 pipeline_status 为 crawled 或 classified 的文章，
+    读取 pipeline_status 为 pending、crawled 或 classified 的文章，
     调用 LLM 进行6类别归类，更新 category_v2 字段。
     """
     db = getattr(request.app.state, "db", None)
@@ -1577,7 +1577,7 @@ async def classify_v2(
         if body.url_hashes:
             query["url_hash"] = {"$in": body.url_hashes}
         else:
-            query["pipeline_status"] = {"$in": ["crawled", "classified"]}
+            query["pipeline_status"] = {"$in": ["pending", "crawled", "classified"]}
             if not body.force:
                 query["$or"] = [
                     {"category_v2": {"$in": ["", None]}},
@@ -1877,7 +1877,26 @@ async def _run_v2_single_workflow(
                 )
                 draft_gen = getattr(app.state, "draft_gen", None)
                 if draft_gen:
+                    from api.user_prompts import DRAFT_SYSTEM_PROMPT_KEY, get_effective_prompt
+
                     style_hints = await load_style_hints(db, user_id)
+                    system_prompt_template = None
+                    try:
+                        effective_prompt = await get_effective_prompt(
+                            db,
+                            user_id,
+                            DRAFT_SYSTEM_PROMPT_KEY,
+                        )
+                    except Exception as exc:
+                        log.warning(
+                            "[run-v2-single] Failed to load custom prompt for user_id=%s: %s",
+                            user_id,
+                            exc,
+                        )
+                    else:
+                        if effective_prompt.is_custom:
+                            system_prompt_template = effective_prompt.content
+                            log.info("[run-v2-single] 使用自定义提示词: %s", user_id)
                     template_repository = getattr(app.state, "template_repository", None)
                     effective_templates = None
                     if template_repository is not None:
@@ -1914,6 +1933,7 @@ async def _run_v2_single_workflow(
                         scores,
                         style_hints=style_hints,
                         templates=effective_templates,
+                        system_prompt_template=system_prompt_template,
                     )
                     if drafts["ok"]:
                         now = datetime.now(UTC)

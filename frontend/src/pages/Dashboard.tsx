@@ -5,11 +5,12 @@
  * 管理全局状态（筛选/分页/排序/报道查看）。
  */
 
-import { ImportOutlined } from '@ant-design/icons';
+import { ImportOutlined, UploadOutlined } from '@ant-design/icons';
 import { Button, Col, Drawer, Row, Space, Tag, Typography, message } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import api from '../api/client';
 import ArticleTable from '../components/ArticleTable';
+import ArticleUpload from '../components/ArticleUpload';
 import CategoryBreakdown from '../components/CategoryBreakdown';
 import DraftViewer from '../components/DraftViewer';
 import FilterBar from '../components/FilterBar';
@@ -40,6 +41,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
   const [batchFetching, setBatchFetching] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   // ── 筛选 & 分页 & 排序 ───────────────────────────────────
   const [filter, setFilter] = useState<FilterValues>({});
@@ -139,6 +141,14 @@ export default function Dashboard() {
     setPage(1);
   }, []);
 
+  const handleUploaded = useCallback(async () => {
+    setFilter({});
+    setPage(1);
+    setSortField('added_at');
+    setSortOrder('desc');
+    await loadStats();
+  }, [loadStats]);
+
   // ── 排序变更 ─────────────────────────────────────────────
   const handleSortChange = useCallback((field: string, order: 'asc' | 'desc' | undefined) => {
     setSortField(field);
@@ -212,22 +222,33 @@ export default function Dashboard() {
         <Title level={3} style={{ margin: 0 }}>
           🚀 PR Agent Dashboard
         </Title>
-        <Button
-          icon={<ImportOutlined />}
-          onClick={async () => {
-            try {
-              const res = await api.importWewe();
-              message.success(`RSS 导入: ${res.saved} 篇`);
-              loadStats();
-              loadArticles();
-            } catch (error: unknown) {
-              message.error(`导入失败: ${getRequestErrorMessage(error)}`);
-            }
-          }}
-        >
-          导入 RSS
-        </Button>
+        <Space>
+          <Button icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>
+            上传文章
+          </Button>
+          <Button
+            icon={<ImportOutlined />}
+            onClick={async () => {
+              try {
+                const res = await api.importWewe();
+                message.success(`RSS 导入: ${res.saved} 篇`);
+                loadStats();
+                loadArticles();
+              } catch (error: unknown) {
+                message.error(`导入失败: ${getRequestErrorMessage(error)}`);
+              }
+            }}
+          >
+            导入 RSS
+          </Button>
+        </Space>
       </div>
+
+      <ArticleUpload
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onUploaded={handleUploaded}
+      />
 
       {/* 统计卡片 */}
       <StatsCards stats={stats} loading={loading} reportCount={reportCount} />

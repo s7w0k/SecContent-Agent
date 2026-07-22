@@ -8,7 +8,7 @@
 // 基础类型
 // ═══════════════════════════════════════════════════════════
 
-export type SourceType = 'overseas_news' | 'wechat_mp' | 'paper';
+export type SourceType = 'overseas_news' | 'wechat_mp' | 'paper' | 'user_upload';
 
 export type PipelinePhase = 'crawl' | 'classify' | 'score' | 'report';
 
@@ -101,6 +101,22 @@ export interface ArticleQuery {
   keyword?: string;
   sort_by?: string;
   order?: 'asc' | 'desc';
+}
+
+export interface UploadArticleResult {
+  url_hash: string;
+  title: string;
+  source_type: 'user_upload';
+  content_length: number;
+  message: string;
+}
+
+export interface EffectivePrompt {
+  prompt_key: string;
+  content: string;
+  is_custom: boolean;
+  required_placeholders: string[];
+  updated_at?: string | null;
 }
 
 /** 热点排行文章条目，仅包含排行面板需要的字段。 */

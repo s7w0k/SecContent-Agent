@@ -32,6 +32,7 @@ PRIVATE_USER_COLLECTIONS = (
     "pipeline_logs",
     "user_pr_templates",
     "user_pr_template_versions",
+    "user_prompts",
 )
 
 

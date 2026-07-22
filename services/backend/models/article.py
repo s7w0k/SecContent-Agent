@@ -26,6 +26,7 @@ class SourceType(StrEnum):
     OVERSEAS_NEWS = "overseas_news"  # 海外安全新闻
     WECHAT_MP = "wechat_mp"  # 微信公众号
     PAPER = "paper"  # 学术论文
+    USER_UPLOAD = "user_upload"  # 用户上传文件
 
 
 # ═══════════════════════════════════════════════════════════

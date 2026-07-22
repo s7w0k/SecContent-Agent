@@ -17,6 +17,13 @@ vi.mock('./pages/PRTemplatesPage', () => ({
     </button>
   ),
 }));
+vi.mock('./pages/SettingsPage', () => ({
+  default: ({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) => (
+    <button type="button" onClick={() => onDirtyChange?.(true)}>
+      模拟未保存提示词
+    </button>
+  ),
+}));
 
 describe('App', () => {
   const authValue: AuthContextValue = {
@@ -53,7 +60,18 @@ describe('App', () => {
     expect(screen.getByText('仪表盘')).toBeDefined();
     expect(screen.getByText('关于')).toBeDefined();
     expect(screen.getByText('PR 模板')).toBeDefined();
+    expect(screen.getByText('配置')).toBeDefined();
     expect(screen.queryByText('海外搜索')).not.toBeInTheDocument();
+  });
+
+  it('places settings between PR templates and logs and opens the settings page', () => {
+    renderApp();
+    const menuLabels = screen.getAllByRole('menuitem').map((item) => item.textContent);
+    expect(menuLabels.indexOf('PR 模板')).toBeLessThan(menuLabels.indexOf('配置'));
+    expect(menuLabels.indexOf('配置')).toBeLessThan(menuLabels.indexOf('运行日志'));
+
+    fireEvent.click(screen.getByText('配置'));
+    expect(screen.getByText('模拟未保存提示词')).toBeInTheDocument();
   });
 
   it('shows dashboard content by default', () => {
@@ -87,5 +105,17 @@ describe('App', () => {
     expect(screen.getByText('模拟未保存模板')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '继续编辑' }));
     expect(screen.getByText('模拟未保存模板')).toBeInTheDocument();
+  });
+
+  it('warns before navigating away from unsaved prompt changes', async () => {
+    renderApp();
+    fireEvent.click(screen.getByText('配置'));
+    fireEvent.click(await screen.findByText('模拟未保存提示词'));
+    fireEvent.click(screen.getByText('仪表盘'));
+
+    expect((await screen.findAllByText('离开配置页面？')).length).toBeGreaterThan(0);
+    expect(screen.getByText('当前提示词还有未保存内容，离开后修改将丢失。')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '继续编辑' }));
+    expect(screen.getByText('模拟未保存提示词')).toBeInTheDocument();
   });
 });

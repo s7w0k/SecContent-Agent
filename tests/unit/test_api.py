@@ -279,6 +279,15 @@ class TestDashboardAPI:
             assert resp.status_code == 200
 
     @pytest.mark.asyncio
+    async def test_list_articles_filters_user_upload_source(self, app, mock_db):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/articles?source_type=user_upload")
+
+        assert resp.status_code == 200
+        query = mock_db["articles"].find.call_args.args[0]
+        assert query["source_type"] == "user_upload"
+
+    @pytest.mark.asyncio
     async def test_list_articles_sorts_by_pr_total_score(self, app, mock_db):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/api/articles?sort_by=pr_total_score&order=desc")

@@ -16,13 +16,15 @@ from api.pipeline import _run_v2_single_workflow
 ARTICLE_HASH = "d41d8cd98f00b204e9800998ecf8427e"
 
 
-def _build_request(profile: dict | None):
+def _build_request(profile: dict | None, prompt: dict | None = None):
     articles = MagicMock()
     articles.find_one = AsyncMock(
         return_value={
             "url_hash": ARTICLE_HASH,
             "title": "MCP security event",
             "content_md": "article content",
+            "source_type": "user_upload",
+            "pipeline_status": "pending",
         },
     )
     articles.update_one = AsyncMock()
@@ -33,10 +35,14 @@ def _build_request(profile: dict | None):
     user_drafts = MagicMock()
     user_drafts.update_one = AsyncMock()
 
+    user_prompts = MagicMock()
+    user_prompts.find_one = AsyncMock(return_value=prompt)
+
     collections = {
         "articles": articles,
         "user_profiles": user_profiles,
         "user_drafts": user_drafts,
+        "user_prompts": user_prompts,
     }
     db = MagicMock()
     db.__getitem__.side_effect = lambda name: collections[name]
@@ -124,8 +130,32 @@ async def test_run_v2_single_uses_default_prompt_without_profile():
 
     assert result["ok"] is True
     assert draft_gen.generate.await_args.kwargs["style_hints"] is None
+    assert draft_gen.generate.await_args.kwargs["system_prompt_template"] is None
     query = collections["user_drafts"].update_one.await_args.args[0]
     assert query["user_id"] == "first-time-user"
+
+
+@pytest.mark.asyncio
+async def test_run_v2_single_injects_custom_system_prompt(caplog):
+    custom_prompt = (
+        "自定义系统提示词\n{knowledge_context}\n{template_spec}\n{style_hints}\n"
+        + "请生成准确、专业且适合公司传播的初稿。"
+    )
+    request, _, draft_gen = _build_request(
+        None,
+        {
+            "user_id": "user-a",
+            "prompt_key": "draft_system",
+            "content": custom_prompt,
+        },
+    )
+
+    with caplog.at_level("INFO"):
+        result = await _run_v2_single_workflow(request.app, ARTICLE_HASH, user_id="user-a")
+
+    assert result["ok"] is True
+    assert draft_gen.generate.await_args.kwargs["system_prompt_template"] == custom_prompt
+    assert "使用自定义提示词: user-a" in caplog.text
 
 
 @pytest.mark.asyncio

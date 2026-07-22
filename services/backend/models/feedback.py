@@ -55,6 +55,7 @@ class ActionType(StrEnum):
     REVISION_APPLY = "revision_apply"
     FEEDBACK_SUBMIT = "feedback_submit"
     PIPELINE_RUN = "pipeline_run"
+    ARTICLE_UPLOAD = "article_upload"
 
 
 class FeedbackStatus(StrEnum):

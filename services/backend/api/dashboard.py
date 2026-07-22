@@ -87,7 +87,7 @@ async def list_articles(
     page: int = Query(default=1, ge=1, description="页码"),
     page_size: int = Query(default=20, ge=1, le=100, description="每页条数"),
     source_type: str | None = Query(
-        default=None, description="来源类型: overseas_news / wechat_mp"
+        default=None, description="来源类型: overseas_news / wechat_mp / paper / user_upload"
     ),
     category: str | None = Query(default=None, description="分类筛选"),
     min_score: int | None = Query(default=None, ge=0, le=200, description="最低综合分"),
@@ -277,7 +277,11 @@ async def fetch_article_content(
     content = ""
 
     try:
-        if source_type == "overseas_news":
+        if source_type == "user_upload":
+            content = article.get("content_md", "")
+            if not content:
+                raise HTTPException(status_code=409, detail="用户上传文章没有可补抓的远程地址")
+        elif source_type == "overseas_news":
             # 海外新闻：用 httpx + BeautifulSoup 抓取
             from api.overseas_crawl import _fetch_fulltext
 
@@ -291,7 +295,7 @@ async def fetch_article_content(
                 request.app.state.mcp_crawl_client,
                 context,
             )
-        else:
+        elif source_type == "wechat_mp":
             # 公众号：调用 mcp-wewe 抓取全文
             async with _httpx.AsyncClient(timeout=30) as client:
                 resp = await client.post("http://mcp-wewe:8100/fetch-article", json={"link": url})
@@ -319,6 +323,8 @@ async def fetch_article_content(
                 soup = BeautifulSoup(r.text, "html.parser")
                 el = soup.select_one("#js_content") or soup.select_one(".rich_media_content")
                 content = el.get_text() if el else r.text[:5000]
+        else:
+            raise HTTPException(status_code=422, detail=f"不支持补抓来源类型: {source_type}")
 
         if not content:
             raise HTTPException(status_code=502, detail="抓取原文失败：内容为空")
@@ -357,7 +363,7 @@ async def batch_fetch_content(
 
     # 按类型分组
     overseas = [a for a in articles if a.get("source_type") == "overseas_news" and a.get("url")]
-    wechat = [a for a in articles if a.get("source_type") != "overseas_news" and a.get("url")]
+    wechat = [a for a in articles if a.get("source_type") == "wechat_mp" and a.get("url")]
     updated = 0
 
     # 海外新闻：调用 mcp-crawl 批量抓取

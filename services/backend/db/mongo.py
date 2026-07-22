@@ -253,6 +253,13 @@ class MongoDB:
                     name="uq_user_template_version",
                 ),
             ],
+            "user_prompts": [
+                IndexModel(
+                    [("user_id", ASCENDING), ("prompt_key", ASCENDING)],
+                    unique=True,
+                    name="uq_user_prompt_key",
+                ),
+            ],
             "pipeline_locks": [
                 IndexModel(
                     [("lock_key", ASCENDING)],

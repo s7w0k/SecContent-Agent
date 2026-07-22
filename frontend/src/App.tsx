@@ -4,6 +4,7 @@ import {
   EditOutlined,
   FileTextOutlined,
   InfoCircleOutlined,
+  SettingOutlined,
   SnippetsOutlined,
   UserOutlined,
   WechatOutlined,
@@ -22,6 +23,7 @@ import LoginPage from './pages/LoginPage';
 import LogsPage from './pages/LogsPage';
 import PRTemplatesPage from './pages/PRTemplatesPage';
 import ProfilePage from './pages/ProfilePage';
+import SettingsPage from './pages/SettingsPage';
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
@@ -32,6 +34,7 @@ const baseMenuItems = [
   { key: 'accounts', icon: <WechatOutlined />, label: '公众号账号' },
   { key: 'profile', icon: <UserOutlined />, label: '用户画像' },
   { key: 'pr-templates', icon: <SnippetsOutlined />, label: 'PR 模板' },
+  { key: 'settings', icon: <SettingOutlined />, label: '配置' },
   { key: 'logs', icon: <FileTextOutlined />, label: '运行日志' },
   { key: 'about', icon: <InfoCircleOutlined />, label: '关于' },
 ];
@@ -39,6 +42,7 @@ const baseMenuItems = [
 export function MainLayout() {
   const [tab, setTab] = useState('dashboard');
   const [templateDirty, setTemplateDirty] = useState(false);
+  const [settingsDirty, setSettingsDirty] = useState(false);
   const { user } = useAuth();
   const menuItems = user?.is_developer
     ? [
@@ -49,15 +53,20 @@ export function MainLayout() {
     : baseMenuItems;
 
   const switchTab = (nextTab: string) => {
-    if (tab === 'pr-templates' && nextTab !== tab && templateDirty) {
+    const leavingDirtyTemplates = tab === 'pr-templates' && templateDirty;
+    const leavingDirtySettings = tab === 'settings' && settingsDirty;
+    if (nextTab !== tab && (leavingDirtyTemplates || leavingDirtySettings)) {
       Modal.confirm({
-        title: '离开模板编辑页面？',
-        content: '当前模板还有未保存内容，离开后修改将丢失。',
+        title: leavingDirtyTemplates ? '离开模板编辑页面？' : '离开配置页面？',
+        content: leavingDirtyTemplates
+          ? '当前模板还有未保存内容，离开后修改将丢失。'
+          : '当前提示词还有未保存内容，离开后修改将丢失。',
         okText: '放弃并离开',
         cancelText: '继续编辑',
         okButtonProps: { danger: true },
         onOk: () => {
-          setTemplateDirty(false);
+          if (leavingDirtyTemplates) setTemplateDirty(false);
+          if (leavingDirtySettings) setSettingsDirty(false);
           setTab(nextTab);
         },
       });
@@ -96,6 +105,7 @@ export function MainLayout() {
         {tab === 'logs' && <LogsPage />}
         {tab === 'profile' && <ProfilePage />}
         {tab === 'pr-templates' && <PRTemplatesPage onDirtyChange={setTemplateDirty} />}
+        {tab === 'settings' && <SettingsPage onDirtyChange={setSettingsDirty} />}
         {tab === 'dev-logs' && user?.is_developer && <DevLogsPage />}
         {tab === 'about' && (
           <div style={{ padding: 48, maxWidth: 800, margin: '0 auto' }}>
