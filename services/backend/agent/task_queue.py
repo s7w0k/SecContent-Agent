@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar
 
 from agent.pipeline_state import PipelineStateManager
 from arq.connections import RedisSettings
+from arq.cron import cron
 from arq.worker import Retry, func
 from config import get_settings
 
@@ -135,6 +137,45 @@ async def resume_pipeline(
 _settings = get_settings()
 
 
+async def cleanup_expired_articles(ctx: dict[str, Any]) -> dict:
+    """定时清理过期文章。
+
+    规则（按入库时间 added_at 计算）：
+    - 超过 48 小时的"不相关"文章 → 删除
+    - 超过 14 天的所有文章 → 删除
+    """
+    db = ctx.get("db")
+    if db is None:
+        logger.warning("cleanup_expired_articles: db not available in ctx, skipping")
+        return {"ok": False, "error": "db not available"}
+
+    now = datetime.now(UTC)
+
+    # 48 小时前的"不相关"文章
+    cutoff_48h = now - timedelta(hours=48)
+    result_irrelevant = await db["articles"].delete_many({
+        "added_at": {"$lt": cutoff_48h},
+        "category_v2": "不相关",
+    })
+
+    # 14 天前的所有文章
+    cutoff_14d = now - timedelta(days=14)
+    result_all = await db["articles"].delete_many({
+        "added_at": {"$lt": cutoff_14d},
+    })
+
+    logger.info(
+        "cleanup_expired_articles: deleted %d irrelevant (>48h), %d expired (>14d)",
+        result_irrelevant.deleted_count,
+        result_all.deleted_count,
+    )
+    return {
+        "ok": True,
+        "deleted_irrelevant": result_irrelevant.deleted_count,
+        "deleted_expired": result_all.deleted_count,
+    }
+
+
 class WorkerSettings:
     """ARQ worker configuration shared by the worker entry point and tests."""
 
@@ -142,6 +183,9 @@ class WorkerSettings:
         func(execute_pipeline, max_tries=_settings.ARQ_MAX_RETRIES + 1),
         func(resume_pipeline, max_tries=_settings.ARQ_MAX_RETRIES + 1),
         func(fetch_fulltext_batch, max_tries=_settings.ARQ_MAX_RETRIES + 1),
+    ]
+    cron_jobs = [
+        cron(cleanup_expired_articles, hour=19, minute=0),  # 每天 03:00 UTC+8
     ]
     redis_settings = redis_settings()
     max_jobs = _settings.ARQ_MAX_JOBS
