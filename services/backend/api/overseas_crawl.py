@@ -2,7 +2,7 @@
 
 import hashlib
 import logging
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from clients.mcp_crawl import McpCrawlClient, RequestContext

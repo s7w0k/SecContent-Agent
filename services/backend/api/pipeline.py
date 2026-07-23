@@ -768,9 +768,9 @@ async def pipeline_crawl(
 async def crawl_overseas_only(
     request: Request, days: int = 1, _user_id: str = Depends(get_current_user)
 ):
-    """仅调 mcp-crawl 爬取海外新闻 → 入库"""
+    """仅调 mcp-crawl 爬取海外新闻 -> 入库"""
     import hashlib
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime
 
     db = getattr(request.app.state, "db", None)
     if db is None:
@@ -859,7 +859,7 @@ async def crawl_wewe_only(request: Request, _user_id: str = Depends(get_current_
     """仅直连 WeWe RSS Atom feed 爬取公众号文章 → 入库"""
     import hashlib
     import xml.etree.ElementTree as ET
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime
 
     db = getattr(request.app.state, "db", None)
     if db is None:
@@ -960,7 +960,7 @@ async def crawl_via_api(request: Request, days: int = 1, _user_id: str = Depends
     """通过 Just One API 抓取指定公众号文章 → 逐篇抓取全文 → 入库。"""
     import hashlib
     import os
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime
 
     db = getattr(request.app.state, "db", None)
     if db is None:
@@ -1073,7 +1073,7 @@ async def pipeline_status(request: Request, _user_id: str = Depends(get_current_
 async def import_wewe_articles(request: Request, _user_id: str = Depends(get_current_user)):
     """从 WeWe RSS 获取全部文章并入库（含公众号来源和中文日期）。"""
     import hashlib
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime
 
     db = getattr(request.app.state, "db", None)
     if db is None:
