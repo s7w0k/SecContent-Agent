@@ -227,6 +227,8 @@ class DraftReviseRequest(BaseModel):
 
     instruction: str = Field(..., min_length=1, description="修改意见")
     save: bool = Field(default=True, description="是否保存修订记录到 MongoDB")
+    selected_text: str | None = Field(default=None, description="选中的段落原文，非空时进入局部改写模式")
+    selected_range: dict | None = Field(default=None, description="段落范围 {start, end}")
 
 
 class DraftReviseResponse(BaseModel):
@@ -557,6 +559,8 @@ async def revise_draft(
             article=article,
             draft=draft,
             style_hints=style_hints,
+            selected_text=body.selected_text,
+            selected_range=body.selected_range,
         )
     except LLMError as e:
         await _log_chat_operation(
@@ -587,6 +591,8 @@ async def revise_draft(
             "created_at": _now_cn(),
             "created_by": user_id,
             "applied": False,
+            **({"selected_text": body.selected_text, "selected_range": body.selected_range}
+               if body.selected_text else {}),
         }
 
         drafts[draft_index].setdefault("revisions", [])
@@ -700,7 +706,7 @@ async def revise_draft_stream(
     draft = drafts[draft_index]
     article["_id"] = str(article["_id"])
 
-    from agent.draft_chat import LLMError, parse_revise_output
+    from agent.draft_chat import LLMError, apply_section_revise, parse_revise_output
 
     async def event_stream():
         """SSE 事件生成器"""
@@ -711,12 +717,22 @@ async def revise_draft_stream(
                 article=article,
                 draft=draft,
                 style_hints=style_hints,
+                selected_text=body.selected_text,
+                selected_range=body.selected_range,
             ):
                 full_text.append(chunk)
                 yield f"data: {json.dumps({'chunk': chunk}, ensure_ascii=False)}\n\n"
 
             raw_text = "".join(full_text)
             change_summary, revised_content = parse_revise_output(raw_text)
+
+            # 局部改写：将改写后的段落替换回完整草稿
+            if body.selected_text and body.selected_text.strip():
+                original_content = draft.get("content_md", "")[:4000]
+                revised_content = apply_section_revise(
+                    original_content, revised_content, body.selected_text, body.selected_range
+                )
+
             revision_id = str(uuid.uuid4())
             saved = False
 
@@ -730,6 +746,8 @@ async def revise_draft_stream(
                     "created_at": _now_cn(),
                     "created_by": user_id,
                     "applied": False,
+                    **({"selected_text": body.selected_text, "selected_range": body.selected_range}
+                       if body.selected_text else {}),
                 }
 
                 drafts[draft_index].setdefault("revisions", [])

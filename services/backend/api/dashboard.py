@@ -518,12 +518,17 @@ async def get_stats(
     high_value_count = (
         await db["articles"].count_documents(
             {
-                "$expr": {
-                    "$gte": [
-                        {"$add": ["$ai_relevance_score", "$reportability_score"]},
-                        140,
-                    ]
-                }
+                "$or": [
+                    {
+                        "$expr": {
+                            "$gte": [
+                                {"$add": ["$ai_relevance_score", "$reportability_score"]},
+                                140,
+                            ]
+                        }
+                    },
+                    {"pr_total_score": {"$gte": 80}},
+                ]
             }
         )
         if total > 0
@@ -538,12 +543,17 @@ async def get_stats(
     today_high_value_count = await db["articles"].count_documents(
         {
             **today_filter,
-            "$expr": {
-                "$gte": [
-                    {"$add": ["$ai_relevance_score", "$reportability_score"]},
-                    140,
-                ]
-            },
+            "$or": [
+                {
+                    "$expr": {
+                        "$gte": [
+                            {"$add": ["$ai_relevance_score", "$reportability_score"]},
+                            140,
+                        ]
+                    }
+                },
+                {"pr_total_score": {"$gte": 80}},
+            ],
         }
     )
 

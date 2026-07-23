@@ -21,6 +21,7 @@ import { Alert, Button, Card, Space, Steps, Tag, Typography, message } from 'ant
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../api/client';
 import type { PipelineState, PipelineStatus } from '../types';
+import { useActiveTasks } from '../hooks/useActiveTasks';
 import LiveOperationProgress from './LiveOperationProgress';
 import PipelineTaskProgress from './PipelineTaskProgress';
 
@@ -72,6 +73,22 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
   } | null>(null);
   const [activeOperation, setActiveOperation] = useState<ActiveOperation | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── 页面重新挂载时恢复进行中的任务 ────────────────────────
+  const { pipelineTask: restoredTask } = useActiveTasks();
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredTask && !activeTask && !restoredRef.current) {
+      restoredRef.current = true;
+      setActiveTask({
+        id: restoredTask.id,
+        key: restoredTask.key as ActionKey,
+        label: restoredTask.label,
+      });
+      setRunning(true);
+      setStatus('running');
+    }
+  }, [restoredTask, activeTask]);
 
   const beginOperation = useCallback((key: ActionKey, label: string, operationMessage: string) => {
     setRunning(true);

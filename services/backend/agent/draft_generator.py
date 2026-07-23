@@ -100,6 +100,26 @@ USER_PROMPT_TEMPLATE = """请根据以下文章和打分信息生成 PR 报道�
 """
 
 
+# ── 优秀 PR 稿参考模板注入 ────────────────────────────────────
+
+REFERENCE_TEMPLATE_SECTION = """
+
+## 优秀 PR 稿参考模板
+以下是一篇优秀 PR 稿，请从以下几个维度学习其写作手法：
+1. **结构布局**：章节划分方式、段落先后顺序、开头引入和结尾收束的写法
+2. **段落节奏**：每段的长度控制、信息密度、逻辑递进方式
+3. **表达技巧**：如何引出话题、如何过渡衔接、如何做小结、如何平衡专业性和可读性
+4. **行文风格**：语气基调、用词习惯、句式偏好
+
+**关键约束**：你可以学习上述写作手法，但草稿中的所有事实、数据、产品名称、事件描述
+必须完全基于上述"文章信息"和"产品知识库"，不得使用参考稿件中的任何具体内容。
+
+【参考 PR 稿开始】
+{reference_pr}
+【参考 PR 稿结束】
+"""
+
+
 # ═══════════════════════════════════════════════════════════════
 # DraftGenerator
 # ═══════════════════════════════════════════════════════════════
@@ -130,6 +150,7 @@ class DraftGenerator:
         style_hints: str | None = None,
         templates: list[EffectivePRTemplate] | None = None,
         system_prompt_template: str | None = None,
+        reference_template: str | None = None,
     ) -> dict:
         """为单篇文章生成 4 篇 PR 草稿。
 
@@ -180,6 +201,7 @@ class DraftGenerator:
                         len(tasks) + 1,
                         style_hints,
                         system_prompt_template,
+                        reference_template,
                     ),
                 )
 
@@ -214,6 +236,7 @@ class DraftGenerator:
         index: int,
         style_hints: str | None = None,
         system_prompt_template: str | None = None,
+        reference_template: str | None = None,
     ) -> dict | None:
         """生成单篇草稿（含重试）。"""
         system_prompt = self._build_system_prompt(
@@ -221,6 +244,7 @@ class DraftGenerator:
             perspective,
             style_hints,
             template_override=system_prompt_template,
+            reference_template=reference_template,
         )
         user_prompt = self._build_user_prompt(article, scores)
 
@@ -263,6 +287,7 @@ class DraftGenerator:
         perspective: str,
         style_hints: str | None = None,
         template_override: str | None = None,
+        reference_template: str | None = None,
     ) -> str:
         knowledge_context = self.knowledge.as_system_prompt()
         if not knowledge_context:
@@ -280,12 +305,19 @@ class DraftGenerator:
         }
         selected_template = template_override or SYSTEM_PROMPT_TEMPLATE
         try:
-            return selected_template.format(**values)
+            prompt = selected_template.format(**values)
         except (KeyError, IndexError, ValueError) as exc:
             if template_override is None:
                 raise
             logger.warning("用户自定义提示词渲染失败，降级默认: %s", exc)
-            return SYSTEM_PROMPT_TEMPLATE.format(**values)
+            prompt = SYSTEM_PROMPT_TEMPLATE.format(**values)
+
+        # 注入优秀 PR 稿模板（仅学习行文逻辑和结构，不学习内容）
+        if reference_template and reference_template.strip():
+            sanitized_ref = self._sanitize_low_trust_text(reference_template.strip()[:15000])
+            prompt += REFERENCE_TEMPLATE_SECTION.format(reference_pr=sanitized_ref)
+
+        return prompt
 
     @classmethod
     def _build_template_spec(

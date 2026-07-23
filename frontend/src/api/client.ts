@@ -321,8 +321,10 @@ export const pipelineApi = {
   },
 
   /** V2 智能 PR 流水线（单文章） */
-  async runV2Single(urlHash: string): Promise<PipelineTaskResponse> {
-    const { data } = await client.post(`/pipeline/run-v2/${urlHash}`);
+  async runV2Single(urlHash: string, referenceTemplate?: string): Promise<PipelineTaskResponse> {
+    const { data } = await client.post(`/pipeline/run-v2/${urlHash}`, referenceTemplate ? {
+      reference_template: referenceTemplate,
+    } : undefined);
     return data;
   },
 

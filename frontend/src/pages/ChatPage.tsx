@@ -39,6 +39,7 @@ import type {
 import ReactMarkdown from 'react-markdown';
 import api, { chatApi } from '../api/client';
 import ChatBubble from '../components/ChatBubble';
+import DraftBlockView, { type DraftBlock } from '../components/DraftBlockView';
 import DraftFeedback from '../components/DraftFeedback';
 import DraftReviewPanel from '../components/DraftReviewPanel';
 import RevisionList from '../components/RevisionList';
@@ -122,6 +123,13 @@ export default function ChatPage() {
   const [revisionResult, setRevisionResult] = useState<DraftReviseResponse | null>(null);
   const [viewingRevision, setViewingRevision] = useState<DraftRevision | null>(null);
   const [draftFullscreen, setDraftFullscreen] = useState(false);
+
+  // ── 段落选中 ─────────────────────────────────────────────
+  const [selectedBlock, setSelectedBlock] = useState<DraftBlock | null>(null);
+  const handleSelectBlock = useCallback((block: DraftBlock | null) => {
+    setSelectedBlock(block);
+    if (block) setMode('改稿');
+  }, []);
 
   // ── 应用修订 ─────────────────────────────────────────────
   const [applying, setApplying] = useState(false);
@@ -256,6 +264,7 @@ export default function ChatPage() {
     setViewingRevision(null);
     setDraftFullscreen(false);
     setError(null);
+    setSelectedBlock(null);
     // 加载新文章+草稿0的对话历史
     if (article) {
       loadChatHistory(urlHash, 0);
@@ -270,6 +279,7 @@ export default function ChatPage() {
     setRevisionResult(null);
     setViewingRevision(null);
     setDraftFullscreen(false);
+    setSelectedBlock(null);
     // 加载新草稿的对话历史
     if (selectedArticle) {
       loadChatHistory(selectedArticle.url_hash, index);
@@ -350,7 +360,16 @@ export default function ChatPage() {
         await chatApi.reviseDraftStream(
           articleForRevise.url_hash,
           draftIndex,
-          { instruction: text, save: true },
+          {
+            instruction: text,
+            save: true,
+            ...(selectedBlock
+              ? {
+                  selected_text: selectedBlock.text,
+                  selected_range: { start: selectedBlock.index, end: selectedBlock.index },
+                }
+              : {}),
+          },
           (chunk) => {
             setMessages((prev) => {
               const updated = [...prev];
@@ -626,7 +645,11 @@ export default function ChatPage() {
                 <div className={styles.previewArea}>
                   {previewContent ? (
                     <div className={styles.markdownContent}>
-                      <ReactMarkdown>{previewContent}</ReactMarkdown>
+                      <DraftBlockView
+                        content={previewContent}
+                        selectedBlockIndex={selectedBlock?.index ?? null}
+                        onSelectBlock={handleSelectBlock}
+                      />
                     </div>
                   ) : (
                     <Empty description="草稿内容不可用" image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -800,6 +823,37 @@ export default function ChatPage() {
 
           {/* 输入区 */}
           <div className={styles.inputArea}>
+            {selectedBlock && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '4px 12px',
+                  background: '#e6f4ff',
+                  border: '1px solid #91caff',
+                  borderRadius: 6,
+                  marginBottom: 8,
+                  fontSize: 13,
+                }}
+              >
+                <EditOutlined style={{ color: '#1677ff' }} />
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  已选中第 {selectedBlock.index + 1} 段：
+                  {selectedBlock.text.length > 50
+                    ? selectedBlock.text.slice(0, 50) + '...'
+                    : selectedBlock.text}
+                </span>
+                <Button
+                  type="text"
+                  size="small"
+                  onClick={() => setSelectedBlock(null)}
+                  style={{ color: '#999', padding: '0 4px' }}
+                >
+                  清除
+                </Button>
+              </div>
+            )}
             <div className={styles.inputWrapper}>
               <TextArea
                 className={styles.textArea}
@@ -865,7 +919,11 @@ export default function ChatPage() {
       >
         {previewContent ? (
           <div className={styles.fullscreenMarkdown}>
-            <ReactMarkdown>{previewContent}</ReactMarkdown>
+            <DraftBlockView
+              content={previewContent}
+              selectedBlockIndex={selectedBlock?.index ?? null}
+              onSelectBlock={handleSelectBlock}
+            />
           </div>
         ) : (
           <Empty description="草稿内容不可用" />

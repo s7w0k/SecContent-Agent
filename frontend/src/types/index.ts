@@ -519,6 +519,8 @@ export interface DraftRevision {
 export interface DraftReviseRequest {
   instruction: string;
   save?: boolean;
+  selected_text?: string;
+  selected_range?: { start: number; end: number };
 }
 
 export interface DraftReviseResponse {

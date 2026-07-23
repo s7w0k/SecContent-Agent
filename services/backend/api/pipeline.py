@@ -418,6 +418,10 @@ async def _execute_pipeline_task(
         )
 
         if task_type == "run-v2" and article_url_hash:
+            # 从任务文档读取 reference_template
+            task_doc = await db["pipeline_tasks"].find_one({"task_id": task_id})
+            reference_template = task_doc.get("reference_template") if task_doc else None
+
             result = await _run_v2_single_workflow(
                 app,
                 article_url_hash,
@@ -425,6 +429,7 @@ async def _execute_pipeline_task(
                 task_id=task_id,
                 trace_id=trace_id,
                 username=username,
+                reference_template=reference_template,
             )
         elif task_type == "run-v2":
             manager = app.state.pipeline_v2
@@ -1634,8 +1639,16 @@ async def classify_v2(
 
 
 @router.post("/run-v2/{url_hash}", summary="单文章 V2 智能 PR 流水线")
-async def run_v2_single(url_hash: str, request: Request, user_id: str = Depends(get_current_user)):
-    """创建单篇文章 V2 后台任务并立即返回 task_id。"""
+async def run_v2_single(
+    url_hash: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
+    """创建单篇文章 V2 后台任务并立即返回 task_id。
+
+    可选在请求体中传入 reference_template（优秀 PR 稿文本），
+    LLM 将学习其行文逻辑和结构（不学习内容）。
+    """
     db = getattr(request.app.state, "db", None)
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -1643,6 +1656,15 @@ async def run_v2_single(url_hash: str, request: Request, user_id: str = Depends(
         raise HTTPException(status_code=503, detail="ClassifierV2 not initialized")
     if await db["articles"].find_one({"url_hash": url_hash}) is None:
         raise HTTPException(status_code=404, detail="Article not found")
+
+    # 读取可选的 reference_template
+    reference_template: str | None = None
+    try:
+        body = await request.json()
+        if isinstance(body, dict):
+            reference_template = body.get("reference_template")
+    except Exception:
+        pass
 
     trace_id = generate_trace_id()
     username = _request_username(request, user_id)
@@ -1654,6 +1676,14 @@ async def run_v2_single(url_hash: str, request: Request, user_id: str = Depends(
         trace_id=trace_id,
         username=username,
     )
+
+    # 将 reference_template 存入任务文档
+    if reference_template and reference_template.strip():
+        await db["pipeline_tasks"].update_one(
+            {"task_id": task["task_id"]},
+            {"$set": {"reference_template": reference_template.strip()[:15000]}},
+        )
+
     await _enqueue_pipeline_task(
         request.app,
         task["task_id"],
@@ -1687,6 +1717,7 @@ async def _run_v2_single_workflow(
     task_id: str | None = None,
     trace_id: str | None = None,
     username: str | None = None,
+    reference_template: str | None = None,
 ) -> dict:
     """执行单篇分类、评分和个性化草稿生成，由后台任务调用。"""
     db = app.state.db
@@ -1934,6 +1965,7 @@ async def _run_v2_single_workflow(
                         style_hints=style_hints,
                         templates=effective_templates,
                         system_prompt_template=system_prompt_template,
+                        reference_template=reference_template,
                     )
                     result["steps"].append(
                         {

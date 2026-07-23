@@ -146,6 +146,96 @@ REVISE_USER_PROMPT = """请根据以下意见改写 PR 初稿：
 """
 
 
+# ── 段落级局部改写 Prompt ────────────────────────────────────
+
+SECTION_REVISE_SYSTEM_PROMPT = """你是一个智能体安全行业的 PR 改稿专家。
+
+## 任务
+用户选中了初稿中的一个段落，请仅根据修改意见改写该选中段落。
+**只输出改写后的段落文本**，不要输出完整稿件，不要输出其他段落。
+
+## 改稿规则
+1. 仅改写"选中段落"，不要改动其他内容
+2. 保留事实边界，不编造数据、客户、产品能力
+3. 保持与原稿一致的语气和风格
+4. 保持与产品知识库一致的产品定位
+
+## 产品知识库
+{knowledge_context}
+
+{style_hints}
+
+## 输出格式（严格遵守）
+```markdown
+## 修改摘要
+- 修改点1
+- 修改点2
+
+## 修订稿
+（仅输出改写后的选中段落内容，不要包含其他段落）
+```
+"""
+
+SECTION_REVISE_USER_PROMPT = """请根据以下意见改写选中段落：
+
+## 用户修改意见
+{instruction}
+
+## 选中段落（需要改写的部分）
+{selected_text}
+
+## 完整原稿（仅供参考上下文，不要改写未选中部分）
+{original_content}
+
+## 文章信息
+- 标题: {title}
+- 来源: {source}
+- V2分类: {category_v2}
+"""
+
+
+def apply_section_revise(
+    original_content: str,
+    revised_section: str,
+    selected_text: str | None = None,
+    selected_range: dict | None = None,
+) -> str:
+    """将 LLM 改写后的文本替换回原始 content_md。
+
+    优先用 selected_text 做文本匹配替换（支持任意选区），
+    若匹配失败则回退到按段落索引替换（selected_range.start）。
+    """
+    if not original_content:
+        return revised_section
+
+    # 优先：文本匹配替换
+    if selected_text and selected_text.strip():
+        target = selected_text.strip()
+        if target in original_content:
+            return original_content.replace(target, revised_section.strip(), 1)
+        # 尝试去除 Markdown 标记后匹配
+        clean_target = re.sub(r"[#*>`\-]", "", target).strip()
+        if clean_target and clean_target in original_content:
+            return original_content.replace(clean_target, revised_section.strip(), 1)
+        logger.warning("apply_section_revise: selected_text not found in original, appending")
+        return original_content + "\n\n" + revised_section.strip()
+
+    # 回退：按段落索引替换
+    blocks = re.split(r"(\n\n+)", original_content)
+    text_blocks = [blocks[i] for i in range(0, len(blocks), 2)]
+    seps = [blocks[i] for i in range(1, len(blocks), 2)]
+
+    start_idx = (selected_range or {}).get("start")
+    if start_idx is not None and 0 <= start_idx < len(text_blocks):
+        text_blocks[start_idx] = revised_section
+        result = text_blocks[0]
+        for i, sep in enumerate(seps):
+            result += sep + text_blocks[i + 1]
+        return result
+
+    return original_content + "\n\n" + revised_section
+
+
 # ═══════════════════════════════════════════════════════════════
 # DraftChatAgent
 # ═══════════════════════════════════════════════════════════════
@@ -298,6 +388,8 @@ class DraftChatAgent:
         article: dict,
         draft: dict,
         style_hints: str | None = None,
+        selected_text: str | None = None,
+        selected_range: dict | None = None,
     ) -> dict:
         """改稿模式：根据修改意见改写 PR 初稿。
 
@@ -305,6 +397,8 @@ class DraftChatAgent:
             instruction: 用户修改意见
             article: 文章数据
             draft: PR 草稿数据
+            selected_text: 选中的段落原文，非空时进入局部改写模式
+            selected_range: 段落范围 {start, end}
 
         Returns:
             {"revised_content_md": str, "change_summary": list[str]}
@@ -313,23 +407,39 @@ class DraftChatAgent:
             LLMError: LLM 调用失败时抛出
         """
         knowledge_context = self._get_knowledge_prompt()
-        system_prompt = REVISE_SYSTEM_PROMPT.format(
-            knowledge_context=knowledge_context,
-            style_hints=self._style_hints_section(style_hints),
-        )
-
         original_content = draft.get("content_md", "")[:MAX_CONTENT_LENGTH]
-        user_prompt = REVISE_USER_PROMPT.format(
-            instruction=instruction,
-            template=draft.get("template", ""),
-            perspective=draft.get("perspective", ""),
-            original_content=original_content,
-            title=article.get("title", ""),
-            source=article.get("source", ""),
-            category_v2=article.get("category_v2", "未分类"),
-            product_relevance=article.get("product_relevance", 0),
-            event_impact=article.get("event_impact", 0),
-        )
+
+        is_section_revise = bool(selected_text and selected_text.strip())
+
+        if is_section_revise:
+            system_prompt = SECTION_REVISE_SYSTEM_PROMPT.format(
+                knowledge_context=knowledge_context,
+                style_hints=self._style_hints_section(style_hints),
+            )
+            user_prompt = SECTION_REVISE_USER_PROMPT.format(
+                instruction=instruction,
+                selected_text=selected_text,
+                original_content=original_content,
+                title=article.get("title", ""),
+                source=article.get("source", ""),
+                category_v2=article.get("category_v2", "未分类"),
+            )
+        else:
+            system_prompt = REVISE_SYSTEM_PROMPT.format(
+                knowledge_context=knowledge_context,
+                style_hints=self._style_hints_section(style_hints),
+            )
+            user_prompt = REVISE_USER_PROMPT.format(
+                instruction=instruction,
+                template=draft.get("template", ""),
+                perspective=draft.get("perspective", ""),
+                original_content=original_content,
+                title=article.get("title", ""),
+                source=article.get("source", ""),
+                category_v2=article.get("category_v2", "未分类"),
+                product_relevance=article.get("product_relevance", 0),
+                event_impact=article.get("event_impact", 0),
+            )
 
         try:
             response = await self.llm.ainvoke(
@@ -345,8 +455,15 @@ class DraftChatAgent:
         raw = response.content if hasattr(response, "content") else str(response)
         change_summary, revised_content = parse_revise_output(raw)
 
+        # 局部改写：将改写后的段落替换回完整草稿
+        if is_section_revise:
+            revised_content = apply_section_revise(
+                original_content, revised_content, selected_text, selected_range
+            )
+
         logger.info(
-            "Revise completed, summary_count=%d, content_length=%d",
+            "Revise completed, section=%s, summary_count=%d, content_length=%d",
+            is_section_revise,
             len(change_summary),
             len(revised_content),
         )
@@ -364,6 +481,8 @@ class DraftChatAgent:
         article: dict,
         draft: dict,
         style_hints: str | None = None,
+        selected_text: str | None = None,
+        selected_range: dict | None = None,
     ) -> AsyncIterator[str]:
         """流式改稿模式：逐 chunk 产出改稿文本。
 
@@ -377,23 +496,39 @@ class DraftChatAgent:
             LLMError: LLM 调用失败时抛出
         """
         knowledge_context = self._get_knowledge_prompt()
-        system_prompt = REVISE_SYSTEM_PROMPT.format(
-            knowledge_context=knowledge_context,
-            style_hints=self._style_hints_section(style_hints),
-        )
-
         original_content = draft.get("content_md", "")[:MAX_CONTENT_LENGTH]
-        user_prompt = REVISE_USER_PROMPT.format(
-            instruction=instruction,
-            template=draft.get("template", ""),
-            perspective=draft.get("perspective", ""),
-            original_content=original_content,
-            title=article.get("title", ""),
-            source=article.get("source", ""),
-            category_v2=article.get("category_v2", "未分类"),
-            product_relevance=article.get("product_relevance", 0),
-            event_impact=article.get("event_impact", 0),
-        )
+
+        is_section_revise = bool(selected_text and selected_text.strip())
+
+        if is_section_revise:
+            system_prompt = SECTION_REVISE_SYSTEM_PROMPT.format(
+                knowledge_context=knowledge_context,
+                style_hints=self._style_hints_section(style_hints),
+            )
+            user_prompt = SECTION_REVISE_USER_PROMPT.format(
+                instruction=instruction,
+                selected_text=selected_text,
+                original_content=original_content,
+                title=article.get("title", ""),
+                source=article.get("source", ""),
+                category_v2=article.get("category_v2", "未分类"),
+            )
+        else:
+            system_prompt = REVISE_SYSTEM_PROMPT.format(
+                knowledge_context=knowledge_context,
+                style_hints=self._style_hints_section(style_hints),
+            )
+            user_prompt = REVISE_USER_PROMPT.format(
+                instruction=instruction,
+                template=draft.get("template", ""),
+                perspective=draft.get("perspective", ""),
+                original_content=original_content,
+                title=article.get("title", ""),
+                source=article.get("source", ""),
+                category_v2=article.get("category_v2", "未分类"),
+                product_relevance=article.get("product_relevance", 0),
+                event_impact=article.get("event_impact", 0),
+            )
 
         try:
             async for chunk in self.llm.astream(

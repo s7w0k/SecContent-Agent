@@ -5,9 +5,9 @@
  * 管理全局状态（筛选/分页/排序/报道查看）。
  */
 
-import { ImportOutlined, UploadOutlined } from '@ant-design/icons';
-import { Button, Col, Drawer, Row, Space, Tag, Typography, message } from 'antd';
-import { useCallback, useEffect, useState } from 'react';
+import { InboxOutlined, ImportOutlined, UploadOutlined } from '@ant-design/icons';
+import { Button, Col, Drawer, Modal, Row, Space, Tag, Typography, Upload, message } from 'antd';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../api/client';
 import ArticleTable from '../components/ArticleTable';
 import ArticleUpload from '../components/ArticleUpload';
@@ -20,6 +20,7 @@ import PipelineTaskProgress from '../components/PipelineTaskProgress';
 import ReportViewer from '../components/ReportViewer';
 import StatsCards from '../components/StatsCards';
 import TodayStatsRow from '../components/TodayStatsRow';
+import { useActiveTasks } from '../hooks/useActiveTasks';
 import type { Article, ArticleQuery, FilterValues, StatsData } from '../types';
 
 const { Title, Paragraph, Text } = Typography;
@@ -55,6 +56,16 @@ export default function Dashboard() {
   const [viewingArticle, setViewingArticle] = useState<Article | null>(null);
   const [draftArticle, setDraftArticle] = useState<Article | null>(null);
   const [draftTask, setDraftTask] = useState<{ taskId: string; articleHash: string } | null>(null);
+
+  // ── 页面重新挂载时恢复进行中的任务 ────────────────────────
+  const { draftTask: restoredDraftTask } = useActiveTasks();
+  const draftRestoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredDraftTask && !draftTask && !draftRestoredRef.current) {
+      draftRestoredRef.current = true;
+      setDraftTask(restoredDraftTask);
+    }
+  }, [restoredDraftTask, draftTask]);
 
   // ── 文章详情 Drawer ──────────────────────────────────────
   const [detailArticle, setDetailArticle] = useState<Article | null>(null);
@@ -181,17 +192,33 @@ export default function Dashboard() {
   );
 
   // ── 单文章 V2 流水线 ────────────────────────────────────
-  const handleRunV2Single = useCallback(async (article: Article) => {
+  const MAX_TEMPLATE_FILES = 3;
+  const MAX_TEMPLATE_CHARS = 15000;
+  const [templateModalArticle, setTemplateModalArticle] = useState<Article | null>(null);
+  const [uploadedTemplates, setUploadedTemplates] = useState<{ name: string; text: string }[]>([]);
+
+  const handleRunV2Single = useCallback((article: Article) => {
+    setUploadedTemplates([]);
+    setTemplateModalArticle(article);
+  }, []);
+
+  const handleConfirmGenerate = useCallback(async () => {
+    const article = templateModalArticle;
+    if (!article) return;
+    setTemplateModalArticle(null);
+    const combined = uploadedTemplates.length > 0
+      ? uploadedTemplates.map((t, i) => `### 参考稿件 ${i + 1}：${t.name}\n\n${t.text}`).join('\n\n---\n\n')
+      : undefined;
     message.loading({ content: '正在创建个性化草稿任务...', key: 'v2single', duration: 0 });
     try {
-      const res = await api.runV2Single(article.url_hash);
+      const res = await api.runV2Single(article.url_hash, combined);
       setDraftTask({ taskId: res.data.task_id, articleHash: article.url_hash });
       message.success({ content: '草稿任务已创建', key: 'v2single', duration: 2 });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '未知错误';
       message.error({ content: `V2失败: ${msg}`, key: 'v2single' });
     }
-  }, []);
+  }, [templateModalArticle, uploadedTemplates]);
 
   // ── 查看 V2 草稿 ────────────────────────────────────────
   const handleViewDrafts = useCallback((article: Article) => {
@@ -426,6 +453,69 @@ export default function Dashboard() {
           </>
         )}
       </Drawer>
+
+      {/* 模板注入对话框 */}
+      <Modal
+        title="生成草稿"
+        open={!!templateModalArticle}
+        onOk={handleConfirmGenerate}
+        onCancel={() => setTemplateModalArticle(null)}
+        okText="确认生成"
+        cancelText="取消"
+        width={520}
+      >
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+          是否需要上传优秀 PR 稿作为参考模板？LLM 将学习其结构布局、段落节奏、表达技巧和行文风格，
+          草稿中的事实和数据仍完全基于当前文章。
+        </Typography.Paragraph>
+        <Upload.Dragger
+          accept=".txt,.md,.markdown"
+          maxCount={MAX_TEMPLATE_FILES}
+          multiple
+          fileList={uploadedTemplates.map((t, i) => ({
+            uid: String(i),
+            name: t.name,
+            status: 'done' as const,
+          }))}
+          beforeUpload={(file) => {
+            if (uploadedTemplates.length >= MAX_TEMPLATE_FILES) {
+              message.warning(`最多上传 ${MAX_TEMPLATE_FILES} 篇`);
+              return false;
+            }
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const text = e.target?.result as string;
+              const totalChars = uploadedTemplates.reduce((s, t) => s + t.text.length, 0) + text.length;
+              if (totalChars > MAX_TEMPLATE_CHARS) {
+                message.error(`总字符数超出限制（${totalChars}/${MAX_TEMPLATE_CHARS}），请减少或缩短文件`);
+                return;
+              }
+              setUploadedTemplates((prev) => [...prev, { name: file.name, text }]);
+              message.success(`已加载: ${file.name}（${text.length} 字符）`);
+            };
+            reader.readAsText(file);
+            return false;
+          }}
+          onRemove={(file) => {
+            setUploadedTemplates((prev) => prev.filter((_, i) => String(i) !== file.uid));
+          }}
+        >
+          <p className="ant-upload-drag-icon">
+            <InboxOutlined />
+          </p>
+          <p className="ant-upload-text">点击或拖拽文件到此处</p>
+          <p className="ant-upload-hint">最多 {MAX_TEMPLATE_FILES} 篇，总字符 ≤ {MAX_TEMPLATE_CHARS}，支持 .txt / .md</p>
+        </Upload.Dragger>
+        {uploadedTemplates.length > 0 && (
+          <Typography.Paragraph
+            type="success"
+            style={{ marginTop: 12, marginBottom: 0, fontSize: 13 }}
+          >
+            已加载 {uploadedTemplates.length} 篇参考模板（共{' '}
+            {uploadedTemplates.reduce((s, t) => s + t.text.length, 0)} 字符），将注入生成上下文。
+          </Typography.Paragraph>
+        )}
+      </Modal>
     </div>
   );
 }
