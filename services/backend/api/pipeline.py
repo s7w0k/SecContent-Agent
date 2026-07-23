@@ -779,7 +779,6 @@ async def crawl_overseas_only(
     if arq_pool is None:
         raise HTTPException(status_code=503, detail="Task queue not available")
 
-    tz = timezone(timedelta(hours=8))
     tools = getattr(request.app.state, "pipeline_manager", None)
     if tools is None:
         raise HTTPException(status_code=503, detail="Pipeline not initialized")
@@ -866,7 +865,6 @@ async def crawl_wewe_only(request: Request, _user_id: str = Depends(get_current_
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
 
-    tz = timezone(timedelta(hours=8))
     log = logging.getLogger("backend.api.pipeline")
 
     try:
@@ -980,7 +978,6 @@ async def crawl_via_api(request: Request, days: int = 1, _user_id: str = Depends
     )
 
     log = logging.getLogger("backend.api.pipeline")
-    tz = timezone(timedelta(hours=8))
     all_articles = []
 
     try:
@@ -1101,7 +1098,6 @@ async def import_wewe_articles(request: Request, _user_id: str = Depends(get_cur
 
         # 2. 入库
         saved = 0
-        tz = timezone(timedelta(hours=8))
         for entry in entries:
             title_el = entry.find("atom:title", ns)
             link_el = entry.find("atom:link", ns)

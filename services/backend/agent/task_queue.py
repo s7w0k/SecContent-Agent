@@ -184,7 +184,7 @@ class WorkerSettings:
         func(resume_pipeline, max_tries=_settings.ARQ_MAX_RETRIES + 1),
         func(fetch_fulltext_batch, max_tries=_settings.ARQ_MAX_RETRIES + 1),
     ]
-    cron_jobs = [
+    cron_jobs: ClassVar[list[Any]] = [
         cron(cleanup_expired_articles, hour=19, minute=0),  # 每天 03:00 UTC+8
     ]
     redis_settings = redis_settings()

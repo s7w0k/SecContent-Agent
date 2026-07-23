@@ -115,7 +115,6 @@ async def crawl_overseas(request: Request, hours: int = Query(default=24, le=72)
     import feedparser
 
     db = getattr(request.app.state, "db", None)
-    tz_cst = timezone(timedelta(hours=8))
     now_utc = datetime.now(UTC)
     cutoff = now_utc - timedelta(hours=hours)
     all_articles = []
