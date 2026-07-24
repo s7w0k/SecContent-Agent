@@ -847,3 +847,71 @@ export interface PRTemplateVersionListResponse {
   page: number;
   page_size: number;
 }
+
+// ── 用户显式偏好 Policy ──────────────────────────
+export interface ProfilePolicy {
+  policy_id: string;
+  user_id: string;
+  content_focus: string[];
+  opening_style: string | null;
+  structure_preference: string | null;
+  required_patterns: string[];
+  avoid_patterns: string[];
+  custom_instructions: string | null;
+  auto_learning_enabled: boolean;
+  memory_write_approval: boolean;
+  version: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PolicyUpdateRequest {
+  content_focus?: string[];
+  opening_style?: string | null;
+  structure_preference?: string | null;
+  required_patterns?: string[];
+  avoid_patterns?: string[];
+  custom_instructions?: string | null;
+  auto_learning_enabled?: boolean;
+  memory_write_approval?: boolean;
+}
+
+// ── 用户记忆 ──────────────────────────────────────
+export interface MemoryItem {
+  memory_id: string;
+  user_id: string;
+  dimension: string;
+  value: string;
+  normalized_key: string;
+  display_text: string;
+  polarity: 'prefer' | 'avoid' | 'require';
+  scope: { category_v2?: string | null; template_id?: string | null; stage?: string | null };
+  confidence: number;
+  support_count: number;
+  contradiction_count: number;
+  independent_task_count: number;
+  evidence_refs: Array<{
+    event_id: string;
+    source_type: string;
+    weight: number;
+    observed_at: string;
+  }>;
+  status: 'candidate' | 'pending_approval' | 'active' | 'suppressed' | 'expired' | 'rejected';
+  created_by: string;
+  confirmed_by_user: boolean;
+  first_seen_at?: string;
+  last_seen_at?: string;
+  use_count: number;
+  positive_outcome_count: number;
+  negative_outcome_count: number;
+  version: number;
+}
+
+export interface MemoryListResponse {
+  items: MemoryItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  status_stats: Record<string, number>;
+  pending_count: number;
+}

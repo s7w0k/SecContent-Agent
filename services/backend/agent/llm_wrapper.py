@@ -24,6 +24,8 @@ PROMPT_VERSIONS = {
     "scorer_v2": "v2.1",
     "draft_generator": "v1.0",
     "draft_chat": "v1.0",
+    "memory_learner": "v1.0",
+    "memory_compiler": "v1.0",
 }
 
 # USD per 1,000 tokens. Values are deliberately configurable in one place and

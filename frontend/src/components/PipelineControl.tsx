@@ -14,7 +14,6 @@ import {
   CloudDownloadOutlined,
   ExperimentOutlined,
   FileTextOutlined,
-  PlayCircleOutlined,
   SyncOutlined,
 } from '@ant-design/icons';
 import { Alert, Button, Card, Space, Steps, Tag, Typography, message } from 'antd';
@@ -40,15 +39,10 @@ interface PipelineControlProps {
 }
 
 type ActionKey =
-  | 'run'
-  | 'crawl'
-  | 'score'
   | 'overseas'
   | 'wewe'
   | 'score-v2'
-  | 'classify-v2'
-  | 'run-v2'
-  | 'report';
+  | 'classify-v2';
 
 interface ActiveOperation {
   key: ActionKey;
@@ -148,44 +142,6 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
 
   // ── 触发操作 ──────────────────────────────────────────────
 
-  const trigger = useCallback(
-    async (action: 'run' | 'score' | 'report', label: string, days?: number) => {
-      beginOperation(action, label, `正在执行${label}，服务端完成后会自动刷新结果...`);
-      message.loading({ content: `${label}中...`, key: 'pipeline', duration: 0 });
-
-      try {
-        if (action === 'run') await api.run(days || 1);
-        else if (action === 'score') await api.score();
-        else if (action === 'report') await api.report();
-        message.success({ content: `${label}已触发`, key: 'pipeline', duration: 2 });
-        startPolling();
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : '未知错误';
-        console.error(`[Pipeline] ${action} failed:`, e);
-        message.error({ content: `${label}失败: ${msg}`, key: 'pipeline' });
-        endOperation();
-        setStatus('failed');
-      }
-    },
-    [beginOperation, endOperation, startPolling],
-  );
-
-  const handleRunFull = useCallback(() => trigger('run', '全流程', 1), [trigger]);
-  const handleCrawl = useCallback(async () => {
-    try {
-      beginOperation('crawl', '爬取+分类', '正在创建后台任务...');
-      message.loading({ content: '正在创建爬取任务...', key: 'pipeline', duration: 0 });
-      const res = await api.crawl(1);
-      setActiveTask({ id: res.data.task_id, key: 'crawl', label: '爬取+分类' });
-      setActiveOperation(null);
-      message.success({ content: '爬取任务已创建', key: 'pipeline', duration: 2 });
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : '未知错误';
-      endOperation();
-      setStatus('failed');
-      message.error({ content: `爬取任务创建失败: ${detail}`, key: 'pipeline' });
-    }
-  }, [beginOperation, endOperation]);
   const handleCrawlOverseas = useCallback(async () => {
     beginOperation('overseas', '海外新闻', '正在连接海外新闻服务并抓取、解析、保存文章...');
     message.loading({ content: '海外新闻爬取中，预计 1-2 分钟...', key: 'overseas', duration: 0 });
@@ -244,7 +200,6 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
       message.error({ content: `V2打分任务创建失败: ${errorMessage(error)}`, key: 'scoreV2' });
     }
   }, [beginOperation, endOperation]);
-  const handleReport = useCallback(() => trigger('report', '报道'), [trigger]);
   const handleClassifyV2 = useCallback(async () => {
     try {
       beginOperation('classify-v2', 'V2分类', '正在统计待分类文章并创建后台任务...');
@@ -264,21 +219,6 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
         content: `V2分类任务创建失败: ${errorMessage(error)}`,
         key: 'classifyV2',
       });
-    }
-  }, [beginOperation, endOperation]);
-  const handleRunV2 = useCallback(async () => {
-    try {
-      beginOperation('run-v2', '智能PR流水线', '正在创建后台任务...');
-      message.loading({ content: '正在创建V2智能PR任务...', key: 'pipelineV2', duration: 0 });
-      const res = await api.runV2(1);
-      setActiveTask({ id: res.data.task_id, key: 'run-v2', label: 'V2智能PR流水线' });
-      setActiveOperation(null);
-      message.success({ content: 'V2任务已创建', key: 'pipelineV2', duration: 2 });
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : '未知错误';
-      message.error({ content: `V2流水线失败: ${msg}`, key: 'pipelineV2' });
-      endOperation();
-      setStatus('failed');
     }
   }, [beginOperation, endOperation]);
 
@@ -336,35 +276,19 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
       {/* 触发按钮 */}
       <Space wrap style={{ marginBottom: 16 }}>
         <Button
-          type="primary"
-          icon={<PlayCircleOutlined />}
-          onClick={handleRunFull}
-          loading={activeOperation?.key === 'run'}
-          disabled={running}
-        >
-          全流程
-        </Button>
-        <Button
           icon={<CloudDownloadOutlined />}
-          onClick={handleCrawl}
-          disabled={running}
-          loading={activeOperation?.key === 'crawl'}
-        >
-          爬取+分类
-        </Button>
-        <Button
           onClick={handleCrawlOverseas}
           disabled={running}
           loading={activeOperation?.key === 'overseas'}
         >
-          海外新闻
+          获取最新海外新闻
         </Button>
         <Button
           onClick={handleCrawlWewe}
           disabled={running}
           loading={activeOperation?.key === 'wewe'}
         >
-          公众号
+          获取最新竞品公众号推文
         </Button>
         <Button
           icon={<ExperimentOutlined />}
@@ -372,7 +296,7 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
           disabled={running}
           loading={activeOperation?.key === 'score-v2'}
         >
-          V2打分
+          智能评分
         </Button>
         <Button
           icon={<ExperimentOutlined />}
@@ -380,24 +304,7 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
           disabled={running}
           loading={activeOperation?.key === 'classify-v2'}
         >
-          V2分类
-        </Button>
-        <Button
-          type="primary"
-          icon={<PlayCircleOutlined />}
-          onClick={handleRunV2}
-          loading={activeOperation?.key === 'run-v2'}
-          disabled={running}
-        >
-          智能PR流水线
-        </Button>
-        <Button
-          icon={<FileTextOutlined />}
-          onClick={handleReport}
-          disabled={running}
-          loading={activeOperation?.key === 'report'}
-        >
-          仅报道
+          智能分类
         </Button>
       </Space>
 
@@ -447,7 +354,7 @@ export default function PipelineControl({ onComplete }: PipelineControlProps) {
 
       {/* 首次使用提示 */}
       {!state && status === 'idle' && (
-        <Text type="secondary">点击"全流程"开始爬取、分类、打分和报道生成</Text>
+        <Text type="secondary">点击上方按钮获取最新文章、执行智能评分或分类</Text>
       )}
 
       {/* 错误展示 */}

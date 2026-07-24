@@ -210,6 +210,31 @@ async def create_feedback(
         detail={"rating": feedback.rating, "tags": feedback.tags},
     )
 
+    # 双写记忆事件（Feature Flag 控制）
+    from agent.memory_event_service import create_memory_event
+    from models.memory import MemorySourceType
+
+    source_type = (
+        MemorySourceType.FEEDBACK_COMMENT
+        if feedback.comment
+        else MemorySourceType.FEEDBACK_RATING
+    )
+    await create_memory_event(
+        db,
+        user_id,
+        source_type,
+        source_id=feedback.feedback_id,
+        article_url_hash=feedback.target_ref.article_url_hash,
+        draft_index=feedback.target_ref.draft_index,
+        category_v2=article.get("category_v2") if article else None,
+        payload={
+            "rating": feedback.rating,
+            "comment": (feedback.comment or "")[:500],
+            "tags": feedback.tags or [],
+        },
+        idempotency_key=f"feedback:{feedback.feedback_id}",
+    )
+
     return {
         "ok": True,
         "data": {

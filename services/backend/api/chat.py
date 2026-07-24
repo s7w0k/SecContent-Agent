@@ -659,6 +659,23 @@ async def revise_draft(
         resource=url_hash,
     )
 
+    # 双写记忆事件（改稿请求）
+    from agent.memory_event_service import create_memory_event
+    from models.memory import MemorySourceType
+
+    await create_memory_event(
+        db,
+        user_id,
+        MemorySourceType.REVISION_REQUEST,
+        source_id=revision_id,
+        article_url_hash=url_hash,
+        draft_index=draft_index,
+        revision_id=revision_id,
+        category_v2=article.get("category_v2"),
+        payload={"instruction": body.instruction[:500]},
+        idempotency_key=f"revision_request:{revision_id}",
+    )
+
     return {
         "ok": True,
         "data": {

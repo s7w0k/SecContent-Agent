@@ -11,7 +11,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../api/client';
 import ArticleTable from '../components/ArticleTable';
 import ArticleUpload from '../components/ArticleUpload';
-import CategoryBreakdown from '../components/CategoryBreakdown';
 import DraftViewer from '../components/DraftViewer';
 import FilterBar from '../components/FilterBar';
 import HotRankingPanel from '../components/HotRankingPanel';
@@ -41,7 +40,6 @@ export default function Dashboard() {
   const [reportCount, setReportCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
-  const [batchFetching, setBatchFetching] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
 
   // ── 筛选 & 分页 & 排序 ───────────────────────────────────
@@ -281,32 +279,13 @@ export default function Dashboard() {
       <StatsCards stats={stats} loading={loading} reportCount={reportCount} />
       <TodayStatsRow stats={stats} loading={loading} />
 
+      {/* 热点排行 */}
+      <div style={{ marginBottom: 16 }}>
+        <HotRankingPanel />
+      </div>
+
       {/* 流水线控制 */}
       <PipelineControl onComplete={handlePipelineComplete} />
-
-      {/* 批量补抓原文按钮 */}
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
-        <Button
-          loading={batchFetching}
-          onClick={async () => {
-            setBatchFetching(true);
-            try {
-              const res = await api.batchFetchContent();
-              if (res.data.updated > 0) {
-                message.success(`补抓完成：${res.data.updated}/${res.data.total} 篇文章已更新`);
-                loadArticles();
-              } else {
-                message.info('没有需要补抓的文章');
-              }
-            } catch {
-              message.error('批量补抓失败');
-            }
-            setBatchFetching(false);
-          }}
-        >
-          批量补抓原文
-        </Button>
-      </div>
 
       {draftTask && (
         <div style={{ marginBottom: 16 }}>
@@ -337,18 +316,7 @@ export default function Dashboard() {
       />
 
       <Row style={{ marginBottom: 16 }}>
-        <Col span={24}>
-          <CategoryBreakdown
-            distribution={stats?.category_distribution ?? {}}
-            loading={loading}
-            onCategoryClick={handleCategoryClick}
-          />
-        </Col>
-      </Row>
-
-      <Row gutter={[16, 16]} align="stretch">
-        {/* 文章表格 */}
-        <Col xs={24} sm={24} lg={16} data-testid="article-table-column">
+        <Col span={24} data-testid="article-table-column">
           <ArticleTable
             articles={articles}
             total={totalArticles}
@@ -367,9 +335,6 @@ export default function Dashboard() {
             onScoreV2Single={handleScoreV2Single}
             onRefresh={loadArticles}
           />
-        </Col>
-        <Col xs={24} sm={24} lg={8} data-testid="hot-ranking-column">
-          <HotRankingPanel />
         </Col>
       </Row>
 

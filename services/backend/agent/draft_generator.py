@@ -151,6 +151,7 @@ class DraftGenerator:
         templates: list[EffectivePRTemplate] | None = None,
         system_prompt_template: str | None = None,
         reference_template: str | None = None,
+        memory_pack: Any | None = None,
     ) -> dict:
         """为单篇文章生成 4 篇 PR 草稿。
 
@@ -202,6 +203,7 @@ class DraftGenerator:
                         style_hints,
                         system_prompt_template,
                         reference_template,
+                        memory_pack,
                     ),
                 )
 
@@ -237,12 +239,22 @@ class DraftGenerator:
         style_hints: str | None = None,
         system_prompt_template: str | None = None,
         reference_template: str | None = None,
+        memory_pack: Any | None = None,
     ) -> dict | None:
         """生成单篇草稿（含重试）。"""
+        # 如果有 Memory Pack，用其渲染文本替代 style_hints
+        effective_style_hints = style_hints
+        if memory_pack is not None and hasattr(memory_pack, "rendered_text") and memory_pack.rendered_text:
+            pack_text = memory_pack.rendered_text
+            if style_hints and style_hints.strip():
+                effective_style_hints = style_hints + "\n\n" + pack_text
+            else:
+                effective_style_hints = pack_text
+
         system_prompt = self._build_system_prompt(
             template,
             perspective,
-            style_hints,
+            effective_style_hints,
             template_override=system_prompt_template,
             reference_template=reference_template,
         )

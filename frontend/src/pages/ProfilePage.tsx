@@ -1,33 +1,26 @@
-import {
-  DashboardOutlined,
-  DownloadOutlined,
-  EditOutlined,
-  ReloadOutlined,
-  StarOutlined,
-} from '@ant-design/icons';
+import { DashboardOutlined, ReloadOutlined } from '@ant-design/icons';
 import {
   Alert,
   Button,
   Card,
   Col,
   Empty,
-  List,
-  Progress,
   Row,
   Skeleton,
   Space,
-  Statistic,
+  Tabs,
   Tag,
   Typography,
   message,
 } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { activityApi, profileApi } from '../api/client';
+import { memoryApi, policyApi, profileApi } from '../api/client';
 import { useAuth } from '../auth/useAuth';
-import ActivityTimeline from '../components/ActivityTimeline';
-import PreferenceStats from '../components/PreferenceStats';
+import MemoryEvidenceDrawer from '../components/MemoryEvidenceDrawer';
+import MemoryItemCard from '../components/MemoryItemCard';
+import ProfilePolicyEditor from '../components/ProfilePolicyEditor';
 import StyleProfileCard from '../components/StyleProfileCard';
-import type { ActivityStats, StyleProfile, UserActivity } from '../types';
+import type { MemoryItem, ProfilePolicy, StyleProfile } from '../types';
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -50,17 +43,43 @@ function isNotFound(error: unknown) {
   return (error as HttpLikeError).response?.status === 404;
 }
 
-function renderTags(tags: string[]) {
-  if (!tags.length) return <Text type="secondary">暂无高频标签</Text>;
-  return (
-    <Space size={[0, 6]} wrap>
-      {tags.map((tag) => (
-        <Tag key={tag} color="blue">
-          {tag}
-        </Tag>
-      ))}
-    </Space>
-  );
+// ── 偏好概览摘要 ──────────────────────────────────
+
+const CONTENT_FOCUS_LABELS: Record<string, string> = {
+  product_tech: '产品技术亮点',
+  industry_trend: '行业趋势洞察',
+  customer_value: '客户案例价值',
+  brand_authority: '品牌权威定位',
+  solution_advantage: '解决方案优势',
+};
+
+const STRUCTURE_LABELS: Record<string, string> = {
+  inverted_pyramid: '倒金字塔',
+  problem_solution: '问题-方案-总结',
+  storytelling: '故事线',
+  progressive: '递进式',
+};
+
+function summarizePolicy(policy: ProfilePolicy | null): string {
+  if (!policy) return '尚未配置显式偏好';
+  const parts: string[] = [];
+  if (policy.content_focus?.length) {
+    const labels = policy.content_focus.map((v) => CONTENT_FOCUS_LABELS[v] || v).join('、');
+    parts.push(`内容侧重「${labels}」`);
+  }
+  if (policy.structure_preference) parts.push(`结构「${STRUCTURE_LABELS[policy.structure_preference] || policy.structure_preference}」`);
+  if (policy.required_patterns?.length) parts.push(`${policy.required_patterns.length} 项必含要素`);
+  if (policy.avoid_patterns?.length) parts.push(`${policy.avoid_patterns.length} 项规避要素`);
+  if (policy.custom_instructions) parts.push('含自定义说明');
+  return parts.length ? parts.join('，') : '尚未配置显式偏好';
+}
+
+function summarizeMemory(stats: Record<string, number> | undefined, pending: number): string {
+  const total = stats ? Object.values(stats).reduce((a, b) => a + b, 0) : 0;
+  if (total === 0) return '暂无自动学习记忆';
+  const active = stats?.active ?? 0;
+  if (pending > 0) return `已学习 ${total} 条记忆，其中 ${active} 条已生效、${pending} 条待审批`;
+  return `已学习 ${total} 条记忆，全部已生效`;
 }
 
 function ProfileEmptyState({
@@ -88,112 +107,21 @@ function ProfileEmptyState({
   );
 }
 
-function FeedbackSummaryCard({ profile }: { profile: StyleProfile | null }) {
-  const summary = profile?.feedback_summary;
-  return (
-    <Card title="反馈汇总" style={{ height: '100%' }}>
-      <Row gutter={[16, 16]}>
-        <Col span={12}>
-          <Statistic title="总反馈" value={summary?.total_feedbacks ?? 0} />
-        </Col>
-        <Col span={12}>
-          <Statistic title="平均评分" value={summary?.avg_rating ?? 0} precision={1} suffix="星" />
-        </Col>
-        <Col span={8}>
-          <Statistic title="正面" value={summary?.positive_count ?? 0} />
-        </Col>
-        <Col span={8}>
-          <Statistic title="中性" value={summary?.neutral_count ?? 0} />
-        </Col>
-        <Col span={8}>
-          <Statistic title="负面" value={summary?.negative_count ?? 0} />
-        </Col>
-      </Row>
-      <div style={{ marginTop: 16 }}>
-        <Text type="secondary">Top 标签</Text>
-        <div style={{ marginTop: 8 }}>{renderTags(summary?.top_tags ?? [])}</div>
-      </div>
-    </Card>
-  );
-}
-
-function ActivityStatsCard({
-  profile,
-  stats,
-}: {
-  profile: StyleProfile | null;
-  stats: ActivityStats | null;
-}) {
-  const dailyTrend = stats?.daily_trend ?? [];
-  const maxDaily = Math.max(...dailyTrend.map((item) => item.count), 0);
-
-  return (
-    <Card title="操作统计" style={{ height: '100%' }}>
-      <Row gutter={[16, 16]}>
-        <Col span={8}>
-          <Statistic
-            title="下载"
-            value={
-              profile?.activity_summary.total_downloads ?? stats?.by_action.draft_download ?? 0
-            }
-            prefix={<DownloadOutlined />}
-          />
-        </Col>
-        <Col span={8}>
-          <Statistic
-            title="应用"
-            value={profile?.activity_summary.total_applies ?? stats?.by_action.revision_apply ?? 0}
-            prefix={<StarOutlined />}
-          />
-        </Col>
-        <Col span={8}>
-          <Statistic
-            title="改稿"
-            value={profile?.activity_summary.total_revises ?? stats?.by_action.draft_revise ?? 0}
-            prefix={<EditOutlined />}
-          />
-        </Col>
-      </Row>
-
-      <div style={{ marginTop: 16 }}>
-        <Text type="secondary">近 30 天趋势</Text>
-        {dailyTrend.length === 0 ? (
-          <Empty description="暂无趋势数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-        ) : (
-          <List
-            size="small"
-            dataSource={dailyTrend.slice(-7)}
-            renderItem={(item) => (
-              <List.Item>
-                <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                  <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                    <Text>{item.date}</Text>
-                    <Text type="secondary">{item.count} 次</Text>
-                  </Space>
-                  <Progress
-                    percent={maxDaily > 0 ? Math.round((item.count / maxDaily) * 100) : 0}
-                    size="small"
-                    showInfo={false}
-                  />
-                </Space>
-              </List.Item>
-            )}
-          />
-        )}
-      </div>
-    </Card>
-  );
-}
-
 export default function ProfilePage() {
   const { user } = useAuth();
   const [profile, setProfile] = useState<StyleProfile | null>(null);
-  const [activities, setActivities] = useState<UserActivity[]>([]);
-  const [activityStats, setActivityStats] = useState<ActivityStats | null>(null);
+  const [policy, setPolicy] = useState<ProfilePolicy | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activitiesLoading, setActivitiesLoading] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ── 记忆审计状态 ──────────────────────────────────
+  const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [memoryStatusFilter, setMemoryStatusFilter] = useState<string>('active,pending_approval');
+  const [memoryStats, setMemoryStats] = useState<Record<string, number>>({});
+  const [memoryPending, setMemoryPending] = useState(0);
+  const [evidenceItem, setEvidenceItem] = useState<MemoryItem | null>(null);
 
   const loadProfile = useCallback(async () => {
     try {
@@ -208,31 +136,42 @@ export default function ProfilePage() {
     }
   }, []);
 
-  const loadActivities = useCallback(async () => {
-    setActivitiesLoading(true);
+  const loadPolicy = useCallback(async () => {
     try {
-      const [list, stats] = await Promise.all([
-        activityApi.list({ page: 1, page_size: 20 }),
-        activityApi.stats(30),
-      ]);
-      setActivities(list.items);
-      setActivityStats(stats);
-    } finally {
-      setActivitiesLoading(false);
+      const res = await policyApi.getPolicy();
+      setPolicy(res.data.policy);
+    } catch {
+      setPolicy(null);
     }
   }, []);
+
+  const loadMemoryItems = useCallback(async () => {
+    setMemoryLoading(true);
+    try {
+      const res = await memoryApi.listItems({ status: memoryStatusFilter, page: 1, page_size: 50 });
+      setMemoryItems(res.data.items);
+      setMemoryStats(res.data.status_stats ?? {});
+      setMemoryPending(res.data.pending_count ?? 0);
+    } catch {
+      setMemoryItems([]);
+      setMemoryStats({});
+      setMemoryPending(0);
+    } finally {
+      setMemoryLoading(false);
+    }
+  }, [memoryStatusFilter]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      await Promise.all([loadProfile(), loadActivities()]);
+      await Promise.all([loadProfile(), loadPolicy(), loadMemoryItems()]);
     } catch (err) {
       setError(getErrorMessage(err, '加载用户画像失败'));
     } finally {
       setLoading(false);
     }
-  }, [loadActivities, loadProfile]);
+  }, [loadProfile, loadPolicy, loadMemoryItems]);
 
   useEffect(() => {
     loadData();
@@ -251,6 +190,20 @@ export default function ProfilePage() {
       setRebuilding(false);
     }
   };
+
+  const handleMemoryAction = useCallback(async (action: string, memoryId: string) => {
+    try {
+      if (action === 'approve') await memoryApi.approveItem(memoryId);
+      else if (action === 'reject') await memoryApi.rejectItem(memoryId);
+      else if (action === 'suppress') await memoryApi.suppressItem(memoryId);
+      else if (action === 'activate') await memoryApi.activateItem(memoryId);
+      else if (action === 'delete') await memoryApi.deleteItem(memoryId);
+      message.success('操作成功');
+      await loadMemoryItems();
+    } catch {
+      message.error('操作失败');
+    }
+  }, [loadMemoryItems]);
 
   const lastUpdated = useMemo(() => {
     if (!profile?.updated_at) return '尚未生成';
@@ -306,31 +259,116 @@ export default function ProfilePage() {
         <div data-testid="profile-loading">
           <Skeleton active paragraph={{ rows: 10 }} />
         </div>
-      ) : !profile ? (
-        <ProfileEmptyState onRebuild={handleRebuild} rebuilding={rebuilding} />
       ) : (
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <Row gutter={[16, 16]}>
-            <Col xs={24} lg={10}>
-              <StyleProfileCard profile={profile} />
-            </Col>
-            <Col xs={24} lg={14}>
-              <PreferenceStats scores={profile.preference_scores} />
-            </Col>
-          </Row>
-
-          <Row gutter={[16, 16]}>
-            <Col xs={24} lg={12}>
-              <FeedbackSummaryCard profile={profile} />
-            </Col>
-            <Col xs={24} lg={12}>
-              <ActivityStatsCard profile={profile} stats={activityStats} />
-            </Col>
-          </Row>
-
-          <ActivityTimeline activities={activities} loading={activitiesLoading} />
-        </Space>
+        <Tabs
+          defaultActiveKey="overview"
+          items={[
+            {
+              key: 'overview',
+              label: '画像概览',
+              children: !profile ? (
+                <ProfileEmptyState onRebuild={handleRebuild} rebuilding={rebuilding} />
+              ) : (
+                <Row gutter={[16, 16]}>
+                  <Col xs={24} lg={12}>
+                    <StyleProfileCard profile={profile} />
+                  </Col>
+                  <Col xs={24} lg={12}>
+                    <Card title="偏好概览" style={{ height: '100%' }}>
+                      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                        <div>
+                          <Text type="secondary" style={{ fontSize: 13 }}>显式偏好</Text>
+                          <Paragraph style={{ margin: '4px 0 0' }}>
+                            {summarizePolicy(policy)}
+                          </Paragraph>
+                        </div>
+                        <div>
+                          <Text type="secondary" style={{ fontSize: 13 }}>自动记忆</Text>
+                          <Paragraph style={{ margin: '4px 0 0' }}>
+                            {summarizeMemory(memoryStats, memoryPending)}
+                          </Paragraph>
+                        </div>
+                      </Space>
+                    </Card>
+                  </Col>
+                </Row>
+              ),
+            },
+            {
+              key: 'policy',
+              label: '显式偏好',
+              children: <ProfilePolicyEditor />,
+            },
+            {
+              key: 'memory',
+              label: '自动记忆',
+              children: (
+                <Card
+                  title="自动学习记忆"
+                  extra={
+                    <Space>
+                      <Tag
+                        color={memoryStatusFilter.includes('pending') ? 'orange' : 'blue'}
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => {
+                          const next = memoryStatusFilter.includes('pending')
+                            ? 'active'
+                            : 'active,pending_approval';
+                          setMemoryStatusFilter(next);
+                        }}
+                      >
+                        {memoryStatusFilter.includes('pending') ? '含待审批' : '仅生效中'}
+                      </Tag>
+                      <Button
+                        size="small"
+                        icon={<ReloadOutlined />}
+                        onClick={loadMemoryItems}
+                        loading={memoryLoading}
+                      >
+                        刷新
+                      </Button>
+                    </Space>
+                  }
+                >
+                  {memoryLoading ? (
+                    <Skeleton active paragraph={{ rows: 5 }} />
+                  ) : memoryItems.length === 0 ? (
+                    <Empty description="暂无自动学习记忆" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  ) : (
+                    <Row gutter={[12, 12]}>
+                      {memoryItems.map((item) => (
+                        <Col xs={24} md={12} key={item.memory_id}>
+                          <MemoryItemCard
+                            item={item}
+                            onAction={(action) => {
+                              if (action === 'evidence') {
+                                setEvidenceItem(item);
+                              } else {
+                                handleMemoryAction(action, item.memory_id);
+                              }
+                            }}
+                          />
+                        </Col>
+                      ))}
+                    </Row>
+                  )}
+                </Card>
+              ),
+            },
+          ]}
+          onChange={(key) => {
+            if (key === 'memory' && memoryItems.length === 0) {
+              loadMemoryItems();
+            }
+          }}
+        />
       )}
+
+      <MemoryEvidenceDrawer
+        open={!!evidenceItem}
+        item={evidenceItem}
+        onClose={() => setEvidenceItem(null)}
+      />
     </div>
   );
 }

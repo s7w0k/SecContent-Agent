@@ -171,6 +171,42 @@ class Settings(BaseSettings):
         le=500,
         description="分页最大每页条数",
     )
+
+    # ── 用户记忆与个性化 ──────────────────────────────
+    MEMORY_FEATURE_ENABLED: bool = Field(
+        default=False,
+        description="总开关：启用用户记忆学习与场景化检索",
+    )
+    MEMORY_DUAL_WRITE_ENABLED: bool = Field(
+        default=False,
+        description="双写开关：新事件同时写入 user_memory_events",
+    )
+    MEMORY_READ_MODE: str = Field(
+        default="legacy",
+        pattern=r"^(legacy|shadow|memory|fallback)$",
+        description="记忆读取模式：legacy=旧画像, shadow=影子, memory=新记忆, fallback=优先新记忆",
+    )
+    MEMORY_AUTO_APPROVAL: bool = Field(
+        default=False,
+        description="自动审批：高置信度记忆自动设为 active",
+    )
+    MEMORY_ACTIVE_THRESHOLD: float = Field(default=0.70, ge=0, le=1)
+    MEMORY_PENDING_THRESHOLD: float = Field(default=0.45, ge=0, le=1)
+    MEMORY_GLOBAL_THRESHOLD: float = Field(default=0.90, ge=0, le=1)
+    MEMORY_MAX_PACK_ITEMS: int = Field(default=8, ge=1, le=20)
+    MEMORY_MAX_PACK_CHARS: int = Field(default=800, ge=100, le=2000)
+    MEMORY_MIN_INDEPENDENT_TASKS: int = Field(default=2, ge=1, le=10)
+    MEMORY_EVIDENCE_LIMIT: int = Field(default=20, ge=5, le=100)
+    MEMORY_DECAY_HALF_LIFE_DAYS: int = Field(default=90, ge=1, le=365)
+    PERSONALIZATION_EXPLANATION_ENABLED: bool = Field(
+        default=False,
+        description="前端个性化解释组件开关",
+    )
+    PERSONALIZATION_EXPERIMENT_ENABLED: bool = Field(
+        default=False,
+        description="个性化实验分流开关",
+    )
+
     API_PAGE_SIZE_DEFAULT: int = Field(
         default=20,
         ge=1,

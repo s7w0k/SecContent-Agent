@@ -415,6 +415,89 @@ class MongoDB:
                     name="idx_link_expires",
                 ),
             ],
+            # ── 用户记忆与个性化 ──────────────────────────
+            "user_profile_policies": [
+                IndexModel([("user_id", ASCENDING)], unique=True, name="uq_profile_policy_user"),
+            ],
+            "user_memory_events": [
+                IndexModel([("event_id", ASCENDING)], unique=True, name="uq_memory_event_id"),
+                IndexModel(
+                    [("idempotency_key", ASCENDING)],
+                    unique=True,
+                    name="uq_memory_event_idempotency",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("status", ASCENDING), ("created_at", ASCENDING)],
+                    name="idx_memory_event_processing",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("source_type", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_memory_event_user_source",
+                ),
+            ],
+            "user_memory_items": [
+                IndexModel(
+                    [
+                        ("user_id", ASCENDING),
+                        ("normalized_key", ASCENDING),
+                        ("scope.category_v2", ASCENDING),
+                        ("scope.template_id", ASCENDING),
+                        ("scope.stage", ASCENDING),
+                        ("polarity", ASCENDING),
+                    ],
+                    unique=True,
+                    name="uq_memory_item_scope",
+                ),
+                IndexModel(
+                    [
+                        ("user_id", ASCENDING),
+                        ("status", ASCENDING),
+                        ("scope.category_v2", ASCENDING),
+                        ("scope.stage", ASCENDING),
+                        ("confidence", DESCENDING),
+                    ],
+                    name="idx_memory_item_retrieval",
+                ),
+                IndexModel(
+                    [("expires_at", ASCENDING)],
+                    expireAfterSeconds=0,
+                    partialFilterExpression={"expires_at": {"$type": "date"}},
+                    name="ttl_memory_item_expiry",
+                ),
+            ],
+            "user_memory_summaries": [
+                IndexModel(
+                    [("user_id", ASCENDING), ("scope_key", ASCENDING)],
+                    unique=True,
+                    name="uq_memory_summary_scope",
+                ),
+            ],
+            "generation_runs": [
+                IndexModel([("generation_id", ASCENDING)], unique=True, name="uq_generation_id"),
+                IndexModel(
+                    [("user_id", ASCENDING), ("article_url_hash", ASCENDING), ("draft_index", ASCENDING)],
+                    name="idx_generation_user_draft",
+                ),
+                IndexModel(
+                    [("experiment.experiment_id", ASCENDING), ("experiment.group", ASCENDING)],
+                    name="idx_generation_experiment",
+                ),
+                IndexModel([("created_at", DESCENDING)], name="idx_generation_created"),
+            ],
+            "personalization_candidates": [
+                IndexModel([("candidate_id", ASCENDING)], unique=True, name="uq_candidate_id"),
+                IndexModel(
+                    [("target_type", ASCENDING), ("status", ASCENDING)],
+                    name="idx_candidate_type_status",
+                ),
+            ],
+            "personalization_feedbacks": [
+                IndexModel([("feedback_id", ASCENDING)], unique=True, name="uq_pers_feedback_id"),
+                IndexModel(
+                    [("user_id", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_pers_feedback_user_date",
+                ),
+            ],
         }
 
         try:

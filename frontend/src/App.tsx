@@ -3,6 +3,7 @@ import {
   DatabaseOutlined,
   EditOutlined,
   FileTextOutlined,
+  FormOutlined,
   InfoCircleOutlined,
   SettingOutlined,
   SnippetsOutlined,
@@ -33,8 +34,15 @@ const baseMenuItems = [
   { key: 'chat', icon: <EditOutlined />, label: '对话改稿' },
   { key: 'accounts', icon: <WechatOutlined />, label: '公众号账号' },
   { key: 'profile', icon: <UserOutlined />, label: '用户画像' },
-  { key: 'pr-templates', icon: <SnippetsOutlined />, label: 'PR 模板' },
-  { key: 'settings', icon: <SettingOutlined />, label: '配置' },
+  {
+    key: 'config',
+    icon: <SettingOutlined />,
+    label: '配置',
+    children: [
+      { key: 'pr-templates', icon: <SnippetsOutlined />, label: 'PR 模板' },
+      { key: 'settings', icon: <FormOutlined />, label: '提示词配置' },
+    ],
+  },
   { key: 'logs', icon: <FileTextOutlined />, label: '运行日志' },
   { key: 'about', icon: <InfoCircleOutlined />, label: '关于' },
 ];

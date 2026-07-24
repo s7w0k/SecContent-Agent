@@ -45,6 +45,8 @@ import type {
   HotRankingQuery,
   KnowledgeSummary,
   LoginRequest,
+  MemoryItem,
+  MemoryListResponse,
   PRTemplateCategory,
   PRTemplateKey,
   PRTemplateListResponse,
@@ -57,7 +59,9 @@ import type {
   PipelineTask,
   PipelineTaskList,
   PipelineTaskResponse,
+  PolicyUpdateRequest,
   PollLoginResult,
+  ProfilePolicy,
   ProfileRebuildResponse,
   QRCodeResult,
   RegisterRequest,
@@ -232,6 +236,38 @@ export const dashboardApi = {
       params: { limit, category, date_range },
     });
     return data.data.items;
+  },
+};
+
+// ═══════════════════════════════════════════════════════════
+// Profile Policy API（用户显式偏好策略）
+// ═══════════════════════════════════════════════════════════
+
+export const policyApi = {
+  async getPolicy(): Promise<{
+    ok: boolean;
+    data: { policy: ProfilePolicy; is_default: boolean; version: number };
+  }> {
+    const { data } = await client.get('/profile-policy');
+    return data;
+  },
+
+  async savePolicy(
+    policy: PolicyUpdateRequest,
+    version: number,
+  ): Promise<{ ok: boolean; data: { policy: ProfilePolicy; version: number } }> {
+    const { data } = await client.put('/profile-policy', policy, {
+      headers: { 'If-Match': String(version) },
+    });
+    return data;
+  },
+
+  async resetPolicy(): Promise<{
+    ok: boolean;
+    data: { policy: ProfilePolicy; is_default: boolean; version: number };
+  }> {
+    const { data } = await client.post('/profile-policy/reset');
+    return data;
   },
 };
 
@@ -870,6 +906,75 @@ export const promptApi = {
   },
 };
 
+// ────────────────────────────────────────────────────────────
+// Memory API（用户记忆）
+// ────────────────────────────────────────────────────────────
+export const memoryApi = {
+  async listItems(params?: {
+    status?: string;
+    dimension?: string;
+    category_v2?: string;
+    stage?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<{ ok: boolean; data: MemoryListResponse }> {
+    const { data } = await client.get('/memory/items', { params });
+    return data;
+  },
+
+  async getItem(memoryId: string): Promise<{ ok: boolean; data: MemoryItem }> {
+    const { data } = await client.get(`/memory/items/${memoryId}`);
+    return data;
+  },
+
+  async approveItem(memoryId: string): Promise<{ ok: boolean }> {
+    const { data } = await client.post(`/memory/items/${memoryId}/approve`);
+    return data;
+  },
+
+  async rejectItem(memoryId: string): Promise<{ ok: boolean }> {
+    const { data } = await client.post(`/memory/items/${memoryId}/reject`);
+    return data;
+  },
+
+  async suppressItem(memoryId: string): Promise<{ ok: boolean }> {
+    const { data } = await client.post(`/memory/items/${memoryId}/suppress`);
+    return data;
+  },
+
+  async activateItem(memoryId: string): Promise<{ ok: boolean }> {
+    const { data } = await client.post(`/memory/items/${memoryId}/activate`);
+    return data;
+  },
+
+  async editItem(
+    memoryId: string,
+    body: { display_text: string; polarity?: string },
+  ): Promise<{ ok: boolean }> {
+    const { data } = await client.put(`/memory/items/${memoryId}`, body);
+    return data;
+  },
+
+  async deleteItem(memoryId: string): Promise<{ ok: boolean }> {
+    const { data } = await client.delete(`/memory/items/${memoryId}`);
+    return data;
+  },
+
+  async recompile(): Promise<{ ok: boolean }> {
+    const { data } = await client.post('/memory/recompile');
+    return data;
+  },
+
+  async previewPack(body: {
+    category_v2?: string;
+    template_id?: string;
+    stage?: string;
+  }): Promise<{ ok: boolean; data: unknown }> {
+    const { data } = await client.post('/memory/preview', body);
+    return data;
+  },
+};
+
 // ═══════════════════════════════════════════════════════════
 // 统一导出
 // ═══════════════════════════════════════════════════════════
@@ -877,6 +982,7 @@ export const promptApi = {
 const api = {
   ...authApi,
   ...dashboardApi,
+  ...policyApi,
   ...pipelineApi,
   ...reportsApi,
   ...accountsApi,
@@ -885,6 +991,7 @@ const api = {
   ...activityApi,
   ...profileApi,
   ...logsApi,
+  ...memoryApi,
   devLogs: devLogsApi,
   prTemplates: prTemplateApi,
   prompts: promptApi,

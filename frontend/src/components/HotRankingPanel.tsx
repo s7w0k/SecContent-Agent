@@ -125,22 +125,18 @@ export default function HotRankingPanel() {
               dataSource={items}
               renderItem={(article, index) => (
                 <List.Item>
-                  <Space align="start" style={{ width: '100%' }}>
+                  <Space align="center" style={{ width: '100%' }} wrap>
                     <Text
                       aria-label={`第 ${index + 1} 名`}
                       style={{ minWidth: 24, textAlign: 'center' }}
                     >
                       {MEDALS[index] ?? index + 1}
                     </Text>
-                    <Space direction="vertical" size={6} style={{ minWidth: 0 }}>
-                      <a href={article.url} target="_blank" rel="noopener noreferrer">
-                        {article.title}
-                      </a>
-                      <Space size={[4, 4]} wrap>
-                        <Tag color="blue">{article.pr_total_score} 分</Tag>
-                        <Tag>{article.category_v2 || '未分类'}</Tag>
-                      </Space>
-                    </Space>
+                    <a href={article.url} target="_blank" rel="noopener noreferrer">
+                      {article.title}
+                    </a>
+                    <Tag color="blue">{article.pr_total_score} 分</Tag>
+                    <Tag>{article.category_v2 || '未分类'}</Tag>
                   </Space>
                 </List.Item>
               )}

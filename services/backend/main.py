@@ -332,6 +332,9 @@ from api.overseas_crawl import router as overseas_router
 from api.pipeline import llm_router
 from api.pipeline import router as pipeline_router
 from api.pr_templates import router as pr_templates_router
+from api.profile_policy import router as profile_policy_router
+from api.personalization import router as personalization_router
+from api.memory import router as memory_router
 from api.profile import router as profile_router
 from api.reports import router as reports_router
 from api.upload import router as upload_router
@@ -354,6 +357,9 @@ app.include_router(crawl_config_router)
 app.include_router(overseas_router)
 app.include_router(upload_router)
 app.include_router(user_prompts_router)
+app.include_router(profile_policy_router)
+app.include_router(personalization_router)
+app.include_router(memory_router)
 
 
 # ── System endpoints ────────────────────────────────────

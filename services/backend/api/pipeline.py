@@ -25,6 +25,7 @@ from agent.style_profiler import load_style_hints
 from api.activity import log_activity
 from api.logs import build_log_error, generate_trace_id, log_pipeline
 from auth.deps import get_current_user
+from config import get_settings
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from logging_config import get_audit_logger
@@ -1955,6 +1956,30 @@ async def _run_v2_single_workflow(
                         bool(style_hints),
                         user_id,
                     )
+                    # 检索 Memory Pack（Feature Flag 控制）
+                    memory_pack = None
+                    settings = get_settings()
+                    if settings.MEMORY_FEATURE_ENABLED and settings.MEMORY_READ_MODE in ("memory", "fallback"):
+                        try:
+                            from agent.memory_retriever import MemoryRetriever
+
+                            retriever = MemoryRetriever(db)
+                            category_v2 = article.get("category_v2")
+                            memory_pack = await retriever.retrieve(
+                                user_id=user_id,
+                                category_v2=category_v2,
+                                stage="draft",
+                            )
+                            log.info(
+                                "[run-v2-single] memory pack retrieved: items=%d chars=%d",
+                                memory_pack.item_count,
+                                memory_pack.char_count,
+                            )
+                        except Exception as mp_err:
+                            log.warning("[run-v2-single] memory pack retrieval failed: %s", mp_err)
+                            if settings.MEMORY_READ_MODE == "memory":
+                                memory_pack = None
+
                     drafts = await draft_gen.generate(
                         dict(article),
                         scores,
@@ -1962,6 +1987,7 @@ async def _run_v2_single_workflow(
                         templates=effective_templates,
                         system_prompt_template=system_prompt_template,
                         reference_template=reference_template,
+                        memory_pack=memory_pack,
                     )
                     result["steps"].append(
                         {

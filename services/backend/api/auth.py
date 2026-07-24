@@ -33,6 +33,13 @@ PRIVATE_USER_COLLECTIONS = (
     "user_pr_templates",
     "user_pr_template_versions",
     "user_prompts",
+    # ── 用户记忆与个性化 ──────────────────────────
+    "user_profile_policies",
+    "user_memory_events",
+    "user_memory_items",
+    "user_memory_summaries",
+    "generation_runs",
+    "personalization_feedbacks",
 )
 
 
