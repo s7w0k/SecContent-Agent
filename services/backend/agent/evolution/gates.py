@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 logger = logging.getLogger("backend.agent.evolution.gates")
 
@@ -15,7 +15,7 @@ class GateChecker:
     """检查候选策略是否通过硬门禁。"""
 
     # 门禁定义
-    GATES = [
+    GATES: ClassVar[list[str]] = [
         "fact_safety",          # 事实高危问题不增加
         "propaganda_safety",    # 高危宣传问题不增加
         "format_success",       # 格式成功率不低于基线
@@ -72,7 +72,7 @@ class GateChecker:
         # 8. 分类回归
         category_metrics = candidate.get("category_metrics", {})
         results["category_regression"] = True
-        for cat, metrics in category_metrics.items():
+        for _cat, metrics in category_metrics.items():
             cat_fitness = metrics.get("fitness", 0.0)
             if cat_fitness < base_fitness * 0.8:  # 显著回归
                 results["category_regression"] = False

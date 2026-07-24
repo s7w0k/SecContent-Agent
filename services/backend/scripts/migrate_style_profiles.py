@@ -41,7 +41,7 @@ async def migrate_user(db, user_id: str, dry_run: bool = False) -> dict:
     created_memory_ids: list[str] = []
 
     # 简单解析 style_hints 中的行
-    lines = [l.strip() for l in style_hints.split("\n") if l.strip() and not l.startswith("#")]
+    lines = [line.strip() for line in style_hints.split("\n") if line.strip() and not line.startswith("#")]
 
     for line in lines:
         # 尝试识别维度
@@ -131,8 +131,8 @@ async def migrate_user(db, user_id: str, dry_run: bool = False) -> dict:
 
 
 async def main(dry_run: bool = False, user_id: str | None = None):
-    from db.mongo import MongoDB
     from config import get_settings
+    from db.mongo import MongoDB
 
     settings = get_settings()
     await MongoDB.connect(

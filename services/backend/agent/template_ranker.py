@@ -114,11 +114,7 @@ class TemplateRanker:
         independent = stat.get("independent_task_count", 0)
 
         # 冷启动检查
-        if independent < 3:
-            # 样本不足，偏好权重减半
-            memory_weight = 0.05
-        else:
-            memory_weight = 0.10
+        memory_weight = 0.05 if independent < 3 else 0.10
 
         ratings = stat.get("ratings", [])
         avg_rating = sum(ratings) / len(ratings) if ratings else 0

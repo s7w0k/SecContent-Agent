@@ -328,14 +328,14 @@ from api.dashboard import router as dashboard_router
 from api.dev_logs import router as dev_logs_router
 from api.feedback import router as feedback_router
 from api.logs import router as logs_router
+from api.memory import router as memory_router
 from api.overseas_crawl import router as overseas_router
+from api.personalization import router as personalization_router
 from api.pipeline import llm_router
 from api.pipeline import router as pipeline_router
 from api.pr_templates import router as pr_templates_router
-from api.profile_policy import router as profile_policy_router
-from api.personalization import router as personalization_router
-from api.memory import router as memory_router
 from api.profile import router as profile_router
+from api.profile_policy import router as profile_policy_router
 from api.reports import router as reports_router
 from api.upload import router as upload_router
 from api.user_prompts import router as user_prompts_router

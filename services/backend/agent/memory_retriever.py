@@ -24,7 +24,6 @@ from config import get_settings
 from models.memory import (
     MemoryItem,
     MemoryPack,
-    MemoryScope,
     MemoryStage,
     MemoryStatus,
     ProfilePolicy,
@@ -181,7 +180,7 @@ class MemoryRetriever:
 
     def _filter_policy_conflicts(self, items: list[dict], policy: ProfilePolicy) -> list[dict]:
         """排除与 Policy 冲突的记忆。"""
-        policy_avoid = set(p.lower() for p in policy.avoid_patterns)
+        policy_avoid = {p.lower() for p in policy.avoid_patterns}
         result = []
         for item in items:
             display = item.get("display_text", "").lower()
@@ -256,7 +255,7 @@ class MemoryRetriever:
         dim_counts: dict[str, int] = {}
         result = []
 
-        for score, item in scored:
+        for _score, item in scored:
             dim = item.get("dimension", "")
             if dim_counts.get(dim, 0) >= max_per_dim.get(dim, 2):
                 continue

@@ -50,7 +50,7 @@ def extract_diff(original: str, revised: str) -> RevisionDiffResult:
         if tag == "equal":
             continue
         elif tag == "replace":
-            for i, j in zip(range(i1, i2), range(j1, j2)):
+            for i, j in zip(range(i1, i2), range(j1, j2), strict=False):
                 orig_text = orig_blocks[i] if i < len(orig_blocks) else ""
                 rev_text = rev_blocks[j] if j < len(rev_blocks) else ""
                 result.changed_blocks.append({"old": orig_text[:500], "new": rev_text[:500]})

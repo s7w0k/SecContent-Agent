@@ -15,7 +15,6 @@ from uuid import uuid4
 from models.memory import MemoryPack
 from models.personalization import (
     ExperimentInfo,
-    GenerationOutcome,
     GenerationRun,
     GenerationStatus,
     MemoryPackSnapshot,
@@ -55,7 +54,7 @@ class PersonalizationTraceService:
             generation_id
         """
         generation_id = f"gen-{uuid4().hex[:12]}"
-        now = datetime.now(UTC)
+        datetime.now(UTC)
 
         # 计算 Prompt 哈希（不存储完整 Prompt）
         prompt_hash = ""

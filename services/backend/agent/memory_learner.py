@@ -14,18 +14,16 @@ from uuid import uuid4
 from config import get_settings
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
-from pydantic import BaseModel, Field
 from models.memory import (
     MemoryDimension,
-    MemoryEvent,
     MemoryEventStatus,
     MemoryEvidence,
-    MemoryItem,
     MemoryPolarity,
     MemoryScope,
     MemorySourceType,
     MemoryStage,
 )
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger("backend.agent.memory_learner")
 

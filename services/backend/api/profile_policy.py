@@ -10,7 +10,6 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from auth.deps import get_current_user
-from config import get_settings
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -81,7 +80,7 @@ async def save_policy(
         try:
             expected_version = int(if_match)
         except (ValueError, TypeError):
-            raise HTTPException(status_code=400, detail="Invalid If-Match header")
+            raise HTTPException(status_code=400, detail="Invalid If-Match header") from None
         if expected_version != current_version:
             raise HTTPException(
                 status_code=409,

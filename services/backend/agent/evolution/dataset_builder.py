@@ -61,7 +61,7 @@ class DatasetBuilder:
         splits = {"train": [], "val": [], "holdout": []}
         import random
 
-        for cat, keys in by_category.items():
+        for _cat, keys in by_category.items():
             random.shuffle(keys)
             n = len(keys)
             train_end = int(n * train_ratio)

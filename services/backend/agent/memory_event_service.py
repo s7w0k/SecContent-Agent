@@ -12,7 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from config import get_settings
-from models.memory import MemoryEvent, MemoryEventStatus, MemorySourceType, MemoryStage
+from models.memory import MemoryEventStatus, MemorySourceType, MemoryStage
 
 logger = logging.getLogger("backend.agent.memory_event_service")
 

@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import sys
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("evaluate_personalization")
@@ -21,8 +20,8 @@ logger = logging.getLogger("evaluate_personalization")
 
 async def cmd_build(args):
     from agent.evolution import DatasetBuilder
-    from db.mongo import MongoDB
     from config import get_settings
+    from db.mongo import MongoDB
 
     settings = get_settings()
     await MongoDB.connect(uri=settings.MONGODB_URI, db_name=settings.MONGODB_DB,
@@ -32,14 +31,14 @@ async def cmd_build(args):
 
     builder = DatasetBuilder(db)
     result = await builder.build(days=args.days)
-    print(f"Dataset built: {result}")
+    logger.info("Dataset built: %s", result)
     await MongoDB.close()
 
 
 async def cmd_generate(args):
     from agent.evolution import CandidateGenerator
-    from db.mongo import MongoDB
     from config import get_settings
+    from db.mongo import MongoDB
 
     settings = get_settings()
     await MongoDB.connect(uri=settings.MONGODB_URI, db_name=settings.MONGODB_DB,
@@ -49,14 +48,14 @@ async def cmd_generate(args):
 
     gen = CandidateGenerator(db)
     result = await gen.generate(args.target, args.dataset)
-    print(f"Candidate generated: {result['candidate_id']}")
+    logger.info("Candidate generated: %s", result["candidate_id"])
     await MongoDB.close()
 
 
 async def cmd_evaluate(args):
     from agent.evolution import Evaluator
-    from db.mongo import MongoDB
     from config import get_settings
+    from db.mongo import MongoDB
 
     settings = get_settings()
     await MongoDB.connect(uri=settings.MONGODB_URI, db_name=settings.MONGODB_DB,
@@ -66,14 +65,14 @@ async def cmd_evaluate(args):
 
     evaluator = Evaluator(db)
     result = await evaluator.evaluate(args.candidate, args.dataset)
-    print(f"Evaluation result: fitness={result.get('fitness')}, holdout={result.get('holdout_fitness')}")
+    logger.info("Evaluation result: fitness=%s, holdout=%s", result.get("fitness"), result.get("holdout_fitness"))
     await MongoDB.close()
 
 
 async def cmd_gates(args):
     from agent.evolution import GateChecker
-    from db.mongo import MongoDB
     from config import get_settings
+    from db.mongo import MongoDB
 
     settings = get_settings()
     await MongoDB.connect(uri=settings.MONGODB_URI, db_name=settings.MONGODB_DB,
@@ -85,16 +84,16 @@ async def cmd_gates(args):
     results = await checker.check(args.candidate)
     passed = sum(1 for v in results.values() if v)
     total = len(results)
-    print(f"Gates: {passed}/{total} passed")
+    logger.info("Gates: %s/%s passed", passed, total)
     for gate, result in results.items():
-        print(f"  {'PASS' if result else 'FAIL'}: {gate}")
+        logger.info("  %s: %s", "PASS" if result else "FAIL", gate)
     await MongoDB.close()
 
 
 async def cmd_publish(args):
     from agent.evolution import Publisher
-    from db.mongo import MongoDB
     from config import get_settings
+    from db.mongo import MongoDB
 
     settings = get_settings()
     await MongoDB.connect(uri=settings.MONGODB_URI, db_name=settings.MONGODB_DB,
@@ -103,8 +102,8 @@ async def cmd_publish(args):
     db = MongoDB.get_db()
 
     publisher = Publisher(db)
-    result = await publisher.transition(args.candidate, args.status, args.approver)
-    print(f"Candidate {args.candidate} -> {args.status}")
+    await publisher.transition(args.candidate, args.status, args.approver)
+    logger.info("Candidate %s -> %s", args.candidate, args.status)
     await MongoDB.close()
 
 

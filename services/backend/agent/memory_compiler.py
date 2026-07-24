@@ -12,7 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from config import get_settings
-from models.memory import MemoryItem, MemoryStatus, MemorySummary, MemoryScope, SoftPreference
+from models.memory import MemoryScope, MemoryStatus, SoftPreference
 
 logger = logging.getLogger("backend.agent.memory_compiler")
 

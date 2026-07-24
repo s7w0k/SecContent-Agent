@@ -9,9 +9,7 @@ confidence =
 from __future__ import annotations
 
 import logging
-import math
 from datetime import UTC, datetime
-from typing import Any
 
 from config import get_settings
 from models.memory import MemoryEvidence, MemorySourceType, MemoryStatus
@@ -103,7 +101,7 @@ def compute_confidence(
     confirmation_bonus = 0.20 if confirmed_by_user else 0.0
 
     # 重复任务加成
-    settings = get_settings()
+    get_settings()
     repeated_task_bonus = min(0.15, 0.05 * max(independent_task_count - 1, 0))
 
     # 最终置信度

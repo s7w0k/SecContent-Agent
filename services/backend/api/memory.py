@@ -10,8 +10,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from agent.memory_compiler import MemorySummaryCompiler
+from agent.memory_confidence import determine_status
 from agent.memory_retriever import MemoryRetriever
-from agent.memory_confidence import compute_confidence, determine_status
 from auth.deps import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from models.memory import MemoryStage, MemoryStatus
