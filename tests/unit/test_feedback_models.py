@@ -341,6 +341,13 @@ class TestMongoDBIndexes:
             "execution_runs",
             "execution_events",
             "execution_links",
+            "user_profile_policies",
+            "user_memory_events",
+            "user_memory_items",
+            "user_memory_summaries",
+            "generation_runs",
+            "personalization_candidates",
+            "personalization_feedbacks",
         }
         assert len(result["users"]) == 3
         assert len(result["feedbacks"]) == 4
@@ -440,5 +447,5 @@ class TestMongoDBIndexes:
             second = await MongoDB.ensure_indexes()
 
         assert first == second
-        assert collection.create_indexes.await_count == 32
+        assert collection.create_indexes.await_count == 46
         assert collection.drop_index.await_count == 2

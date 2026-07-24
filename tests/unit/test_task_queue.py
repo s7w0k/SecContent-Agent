@@ -178,8 +178,10 @@ def test_worker_settings_follow_application_config():
     assert WorkerSettings.max_tries == settings.ARQ_MAX_RETRIES + 1
     assert WorkerSettings.health_check_interval == 15
     assert {function.name for function in WorkerSettings.functions} == {
+        "compile_memory_summaries",
         "execute_pipeline",
         "fetch_fulltext_batch",
+        "process_memory_event",
         "resume_pipeline",
     }
 
