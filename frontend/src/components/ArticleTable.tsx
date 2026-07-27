@@ -63,6 +63,7 @@ export default function ArticleTable({
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
   const [batchDeleting, setBatchDeleting] = useState(false);
+  const [deletingIrrelevant, setDeletingIrrelevant] = useState(false);
 
   const handleFetch = useCallback(
     async (hash: string) => {
@@ -120,6 +121,18 @@ export default function ArticleTable({
     }
     setBatchDeleting(false);
   }, [articles, selectedRowKeys, onRefresh]);
+
+  const handleDeleteIrrelevant = useCallback(async () => {
+    setDeletingIrrelevant(true);
+    try {
+      const r = await api.deleteIrrelevantArticles();
+      message.success(`已删除 ${r.deleted} 篇不相关文章`);
+      onRefresh();
+    } catch {
+      message.error('删除不相关文章失败');
+    }
+    setDeletingIrrelevant(false);
+  }, [onRefresh]);
 
   const columns: ColumnsType<Article> = [
     {
@@ -392,6 +405,17 @@ export default function ArticleTable({
 
   return (
     <>
+      <div style={{ marginBottom: 12 }}>
+        <Popconfirm
+          title="确定删除所有分类为「不相关」的文章？"
+          onConfirm={handleDeleteIrrelevant}
+          disabled={deletingIrrelevant}
+        >
+          <Button danger size="small" icon={<DeleteOutlined />} loading={deletingIrrelevant}>
+            删除不相关文章
+          </Button>
+        </Popconfirm>
+      </div>
       {selectedRowKeys.length > 0 && (
         <div style={{ marginBottom: 12 }}>
           <Space>

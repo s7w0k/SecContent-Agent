@@ -150,6 +150,7 @@ async def lifespan(app: FastAPI):
             api_key=settings.DEEPSEEK_API_KEY,
             base_url=settings.DEEPSEEK_BASE_URL,
             temperature=0.1,
+            timeout=settings.DEEPSEEK_TIMEOUT,
         )
         app.state.llm = llm
         _log("INFO", f"LLM initialized: model={settings.DEEPSEEK_MODEL}")
@@ -327,6 +328,8 @@ from api.crawl_config import router as crawl_config_router
 from api.dashboard import router as dashboard_router
 from api.dev_logs import router as dev_logs_router
 from api.feedback import router as feedback_router
+from api.knowledge_admin import router as knowledge_admin_router
+from api.knowledge_catalog import router as knowledge_catalog_router
 from api.logs import router as logs_router
 from api.memory import router as memory_router
 from api.overseas_crawl import router as overseas_router
@@ -360,6 +363,8 @@ app.include_router(user_prompts_router)
 app.include_router(profile_policy_router)
 app.include_router(personalization_router)
 app.include_router(memory_router)
+app.include_router(knowledge_catalog_router)
+app.include_router(knowledge_admin_router)
 
 
 # ── System endpoints ────────────────────────────────────

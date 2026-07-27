@@ -426,6 +426,99 @@ export interface KnowledgeSummary {
   loaded_at?: string;
 }
 
+// ═══ 知识库管理 ═════════════════════════════════════════════
+
+export interface KnowledgeTreeNode {
+  name: string;
+  path: string;
+  node_type: 'dir' | 'file';
+  children?: KnowledgeTreeNode[];
+}
+
+export interface KnowledgeTree {
+  root_name: string;
+  knowledge_hash: string;
+  loaded_at: string;
+  children: KnowledgeTreeNode[];
+}
+
+export interface KnowledgeDocument {
+  relative_path: string;
+  content: string;
+  content_hash: string;
+  size: number;
+  updated_at: string;
+  document_id: string;
+  name: string;
+  knowledge_role: string;
+  loader_relevant: boolean;
+  direct_scoring_prompt: boolean;
+  editable: boolean;
+  protected_path: boolean;
+}
+
+export interface KnowledgeSearchResult {
+  relative_path: string;
+  name: string;
+  content_hash: string;
+  size: number;
+  snippet: string;
+  knowledge_role: string;
+  direct_scoring_prompt: boolean;
+  document_id: string;
+}
+
+export interface KnowledgeStatus {
+  root_path: string;
+  loaded: boolean;
+  file_count: number;
+  loader_relevant_count: number;
+  direct_scoring_file_count: number;
+  knowledge_hash: string;
+  loaded_at: string;
+}
+
+export interface KnowledgeUsageItem {
+  role: string;
+  label: string;
+  description: string;
+}
+
+// ── 知识库草稿校验与预览（K.5）──────────────────────
+
+export interface KnowledgeValidationResult {
+  status: 'passed' | 'failed';
+  errors: string[];
+  warnings: string[];
+  loader_file_count: number;
+  loader_relevant_count: number;
+}
+
+export interface KnowledgePromptPreview {
+  old_prompt: string;
+  new_prompt: string;
+  old_hash: string;
+  new_hash: string;
+  prompt_changed: boolean;
+  file_in_prompt: boolean;
+  char_count_old: number;
+  char_count_new: number;
+}
+
+export interface KnowledgeScorePreview {
+  old_score: { product_relevance: number; event_impact: number; pr_total_score: number; error?: string } | null;
+  new_score: { product_relevance: number; event_impact: number; pr_total_score: number; error?: string } | null;
+  score_changed: boolean;
+}
+
+export interface KnowledgePreviewArticle {
+  title: string;
+  source: string;
+  category_v2: string;
+  summary_cn: string;
+  content_md: string;
+}
+
 // ═══════════════════════════════════════════════════════════
 // Filter（筛选栏状态）
 // ═══════════════════════════════════════════════════════════

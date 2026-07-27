@@ -46,3 +46,16 @@ async def get_developer_user(request: Request) -> tuple[str, dict[str, Any]]:
     if not user_doc or not user_doc.get("is_developer", False):
         raise AuthError(403, "FORBIDDEN", "需要开发者权限")
     return user_id, user_doc
+
+
+async def require_admin(request: Request) -> tuple[str, dict[str, Any]]:
+    """返回当前管理员用户及其文档，普通用户不得访问管理员接口。"""
+
+    user_id = await get_current_user(request)
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise AuthError(503, "DATABASE_UNAVAILABLE", "数据库暂不可用")
+    user_doc = await db["users"].find_one({"user_id": user_id})
+    if not user_doc or not user_doc.get("is_admin", False):
+        raise AuthError(403, "FORBIDDEN", "需要管理员权限")
+    return user_id, user_doc

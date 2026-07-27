@@ -23,6 +23,7 @@ import DevLogsPage from './pages/DevLogsPage';
 import LoginPage from './pages/LoginPage';
 import LogsPage from './pages/LogsPage';
 import PRTemplatesPage from './pages/PRTemplatesPage';
+import ProductKnowledgePage from './pages/ProductKnowledgePage';
 import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
 
@@ -41,6 +42,7 @@ const baseMenuItems = [
     children: [
       { key: 'pr-templates', icon: <SnippetsOutlined />, label: 'PR 模板' },
       { key: 'settings', icon: <FormOutlined />, label: '提示词配置' },
+      { key: 'product-knowledge', icon: <DatabaseOutlined />, label: '产品知识库' },
     ],
   },
   { key: 'logs', icon: <FileTextOutlined />, label: '运行日志' },
@@ -114,6 +116,7 @@ export function MainLayout() {
         {tab === 'profile' && <ProfilePage />}
         {tab === 'pr-templates' && <PRTemplatesPage onDirtyChange={setTemplateDirty} />}
         {tab === 'settings' && <SettingsPage onDirtyChange={setSettingsDirty} />}
+        {tab === 'product-knowledge' && <ProductKnowledgePage />}
         {tab === 'dev-logs' && user?.is_developer && <DevLogsPage />}
         {tab === 'about' && (
           <div style={{ padding: 48, maxWidth: 800, margin: '0 auto' }}>

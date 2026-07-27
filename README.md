@@ -239,6 +239,39 @@ docker compose exec backend python scripts/set_developer.py alice --disable
 
 > 开发者日志可能包含跨用户运行元数据，仅应向受信任的排障人员授权。权限变更后刷新页面或重新登录即可生效。
 
+### 产品知识库可视化管理
+
+系统提供产品知识库的可视化浏览与管理功能，位于「配置 → 产品知识库」菜单下。
+
+**全员浏览**：所有登录用户可查看知识库真实目录树、Markdown 正文、文件用途标签和评分参与状态。
+
+**管理员维护**：`is_admin=true` 的用户可创建草稿、校验、Prompt 预览、试打分、发布和回滚。
+
+```text
+浏览目录 -> 创建草稿 -> 校验格式 -> 预览Prompt变化 -> 试打分对比 -> 发布到正式文件 -> 回滚（如需要）
+```
+
+核心特性：
+
+- 正式知识仍存放在 `agent-security-briefs/` 目录，MongoDB 仅存储草稿和发布历史。
+- 发布采用原子写入（`os.replace`），失败自动恢复。
+- 发布后 API 进程立即刷新知识，Worker 在下一个任务开始前检测文件变更。
+- 5 个核心打分文件受保护，允许编辑内容但禁止重命名和删除。
+- API 容器知识目录为读写挂载（`:rw`），Worker 保持只读（`:ro`）。
+
+设置管理员权限：
+
+```bash
+docker compose exec backend python -c "
+from db.mongo import MongoDB; import asyncio
+async def main():
+    await MongoDB.connect(uri='mongodb://admin:pr_agent_2024@mongodb:27017', db_name='pr_agent')
+    await MongoDB.get_collection('users').update_one({'username': 'admin'}, {'\$set': {'is_admin': True}})
+    await MongoDB.disconnect()
+asyncio.run(main())
+"
+```
+
 ---
 
 ## 架构

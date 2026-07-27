@@ -82,6 +82,7 @@ class UserInDB(BaseModel):
     display_name: str = Field(min_length=1, max_length=50)
     is_active: bool = True
     is_developer: bool = False
+    is_admin: bool = False
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
 
@@ -96,6 +97,7 @@ class UserPublic(BaseModel):
     display_name: str
     email: str | None = None
     is_developer: bool = False
+    is_admin: bool = False
     created_at: datetime
 
 

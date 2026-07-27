@@ -143,6 +143,10 @@ class Settings(BaseSettings):
         default="deepseek-chat",
         description="默认模型名",
     )
+    DEEPSEEK_TIMEOUT: float = Field(
+        default=60.0,
+        description="DeepSeek API 单次请求超时（秒）",
+    )
 
     # ── 知识库 ───────────────────────────────────────
     KNOWLEDGE_BASE_DIR: str = Field(

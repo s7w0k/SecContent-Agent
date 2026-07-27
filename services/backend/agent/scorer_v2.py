@@ -130,6 +130,14 @@ class ScoringAgentV2:
         self.system_prompt = self._build_system_prompt()
         self.llm_wrapper = LLMWrapper(llm, db)
 
+    def refresh_prompt(self) -> None:
+        """重建 System Prompt（发布后热刷新用）。
+
+        不改变 LLM、评分维度和阈值，只重新从当前 knowledge 读取并拼接 Prompt。
+        """
+        self.system_prompt = self._build_system_prompt()
+        logger.info("ScoringAgentV2 prompt refreshed")
+
     # ── 公开接口 ──────────────────────────────────────────────
 
     async def score_single(

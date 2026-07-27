@@ -498,6 +498,47 @@ class MongoDB:
                     name="idx_pers_feedback_user_date",
                 ),
             ],
+            "knowledge_drafts": [
+                IndexModel([("draft_id", ASCENDING)], unique=True, name="uq_knowledge_draft_id"),
+                IndexModel(
+                    [("relative_path", ASCENDING), ("status", ASCENDING)],
+                    name="idx_knowledge_draft_path_status",
+                ),
+                IndexModel([("updated_at", DESCENDING)], name="idx_knowledge_draft_updated"),
+            ],
+            "knowledge_revisions": [
+                IndexModel(
+                    [("revision_id", ASCENDING)],
+                    unique=True,
+                    name="uq_knowledge_revision_id",
+                ),
+                IndexModel([("publication_id", ASCENDING)], name="idx_knowledge_revision_pub"),
+                IndexModel([("relative_path", ASCENDING)], name="idx_knowledge_revision_path"),
+            ],
+            "knowledge_publications": [
+                IndexModel(
+                    [("publication_id", ASCENDING)],
+                    unique=True,
+                    name="uq_knowledge_pub_id",
+                ),
+                IndexModel([("published_at", DESCENDING)], name="idx_knowledge_pub_date"),
+                IndexModel([("status", ASCENDING)], name="idx_knowledge_pub_status"),
+            ],
+            "knowledge_publish_locks": [
+                IndexModel([("lock_key", ASCENDING)], unique=True, name="uq_knowledge_lock_key"),
+                IndexModel([("expires_at", ASCENDING)], name="idx_knowledge_lock_expires"),
+            ],
+            "knowledge_audit_logs": [
+                IndexModel([("audit_id", ASCENDING)], unique=True, name="uq_knowledge_audit_id"),
+                IndexModel(
+                    [("user_id", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_knowledge_audit_user_date",
+                ),
+                IndexModel(
+                    [("action", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_knowledge_audit_action_date",
+                ),
+            ],
         }
 
         try:

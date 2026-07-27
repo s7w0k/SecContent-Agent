@@ -43,7 +43,16 @@ import type {
   FeedbackUpdateResponse,
   HotArticle,
   HotRankingQuery,
+  KnowledgeDocument,
+  KnowledgePreviewArticle,
+  KnowledgePromptPreview,
+  KnowledgeScorePreview,
+  KnowledgeSearchResult,
+  KnowledgeStatus,
   KnowledgeSummary,
+  KnowledgeTree,
+  KnowledgeUsageItem,
+  KnowledgeValidationResult,
   LoginRequest,
   MemoryItem,
   MemoryListResponse,
@@ -199,6 +208,12 @@ export const dashboardApi = {
   /** 批量删除文章 */
   async batchDeleteArticles(hashes: string[]): Promise<{ ok: boolean; deleted: number }> {
     const { data } = await client.delete('/articles/batch', { data: { url_hashes: hashes } });
+    return data;
+  },
+
+  /** 删除所有不相关文章 */
+  async deleteIrrelevantArticles(): Promise<{ ok: boolean; deleted: number }> {
+    const { data } = await client.delete('/articles/irrelevant');
     return data;
   },
 
@@ -976,6 +991,80 @@ export const memoryApi = {
 };
 
 // ═══════════════════════════════════════════════════════════
+// Knowledge Catalog API（产品知识库目录）
+// ═══════════════════════════════════════════════════════════
+
+export const knowledgeApi = {
+  /** 获取知识库目录树 */
+  async getTree(includeEmpty = true, includeRaw = true): Promise<KnowledgeTree> {
+    const { data } = await client.get('/knowledge/tree', {
+      params: { include_empty: includeEmpty, include_raw: includeRaw },
+    });
+    return data.data;
+  },
+
+  /** 获取文档内容与元数据 */
+  async getDocument(path: string): Promise<KnowledgeDocument> {
+    const { data } = await client.get('/knowledge/documents', { params: { path } });
+    return data.data;
+  },
+
+  /** 搜索知识库文件 */
+  async search(
+    q: string,
+    role?: string,
+    directScoringPrompt?: boolean,
+  ): Promise<KnowledgeSearchResult[]> {
+    const params: Record<string, unknown> = { q };
+    if (role) params.role = role;
+    if (directScoringPrompt !== undefined) params.direct_scoring_prompt = directScoringPrompt;
+    const { data } = await client.get('/knowledge/search', { params });
+    return data.data;
+  },
+
+  /** 获取知识库加载状态 */
+  async getStatus(): Promise<KnowledgeStatus> {
+    const { data } = await client.get('/knowledge/status');
+    return data.data;
+  },
+
+  /** 获取用途分类说明 */
+  async getUsageMap(): Promise<KnowledgeUsageItem[]> {
+    const { data } = await client.get('/knowledge/usage-map');
+    return data.data;
+  },
+};
+
+// ═══════════════════════════════════════════════════════════
+// Knowledge Admin API（产品知识库草稿管理，K.5）
+// ═══════════════════════════════════════════════════════════
+
+export const knowledgeAdminApi = {
+  /** 校验草稿内容与加载器一致性 */
+  async validateDraft(draftId: string): Promise<KnowledgeValidationResult> {
+    const { data } = await client.post(`/admin/knowledge/drafts/${draftId}/validate`);
+    return data.data;
+  },
+
+  /** 预览草稿对评分 Prompt 的影响 */
+  async previewPrompt(draftId: string): Promise<KnowledgePromptPreview> {
+    const { data } = await client.post(`/admin/knowledge/drafts/${draftId}/preview-prompt`);
+    return data.data;
+  },
+
+  /** 使用测试文章试打分（新旧 Prompt 对比） */
+  async previewScore(
+    draftId: string,
+    article: KnowledgePreviewArticle,
+  ): Promise<KnowledgeScorePreview> {
+    const { data } = await client.post(`/admin/knowledge/drafts/${draftId}/preview-score`, {
+      article,
+    });
+    return data.data;
+  },
+};
+
+// ═══════════════════════════════════════════════════════════
 // 统一导出
 // ═══════════════════════════════════════════════════════════
 
@@ -995,6 +1084,8 @@ const api = {
   devLogs: devLogsApi,
   prTemplates: prTemplateApi,
   prompts: promptApi,
+  knowledge: knowledgeApi,
+  knowledgeAdmin: knowledgeAdminApi,
 };
 
 export default api;

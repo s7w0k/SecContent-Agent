@@ -17,6 +17,9 @@ vi.mock('./pages/PRTemplatesPage', () => ({
     </button>
   ),
 }));
+vi.mock('./pages/ProductKnowledgePage', () => ({
+  default: () => <div>Product Knowledge Page</div>,
+}));
 vi.mock('./pages/SettingsPage', () => ({
   default: ({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) => (
     <button type="button" onClick={() => onDirtyChange?.(true)}>

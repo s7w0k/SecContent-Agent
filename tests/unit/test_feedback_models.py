@@ -348,6 +348,11 @@ class TestMongoDBIndexes:
             "generation_runs",
             "personalization_candidates",
             "personalization_feedbacks",
+            "knowledge_drafts",
+            "knowledge_revisions",
+            "knowledge_publications",
+            "knowledge_publish_locks",
+            "knowledge_audit_logs",
         }
         assert len(result["users"]) == 3
         assert len(result["feedbacks"]) == 4
@@ -447,5 +452,5 @@ class TestMongoDBIndexes:
             second = await MongoDB.ensure_indexes()
 
         assert first == second
-        assert collection.create_indexes.await_count == 46
+        assert collection.create_indexes.await_count == 56
         assert collection.drop_index.await_count == 2

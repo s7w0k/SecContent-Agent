@@ -44,6 +44,18 @@ async def execute_pipeline(
         logger.warning("Queued pipeline task not found: task_id=%s user_id=%s", task_id, user_id)
         return {"status": "failed", "error": "task not found"}
 
+    # Refresh knowledge at task boundary
+    from agent.knowledge_runtime import KnowledgeRuntimeRefresher
+
+    app = ctx.get("app")
+    app_state = getattr(app, "state", None) if app is not None else None
+    knowledge_hash = ""
+    if app_state is not None:
+        refresher = KnowledgeRuntimeRefresher(app_state)
+        knowledge_hash = await refresher.prepare_for_task()
+        if knowledge_hash:
+            logger.info("Task starting with knowledge hash: %s", knowledge_hash[:8])
+
     try:
         from api.pipeline import _execute_pipeline_task
 

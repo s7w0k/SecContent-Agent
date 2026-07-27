@@ -62,6 +62,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         api_key=settings.DEEPSEEK_API_KEY,
         base_url=settings.DEEPSEEK_BASE_URL,
         temperature=0.1,
+        timeout=settings.DEEPSEEK_TIMEOUT,
     )
     classifier_v2 = ClassifierV2(llm=llm, db=db)
     scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge, db=db)
@@ -89,6 +90,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     app = SimpleNamespace(
         state=SimpleNamespace(
             db=db,
+            knowledge_loader=knowledge,
             classifier_v2=classifier_v2,
             scorer_v2=scorer_v2,
             draft_gen=draft_gen,

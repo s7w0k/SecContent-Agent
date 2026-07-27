@@ -200,7 +200,7 @@ services:
       LOG_ACCESS_RETENTION_DAYS: ${LOG_ACCESS_RETENTION_DAYS:-7}
       LOG_AUDIT_RETENTION_DAYS: ${LOG_AUDIT_RETENTION_DAYS:-365}
     volumes:
-      - ./agent-security-briefs:/app/documents:ro
+      - ./agent-security-briefs:/app/documents:rw
       - ./docs:/app/docs:ro
       - ./logs:/app/logs
     networks:

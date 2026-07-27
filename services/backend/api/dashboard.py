@@ -281,6 +281,17 @@ async def batch_delete_articles(
     return {"ok": True, "deleted": result.deleted_count}
 
 
+@router.delete("/articles/irrelevant", summary="删除所有不相关文章")
+async def delete_irrelevant_articles(
+    request: Request,
+    _user_id: str = Depends(get_current_user),
+):
+    """删除所有 category_v2 为「不相关」的文章。"""
+    db = _get_db(request)
+    result = await db["articles"].delete_many({"category_v2": "不相关"})
+    return {"ok": True, "deleted": result.deleted_count}
+
+
 @router.delete("/articles/{url_hash}", summary="删除文章")
 async def delete_article(
     url_hash: str,
