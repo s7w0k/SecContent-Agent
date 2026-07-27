@@ -34,7 +34,7 @@ const baseMenuItems = [
   { key: 'dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
   { key: 'chat', icon: <EditOutlined />, label: '对话改稿' },
   { key: 'accounts', icon: <WechatOutlined />, label: '公众号账号' },
-  { key: 'profile', icon: <UserOutlined />, label: '用户画像' },
+  { key: 'profile', icon: <UserOutlined />, label: '个人偏好' },
   {
     key: 'config',
     icon: <SettingOutlined />,

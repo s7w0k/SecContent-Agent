@@ -182,13 +182,14 @@ class KnowledgeCatalog:
         if os.path.isabs(relative_path):
             raise ValueError("路径不允许为绝对路径")
 
-        target = (self.root_dir / relative_path).resolve()
+        raw_target = self.root_dir / relative_path
+        if raw_target.is_symlink():
+            raise ValueError("路径不允许为符号链接")
+
+        target = raw_target.resolve()
 
         if self.root_dir not in target.parents and target != self.root_dir:
             raise ValueError("路径超出知识库根目录")
-
-        if target.is_symlink():
-            raise ValueError("路径不允许为符号链接")
 
         if target.suffix != ".md":
             raise ValueError("仅允许访问 Markdown 文件")
