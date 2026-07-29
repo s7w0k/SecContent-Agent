@@ -179,6 +179,7 @@ def test_worker_settings_follow_application_config():
     assert WorkerSettings.health_check_interval == 15
     assert {function.name for function in WorkerSettings.functions} == {
         "compile_memory_summaries",
+        "enrich_web_search_articles",
         "execute_pipeline",
         "fetch_fulltext_batch",
         "process_memory_event",

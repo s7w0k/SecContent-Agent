@@ -8,7 +8,7 @@
 // 基础类型
 // ═══════════════════════════════════════════════════════════
 
-export type SourceType = 'overseas_news' | 'wechat_mp' | 'paper' | 'user_upload';
+export type SourceType = 'overseas_news' | 'wechat_mp' | 'paper' | 'user_upload' | 'web_search';
 
 export type PipelinePhase = 'crawl' | 'classify' | 'score' | 'report';
 
@@ -60,6 +60,7 @@ export interface Article {
   summary: string;
   summary_cn: string;
   content_md?: string;
+  content_fetch_status?: string;
   is_ai_security: boolean;
   is_agent_security: boolean;
   category: string;
@@ -98,6 +99,7 @@ export interface ArticleQuery {
   min_score?: number;
   is_ai_security?: boolean;
   is_high_value?: boolean;
+  has_drafts?: boolean;
   keyword?: string;
   sort_by?: string;
   order?: 'asc' | 'desc';
@@ -529,6 +531,7 @@ export interface FilterValues {
   min_score?: number;
   keyword?: string;
   is_high_value?: boolean;
+  has_drafts?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1007,4 +1010,70 @@ export interface MemoryListResponse {
   page_size: number;
   status_stats: Record<string, number>;
   pending_count: number;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Web Search（SearXNG 网络搜索）
+// ═══════════════════════════════════════════════════════════
+
+// ── Web Search ──
+export type SearchCategory = 'general' | 'news';
+export type SearchTimeRange = 'day' | 'month' | 'year';
+
+export interface WebSearchResult {
+  result_id: string;
+  title: string;
+  url: string;
+  display_domain: string;
+  snippet: string;
+  published_at?: string | null;
+  engines: string[];
+  category: string;
+  is_imported: boolean;
+  article_url_hash?: string | null;
+}
+
+export interface SearchWarning {
+  code: string;
+  message: string;
+  count: number;
+}
+
+export interface WebSearchResponse {
+  search_id: string;
+  query: Record<string, unknown>;
+  results: WebSearchResult[];
+  page: number;
+  has_more: boolean;
+  warnings: SearchWarning[];
+  expires_at: string;
+}
+
+export interface SearchImportItem {
+  result_id: string;
+  status: 'imported' | 'duplicate' | 'invalid_url' | 'failed';
+  article_url_hash?: string | null;
+  message: string;
+}
+
+export interface SearchImportSummary {
+  requested: number;
+  imported: number;
+  duplicate: number;
+  failed: number;
+  enrichment_queued: number;
+}
+
+export interface SearchImportResponse {
+  batch_id: string;
+  summary: SearchImportSummary;
+  items: SearchImportItem[];
+}
+
+export interface SearchStatusResponse {
+  enabled: boolean;
+  available: boolean;
+  allowed_categories: string[];
+  allowed_languages: string[];
+  max_import_items: number;
 }

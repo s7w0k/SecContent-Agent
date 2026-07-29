@@ -272,6 +272,35 @@ asyncio.run(main())
 "
 ```
 
+### 网页搜索
+
+基于 SearXNG 的用户主动搜索功能，允许用户搜索互联网内容并选择性导入文章库。
+
+**功能说明：**
+- 用户输入关键词，系统通过内部 SearXNG 服务聚合搜索
+- 搜索结果按用户隔离短期保存（默认 30 分钟）
+- 用户勾选结果批量导入共享文章库
+- 导入后自动异步补抓全文
+- Dashboard 可按"网页搜索"来源筛选
+
+**配置：**
+- `WEB_SEARCH_ENABLED=false` - 功能总开关，默认关闭
+- `SEARXNG_SECRET=your-secret` - SearXNG 实例密钥
+- `SEARXNG_URL=http://searxng:8080` - SearXNG 内部地址
+- 其他配置项见 `.env.example`
+
+**启用步骤：**
+1. 在 `.env` 中设置 `WEB_SEARCH_ENABLED=true` 和 `SEARXNG_SECRET`
+2. 重启容器：`docker compose -p pr-core up -d --build`
+3. 验证：`curl http://localhost:18000/api/search/status`（需 JWT）
+
+**安全设计：**
+- SearXNG 不暴露宿主机端口，仅内部网络可达
+- 搜索会话和导入记录按 user_id 隔离
+- URL 规范化去除追踪参数，MD5 去重
+- 全文抓取前进行 SSRF 防护（拒绝私网/回环/云元数据地址）
+- 共享文章不包含用户 ID 和搜索词
+
 ---
 
 ## 架构

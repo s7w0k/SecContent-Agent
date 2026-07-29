@@ -63,6 +63,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         base_url=settings.DEEPSEEK_BASE_URL,
         temperature=0.1,
         timeout=settings.DEEPSEEK_TIMEOUT,
+        max_tokens=settings.DEEPSEEK_MAX_TOKENS,
     )
     classifier_v2 = ClassifierV2(llm=llm, db=db)
     scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge, db=db)
@@ -105,6 +106,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         {
             "app": app,
             "db": db,
+            "llm": llm,
             "pipeline_v2": pipeline_v2,
             "mcp_crawl_client": mcp_crawl_client,
             "template_repository": template_repository,

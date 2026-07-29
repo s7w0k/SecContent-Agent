@@ -62,6 +62,27 @@ pr-agent-demo/
 
 ## 常用命令
 
+### Docker 构建（项目主体，必须使用完整命令）
+
+```powershell
+docker compose -p pr-core `
+  --env-file .env `
+  --env-file deploy/local/.env.core-local `
+  -f docker-compose.yml `
+  -f deploy/core/docker-compose.remote-crawl.yml `
+  -f deploy/local/docker-compose.core-local.yml `
+  up -d --build
+```
+
+> **注意**：不能简化为 `docker compose up -d --build`，否则会缺少 env 文件和 compose 覆盖文件，导致端口冲突或配置缺失。
+
+### 停止服务
+
+```powershell
+docker compose -p pr-core --env-file .env --env-file deploy/local/.env.core-local -f docker-compose.yml -f deploy/core/docker-compose.remote-crawl.yml -f deploy/local/docker-compose.core-local.yml down
+```
+
+### 开发与测试
 ```bash
 make dev          # 一键启动开发环境
 make test         # 运行全部测试

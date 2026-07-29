@@ -20,7 +20,7 @@ import ReportViewer from '../components/ReportViewer';
 import StatsCards from '../components/StatsCards';
 import TodayStatsRow from '../components/TodayStatsRow';
 import { useActiveTasks } from '../hooks/useActiveTasks';
-import type { Article, ArticleQuery, FilterValues, StatsData } from '../types';
+import type { Article, ArticleQuery, FilterValues, SourceType, StatsData } from '../types';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -32,7 +32,12 @@ function getRequestErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '未知错误';
 }
 
-export default function Dashboard() {
+interface DashboardProps {
+  initialSourceType?: string;
+  refreshKey?: number;
+}
+
+export default function Dashboard({ initialSourceType, refreshKey }: DashboardProps) {
   // ── 数据状态 ──────────────────────────────────────────────
   const [stats, setStats] = useState<StatsData | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
@@ -121,6 +126,23 @@ export default function Dashboard() {
     loadArticles();
   }, [loadArticles]);
 
+  // ── 从搜索页跳转时设置来源筛选 ───────────────────────────
+  useEffect(() => {
+    if (initialSourceType) {
+      setFilter((prev) => ({ ...prev, source_type: initialSourceType as SourceType }));
+      setPage(1);
+      setSortField('added_at');
+      setSortOrder('desc');
+    }
+  }, [initialSourceType]);
+
+  // ── refreshKey 变更时触发数据重新加载 ─────────────────────
+  useEffect(() => {
+    if (refreshKey !== undefined && refreshKey > 0) {
+      loadArticles();
+    }
+  }, [refreshKey]);
+
   // ── 自动刷新（15 秒轮询，后台全文抓取完成后 UI 自动更新）──
   useEffect(() => {
     const timer = setInterval(() => {
@@ -139,7 +161,7 @@ export default function Dashboard() {
     loadReportCount();
   }, [loadStats, loadArticles, loadReportCount]);
 
-  // ── 筛选变更 → 重置到第一页 ─────────────────────────────
+  // ── 筛选变更 -> 重置到第一页 ─────────────────────────────
   const handleFilterChange = useCallback((values: FilterValues) => {
     setFilter(values);
     setPage(1);

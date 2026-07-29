@@ -56,6 +56,9 @@ class ActionType(StrEnum):
     FEEDBACK_SUBMIT = "feedback_submit"
     PIPELINE_RUN = "pipeline_run"
     ARTICLE_UPLOAD = "article_upload"
+    WEB_SEARCH = "web_search"
+    SEARCH_RESULT_IMPORT = "search_result_import"
+    SEARCH_CONTENT_RETRY = "search_content_retry"
 
 
 class FeedbackStatus(StrEnum):

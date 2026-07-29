@@ -62,7 +62,7 @@ class TestPRTemplates:
         for templates in PR_TEMPLATES.values():
             for template in templates:
                 assert (template.category, template.slot) == expected[template.template_key]
-                assert template.system_version == 1
+                assert template.system_version == 2
 
     def test_get_system_template_by_key(self):
         from agent.pr_templates import get_system_template
@@ -230,7 +230,7 @@ class TestDraftGenerator:
             assert "index" in draft
             assert draft["template_id"].startswith("system:")
             assert draft["template_key"]
-            assert draft["template_version"] == 1
+            assert draft["template_version"] == 2
             assert draft["template_source"] == "system"
             assert draft["template_snapshot"]["sections"]
             assert draft["template_snapshot"]["perspective"] == draft["perspective"]

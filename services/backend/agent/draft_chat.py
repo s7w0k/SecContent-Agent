@@ -143,6 +143,8 @@ REVISE_USER_PROMPT = """请根据以下意见改写 PR 初稿：
 - V2分类: {category_v2}
 - 产品相关度: {product_relevance}/100
 - 事件影响力: {event_impact}/100
+
+{history_context}
 """
 
 
@@ -191,6 +193,8 @@ SECTION_REVISE_USER_PROMPT = """请根据以下意见改写选中段落：
 - 标题: {title}
 - 来源: {source}
 - V2分类: {category_v2}
+
+{history_context}
 """
 
 
@@ -390,6 +394,7 @@ class DraftChatAgent:
         style_hints: str | None = None,
         selected_text: str | None = None,
         selected_range: dict | None = None,
+        history: list[dict] | None = None,
     ) -> dict:
         """改稿模式：根据修改意见改写 PR 初稿。
 
@@ -399,6 +404,7 @@ class DraftChatAgent:
             draft: PR 草稿数据
             selected_text: 选中的段落原文，非空时进入局部改写模式
             selected_range: 段落范围 {start, end}
+            history: 对话历史 [{role, content}, ...]
 
         Returns:
             {"revised_content_md": str, "change_summary": list[str]}
@@ -408,6 +414,7 @@ class DraftChatAgent:
         """
         knowledge_context = self._get_knowledge_prompt()
         original_content = draft.get("content_md", "")[:MAX_CONTENT_LENGTH]
+        history_context = self._build_history_context(history)
 
         is_section_revise = bool(selected_text and selected_text.strip())
 
@@ -423,6 +430,7 @@ class DraftChatAgent:
                 title=article.get("title", ""),
                 source=article.get("source", ""),
                 category_v2=article.get("category_v2", "未分类"),
+                history_context=history_context,
             )
         else:
             system_prompt = REVISE_SYSTEM_PROMPT.format(
@@ -439,6 +447,7 @@ class DraftChatAgent:
                 category_v2=article.get("category_v2", "未分类"),
                 product_relevance=article.get("product_relevance", 0),
                 event_impact=article.get("event_impact", 0),
+                history_context=history_context,
             )
 
         try:
@@ -483,6 +492,7 @@ class DraftChatAgent:
         style_hints: str | None = None,
         selected_text: str | None = None,
         selected_range: dict | None = None,
+        history: list[dict] | None = None,
     ) -> AsyncIterator[str]:
         """流式改稿模式：逐 chunk 产出改稿文本。
 
@@ -497,6 +507,7 @@ class DraftChatAgent:
         """
         knowledge_context = self._get_knowledge_prompt()
         original_content = draft.get("content_md", "")[:MAX_CONTENT_LENGTH]
+        history_context = self._build_history_context(history)
 
         is_section_revise = bool(selected_text and selected_text.strip())
 
@@ -512,6 +523,7 @@ class DraftChatAgent:
                 title=article.get("title", ""),
                 source=article.get("source", ""),
                 category_v2=article.get("category_v2", "未分类"),
+                history_context=history_context,
             )
         else:
             system_prompt = REVISE_SYSTEM_PROMPT.format(
@@ -528,6 +540,7 @@ class DraftChatAgent:
                 category_v2=article.get("category_v2", "未分类"),
                 product_relevance=article.get("product_relevance", 0),
                 event_impact=article.get("event_impact", 0),
+                history_context=history_context,
             )
 
         try:

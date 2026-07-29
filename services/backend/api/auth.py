@@ -28,6 +28,10 @@ PRIVATE_USER_COLLECTIONS = (
     "user_profiles",
     "user_drafts",
     "chat_sessions",
+    # ── Web 搜索 (SearXNG) ──────────────────────────
+    "search_sessions",
+    "search_import_batches",
+    "search_import_items",
     "pipeline_tasks",
     "pipeline_logs",
     "user_pr_templates",

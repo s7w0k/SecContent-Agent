@@ -74,6 +74,16 @@ async def lifespan(app: FastAPI):
     from clients.mcp_crawl import McpCrawlClient
 
     app.state.mcp_crawl_client = McpCrawlClient.from_settings(settings)
+
+    app.state.searxng_client = None
+    if settings.WEB_SEARCH_ENABLED:
+        try:
+            from clients.searxng import SearXNGClient
+            app.state.searxng_client = SearXNGClient.from_settings(settings)
+            _log("INFO", f"SearXNG client initialized: {settings.SEARXNG_URL}")
+        except Exception as e:
+            _log("WARNING", f"SearXNG client init failed: {e}")
+
     _log("INFO", "=" * 50)
     _log("INFO", "Backend starting...")
     _log("INFO", f"Python {sys.version}")
@@ -151,6 +161,7 @@ async def lifespan(app: FastAPI):
             base_url=settings.DEEPSEEK_BASE_URL,
             temperature=0.1,
             timeout=settings.DEEPSEEK_TIMEOUT,
+            max_tokens=settings.DEEPSEEK_MAX_TOKENS,
         )
         app.state.llm = llm
         _log("INFO", f"LLM initialized: model={settings.DEEPSEEK_MODEL}")
@@ -210,6 +221,9 @@ async def lifespan(app: FastAPI):
         if arq_pool is not None:
             await arq_pool.aclose()
         await app.state.mcp_crawl_client.aclose()
+        searxng_client = getattr(app.state, "searxng_client", None)
+        if searxng_client is not None:
+            await searxng_client.aclose()
         try:
             from db.mongo import MongoDB
 
@@ -342,6 +356,7 @@ from api.profile_policy import router as profile_policy_router
 from api.reports import router as reports_router
 from api.upload import router as upload_router
 from api.user_prompts import router as user_prompts_router
+from api.web_search import router as web_search_router
 
 app.include_router(pipeline_router)
 app.include_router(llm_router)
@@ -365,6 +380,7 @@ app.include_router(personalization_router)
 app.include_router(memory_router)
 app.include_router(knowledge_catalog_router)
 app.include_router(knowledge_admin_router)
+app.include_router(web_search_router)
 
 
 # ── System endpoints ────────────────────────────────────
@@ -380,6 +396,19 @@ async def health():
             mongo_health = await MongoDB.health_check()
     except Exception as e:
         mongo_health = {"status": "error", "error": str(e)}
+
+    searxng_status = {"status": "disabled"}
+    if settings.WEB_SEARCH_ENABLED:
+        searxng_client = getattr(app.state, "searxng_client", None)
+        if searxng_client is not None:
+            try:
+                available = await searxng_client.health_check()
+                searxng_status = {"status": "ok" if available else "unavailable"}
+            except Exception:
+                searxng_status = {"status": "error"}
+        else:
+            searxng_status = {"status": "not_initialized"}
+
     return {
         "ok": True,
         "status": "healthy",
@@ -387,6 +416,7 @@ async def health():
         "mongodb": mongo_health,
         "mcp_wewe": settings.MCP_WEWE_URL,
         "mcp_crawl": settings.MCP_CRAWL_URL,
+        "searxng": searxng_status,
     }
 
 

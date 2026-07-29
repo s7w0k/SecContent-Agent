@@ -73,6 +73,7 @@ function buildActions(
         </Button>,
       );
       break;
+    case 'candidate':
     case 'pending_approval':
       actions.push(
         <Button

@@ -71,8 +71,7 @@ async def test_apply_revision_rechecks_and_overwrites_review():
         )
 
     assert response.status_code == 200
-    assert response.json()["data"]["review"]["summary"] == "修订稿检查完成"
-    reviewed_draft = reviewer.review.await_args.args[1]
-    assert reviewed_draft["content_md"] == "修订后内容"
+    # 应用修订不再同步触发稿件检查，用户可单独点击"稿件检查"
     saved_drafts = user_drafts.update_one.await_args.args[1]["$set"]["drafts"]
-    assert saved_drafts[0]["review"]["content_hash"] == compute_content_hash("修订后内容")
+    assert saved_drafts[0]["content_md"] == "修订后内容"
+    assert saved_drafts[0]["revisions"][0]["applied"] is True

@@ -168,7 +168,7 @@ describe('ProfilePage', () => {
     render(<ProfilePage />);
 
     await waitFor(() => {
-      expect(screen.getByText('用户画像尚未生成')).toBeDefined();
+      expect(screen.getByText('个人偏好尚未生成')).toBeDefined();
     });
     expect(screen.getByText(/系统会积累偏好信号/)).toBeDefined();
   });
@@ -196,7 +196,7 @@ describe('ProfilePage', () => {
     render(<ProfilePage />);
 
     await waitFor(() => {
-      expect(screen.getByText('用户画像加载异常')).toBeDefined();
+      expect(screen.getByText('个人偏好加载异常')).toBeDefined();
     });
     expect(screen.getByText('Database not available')).toBeDefined();
   });

@@ -130,6 +130,49 @@ class Settings(BaseSettings):
         description="是否校验 mcp-crawl HTTPS 证书",
     )
 
+    # ── SearXNG 搜索 ─────────────────────────────────
+    WEB_SEARCH_ENABLED: bool = Field(default=False, description="搜索功能总开关")
+    SEARXNG_URL: str = Field(default="http://searxng:8080", description="SearXNG 内部地址")
+    SEARXNG_CONNECT_TIMEOUT: float = Field(
+        default=3.0, gt=0, le=30, description="SearXNG 建连超时秒数"
+    )
+    SEARXNG_READ_TIMEOUT: float = Field(
+        default=15.0, gt=0, le=60, description="SearXNG 读取超时秒数"
+    )
+    SEARXNG_MAX_RETRIES: int = Field(
+        default=1, ge=0, le=3, description="SearXNG 最大重试次数"
+    )
+    WEB_SEARCH_RESULT_LIMIT: int = Field(
+        default=20, ge=1, le=50, description="单页返回结果上限"
+    )
+    WEB_SEARCH_IMPORT_BATCH_LIMIT: int = Field(
+        default=20, ge=1, le=50, description="单批导入上限"
+    )
+    WEB_SEARCH_SESSION_TTL_MINUTES: int = Field(
+        default=30, ge=5, le=120, description="搜索会话保留时间分钟"
+    )
+    WEB_SEARCH_RATE_LIMIT_PER_MINUTE: int = Field(
+        default=20, ge=1, le=100, description="单用户搜索频率"
+    )
+    WEB_SEARCH_CACHE_TTL_MINUTES: int = Field(
+        default=10, ge=0, le=60, description="搜索结果缓存分钟数，0 表示禁用"
+    )
+    WEB_SEARCH_ALLOWED_CATEGORIES: str = Field(
+        default="general,news", description="允许的搜索分类"
+    )
+    WEB_SEARCH_ALLOWED_LANGUAGES: str = Field(
+        default="all,zh-CN,en", description="允许的搜索语言"
+    )
+    WEB_SEARCH_ENRICH_ON_IMPORT: bool = Field(
+        default=True, description="导入后是否自动补全文"
+    )
+    WEB_SEARCH_FETCH_MAX_CONCURRENCY: int = Field(
+        default=3, ge=1, le=10, description="全文抓取最大并发"
+    )
+    WEB_SEARCH_AUDIT_RETENTION_DAYS: int = Field(
+        default=180, ge=1, le=3650, description="导入审计保留天数"
+    )
+
     # ── LLM 配置 ─────────────────────────────────────
     DEEPSEEK_API_KEY: str = Field(
         default="",
@@ -146,6 +189,10 @@ class Settings(BaseSettings):
     DEEPSEEK_TIMEOUT: float = Field(
         default=60.0,
         description="DeepSeek API 单次请求超时（秒）",
+    )
+    DEEPSEEK_MAX_TOKENS: int = Field(
+        default=8192,
+        description="DeepSeek API 单次请求最大生成 token 数（推理模型需留足推理+输出空间）",
     )
 
     # ── 知识库 ───────────────────────────────────────
@@ -321,6 +368,15 @@ class Settings(BaseSettings):
         normalized = v.strip().rstrip("/")
         if not normalized.startswith(("http://", "https://")):
             raise ValueError("MCP_CRAWL_URL must start with http:// or https://")
+        return normalized
+
+    @field_validator("SEARXNG_URL")
+    @classmethod
+    def searxng_url_format(cls, v: str) -> str:
+        """只允许 HTTP(S) SearXNG 地址，并统一去掉末尾斜杠。"""
+        normalized = v.strip().rstrip("/")
+        if not normalized.startswith(("http://", "https://")):
+            raise ValueError("SEARXNG_URL must start with http:// or https://")
         return normalized
 
 

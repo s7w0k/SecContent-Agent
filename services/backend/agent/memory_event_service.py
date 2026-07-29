@@ -34,6 +34,7 @@ async def create_memory_event(
     stage: MemoryStage = MemoryStage.DRAFT,
     payload: dict[str, Any] | None = None,
     idempotency_key: str | None = None,
+    arq_pool: Any = None,
 ) -> str | None:
     """幂等创建记忆事件。
 
@@ -43,6 +44,7 @@ async def create_memory_event(
         source_type: 信号来源类型
         ...: 其他上下文字段
         idempotency_key: 幂等键，默认由 source_type:source_id 生成
+        arq_pool: ARQ 连接池，传入时自动 enqueue process_memory_event 任务
 
     Returns:
         event_id 或 None（Feature Flag 关闭或重复事件时返回 None）
@@ -95,7 +97,6 @@ async def create_memory_event(
             source_type.value,
             user_id,
         )
-        return event_id
     except Exception as exc:
         # 幂等键重复是预期行为
         if "idempotency_key" in str(exc) or "E11000" in str(exc):
@@ -104,3 +105,17 @@ async def create_memory_event(
         # 其他错误不阻塞主请求
         logger.warning("memory event creation failed: %s", exc)
         return None
+
+    # 触发 ARQ 异步处理任务
+    if arq_pool is not None:
+        try:
+            await arq_pool.enqueue_job(
+                "process_memory_event",
+                event_id=event_id,
+                user_id=user_id,
+            )
+            logger.info("memory event enqueued: event_id=%s", event_id)
+        except Exception as exc:
+            logger.warning("failed to enqueue process_memory_event: %s", exc)
+
+    return event_id

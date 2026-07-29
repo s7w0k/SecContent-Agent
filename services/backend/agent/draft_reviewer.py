@@ -50,8 +50,8 @@ GUARANTEE_WORDS: tuple[str, ...] = (
 SEVERITY_ORDER = {severity: index for index, severity in enumerate(ISSUE_SEVERITIES)}
 MAX_SOURCE_LENGTH = 12000
 MAX_DRAFT_LENGTH = 12000
-DEFAULT_TIMEOUT_SECONDS = 120.0
-DEFAULT_MAX_RETRIES = 1
+DEFAULT_TIMEOUT_SECONDS = 90.0
+DEFAULT_MAX_RETRIES = 0
 
 SYSTEM_PROMPT = """你是稿件内容与宣传话术检查助手。你只检查并列出问题，不作法律判断、发布判断或审批结论。
 
@@ -59,12 +59,24 @@ SYSTEM_PROMPT = """你是稿件内容与宣传话术检查助手。你只检查�
 1. 事实判断只能对照用户输入中的原文和原文摘要，不得使用模型记忆或外部知识补充事实。
 2. 原文没有依据的新结论标记为 unsupported_claim，不能声称外部事实一定错误。
 3. 检查人物、公司、机构、产品、时间、地点、版本、漏洞编号、数字、比例、金额、数量和性能指标是否一致。
-4. 检查稿件是否把“可能、预计、或许”等不确定表述改成确定事实。
+4. 检查稿件是否把"可能、预计、或许"等不确定表述改成确定事实。
 5. 检查第一、唯一、最强、领先、竞品比较或贬损、100%、零风险、保证性和夸大性话术。
 6. 每条问题的 quote 必须逐字引用稿件中的原句；推荐改写不得引入新数字、客户、能力或结论。
 7. 没有问题时返回空 issues，不得凑数。
 8. 原文正文不可用时，不判断外部事实真伪，只检查稿件自身矛盾和宣传话术。
 9. 只返回一个 JSON 对象，不返回 Markdown 或解释。
+
+category 字段只能取以下英文值（不得使用中文）：
+- fact_mismatch：稿件中的事实与原文不一致
+- unsupported_claim：稿件中的结论在原文中找不到依据
+- internal_conflict：稿件内部前后矛盾
+- absolute_claim：使用"第一、唯一、最强"等绝对化用语
+- competitor_comparison：与竞品进行不当比较
+- competitor_disparagement：使用贬低性词语评价竞品
+- guarantee_claim：使用"100%、零风险、彻底杜绝"等保证性话术
+- unsupported_data：稿件中的数据在原文中找不到出处
+- exaggerated_claim：夸大产品能力或效果
+- ambiguous_expression：表述含糊、容易引起误解
 
 JSON 格式：
 {
@@ -72,7 +84,7 @@ JSON 格式：
   "issues": [
     {
       "issue_id": "issue-001",
-      "category": "十类问题类型之一",
+      "category": "fact_mismatch|unsupported_claim|internal_conflict|absolute_claim|competitor_comparison|competitor_disparagement|guarantee_claim|unsupported_data|exaggerated_claim|ambiguous_expression",
       "severity": "high|medium|low",
       "quote": "稿件原句",
       "reason": "问题原因",
@@ -82,6 +94,19 @@ JSON 格式：
   ]
 }
 """
+
+
+def _repair_json(text: str) -> str:
+    """修复 LLM 生成的常见 JSON 语法问题。"""
+    # 移除尾逗号：}, ] 前的逗号
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+    # 单引号 -> 双引号（仅匹配键和值的引号）
+    text = re.sub(r"'([^']*)'(\s*:)", r'"\1"\2', text)
+    text = re.sub(r":\s*'([^']*)'", r': "\1"', text)
+    # 移除注释
+    text = re.sub(r"//.*?$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    return text
 
 
 def normalize_draft_content(content: str) -> str:
@@ -172,6 +197,8 @@ class DraftReviewer:
         max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
         self.llm = llm
+        # 启用 JSON 模式，强制 DeepSeek 返回合法 JSON
+        self.json_llm = llm.bind(response_format={"type": "json_object"}) if hasattr(llm, "bind") else llm
         self.timeout_seconds = timeout_seconds
         self.max_retries = max(0, max_retries)
 
@@ -199,7 +226,7 @@ class DraftReviewer:
         for attempt in range(self.max_retries + 1):
             try:
                 response = await asyncio.wait_for(
-                    self.llm.ainvoke(
+                    self.json_llm.ainvoke(
                         [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=prompt)]
                     ),
                     timeout=self.timeout_seconds,
@@ -311,24 +338,56 @@ class DraftReviewer:
             issue_data = dict(raw_issue)
             issue_data["issue_id"] = str(issue_data.get("issue_id") or f"issue-{index:03d}")
             issue = DraftReviewIssue.model_validate(issue_data)
+            # 精确匹配 -> 归一化匹配 -> 跳过
             if issue.quote not in draft_content:
-                raise ValueError("review issue quote is not present in draft")
+                normalized_quote = re.sub(r"\s+", "", issue.quote)
+                normalized_draft = re.sub(r"\s+", "", draft_content)
+                if normalized_quote in normalized_draft:
+                    # 归一化后匹配，保留原文中的实际句子
+                    issue = issue.model_copy(update={"quote": issue.quote.strip()})
+                else:
+                    logger.warning(
+                        "review issue quote not found in draft, skipping: %s",
+                        issue.quote[:100],
+                    )
+                    continue
             issues.append(issue)
         return issues, str(payload.get("summary") or "")
 
     @staticmethod
     def _extract_json(raw: str) -> dict[str, Any]:
         text = raw.strip()
-        if text.startswith("```"):
-            lines = text.splitlines()
-            lines = lines[1:] if lines else lines
-            if lines and lines[-1].strip().startswith("```"):
-                lines = lines[:-1]
-            text = "\n".join(lines).strip()
+        # 剥离 ```json ... ``` 代码块
+        code_block = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
+        if code_block:
+            text = code_block.group(1).strip()
+        # 尝试直接解析
         try:
             payload = json.loads(text)
-        except json.JSONDecodeError as exc:
-            raise ValueError("review response is not valid JSON") from exc
+        except json.JSONDecodeError:
+            # 回退：提取文本中第一个 JSON 对象（贪婪匹配以支持嵌套）
+            match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+            if match is None:
+                logger.warning(
+                    "review response contains no JSON object, raw (first 500 chars): %s",
+                    text[:500],
+                )
+                raise ValueError("review response is not valid JSON") from None
+            candidate = match.group(0)
+            try:
+                payload = json.loads(candidate)
+            except json.JSONDecodeError:
+                # 二次回退：修复常见 LLM JSON 语法问题后重试
+                repaired = _repair_json(candidate)
+                try:
+                    payload = json.loads(repaired)
+                except json.JSONDecodeError as exc:
+                    logger.warning(
+                        "review response JSON parse failed after repair: %s, raw (first 500 chars): %s",
+                        exc,
+                        candidate[:500],
+                    )
+                    raise ValueError("review response is not valid JSON") from exc
         if not isinstance(payload, dict):
             raise ValueError("review response must be a JSON object")
         return payload

@@ -5,6 +5,7 @@ import {
   FileTextOutlined,
   FormOutlined,
   InfoCircleOutlined,
+  SearchOutlined,
   SettingOutlined,
   SnippetsOutlined,
   UserOutlined,
@@ -26,12 +27,14 @@ import PRTemplatesPage from './pages/PRTemplatesPage';
 import ProductKnowledgePage from './pages/ProductKnowledgePage';
 import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
+import WebSearchPage from './pages/WebSearchPage';
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
 
 const baseMenuItems = [
   { key: 'dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
+  { key: 'search', icon: <SearchOutlined />, label: '信息搜索' },
   { key: 'chat', icon: <EditOutlined />, label: '对话改稿' },
   { key: 'accounts', icon: <WechatOutlined />, label: '公众号账号' },
   { key: 'profile', icon: <UserOutlined />, label: '个人偏好' },
@@ -53,6 +56,7 @@ export function MainLayout() {
   const [tab, setTab] = useState('dashboard');
   const [templateDirty, setTemplateDirty] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
+  const [dashboardEntry, setDashboardEntry] = useState<{ sourceType?: string; refreshKey: number }>({ refreshKey: 0 });
   const { user } = useAuth();
   const menuItems = user?.is_developer
     ? [
@@ -109,7 +113,22 @@ export function MainLayout() {
         <UserMenu />
       </Header>
       <Content>
-        {tab === 'dashboard' && <Dashboard />}
+        {tab === 'dashboard' && (
+          <Dashboard
+            initialSourceType={dashboardEntry.sourceType}
+            refreshKey={dashboardEntry.refreshKey}
+          />
+        )}
+        {tab === 'search' && (
+          <WebSearchPage
+            onNavigate={(page) => {
+              if (page === 'dashboard') {
+                setDashboardEntry({ sourceType: 'web_search', refreshKey: Date.now() });
+              }
+              setTab(page);
+            }}
+          />
+        )}
         {tab === 'chat' && <ChatPage />}
         {tab === 'accounts' && <AccountPage />}
         {tab === 'logs' && <LogsPage />}

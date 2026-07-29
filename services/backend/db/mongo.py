@@ -539,6 +539,59 @@ class MongoDB:
                     name="idx_knowledge_audit_action_date",
                 ),
             ],
+            # ── Web 搜索 (SearXNG) ──────────────────────────
+            "search_sessions": [
+                IndexModel(
+                    [("search_id", ASCENDING)],
+                    unique=True,
+                    name="idx_search_id",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_search_user_created",
+                ),
+                IndexModel(
+                    [("expires_at", ASCENDING)],
+                    name="idx_search_session_ttl",
+                    expireAfterSeconds=0,
+                ),
+            ],
+            "search_import_batches": [
+                IndexModel(
+                    [("user_id", ASCENDING), ("idempotency_key", ASCENDING)],
+                    unique=True,
+                    name="idx_import_batch_user_idem",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_import_batch_user_created",
+                ),
+                IndexModel(
+                    [("expires_at", ASCENDING)],
+                    name="idx_import_batch_ttl",
+                    expireAfterSeconds=0,
+                ),
+            ],
+            "search_import_items": [
+                IndexModel(
+                    [("user_id", ASCENDING), ("search_id", ASCENDING), ("result_id", ASCENDING)],
+                    unique=True,
+                    name="idx_import_item_user_search_result",
+                ),
+                IndexModel(
+                    [("batch_id", ASCENDING), ("created_at", ASCENDING)],
+                    name="idx_import_item_batch_created",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_import_item_user_created",
+                ),
+                IndexModel(
+                    [("expires_at", ASCENDING)],
+                    name="idx_import_item_ttl",
+                    expireAfterSeconds=0,
+                ),
+            ],
         }
 
         try:

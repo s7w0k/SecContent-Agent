@@ -37,7 +37,7 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from 'react';
 import ReactMarkdown from 'react-markdown';
-import api, { chatApi } from '../api/client';
+import api, { chatApi, memoryApi } from '../api/client';
 import ChatBubble from '../components/ChatBubble';
 import DraftBlockView, { type DraftBlock } from '../components/DraftBlockView';
 import DraftFeedback from '../components/DraftFeedback';
@@ -332,8 +332,31 @@ export default function ChatPage() {
               return updated;
             });
           },
-          (_fullAnswer) => {
+          (_fullAnswer, meta) => {
             // 流结束，answer 已通过 chunk 逐步拼接
+            // 如果触发了记忆学习，轮询直到完成
+            if (meta?.memory_learning) {
+              let pollCount = 0;
+              const maxPolls = 20; // 最多轮询 60 秒（20 × 3s）
+              const pollMemory = async () => {
+                try {
+                  const res = await memoryApi.listItems({ status: 'pending_approval', page: 1, page_size: 5 });
+                  if ((res.data?.items?.length ?? 0) > 0) {
+                    message.success(`偏好学习完成，已提取 ${res.data.items.length} 条记忆，可在「个人偏好」页面查看`);
+                    return;
+                  }
+                } catch {
+                  // 忽略轮询错误
+                }
+                pollCount++;
+                if (pollCount < maxPolls) {
+                  setTimeout(pollMemory, 3000);
+                } else {
+                  message.info('偏好学习仍在进行中，请稍后到「个人偏好」页面查看结果');
+                }
+              };
+              setTimeout(pollMemory, 5000); // 5 秒后开始轮询
+            }
           },
           (errMsg) => {
             setError(errMsg);

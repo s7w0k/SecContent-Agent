@@ -233,6 +233,7 @@ async def create_feedback(
             "tags": feedback.tags or [],
         },
         idempotency_key=f"feedback:{feedback.feedback_id}",
+        arq_pool=getattr(request.app.state, "arq_pool", None),
     )
 
     return {

@@ -147,8 +147,25 @@ export default function ArticleTable({
           wechat_mp: { color: 'green', label: s },
           paper: { color: 'default', label: s },
           user_upload: { color: 'purple', label: '用户上传' },
+          web_search: { color: 'cyan', label: s },
         }[r.source_type];
-        return <Tag color={sourceStyle.color}>{sourceStyle.label}</Tag>;
+        return (
+          <Space size={2} wrap>
+            <Tag color={sourceStyle.color}>{sourceStyle.label}</Tag>
+            {r.content_fetch_status === 'queued' && (
+              <Tag color="orange" style={{ fontSize: 11 }}>排队中</Tag>
+            )}
+            {r.content_fetch_status === 'fetching' && (
+              <Tag color="processing" style={{ fontSize: 11 }}>获取中</Tag>
+            )}
+            {r.content_fetch_status === 'failed' && (
+              <Tag color="red" style={{ fontSize: 11 }}>获取失败</Tag>
+            )}
+            {r.content_fetch_status === 'blocked' && (
+              <Tag color="default" style={{ fontSize: 11 }}>已阻止</Tag>
+            )}
+          </Space>
+        );
       },
     },
     {
@@ -328,6 +345,17 @@ export default function ArticleTable({
                 onClick={() => handleFetch(record.url_hash)}
               >
                 抓取原文
+              </Button>
+            )}
+            {record.source_type === 'web_search' && !hasContent && (
+              <Button
+                type="link"
+                size="small"
+                icon={<FileTextOutlined />}
+                loading={b}
+                onClick={() => handleFetch(record.url_hash)}
+              >
+                获取全文
               </Button>
             )}
             {hasContent && !hasSummary && (

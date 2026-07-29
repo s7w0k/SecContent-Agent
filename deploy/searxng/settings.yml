@@ -1,0 +1,76 @@
+# SearXNG Settings - PR Agent 内部搜索服务
+# 参考: https://docs.searxng.org/admin/settings/settings
+# 必须启用 json 格式，否则 Backend 请求 format=json 会返回 403
+
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "PR Agent Search"
+
+search:
+  safe_search: 1
+  autocomplete: ""
+  default_lang: "zh-CN"
+  results_per_page: 20
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "${SEARXNG_SECRET}"
+  limiter: false
+  image_proxy: false
+  port: 8080
+  bind_address: "0.0.0.0"
+
+# 引擎配置：启用国内可用引擎，禁用海外不可达引擎
+engines:
+  # ── 国内搜索引擎（核心）──
+  - name: baidu
+    engine: baidu
+    disabled: false
+    timeout: 8.0
+    max_results: 20
+
+  - name: bing
+    engine: bing
+    disabled: false
+    timeout: 10.0
+    max_results: 20
+
+  - name: sogou
+    engine: sogou
+    disabled: false
+    timeout: 8.0
+
+  - name: 360search
+    engine: 360search
+    disabled: false
+    timeout: 8.0
+
+  - name: zhihu
+    engine: zhihu
+    disabled: false
+    timeout: 8.0
+
+  # ── 海外引擎（国内不可达，禁用）──
+  - name: google
+    engine: google
+    disabled: true
+
+  - name: duckduckgo
+    engine: duckduckgo
+    disabled: true
+
+  - name: brave
+    engine: brave
+    disabled: true
+
+  - name: qwant
+    engine: qwant
+    disabled: true
+
+  - name: startpage
+    engine: startpage
+    disabled: true

@@ -5,7 +5,10 @@ import {
   Card,
   Col,
   Empty,
+  Input,
+  Modal,
   Row,
+  Select,
   Skeleton,
   Space,
   Tabs,
@@ -78,6 +81,8 @@ function summarizeMemory(stats: Record<string, number> | undefined, pending: num
   const total = stats ? Object.values(stats).reduce((a, b) => a + b, 0) : 0;
   if (total === 0) return '暂无自动学习记忆';
   const active = stats?.active ?? 0;
+  const candidate = stats?.candidate ?? 0;
+  if (candidate > 0) return `已学习 ${total} 条记忆，其中 ${active} 条已生效、${candidate} 条待确认`;
   if (pending > 0) return `已学习 ${total} 条记忆，其中 ${active} 条已生效、${pending} 条待审批`;
   return `已学习 ${total} 条记忆，全部已生效`;
 }
@@ -92,7 +97,7 @@ function ProfileEmptyState({
         image={Empty.PRESENTED_IMAGE_SIMPLE}
         description={
           <Space direction="vertical">
-            <Text strong>用户画像尚未生成</Text>
+            <Text strong>个人偏好尚未生成</Text>
             <Text type="secondary">
               开始提交草稿反馈、下载草稿或应用修订后，系统会积累偏好信号；也可以手动重建画像。
             </Text>
@@ -118,10 +123,14 @@ export default function ProfilePage() {
   // ── 记忆审计状态 ──────────────────────────────────
   const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
   const [memoryLoading, setMemoryLoading] = useState(false);
-  const [memoryStatusFilter, setMemoryStatusFilter] = useState<string>('active,pending_approval');
+  const [memoryStatusFilter, setMemoryStatusFilter] = useState<string>('active,pending_approval,candidate');
   const [memoryStats, setMemoryStats] = useState<Record<string, number>>({});
   const [memoryPending, setMemoryPending] = useState(0);
   const [evidenceItem, setEvidenceItem] = useState<MemoryItem | null>(null);
+  const [editItem, setEditItem] = useState<MemoryItem | null>(null);
+  const [editText, setEditText] = useState('');
+  const [editPolarity, setEditPolarity] = useState<string>('prefer');
+  const [editSaving, setEditSaving] = useState(false);
 
   const loadProfile = useCallback(async () => {
     try {
@@ -192,6 +201,15 @@ export default function ProfilePage() {
   };
 
   const handleMemoryAction = useCallback(async (action: string, memoryId: string) => {
+    if (action === 'edit') {
+      const item = memoryItems.find((m) => m.memory_id === memoryId);
+      if (item) {
+        setEditItem(item);
+        setEditText(item.display_text);
+        setEditPolarity(item.polarity);
+      }
+      return;
+    }
     try {
       if (action === 'approve') await memoryApi.approveItem(memoryId);
       else if (action === 'reject') await memoryApi.rejectItem(memoryId);
@@ -203,7 +221,25 @@ export default function ProfilePage() {
     } catch {
       message.error('操作失败');
     }
-  }, [loadMemoryItems]);
+  }, [loadMemoryItems, memoryItems]);
+
+  const handleEditSave = useCallback(async () => {
+    if (!editItem) return;
+    setEditSaving(true);
+    try {
+      await memoryApi.editItem(editItem.memory_id, {
+        display_text: editText,
+        polarity: editPolarity,
+      });
+      message.success('编辑成功');
+      setEditItem(null);
+      await loadMemoryItems();
+    } catch {
+      message.error('编辑失败');
+    } finally {
+      setEditSaving(false);
+    }
+  }, [editItem, editText, editPolarity, loadMemoryItems]);
 
   const lastUpdated = useMemo(() => {
     if (!profile?.updated_at) return '尚未生成';
@@ -216,7 +252,7 @@ export default function ProfilePage() {
         <Col>
           <Space direction="vertical" size={0}>
             <Title level={3} style={{ margin: 0 }}>
-              {user?.display_name || user?.username} 的用户画像
+              {user?.display_name || user?.username} 的个人偏好
             </Title>
             <Paragraph type="secondary" style={{ margin: 0 }}>
               基于反馈、下载、改稿与应用记录学习你的 PR 草稿偏好。
@@ -248,7 +284,7 @@ export default function ProfilePage() {
           type="error"
           showIcon
           closable
-          message="用户画像加载异常"
+          message="个人偏好加载异常"
           description={error}
           onClose={() => setError(null)}
           style={{ marginBottom: 16 }}
@@ -308,16 +344,16 @@ export default function ProfilePage() {
                   extra={
                     <Space>
                       <Tag
-                        color={memoryStatusFilter.includes('pending') ? 'orange' : 'blue'}
+                        color={memoryStatusFilter === 'active' ? 'blue' : 'orange'}
                         style={{ cursor: 'pointer' }}
                         onClick={() => {
-                          const next = memoryStatusFilter.includes('pending')
-                            ? 'active'
-                            : 'active,pending_approval';
+                          const next = memoryStatusFilter === 'active'
+                            ? 'active,pending_approval,candidate'
+                            : 'active';
                           setMemoryStatusFilter(next);
                         }}
                       >
-                        {memoryStatusFilter.includes('pending') ? '含待审批' : '仅生效中'}
+                        {memoryStatusFilter === 'active' ? '仅生效中' : '全部记忆'}
                       </Tag>
                       <Button
                         size="small"
@@ -369,6 +405,47 @@ export default function ProfilePage() {
         item={evidenceItem}
         onClose={() => setEvidenceItem(null)}
       />
+
+      <Modal
+        title="编辑记忆"
+        open={!!editItem}
+        onCancel={() => setEditItem(null)}
+        onOk={handleEditSave}
+        confirmLoading={editSaving}
+        okText="保存"
+        cancelText="取消"
+        destroyOnClose
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <div>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>
+              极性
+            </Text>
+            <Select
+              value={editPolarity}
+              onChange={setEditPolarity}
+              style={{ width: '100%' }}
+              options={[
+                { value: 'prefer', label: '倾向 (prefer)' },
+                { value: 'avoid', label: '避免 (avoid)' },
+                { value: 'require', label: '必须 (require)' },
+              ]}
+            />
+          </div>
+          <div>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>
+              描述
+            </Text>
+            <Input.TextArea
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              rows={5}
+              maxLength={500}
+              showCount
+            />
+          </div>
+        </Space>
+      </Modal>
     </div>
   );
 }

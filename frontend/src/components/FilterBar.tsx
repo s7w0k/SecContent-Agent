@@ -21,6 +21,13 @@ const SOURCE_OPTIONS: { value: SourceType | ''; label: string }[] = [
   { value: 'wechat_mp', label: '微信公众号' },
   { value: 'paper', label: '论文' },
   { value: 'user_upload', label: '用户上传' },
+  { value: 'web_search', label: '网页搜索' },
+];
+
+const DRAFT_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: '全部初稿' },
+  { value: 'yes', label: '已生成初稿' },
+  { value: 'no', label: '未生成初稿' },
 ];
 
 interface FilterBarProps {
@@ -32,10 +39,17 @@ interface FilterBarProps {
 export default function FilterBar({ value, onChange, categories }: FilterBarProps) {
   const handleChange = useCallback(
     (key: keyof FilterValues, val: unknown) => {
-      onChange({ ...value, [key]: val || undefined });
+      if (key === 'has_drafts') {
+        const v = val as string;
+        onChange({ ...value, has_drafts: v === '' ? undefined : v === 'yes' });
+      } else {
+        onChange({ ...value, [key]: val || undefined });
+      }
     },
     [value, onChange],
   );
+
+  const draftValue = value.has_drafts === undefined ? '' : value.has_drafts ? 'yes' : 'no';
 
   const handleReset = useCallback(() => {
     onChange({});
@@ -65,6 +79,15 @@ export default function FilterBar({ value, onChange, categories }: FilterBarProp
           onChange={(v) => handleChange('category', v || undefined)}
           options={categoryOptions}
           showSearch
+        />
+      </Col>
+      <Col xs={24} sm={6} md={4}>
+        <Select
+          style={{ width: '100%' }}
+          placeholder="初稿状态"
+          value={draftValue}
+          onChange={(v) => handleChange('has_drafts', v)}
+          options={DRAFT_OPTIONS}
         />
       </Col>
       <Col xs={12} sm={6} md={3}>

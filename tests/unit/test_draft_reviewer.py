@@ -27,6 +27,7 @@ def _issue(category: str, severity: str, quote: str, reason: str = "存在问题
 
 def _reviewer(response: MagicMock) -> DraftReviewer:
     llm = MagicMock()
+    llm.bind = MagicMock(return_value=llm)
     llm.ainvoke = AsyncMock(return_value=response)
     return DraftReviewer(llm)
 
@@ -136,6 +137,7 @@ async def test_missing_source_only_checks_wording_and_marks_partial():
 @pytest.mark.asyncio
 async def test_invalid_json_retries_then_returns_rule_fallback():
     llm = MagicMock()
+    llm.bind = MagicMock(return_value=llm)
     llm.ainvoke = AsyncMock(side_effect=[MagicMock(content="bad"), MagicMock(content="still bad")])
     reviewer = DraftReviewer(llm, max_retries=1)
 
@@ -151,11 +153,80 @@ async def test_invalid_json_retries_then_returns_rule_fallback():
 
 
 @pytest.mark.asyncio
+async def test_review_parses_json_wrapped_in_code_block():
+    """LLM 返回 ```json 代码块包裹的 JSON 时应正确解析。"""
+    draft_content = "我们是业内第一。"
+    payload = json.dumps(
+        {"summary": "检查完成", "issues": [_issue("absolute_claim", "medium", draft_content)]},
+        ensure_ascii=False,
+    )
+    reviewer = _reviewer(MagicMock(content=f"```json\n{payload}\n```"))
+
+    result = await reviewer.review(
+        {"title": "原文", "content_md": "产品发布。"},
+        {"title": "稿件", "content_md": draft_content},
+    )
+
+    assert result.status == "completed"
+    assert result.issues[0].category == "absolute_claim"
+
+
+@pytest.mark.asyncio
+async def test_review_parses_json_with_surrounding_text():
+    """LLM 返回带前后说明文字的 JSON 时应正确解析。"""
+    draft_content = "我们是业内第一。"
+    payload = json.dumps(
+        {"summary": "检查完成", "issues": [_issue("absolute_claim", "medium", draft_content)]},
+        ensure_ascii=False,
+    )
+    reviewer = _reviewer(MagicMock(content=f"好的，以下是检查结果：\n{payload}\n请参考以上分析。"))
+
+    result = await reviewer.review(
+        {"title": "原文", "content_md": "产品发布。"},
+        {"title": "稿件", "content_md": draft_content},
+    )
+
+    assert result.status == "completed"
+    assert result.issues[0].category == "absolute_claim"
+
+
+@pytest.mark.asyncio
+async def test_review_parses_json_with_trailing_commas_and_single_quotes():
+    """LLM 返回含尾逗号和单引号的 JSON 时应修复后正确解析。"""
+    draft_content = "我们是业内第一。"
+    # 故意包含尾逗号和单引号
+    raw = """{
+        'summary': '检查完成',
+        'issues': [
+            {
+                'issue_id': 'issue-001',
+                'category': 'absolute_claim',
+                'severity': 'medium',
+                'quote': '我们是业内第一。',
+                'reason': '绝对化用语',
+                'suggestion': '修改',
+                'suggested_rewrite': '我们在领域内有优势',
+            },
+        ],
+    }"""
+    reviewer = _reviewer(MagicMock(content=raw))
+
+    result = await reviewer.review(
+        {"title": "原文", "content_md": "产品发布。"},
+        {"title": "稿件", "content_md": draft_content},
+    )
+
+    assert result.status == "completed"
+    assert result.issues[0].category == "absolute_claim"
+
+
+@pytest.mark.asyncio
 async def test_timeout_without_rule_candidate_returns_failed():
     async def timeout(_messages):
         await asyncio.sleep(0.05)
 
     llm = MagicMock()
+    llm.bind = MagicMock(return_value=llm)
     llm.ainvoke = AsyncMock(side_effect=timeout)
     reviewer = DraftReviewer(llm, timeout_seconds=0.001, max_retries=0)
 

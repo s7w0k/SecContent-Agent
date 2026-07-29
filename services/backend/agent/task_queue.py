@@ -113,6 +113,128 @@ async def fetch_fulltext_batch(
     return {"requested": len(articles)}
 
 
+async def enrich_web_search_articles(
+    ctx: dict[str, Any],
+    article_url_hashes: list[str],
+    trace_id: str = "",
+    user_id: str = "",
+) -> dict[str, int]:
+    """Fetch full text for web search articles that have empty content_md."""
+    import httpx
+    from bs4 import BeautifulSoup
+    from utils.url_safety import is_safe_url
+
+    db = ctx["db"]
+    success = 0
+    failed = 0
+    skipped = 0
+
+    for url_hash in article_url_hashes:
+        article = await db["articles"].find_one({"url_hash": url_hash})
+        if not article:
+            skipped += 1
+            continue
+
+        # Skip if already has content
+        if article.get("content_md"):
+            skipped += 1
+            continue
+
+        url = article.get("url", "")
+        if not url or not is_safe_url(url):
+            await db["articles"].update_one(
+                {"url_hash": url_hash},
+                {"$set": {
+                    "content_fetch_status": "blocked",
+                    "content_fetch_error": "URL不安全",
+                }},
+            )
+            failed += 1
+            continue
+
+        # Mark as fetching
+        await db["articles"].update_one(
+            {"url_hash": url_hash},
+            {"$set": {"content_fetch_status": "fetching"}},
+        )
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=30,
+                follow_redirects=True,
+                max_redirects=5,
+                headers={"User-Agent": "PR-Agent-Fetch/1.0"},
+            ) as client:
+                resp = await client.get(url)
+                content_type = resp.headers.get("content-type", "")
+                if not any(
+                    t in content_type
+                    for t in ("text/html", "text/plain", "application/xhtml")
+                ):
+                    await db["articles"].update_one(
+                        {"url_hash": url_hash},
+                        {"$set": {
+                            "content_fetch_status": "blocked",
+                            "content_fetch_error": f"不支持的内容类型: {content_type}",
+                        }},
+                    )
+                    failed += 1
+                    continue
+
+                soup = BeautifulSoup(resp.text, "html.parser")
+                for tag in soup(["script", "style", "nav", "footer", "header"]):
+                    tag.decompose()
+                content = soup.get_text(separator="\n", strip=True)
+
+            if not content:
+                await db["articles"].update_one(
+                    {"url_hash": url_hash},
+                    {"$set": {
+                        "content_fetch_status": "failed",
+                        "content_fetch_error": "内容为空",
+                    }},
+                )
+                failed += 1
+                continue
+
+            await db["articles"].update_one(
+                {"url_hash": url_hash},
+                {"$set": {
+                    "content_md": content[:50000],
+                    "content_fetch_status": "completed",
+                    "content_fetch_error": None,
+                    "pipeline_status": "ready",
+                }},
+            )
+            success += 1
+        except httpx.TimeoutException:
+            await db["articles"].update_one(
+                {"url_hash": url_hash},
+                {"$set": {
+                    "content_fetch_status": "failed",
+                    "content_fetch_error": "抓取超时",
+                }},
+            )
+            failed += 1
+        except Exception as e:
+            await db["articles"].update_one(
+                {"url_hash": url_hash},
+                {"$set": {
+                    "content_fetch_status": "failed",
+                    "content_fetch_error": str(e)[:200],
+                }},
+            )
+            failed += 1
+
+    logger.info(
+        "Web search enrichment done: success=%d failed=%d skipped=%d",
+        success,
+        failed,
+        skipped,
+    )
+    return {"success": success, "failed": failed, "skipped": skipped}
+
+
 async def resume_pipeline(
     ctx: dict[str, Any],
     task_id: str,
@@ -288,6 +410,7 @@ class WorkerSettings:
         func(execute_pipeline, max_tries=_settings.ARQ_MAX_RETRIES + 1),
         func(resume_pipeline, max_tries=_settings.ARQ_MAX_RETRIES + 1),
         func(fetch_fulltext_batch, max_tries=_settings.ARQ_MAX_RETRIES + 1),
+        func(enrich_web_search_articles, max_tries=_settings.ARQ_MAX_RETRIES + 1),
         func(process_memory_event, max_tries=_settings.ARQ_MAX_RETRIES + 1),
         func(compile_memory_summaries, max_tries=_settings.ARQ_MAX_RETRIES + 1),
     ]

@@ -18,6 +18,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from agent.draft_chat import MAX_HISTORY_TURNS
 from agent.draft_reviewer import DraftReviewer, compute_content_hash
 from agent.style_profiler import load_style_hints
 from agent.template_compat import normalize_legacy_drafts, template_reference
@@ -193,6 +194,23 @@ async def _save_chat_message(
     )
 
 
+async def _load_chat_history(
+    db,
+    user_id: str,
+    url_hash: str,
+    draft_index: int,
+) -> list[dict]:
+    """从 chat_sessions 加载最近对话历史，供改稿时注入上下文。"""
+    session = await db["chat_sessions"].find_one(
+        {"user_id": user_id, "article_url_hash": url_hash, "draft_index": draft_index},
+    )
+    if session is None:
+        return []
+    messages = session.get("messages", [])
+    recent = messages[-MAX_HISTORY_TURNS * 2:] if messages else []
+    return [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in recent]
+
+
 # ═══════════════════════════════════════════════════════════════
 # Pydantic 模型
 # ═══════════════════════════════════════════════════════════════
@@ -301,6 +319,58 @@ async def chat_ask(
                 )
                 if revision is None:
                     raise HTTPException(status_code=404, detail="Revision not found")
+
+    # 手动触发偏好学习：用户输入"沉淀偏好""学习偏好"等关键词
+    memory_trigger_keywords = ("沉淀偏好", "学习偏好", "保存偏好", "记忆偏好", "提取偏好")
+    if any(kw in body.message for kw in memory_trigger_keywords):
+        if body.article_url_hash and body.draft_index is not None:
+            # 加载对话历史
+            chat_history = await _load_chat_history(db, user_id, body.article_url_hash, body.draft_index)
+            # 格式化为文本
+            history_text = "\n".join(
+                f"{'用户' if m.get('role') == 'user' else '助手'}: {m.get('content', '')[:500]}"
+                for m in chat_history
+            )
+            if not history_text.strip():
+                history_text = body.message
+
+            # 创建记忆事件
+            from agent.memory_event_service import create_memory_event
+            from models.memory import MemorySourceType
+
+            category_v2 = article.get("category_v2") if article else None
+            await create_memory_event(
+                db,
+                user_id,
+                MemorySourceType.EXPLICIT_CORRECTION,
+                source_id=f"manual-{generate_trace_id()[:8]}",
+                article_url_hash=body.article_url_hash,
+                draft_index=body.draft_index,
+                category_v2=category_v2,
+                payload={"chat_history": history_text},
+                arq_pool=getattr(request.app.state, "arq_pool", None),
+            )
+
+            # 保存对话记录
+            await _save_chat_message(
+                db, user_id, body.article_url_hash, body.draft_index, "user", body.message,
+            )
+            response_msg = "已从当前对话历史中提取偏好，正在后台学习。学习完成后可在「个人偏好」页面查看。"
+            await _save_chat_message(
+                db, user_id, body.article_url_hash, body.draft_index, "assistant", response_msg,
+            )
+
+            return {
+                "ok": True,
+                "data": {"answer": response_msg, "sources": []},
+                "trace_id": trace_id,
+            }
+        else:
+            return {
+                "ok": True,
+                "data": {"answer": "请在稿件对话页面中使用此功能，需要先选择一篇文章和草稿。", "sources": []},
+                "trace_id": trace_id,
+            }
 
     # 调用 Agent
     from agent.draft_chat import LLMError
@@ -415,6 +485,58 @@ async def chat_ask_stream(
                 )
                 if revision is None:
                     raise HTTPException(status_code=404, detail="Revision not found")
+
+    # 手动触发偏好学习：用户输入"沉淀偏好""学习偏好"等关键词
+    memory_trigger_keywords = ("沉淀偏好", "学习偏好", "保存偏好", "记忆偏好", "提取偏好")
+    if any(kw in body.message for kw in memory_trigger_keywords):
+        if body.article_url_hash and body.draft_index is not None:
+            # 加载对话历史
+            chat_history = await _load_chat_history(db, user_id, body.article_url_hash, body.draft_index)
+            history_text = "\n".join(
+                f"{'用户' if m.get('role') == 'user' else '助手'}: {m.get('content', '')[:500]}"
+                for m in chat_history
+            )
+            if not history_text.strip():
+                history_text = body.message
+
+            from agent.memory_event_service import create_memory_event
+            from models.memory import MemorySourceType
+
+            category_v2 = article.get("category_v2") if article else None
+            await create_memory_event(
+                db,
+                user_id,
+                MemorySourceType.EXPLICIT_CORRECTION,
+                source_id=f"manual-{generate_trace_id()[:8]}",
+                article_url_hash=body.article_url_hash,
+                draft_index=body.draft_index,
+                category_v2=category_v2,
+                payload={"chat_history": history_text},
+                arq_pool=getattr(request.app.state, "arq_pool", None),
+            )
+
+            response_msg = "已从当前对话历史中提取偏好，正在后台学习。学习完成后可在「个人偏好」页面查看。"
+
+            # 保存对话记录
+            await _save_chat_message(
+                db, user_id, body.article_url_hash, body.draft_index, "user", body.message,
+            )
+            await _save_chat_message(
+                db, user_id, body.article_url_hash, body.draft_index, "assistant", response_msg,
+            )
+
+            # 以 SSE 格式返回，携带 memory_learning 标记供前端轮询
+            async def memory_trigger_stream():
+                yield f"data: {json.dumps({'chunk': response_msg}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'done': True, 'answer': response_msg, 'memory_learning': True}, ensure_ascii=False)}\n\n"
+            return StreamingResponse(memory_trigger_stream(), media_type="text/event-stream")
+        else:
+            response_msg = "请在稿件对话页面中使用此功能，需要先选择一篇文章和草稿。"
+
+            async def memory_hint_stream():
+                yield f"data: {json.dumps({'chunk': response_msg}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'done': True, 'answer': response_msg}, ensure_ascii=False)}\n\n"
+            return StreamingResponse(memory_hint_stream(), media_type="text/event-stream")
 
     from agent.draft_chat import LLMError
 
@@ -550,6 +672,9 @@ async def revise_draft(
     draft = drafts[draft_index]
     article["_id"] = str(article["_id"])
 
+    # 加载对话历史，让改稿基于当前对话上下文
+    chat_history = await _load_chat_history(db, user_id, url_hash, draft_index)
+
     # 调用 Agent
     from agent.draft_chat import LLMError
 
@@ -561,6 +686,7 @@ async def revise_draft(
             style_hints=style_hints,
             selected_text=body.selected_text,
             selected_range=body.selected_range,
+            history=chat_history,
         )
     except LLMError as e:
         await _log_chat_operation(
@@ -674,6 +800,7 @@ async def revise_draft(
         category_v2=article.get("category_v2"),
         payload={"instruction": body.instruction[:500]},
         idempotency_key=f"revision_request:{revision_id}",
+        arq_pool=getattr(request.app.state, "arq_pool", None),
     )
 
     return {
@@ -723,6 +850,9 @@ async def revise_draft_stream(
     draft = drafts[draft_index]
     article["_id"] = str(article["_id"])
 
+    # 加载对话历史，让改稿基于当前对话上下文
+    chat_history = await _load_chat_history(db, user_id, url_hash, draft_index)
+
     from agent.draft_chat import LLMError, apply_section_revise, parse_revise_output
 
     async def event_stream():
@@ -736,6 +866,7 @@ async def revise_draft_stream(
                 style_hints=style_hints,
                 selected_text=body.selected_text,
                 selected_range=body.selected_range,
+                history=chat_history,
             ):
                 full_text.append(chunk)
                 yield f"data: {json.dumps({'chunk': chunk}, ensure_ascii=False)}\n\n"
@@ -831,6 +962,24 @@ async def revise_draft_stream(
                     "saved": saved,
                     "stream": True,
                 },
+            )
+
+            # 双写记忆事件（改稿请求）
+            from agent.memory_event_service import create_memory_event
+            from models.memory import MemorySourceType
+
+            await create_memory_event(
+                db,
+                user_id,
+                MemorySourceType.REVISION_REQUEST,
+                source_id=revision_id,
+                article_url_hash=url_hash,
+                draft_index=draft_index,
+                revision_id=revision_id,
+                category_v2=article.get("category_v2"),
+                payload={"instruction": body.instruction[:500]},
+                idempotency_key=f"revision_request:{revision_id}",
+                arq_pool=getattr(request.app.state, "arq_pool", None),
             )
 
             yield f"data: {json.dumps({'done': True, 'revision_id': revision_id, 'revised_content_md': revised_content, 'change_summary': change_summary, 'saved': saved}, ensure_ascii=False)}\n\n"
@@ -944,8 +1093,7 @@ async def apply_revision(
 
     drafts[draft_index]["content_md"] = target_revision["content_md"]
     target_revision["applied"] = True
-    review = await _review_draft_safely(request, article, drafts[draft_index])
-    drafts[draft_index]["review"] = review.model_dump(mode="json")
+    # 移除同步稿件检查，避免用户等待 LLM 推理；用户可单独点击"稿件检查"触发
 
     await db["user_drafts"].update_one(
         {"user_id": user_id, "article_url_hash": url_hash},
@@ -984,6 +1132,27 @@ async def apply_revision(
         user_id=user_id,
         action="chat_apply",
         resource=url_hash,
+    )
+
+    # 双写记忆事件（应用修订，强信号）
+    from agent.memory_event_service import create_memory_event
+    from models.memory import MemorySourceType
+
+    await create_memory_event(
+        db,
+        user_id,
+        MemorySourceType.REVISION_APPLY,
+        source_id=revision_id,
+        article_url_hash=url_hash,
+        draft_index=draft_index,
+        revision_id=revision_id,
+        category_v2=article.get("category_v2"),
+        payload={
+            "instruction": target_revision.get("instruction", "")[:500],
+            "diff_summary": target_revision.get("change_summary", [])[:10],
+        },
+        idempotency_key=f"revision_apply:{revision_id}",
+        arq_pool=getattr(request.app.state, "arq_pool", None),
     )
 
     return {

@@ -93,6 +93,7 @@ async def list_articles(
     min_score: int | None = Query(default=None, ge=0, le=200, description="最低综合分"),
     is_ai_security: bool | None = Query(default=None, description="是否AI安全相关"),
     is_high_value: bool | None = Query(default=None, description="是否高分文章(≥140)"),
+    has_drafts: bool | None = Query(default=None, description="是否已生成初稿"),
     keyword: str | None = Query(default=None, description="标题/摘要关键词搜索"),
     sort_by: str = Query(default="added_at", description="排序字段"),
     order: str = Query(default="desc", description="排序方向: asc / desc"),
@@ -114,6 +115,19 @@ async def list_articles(
         query["category_v2"] = category
     if is_ai_security is not None:
         query["is_ai_security"] = is_ai_security
+
+    # 按是否已生成初稿筛选（仅在已打分且达到初稿生成阈值的文章中筛选）
+    if has_drafts is not None:
+        draft_hashes = await db["user_drafts"].distinct(
+            "article_url_hash",
+            {"user_id": user_id, "drafts.0": {"$exists": True}},
+        )
+        if has_drafts:
+            query["url_hash"] = {"$in": draft_hashes}
+        else:
+            # 未生成初稿：排除已有初稿的，且只看达到初稿生成阈值的已打分文章
+            query["url_hash"] = {"$nin": draft_hashes}
+            query["pr_total_score"] = {"$gte": 80}
 
     # 排序
     sort_order = -1 if order == "desc" else 1
@@ -373,6 +387,35 @@ async def fetch_article_content(
                 soup = BeautifulSoup(r.text, "html.parser")
                 el = soup.select_one("#js_content") or soup.select_one(".rich_media_content")
                 content = el.get_text() if el else r.text[:5000]
+        elif source_type == "web_search":
+            # Web search: fetch via httpx with safety checks
+            from utils.url_safety import is_safe_url
+
+            if not is_safe_url(url):
+                raise HTTPException(status_code=422, detail="URL 不安全，无法抓取")
+
+            async with _httpx.AsyncClient(
+                timeout=30,
+                follow_redirects=True,
+                max_redirects=5,
+                headers={"User-Agent": "PR-Agent-Fetch/1.0"},
+            ) as client:
+                resp = await client.get(url)
+                content_type = resp.headers.get("content-type", "")
+                if not any(
+                    t in content_type for t in ("text/html", "text/plain", "application/xhtml")
+                ):
+                    raise HTTPException(
+                        status_code=422, detail=f"不支持的内容类型: {content_type}"
+                    )
+
+                from bs4 import BeautifulSoup
+
+                soup = BeautifulSoup(resp.text, "html.parser")
+                # Remove script and style elements
+                for tag in soup(["script", "style", "nav", "footer", "header"]):
+                    tag.decompose()
+                content = soup.get_text(separator="\n", strip=True)
         else:
             raise HTTPException(status_code=422, detail=f"不支持补抓来源类型: {source_type}")
 
@@ -382,7 +425,13 @@ async def fetch_article_content(
         # 保存到 DB
         await db["articles"].update_one(
             {"url_hash": url_hash},
-            {"$set": {"content_md": content[:50000]}},
+            {
+                "$set": {
+                    "content_md": content[:50000],
+                    "content_fetch_status": "completed",
+                    "content_fetch_error": None,
+                }
+            },
         )
         return {"ok": True, "content": content[:5000]}
     except HTTPException:
@@ -414,6 +463,7 @@ async def batch_fetch_content(
     # 按类型分组
     overseas = [a for a in articles if a.get("source_type") == "overseas_news" and a.get("url")]
     wechat = [a for a in articles if a.get("source_type") == "wechat_mp" and a.get("url")]
+    web_search = [a for a in articles if a.get("source_type") == "web_search" and a.get("url")]
     updated = 0
 
     # 海外新闻：调用 mcp-crawl 批量抓取
@@ -465,6 +515,65 @@ async def batch_fetch_content(
                 updated += 1
         except Exception:
             pass
+
+    # Web search articles: fetch directly with safety checks
+    import httpx as _httpx_ws
+    from utils.url_safety import is_safe_url
+
+    for article in web_search:
+        try:
+            url = article.get("url", "")
+            if not url or not is_safe_url(url):
+                await db["articles"].update_one(
+                    {"url_hash": article["url_hash"]},
+                    {"$set": {
+                        "content_fetch_status": "blocked",
+                        "content_fetch_error": "URL不安全",
+                    }},
+                )
+                continue
+
+            async with _httpx_ws.AsyncClient(
+                timeout=30, follow_redirects=True, max_redirects=5
+            ) as client:
+                resp = await client.get(url, headers={"User-Agent": "PR-Agent-Fetch/1.0"})
+                content_type = resp.headers.get("content-type", "")
+                if not any(
+                    t in content_type for t in ("text/html", "text/plain", "application/xhtml")
+                ):
+                    await db["articles"].update_one(
+                        {"url_hash": article["url_hash"]},
+                        {"$set": {
+                            "content_fetch_status": "blocked",
+                            "content_fetch_error": f"不支持的内容类型: {content_type}",
+                        }},
+                    )
+                    continue
+
+                from bs4 import BeautifulSoup
+
+                soup = BeautifulSoup(resp.text, "html.parser")
+                for tag in soup(["script", "style", "nav", "footer", "header"]):
+                    tag.decompose()
+                content = soup.get_text(separator="\n", strip=True)
+
+            await db["articles"].update_one(
+                {"url_hash": article["url_hash"]},
+                {"$set": {
+                    "content_md": content[:50000],
+                    "content_fetch_status": "completed",
+                    "content_fetch_error": None,
+                }},
+            )
+            updated += 1
+        except Exception as e:
+            await db["articles"].update_one(
+                {"url_hash": article["url_hash"]},
+                {"$set": {
+                    "content_fetch_status": "failed",
+                    "content_fetch_error": str(e)[:200],
+                }},
+            )
 
     return {"ok": True, "data": {"total": len(articles), "updated": updated}}
 

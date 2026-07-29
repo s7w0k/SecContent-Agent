@@ -151,6 +151,40 @@ services:
       start_period: 15s
 
   # ──────────────────────────────────────────────────────────
+  # SearXNG - 内部搜索聚合服务（仅内部网络可达）
+  # ──────────────────────────────────────────────────────────
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # SearXNG 需要写入临时文件，不能使用 read_only
+    volumes:
+      - ./deploy/searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - searxng_data:/etc/searxng/data
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080/
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-default-secret-change-me}
+      SEARXNG_REDIS_URL: ${SEARXNG_REDIS_URL:-redis://redis:6379/2}
+    # 不映射宿主机端口（仅内部网络可达）
+    ports:
+      - "18081:8080"
+    networks:
+      - agent-net
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')\" || exit 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ──────────────────────────────────────────────────────────
   # Backend - 核心后端服务（API 网关 + Agent 流水线）
   # ──────────────────────────────────────────────────────────
   backend:
@@ -199,6 +233,21 @@ services:
       LOG_ERROR_RETENTION_DAYS: ${LOG_ERROR_RETENTION_DAYS:-90}
       LOG_ACCESS_RETENTION_DAYS: ${LOG_ACCESS_RETENTION_DAYS:-7}
       LOG_AUDIT_RETENTION_DAYS: ${LOG_AUDIT_RETENTION_DAYS:-365}
+      # ── SearXNG 搜索 ──
+      WEB_SEARCH_ENABLED: ${WEB_SEARCH_ENABLED:-false}
+      SEARXNG_URL: http://searxng:8080
+      SEARXNG_CONNECT_TIMEOUT: ${SEARXNG_CONNECT_TIMEOUT:-3}
+      SEARXNG_READ_TIMEOUT: ${SEARXNG_READ_TIMEOUT:-15}
+      SEARXNG_MAX_RETRIES: ${SEARXNG_MAX_RETRIES:-1}
+      WEB_SEARCH_RESULT_LIMIT: ${WEB_SEARCH_RESULT_LIMIT:-20}
+      WEB_SEARCH_IMPORT_BATCH_LIMIT: ${WEB_SEARCH_IMPORT_BATCH_LIMIT:-20}
+      WEB_SEARCH_SESSION_TTL_MINUTES: ${WEB_SEARCH_SESSION_TTL_MINUTES:-30}
+      WEB_SEARCH_RATE_LIMIT_PER_MINUTE: ${WEB_SEARCH_RATE_LIMIT_PER_MINUTE:-20}
+      WEB_SEARCH_ALLOWED_CATEGORIES: ${WEB_SEARCH_ALLOWED_CATEGORIES:-general,news}
+      WEB_SEARCH_ALLOWED_LANGUAGES: ${WEB_SEARCH_ALLOWED_LANGUAGES:-all,zh-CN,en}
+      WEB_SEARCH_ENRICH_ON_IMPORT: ${WEB_SEARCH_ENRICH_ON_IMPORT:-true}
+      WEB_SEARCH_FETCH_MAX_CONCURRENCY: ${WEB_SEARCH_FETCH_MAX_CONCURRENCY:-3}
+      WEB_SEARCH_AUDIT_RETENTION_DAYS: ${WEB_SEARCH_AUDIT_RETENTION_DAYS:-180}
     volumes:
       - ./agent-security-briefs:/app/documents:rw
       - ./docs:/app/docs:ro
@@ -289,6 +338,8 @@ volumes:
   mongo_data:
     driver: local
   redis_data:
+    driver: local
+  searxng_data:
     driver: local
 
 # ═══════════════════════════════════════════════════════════════

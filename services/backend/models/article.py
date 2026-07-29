@@ -27,6 +27,7 @@ class SourceType(StrEnum):
     WECHAT_MP = "wechat_mp"  # 微信公众号
     PAPER = "paper"  # 学术论文
     USER_UPLOAD = "user_upload"  # 用户上传文件
+    WEB_SEARCH = "web_search"  # Web 搜索导入
 
 
 # ═══════════════════════════════════════════════════════════

@@ -32,6 +32,9 @@ SOURCE_WEIGHTS: dict[MemorySourceType, float] = {
 
 def _time_decay(observed_at: datetime, half_life_days: int) -> float:
     """时间衰减因子：0.5 ^ (age_days / half_life_days)"""
+    # MongoDB 返回的 datetime 可能没有时区信息，统一转为 UTC
+    if observed_at.tzinfo is None:
+        observed_at = observed_at.replace(tzinfo=UTC)
     age_days = (datetime.now(UTC) - observed_at).total_seconds() / 86400
     return 0.5 ** (age_days / max(half_life_days, 1))
 

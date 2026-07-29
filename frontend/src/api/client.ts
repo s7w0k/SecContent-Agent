@@ -75,11 +75,14 @@ import type {
   QRCodeResult,
   RegisterRequest,
   Report,
+  SearchImportResponse,
+  SearchStatusResponse,
   StatsData,
   StyleProfile,
   UploadArticleResult,
   User,
   UserActivityCreate,
+  WebSearchResponse,
 } from '../types';
 
 // ═══════════════════════════════════════════════════════════
@@ -582,7 +585,7 @@ export const chatApi = {
   async askStream(
     request: ChatAskRequest,
     onChunk: (chunk: string) => void,
-    onDone?: (fullAnswer: string) => void,
+    onDone?: (fullAnswer: string, meta?: { memory_learning?: boolean }) => void,
     onError?: (error: string) => void,
   ): Promise<void> {
     const url = buildSSEUrl('/chat/ask_stream');
@@ -630,7 +633,7 @@ export const chatApi = {
             if (event.chunk) {
               onChunk(event.chunk);
             } else if (event.done && event.answer !== undefined) {
-              onDone?.(event.answer);
+              onDone?.(event.answer, { memory_learning: event.memory_learning });
               return;
             } else if (event.error) {
               onError?.(event.error);
@@ -1065,6 +1068,51 @@ export const knowledgeAdminApi = {
 };
 
 // ═══════════════════════════════════════════════════════════
+// Web Search API（SearXNG 网络搜索）
+// ═══════════════════════════════════════════════════════════
+
+export const webSearchApi = {
+  /** 查询搜索功能状态 */
+  async getStatus(): Promise<SearchStatusResponse> {
+    const { data } = await client.get('/search/status');
+    return data.data;
+  },
+
+  /** 执行搜索 */
+  async search(params: {
+    q: string;
+    categories?: string[];
+    language?: string;
+    time_range?: string;
+    safesearch?: number;
+    pageno?: number;
+  }): Promise<WebSearchResponse> {
+    const { data } = await client.post('/search/query', params, { timeout: 20000 });
+    return data.data;
+  },
+
+  /** 获取已有搜索会话 */
+  async getSession(searchId: string): Promise<WebSearchResponse> {
+    const { data } = await client.get(`/search/sessions/${searchId}`);
+    return data.data;
+  },
+
+  /** 导入搜索结果为文章 */
+  async importResults(
+    searchId: string,
+    resultIds: string[],
+    idempotencyKey: string,
+  ): Promise<SearchImportResponse> {
+    const { data } = await client.post(
+      '/search/import',
+      { search_id: searchId, result_ids: resultIds },
+      { headers: { 'Idempotency-Key': idempotencyKey } },
+    );
+    return data.data;
+  },
+};
+
+// ═══════════════════════════════════════════════════════════
 // 统一导出
 // ═══════════════════════════════════════════════════════════
 
@@ -1086,6 +1134,7 @@ const api = {
   prompts: promptApi,
   knowledge: knowledgeApi,
   knowledgeAdmin: knowledgeAdminApi,
+  webSearchApi,
 };
 
 export default api;

@@ -27,6 +27,9 @@ vi.mock('./pages/SettingsPage', () => ({
     </button>
   ),
 }));
+vi.mock('./pages/WebSearchPage', () => ({
+  default: () => <div>Web Search Page</div>,
+}));
 
 describe('App', () => {
   const authValue: AuthContextValue = {

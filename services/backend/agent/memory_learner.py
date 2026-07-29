@@ -63,17 +63,20 @@ SYSTEM_PROMPT = """你是一个用户写作偏好提取专家。
 6. 不要推断用户身份、组织或敏感属性
 
 ## 输出格式
-返回 JSON 数组，每个元素包含：
+返回一个 JSON 对象，包含 candidates 数组。每个元素包含：
 - dimension: 偏好维度（tone/length/template/perspective/structure/title_style/content_order/revise_direction/avoid_pattern/required_pattern）
 - value: 偏好值（简短关键词）
-- display_text: 面向用户的描述文本
+- display_text: 面向用户的详细描述（2-4句话，包含：偏好内容、适用场景、原因或效果）
 - polarity: prefer（倾向）/avoid（避免）/require（必须）
 - scope_category_v2: 适用分类（null 表示全局）
 - scope_stage: 适用阶段（draft/revise/review）
 - evidence_summary: 证据摘要
 - extraction_confidence: 提取置信度 [0, 1]
 
-如果没有可提取的偏好，返回空数组 []。
+如果没有可提取的偏好，返回 {"candidates": []}。
+
+示例：
+{"candidates": [{"dimension": "title_style", "value": "no_type_prefix", "display_text": "章节标题只保留描述性信息，不加'事件概述''技术解读'等类型前缀。适用于所有PR稿件和公众号文章的章节标题。这样可以提升阅读的文学性和沉浸感，避免结构词打断叙事节奏。", "polarity": "avoid", "scope_category_v2": null, "scope_stage": "draft", "evidence_summary": "用户明确要求去掉章节标题中的类型前缀", "extraction_confidence": 0.85}]}
 """
 
 
@@ -82,6 +85,12 @@ class MemoryLearner:
 
     def __init__(self, llm: BaseChatModel, db: Any = None):
         self.llm = llm
+        # 启用 JSON 模式，强制 DeepSeek 返回合法 JSON
+        self.json_llm = (
+            llm.bind(response_format={"type": "json_object"})
+            if hasattr(llm, "bind")
+            else llm
+        )
         self.db = db
 
     async def extract_candidates(self, event: dict) -> ExtractionResult:
@@ -104,7 +113,7 @@ class MemoryLearner:
             return ExtractionResult(skipped=True, skip_reason="no extractable content")
 
         try:
-            response = await self.llm.ainvoke([
+            response = await self.json_llm.ainvoke([
                 SystemMessage(content=SYSTEM_PROMPT),
                 HumanMessage(content=user_prompt),
             ])
@@ -169,6 +178,13 @@ class MemoryLearner:
         elif source_type == "draft_download":
             parts.append("用户下载了草稿（弱正向信号）")
 
+        elif source_type == "explicit_correction":
+            chat_history = payload.get("chat_history", "")
+            if not chat_history:
+                return ""
+            parts.append("用户对话历史（请从中提取稳定的写作偏好）:")
+            parts.append(chat_history[:3000])
+
         else:
             return ""
 
@@ -186,20 +202,38 @@ class MemoryLearner:
             lines = text.split("\n")
             text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
 
+        data = None
         try:
-            data = json.loads(text)
+            parsed = json.loads(text)
+            # 支持 {"candidates": [...]} 对象格式
+            if isinstance(parsed, dict):
+                data = parsed.get("candidates", [])
+            elif isinstance(parsed, list):
+                data = parsed
         except json.JSONDecodeError:
-            # 尝试找到 JSON 数组
-            start = text.find("[")
-            end = text.rfind("]")
-            if start >= 0 and end > start:
+            # 回退：提取文本中的 JSON
+            import re
+
+            # 先尝试提取对象
+            obj_match = re.search(r"\{.*\}", text, re.DOTALL)
+            if obj_match:
                 try:
-                    data = json.loads(text[start : end + 1])
+                    parsed = json.loads(obj_match.group(0))
+                    if isinstance(parsed, dict):
+                        data = parsed.get("candidates", [])
                 except json.JSONDecodeError:
-                    logger.warning("failed to parse candidates: %s", text[:200])
-                    return []
-            else:
-                return []
+                    pass
+
+            # 再尝试提取数组（兼容旧格式）
+            if data is None:
+                start = text.find("[")
+                end = text.rfind("]")
+                if start >= 0 and end > start:
+                    try:
+                        data = json.loads(text[start : end + 1])
+                    except json.JSONDecodeError:
+                        logger.warning("failed to parse candidates: %s", text[:200])
+                        return []
 
         if not isinstance(data, list):
             return []

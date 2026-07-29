@@ -75,6 +75,7 @@ async def submit_personalization_feedback(
             "comment": (body.comment or "")[:300],
         },
         idempotency_key=f"pers_feedback:{feedback_id}",
+        arq_pool=getattr(request.app.state, "arq_pool", None),
     )
 
     # 如果用户拒绝，将记忆状态设为 rejected
