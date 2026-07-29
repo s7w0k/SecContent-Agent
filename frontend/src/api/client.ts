@@ -1043,6 +1043,44 @@ export const knowledgeApi = {
 // ═══════════════════════════════════════════════════════════
 
 export const knowledgeAdminApi = {
+  /** 创建草稿 */
+  async createDraft(documentId: string, baseContentHash: string): Promise<KnowledgeDraft> {
+    const { data } = await client.post('/admin/knowledge/drafts', {
+      document_id: documentId,
+      base_content_hash: baseContentHash,
+    });
+    return data.data;
+  },
+
+  /** 获取草稿详情（含正式内容） */
+  async getDraft(draftId: string): Promise<{ draft: KnowledgeDraft; formal_content: string; formal_hash: string }> {
+    const { data } = await client.get(`/admin/knowledge/drafts/${draftId}`);
+    return data.data;
+  },
+
+  /** 保存草稿 */
+  async updateDraft(draftId: string, contentMd: string, changeSummary?: string): Promise<KnowledgeDraft> {
+    const { data } = await client.put(`/admin/knowledge/drafts/${draftId}`, {
+      content_md: contentMd,
+      change_summary: changeSummary,
+    });
+    return data.data;
+  },
+
+  /** 放弃草稿 */
+  async deleteDraft(draftId: string): Promise<void> {
+    await client.delete(`/admin/knowledge/drafts/${draftId}`);
+  },
+
+  /** 列出草稿 */
+  async listDrafts(relativePath?: string, status?: string): Promise<KnowledgeDraft[]> {
+    const params: Record<string, string> = {};
+    if (relativePath) params.relative_path = relativePath;
+    if (status) params.status = status;
+    const { data } = await client.get('/admin/knowledge/drafts', { params });
+    return data.data;
+  },
+
   /** 校验草稿内容与加载器一致性 */
   async validateDraft(draftId: string): Promise<KnowledgeValidationResult> {
     const { data } = await client.post(`/admin/knowledge/drafts/${draftId}/validate`);
@@ -1062,6 +1100,36 @@ export const knowledgeAdminApi = {
   ): Promise<KnowledgeScorePreview> {
     const { data } = await client.post(`/admin/knowledge/drafts/${draftId}/preview-score`, {
       article,
+    });
+    return data.data;
+  },
+
+  /** 发布草稿到正式知识库 */
+  async publish(draftIds: string[], versionName?: string, releaseNotes?: string): Promise<Record<string, unknown>> {
+    const { data } = await client.post('/admin/knowledge/publications', {
+      draft_ids: draftIds,
+      version_name: versionName,
+      release_notes: releaseNotes,
+    });
+    return data.data;
+  },
+
+  /** 发布历史列表 */
+  async listPublications(limit = 20): Promise<Record<string, unknown>[]> {
+    const { data } = await client.get('/admin/knowledge/publications', { params: { limit } });
+    return data.data;
+  },
+
+  /** 发布详情 */
+  async getPublication(publicationId: string): Promise<Record<string, unknown>> {
+    const { data } = await client.get(`/admin/knowledge/publications/${publicationId}`);
+    return data.data;
+  },
+
+  /** 回滚发布 */
+  async rollback(publicationId: string, confirmVersion?: string): Promise<Record<string, unknown>> {
+    const { data } = await client.post(`/admin/knowledge/publications/${publicationId}/rollback`, {
+      confirm_version: confirmVersion,
     });
     return data.data;
   },

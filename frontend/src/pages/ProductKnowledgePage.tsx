@@ -1,11 +1,11 @@
 /**
  * 产品知识库页面（K.3）
  *
- * 全员可见的只读浏览页面：左侧目录树 + 搜索，右侧文档查看器，
- * 顶部展示知识库加载状态。所有登录用户均可访问。
+ * 全员可见的只读浏览页面：左侧目录树 + 搜索，右侧文档查看器。
+ * 管理员可创建草稿、编辑、校验、发布。
  */
 
-import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { EditOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import {
   Alert,
   Button,
@@ -14,6 +14,7 @@ import {
   Empty,
   Input,
   List,
+  Modal,
   Row,
   Skeleton,
   Space,
@@ -23,12 +24,14 @@ import {
   message,
 } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { knowledgeApi } from '../api/client';
+import { knowledgeAdminApi, knowledgeApi } from '../api/client';
+import { useAuth } from '../auth/useAuth';
 import KnowledgeTree from '../components/KnowledgeTree';
 import KnowledgeUsageBadge from '../components/KnowledgeUsageBadge';
 import KnowledgeViewer from '../components/KnowledgeViewer';
 import type {
   KnowledgeDocument,
+  KnowledgeDraft,
   KnowledgeSearchResult,
   KnowledgeStatus,
   KnowledgeTreeNode,
@@ -36,11 +39,6 @@ import type {
 } from '../types';
 
 const { Paragraph, Text, Title } = Typography;
-
-interface ProductKnowledgePageProps {
-  /** 占位 prop，为未来编辑能力预留；当前页面只读，始终为 false */
-  onDirtyChange?: (dirty: boolean) => void;
-}
 
 interface HttpLikeError {
   response?: {
@@ -66,7 +64,10 @@ function formatTime(iso: string): string {
   }
 }
 
-export default function ProductKnowledgePage({ onDirtyChange }: ProductKnowledgePageProps) {
+export default function ProductKnowledgePage() {
+  const { user } = useAuth();
+  const isAdmin = user?.is_admin ?? false;
+
   const [tree, setTree] = useState<KnowledgeTreeNode[]>([]);
   const [status, setStatus] = useState<KnowledgeStatus | null>(null);
   const [usageMap, setUsageMap] = useState<KnowledgeUsageItem[]>([]);
@@ -81,10 +82,12 @@ export default function ProductKnowledgePage({ onDirtyChange }: ProductKnowledge
   const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
 
-  // 只读页面，始终通知非脏状态
-  useEffect(() => {
-    onDirtyChange?.(false);
-  }, [onDirtyChange]);
+  // 草稿编辑状态
+  const [draftModalOpen, setDraftModalOpen] = useState(false);
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [draftContent, setDraftContent] = useState('');
+  const [currentDraft, setCurrentDraft] = useState<KnowledgeDraft | null>(null);
+  const [draftSaving, setDraftSaving] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -110,8 +113,6 @@ export default function ProductKnowledgePage({ onDirtyChange }: ProductKnowledge
   }, [loadData]);
 
   const directScoringPaths = useMemo(() => {
-    // 从搜索结果或目录树中无法直接获得该信息，留空集合。
-    // 如需高亮，可在此扩展通过单独接口拉取。
     return new Set<string>();
   }, []);
 
@@ -156,6 +157,123 @@ export default function ProductKnowledgePage({ onDirtyChange }: ProductKnowledge
     },
     [handleSelect],
   );
+
+  // 创建草稿
+  const handleCreateDraft = useCallback(async () => {
+    if (!selectedDoc) return;
+    if (!selectedDoc.editable) {
+      message.warning('该文件不允许编辑');
+      return;
+    }
+    setDraftLoading(true);
+    try {
+      const draft = await knowledgeAdminApi.createDraft(
+        selectedDoc.document_id,
+        selectedDoc.content_hash,
+      );
+      setCurrentDraft(draft);
+      setDraftContent(draft.content_md);
+      setDraftModalOpen(true);
+    } catch (err) {
+      message.error(getErrorMessage(err, '创建草稿失败'));
+    } finally {
+      setDraftLoading(false);
+    }
+  }, [selectedDoc]);
+
+  // 保存草稿
+  const handleSaveDraft = useCallback(async () => {
+    if (!currentDraft) return;
+    if (!draftContent.trim()) {
+      message.warning('草稿内容不能为空');
+      return;
+    }
+    setDraftSaving(true);
+    try {
+      const updated = await knowledgeAdminApi.updateDraft(
+        currentDraft.draft_id,
+        draftContent,
+      );
+      setCurrentDraft(updated);
+      message.success('草稿已保存');
+    } catch (err) {
+      message.error(getErrorMessage(err, '保存失败'));
+    } finally {
+      setDraftSaving(false);
+    }
+  }, [currentDraft, draftContent]);
+
+  // 校验草稿
+  const handleValidateDraft = useCallback(async () => {
+    if (!currentDraft) return;
+    setDraftSaving(true);
+    try {
+      const result = await knowledgeAdminApi.validateDraft(currentDraft.draft_id);
+      if (result.status === 'passed') {
+        message.success(`校验通过（${result.loader_file_count} 个文件，${result.loader_relevant_count} 个评分相关）`);
+      } else {
+        message.warning(`校验失败：${result.errors.join('; ')}`);
+      }
+      // 刷新草稿状态
+      const data = await knowledgeAdminApi.getDraft(currentDraft.draft_id);
+      setCurrentDraft(data.draft);
+    } catch (err) {
+      message.error(getErrorMessage(err, '校验失败'));
+    } finally {
+      setDraftSaving(false);
+    }
+  }, [currentDraft]);
+
+  // 发布草稿
+  const handlePublishDraft = useCallback(async () => {
+    if (!currentDraft) return;
+    Modal.confirm({
+      title: '发布到正式知识库',
+      content: '发布后将立即生效，影响后续文章打分和草稿生成。确认发布？',
+      okText: '发布',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setDraftSaving(true);
+        try {
+          await knowledgeAdminApi.publish([currentDraft.draft_id]);
+          message.success('发布成功，知识库已刷新');
+          setDraftModalOpen(false);
+          setCurrentDraft(null);
+          await loadData();
+        } catch (err) {
+          message.error(getErrorMessage(err, '发布失败'));
+        } finally {
+          setDraftSaving(false);
+        }
+      },
+    });
+  }, [currentDraft, loadData]);
+
+  // 放弃草稿
+  const handleDiscardDraft = useCallback(async () => {
+    if (!currentDraft) return;
+    Modal.confirm({
+      title: '放弃草稿',
+      content: '放弃后草稿将被删除，不影响正式文件。',
+      okText: '放弃',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setDraftSaving(true);
+        try {
+          await knowledgeAdminApi.deleteDraft(currentDraft.draft_id);
+          message.success('草稿已放弃');
+          setDraftModalOpen(false);
+          setCurrentDraft(null);
+        } catch (err) {
+          message.error(getErrorMessage(err, '放弃失败'));
+        } finally {
+          setDraftSaving(false);
+        }
+      },
+    });
+  }, [currentDraft]);
 
   const renderLeftContent = () => {
     if (searchKeyword) {
@@ -224,9 +342,21 @@ export default function ProductKnowledgePage({ onDirtyChange }: ProductKnowledge
           </Paragraph>
         </Col>
         <Col>
-          <Button icon={<ReloadOutlined />} loading={loading} onClick={loadData}>
-            刷新
-          </Button>
+          <Space>
+            {isAdmin && selectedDoc?.editable && (
+              <Button
+                type="primary"
+                icon={<EditOutlined />}
+                loading={draftLoading}
+                onClick={handleCreateDraft}
+              >
+                编辑
+              </Button>
+            )}
+            <Button icon={<ReloadOutlined />} loading={loading} onClick={loadData}>
+              刷新
+            </Button>
+          </Space>
         </Col>
       </Row>
 
@@ -319,11 +449,75 @@ export default function ProductKnowledgePage({ onDirtyChange }: ProductKnowledge
           </Card>
         </Col>
         <Col xs={24} md={16}>
-          <Card title="文档内容" size="small" styles={{ body: { padding: 16 } }}>
+          <Card
+            title="文档内容"
+            size="small"
+            styles={{ body: { padding: 16 } }}
+          >
             <KnowledgeViewer document={selectedDoc} loading={docLoading} />
           </Card>
         </Col>
       </Row>
+
+      {/* 草稿编辑弹窗 */}
+      <Modal
+        title={`编辑草稿 - ${currentDraft?.relative_path ?? ''}`}
+        open={draftModalOpen}
+        onCancel={() => {
+          setDraftModalOpen(false);
+          setCurrentDraft(null);
+        }}
+        width={900}
+        footer={
+          <Space>
+            <Button
+              danger
+              onClick={handleDiscardDraft}
+              loading={draftSaving}
+            >
+              放弃草稿
+            </Button>
+            <Button onClick={handleValidateDraft} loading={draftSaving}>
+              校验
+            </Button>
+            <Button onClick={handleSaveDraft} loading={draftSaving}>
+              保存
+            </Button>
+            <Button type="primary" onClick={handlePublishDraft} loading={draftSaving}>
+              发布
+            </Button>
+          </Space>
+        }
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          {currentDraft?.validation && (
+            <Alert
+              type={currentDraft.validation.status === 'passed' ? 'success' : 'error'}
+              showIcon
+              message={
+                currentDraft.validation.status === 'passed'
+                  ? '校验通过'
+                  : `校验失败：${currentDraft.validation.errors.join('; ')}`
+              }
+              description={
+                currentDraft.validation.warnings.length > 0
+                  ? currentDraft.validation.warnings.join('\n')
+                  : undefined
+              }
+            />
+          )}
+          <Input.TextArea
+            value={draftContent}
+            onChange={(e) => setDraftContent(e.target.value)}
+            rows={20}
+            style={{ fontFamily: 'monospace', fontSize: 13 }}
+          />
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            草稿 ID: {currentDraft?.draft_id ?? '-'} · 状态: {currentDraft?.status ?? '-'} ·
+            更新时间: {currentDraft?.updated_at ? formatTime(currentDraft.updated_at) : '-'}
+          </Text>
+        </Space>
+      </Modal>
     </div>
   );
 }

@@ -24,6 +24,7 @@ export interface User {
   display_name: string;
   email?: string | null;
   is_developer: boolean;
+  is_admin: boolean;
   created_at: string;
 }
 
@@ -487,6 +488,21 @@ export interface KnowledgeUsageItem {
 }
 
 // ── 知识库草稿校验与预览（K.5）──────────────────────
+
+export interface KnowledgeDraft {
+  draft_id: string;
+  document_id: string;
+  relative_path: string;
+  base_content_hash: string;
+  content_md: string;
+  status: string;
+  validation: KnowledgeValidationResult | null;
+  change_summary: string | null;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface KnowledgeValidationResult {
   status: 'passed' | 'failed';
