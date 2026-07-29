@@ -1,4 +1,7 @@
-"""搜索频率限制与结果缓存（基于 Redis）。"""
+"""搜索频率限制与结果缓存（基于 Redis）。
+
+Redis 不可用时自动降级：频率限制放行、缓存读写跳过。
+"""
 
 from __future__ import annotations
 
@@ -38,15 +41,20 @@ async def check_rate_limit(user_id: str) -> bool:
 
     Returns:
         True 表示允许搜索，False 表示被限流。
+        Redis 不可用时返回 True（放行）。
     """
     s = get_settings()
     limit = s.WEB_SEARCH_RATE_LIMIT_PER_MINUTE
     key = f"search:rate:{user_id}"
 
-    r = _get_redis()
-    current = await r.incr(key)
-    if current == 1:
-        await r.expire(key, 60)
+    try:
+        r = _get_redis()
+        current = await r.incr(key)
+        if current == 1:
+            await r.expire(key, 60)
+    except Exception as exc:
+        logger.warning("rate limit check skipped (redis unavailable): %s", exc)
+        return True
 
     if current > limit:
         logger.warning(
@@ -92,14 +100,19 @@ async def get_cached_result(
     safesearch: int,
     pageno: int,
 ) -> dict[str, Any] | None:
-    """从 Redis 获取缓存的搜索结果。"""
+    """从 Redis 获取缓存的搜索结果。Redis 不可用时返回 None（缓存未命中）。"""
     s = get_settings()
     if s.WEB_SEARCH_CACHE_TTL_MINUTES <= 0:
         return None
 
     key = _cache_key(q, categories, language, time_range, safesearch, pageno)
-    r = _get_redis()
-    raw = await r.get(key)
+    try:
+        r = _get_redis()
+        raw = await r.get(key)
+    except Exception as exc:
+        logger.warning("cache read skipped (redis unavailable): %s", exc)
+        return None
+
     if raw is None:
         return None
 
@@ -116,13 +129,16 @@ async def set_cached_result(
     pageno: int,
     data: dict[str, Any],
 ) -> None:
-    """将搜索结果写入 Redis 缓存。"""
+    """将搜索结果写入 Redis 缓存。Redis 不可用时跳过。"""
     s = get_settings()
     ttl = s.WEB_SEARCH_CACHE_TTL_MINUTES
     if ttl <= 0:
         return
 
     key = _cache_key(q, categories, language, time_range, safesearch, pageno)
-    r = _get_redis()
-    await r.set(key, json.dumps(data, ensure_ascii=False), ex=ttl * 60)
-    logger.info("search cache set: q_len=%d ttl=%dmin", len(q), ttl)
+    try:
+        r = _get_redis()
+        await r.set(key, json.dumps(data, ensure_ascii=False), ex=ttl * 60)
+        logger.info("search cache set: q_len=%d ttl=%dmin", len(q), ttl)
+    except Exception as exc:
+        logger.warning("cache write skipped (redis unavailable): %s", exc)

@@ -1162,7 +1162,7 @@ async def apply_revision(
             "draft_index": draft_index,
             "revision_id": revision_id,
             "applied": True,
-            "review": drafts[draft_index]["review"],
+            "review": drafts[draft_index].get("review"),
             "trace_id": trace_id,
         },
     }

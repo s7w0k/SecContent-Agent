@@ -64,6 +64,6 @@ def test_invalid_custom_placeholder_falls_back_to_default(generator, caplog):
             template_override=invalid,
         )
 
-    assert rendered.startswith("你是一个智能体安全行业的技术 PR 撰稿人。")
+    assert rendered.startswith("你是亚信安全市场部的公众号撰稿人。")
     assert "产品知识内容" in rendered
     assert "降级默认" in caplog.text
