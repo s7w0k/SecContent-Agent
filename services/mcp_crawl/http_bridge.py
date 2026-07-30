@@ -151,7 +151,9 @@ async def _init_mcp() -> None:
     _mcp_tools = {
         tool.name: {
             "description": tool.description,
-            "inputSchema": tool.inputSchema,
+            # mcp 包新版将 Tool.inputSchema 改为 input_schema，兼容两种
+            "inputSchema": getattr(tool, "inputSchema", None)
+            or getattr(tool, "input_schema", None),
         }
         for tool in result.tools
     }
