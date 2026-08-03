@@ -107,7 +107,14 @@ def test_remote_compose_resolves_to_five_core_services_with_matching_config():
     config = json.loads(result.stdout)
     services = config["services"]
 
-    assert set(services) == {"mongodb", "redis", "mcp-wewe", "backend", "backend-worker"}
+    assert set(services) == {
+        "mongodb",
+        "redis",
+        "mcp-wewe",
+        "searxng",
+        "backend",
+        "backend-worker",
+    }
     for service_name in ("backend", "backend-worker"):
         service = services[service_name]
         assert "mcp-crawl" not in service.get("depends_on", {})

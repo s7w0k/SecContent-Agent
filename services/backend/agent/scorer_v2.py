@@ -37,7 +37,7 @@ import re
 from typing import Any
 
 from agent.llm_wrapper import LLMWrapper
-from agent.schemas import ScoreResultSchema
+from agent.schemas import SingleProductScoreSchema
 from langchain_core.language_models import BaseChatModel
 
 logger = logging.getLogger("backend.agent.scorer_v2")
@@ -59,40 +59,40 @@ _TOO_HIGH_KEYWORDS = ("偏高", "过高", "打分高", "分数高", "too_high", 
 _TOO_LOW_KEYWORDS = ("偏低", "过低", "打分低", "分数低", "too_low", "low")
 
 SYSTEM_PROMPT_TEMPLATE = """你是一个智能体安全领域的技术情报分析师。
-请根据产品知识库和文章内容，从以下两个维度对文章评分。
+请根据产品知识库和文章内容，对指定产品评估相关性，并评估事件影响面。
 
 ## 产品知识库
 {knowledge_context}
 
+## 待评产品
+{product_list}
+
 ## 评分维度
 
-### 1. 产品能力相关度 (product_relevance: 0-100)
-评估这个事件与我们产品的关系——产品能否解决它？能否蹭这个热点？
+### 1. 该产品能力相关度 (relevance: 0-100)
+评估这个事件与上述产品的关系--产品能否解决它？能否蹭这个热点？
 
-- **90-100**: 直接涉及产品核心能力（身份安全、Agent安全、MCP协议），产品能直接解决/参与
+- **90-100**: 直接涉及产品核心能力，产品能直接解决/参与
 - **70-89**: 与产品能力有明确交集，可作为典型案例或营销素材
 - **50-69**: 泛安全/泛AI事件，产品能部分关联
 - **30-49**: 弱关联，仅作行业背景参考
 - **0-29**: 与产品无关
 
 ### 2. 事件影响面与传播力 (event_impact: 0-100)
-评估这个事件本身有多大的话题价值——是我们蹭它，还是找论据？
+评估这个事件本身有多大的话题价值。
 
-- **90-100**: 全球性/国家级重大事件，主流媒体广泛报道，行业标杆意义
-- **70-89**: 行业内有较大影响，安全圈热传，可引发客户关注
+- **90-100**: 全球性/国家级重大事件，主流媒体广泛报道
+- **70-89**: 行业内有较大影响，安全圈热传
 - **50-69**: 细分领域有影响力，专业媒体覆盖
 - **30-49**: 一般性报道，有一定参考价值
 - **0-29**: 常规动态，无显著传播力
 
-## 综合分
-综合分 = 产品能力相关度 + 事件影响面与传播力（范围 0-200）
-
 ## 输出格式
 严格输出 JSON，不要加代码块标记：
-{{"product_relevance": 85, "event_impact": 70, "reason": "40字以内的打分理由", "tags": ["标签"]}}
+{{"relevance": 85, "event_impact": 70, "reason": "40字以内的打分理由"}}
 """
 
-USER_PROMPT_TEMPLATE = """请对以下文章进行双维度评分：
+USER_PROMPT_TEMPLATE = """请对以下文章进行评分：
 
 **标题**: {title}
 **来源**: {source}
@@ -149,13 +149,32 @@ class ScoringAgentV2:
         user_id: str = "",
         trace_id: str = "",
         task_id: str = "",
+        product_list_override: str | None = None,
+        products: list[dict] | None = None,
     ) -> dict:
-        """单篇打分，返回包含 product_relevance / event_impact / pr_total_score 的 dict。"""
+        """单篇打分，按产品并发调用 LLM。
+
+        Args:
+            product_list_override: 直接传入产品列表文本（旧模式，单次调用）。
+            products: 产品列表 [{product_id, product_name}]，每个产品单独并发评分。
+        """
         art = (
             article
             if isinstance(article, dict)
             else (article.model_dump() if hasattr(article, "model_dump") else article)
         )
+
+        if products:
+            return await self._score_concurrent(
+                art,
+                products=products,
+                threshold=threshold,
+                threshold_adjustment=threshold_adjustment,
+                user_id=user_id,
+                trace_id=trace_id,
+                task_id=task_id,
+            )
+
         return await self._score_with_llm(
             art,
             threshold=threshold,
@@ -163,7 +182,128 @@ class ScoringAgentV2:
             user_id=user_id,
             trace_id=trace_id,
             task_id=task_id,
+            product_list_override=product_list_override,
         )
+
+    async def _score_concurrent(
+        self,
+        article: dict,
+        *,
+        products: list[dict],
+        threshold: int = PR_THRESHOLD,
+        threshold_adjustment: int = 0,
+        user_id: str = "",
+        trace_id: str = "",
+        task_id: str = "",
+    ) -> dict:
+        """对多个产品并发评分，每个产品一次 LLM 调用。"""
+        sem = asyncio.Semaphore(5)
+
+        async def score_one_product(product: dict) -> dict:
+            async with sem:
+                return await self._score_single_product(
+                    article,
+                    product_id=product["product_id"],
+                    product_name=product["product_name"],
+                    threshold=threshold,
+                    threshold_adjustment=threshold_adjustment,
+                    user_id=user_id,
+                    trace_id=trace_id,
+                    task_id=task_id,
+                )
+
+        results = await asyncio.gather(*[score_one_product(p) for p in products])
+
+        # 聚合结果
+        product_scores = []
+        max_relevance = 0
+        event_impact = 0
+        best_reason = ""
+        for r in results:
+            if r.get("_fallback"):
+                continue
+            product_scores.append({
+                "product_id": r["product_id"],
+                "product_name": r["product_name"],
+                "score": r["relevance"],
+                "reason": r.get("reason", ""),
+            })
+            if r["relevance"] > max_relevance:
+                max_relevance = r["relevance"]
+                best_reason = r.get("reason", "")
+            if r.get("event_impact", 0) > event_impact:
+                event_impact = r["event_impact"]
+
+        pr_total = max_relevance + event_impact
+        return {
+            "product_relevance": max_relevance,
+            "event_impact": event_impact,
+            "pr_total_score": pr_total,
+            "score_reason": best_reason,
+            "product_scores": product_scores,
+            "is_pr_candidate": pr_total >= threshold,
+            "pr_threshold": threshold,
+            "threshold_adjustment": threshold_adjustment,
+            "_fallback": len(product_scores) == 0,
+        }
+
+    async def _score_single_product(
+        self,
+        article: dict,
+        *,
+        product_id: str,
+        product_name: str,
+        threshold: int = PR_THRESHOLD,
+        threshold_adjustment: int = 0,
+        user_id: str = "",
+        trace_id: str = "",
+        task_id: str = "",
+    ) -> dict:
+        """对单个产品评分（一次 LLM 调用）。"""
+        system_prompt = await self._build_system_prompt_for_product(
+            product_id, product_name, user_id=user_id
+        )
+        user_prompt = self._build_user_prompt(article)
+
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                structured = await self.llm_wrapper.invoke_structured(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    output_schema=SingleProductScoreSchema,
+                    agent_type="scorer_v2",
+                    user_id=user_id,
+                    trace_id=trace_id,
+                    task_id=task_id,
+                )
+                data = structured.model_dump()
+                return {
+                    "product_id": product_id,
+                    "product_name": product_name,
+                    "relevance": max(SCORE_MIN, min(SCORE_MAX, int(data.get("relevance", 0)))),
+                    "event_impact": max(SCORE_MIN, min(SCORE_MAX, int(data.get("event_impact", 0)))),
+                    "reason": str(data.get("reason", ""))[:200],
+                    "_fallback": False,
+                }
+            except Exception as e:
+                if attempt == MAX_RETRIES:
+                    return {
+                        "product_id": product_id,
+                        "product_name": product_name,
+                        "relevance": 0,
+                        "event_impact": 0,
+                        "reason": f"Failed: {e!s}"[:200],
+                        "_fallback": True,
+                    }
+
+        return {
+            "product_id": product_id,
+            "product_name": product_name,
+            "relevance": 0,
+            "event_impact": 0,
+            "reason": "max retries",
+            "_fallback": True,
+        }
 
     async def score_batch(
         self,
@@ -304,7 +444,7 @@ class ScoringAgentV2:
     # ── Prompt 构建 ──────────────────────────────────────────
 
     def _build_system_prompt(self) -> str:
-        """构建 System Prompt（含 V2 知识库上下文）。"""
+        """构建 System Prompt（含 V2 知识库上下文和产品列表）。"""
         if hasattr(self.knowledge, "as_scoring_prompt"):
             knowledge_context = self.knowledge.as_scoring_prompt()
         elif hasattr(self.knowledge, "as_system_prompt"):
@@ -313,7 +453,115 @@ class ScoringAgentV2:
             knowledge_context = ""
         if not knowledge_context:
             knowledge_context = "（知识库未加载，使用通用安全知识）"
-        return SYSTEM_PROMPT_TEMPLATE.format(knowledge_context=knowledge_context)
+
+        # 构建产品列表
+        product_list = self._build_product_list()
+
+        return SYSTEM_PROMPT_TEMPLATE.format(
+            knowledge_context=knowledge_context,
+            product_list=product_list,
+        )
+
+    @staticmethod
+    def _build_product_list() -> str:
+        """构建待评产品列表文本。"""
+        try:
+            from agent.product_catalog import _PRODUCTS
+
+            products = [p for p in _PRODUCTS if p.published]
+            if not products:
+                return "（无可用产品，请综合评估）"
+            lines = []
+            for p in products:
+                lines.append(f"- product_id: {p.product_id}, product_name: {p.name}")
+            return "\n".join(lines)
+        except Exception:
+            return "（产品目录未加载，请综合评估）"
+
+    @staticmethod
+    def _build_product_list_for_ids(product_ids: list[str]) -> str:
+        """构建指定产品的列表文本。"""
+        try:
+            from agent.product_catalog import _PRODUCTS
+
+            products = [p for p in _PRODUCTS if p.product_id in product_ids]
+            if not products:
+                return ScoringAgentV2._build_product_list()
+            lines = []
+            for p in products:
+                lines.append(f"- product_id: {p.product_id}, product_name: {p.name}")
+            return "\n".join(lines)
+        except Exception:
+            return ScoringAgentV2._build_product_list()
+
+    def _build_system_prompt_with_text(self, product_list_text: str) -> str:
+        """构建包含指定产品列表文本的系统提示词。"""
+        if hasattr(self.knowledge, "as_scoring_prompt"):
+            knowledge_context = self.knowledge.as_scoring_prompt()
+        elif hasattr(self.knowledge, "as_system_prompt"):
+            knowledge_context = self.knowledge.as_system_prompt()
+        else:
+            knowledge_context = ""
+        if not knowledge_context:
+            knowledge_context = "（知识库未加载，使用通用安全知识）"
+        return SYSTEM_PROMPT_TEMPLATE.format(
+            knowledge_context=knowledge_context,
+            product_list=product_list_text,
+        )
+
+    async def _build_system_prompt_for_product(
+        self,
+        product_id: str,
+        product_name: str,
+        *,
+        user_id: str = "",
+    ) -> str:
+        """按产品构建系统提示词。
+
+        只注入当前待评产品的知识：
+          - 全局产品：读取该产品 knowledge_root 下的 overview.md / market-brief.md
+          - 用户级产品：从 user_knowledge_entries 读取该用户该产品的知识条目
+          - 共享参考文件（hot-event-playbook 等）作为兜底上下文
+
+        知识切片解析失败时回退到全局评分知识。
+        """
+        knowledge_context = ""
+        if self.db is not None:
+            try:
+                from agent.knowledge_slice import KnowledgeSliceResolver
+
+                try:
+                    from config import get_settings
+
+                    base_dir = get_settings().KNOWLEDGE_BASE_DIR
+                except Exception:
+                    base_dir = "/app/docs"
+
+                resolver = KnowledgeSliceResolver(base_dir, db=self.db)
+                slice_result = await resolver.resolve(
+                    purpose="score",
+                    product_ids=[product_id],
+                    user_id=user_id or None,
+                )
+                knowledge_context = slice_result.content
+            except Exception as exc:
+                logger.warning(
+                    "Knowledge slice resolve failed for product %s: %s", product_id, exc
+                )
+
+        if not knowledge_context:
+            if hasattr(self.knowledge, "as_scoring_prompt"):
+                knowledge_context = self.knowledge.as_scoring_prompt()
+            elif hasattr(self.knowledge, "as_system_prompt"):
+                knowledge_context = self.knowledge.as_system_prompt()
+        if not knowledge_context:
+            knowledge_context = "（知识库未加载，使用通用安全知识）"
+
+        product_list_text = f"- product_id: {product_id}, product_name: {product_name}"
+        return SYSTEM_PROMPT_TEMPLATE.format(
+            knowledge_context=knowledge_context,
+            product_list=product_list_text,
+        )
 
     @staticmethod
     def _build_user_prompt(article: dict) -> str:
@@ -341,26 +589,43 @@ class ScoringAgentV2:
         user_id: str = "",
         trace_id: str = "",
         task_id: str = "",
+        product_list_override: str | None = None,
     ) -> dict:
         """调用 LLM 进行双维度打分（含重试和降级）。"""
+        # 构建系统提示词
+        if product_list_override is not None:
+            system_prompt = self._build_system_prompt_with_text(product_list_override)
+        else:
+            system_prompt = self.system_prompt
         user_prompt = self._build_user_prompt(article)
 
         for attempt in range(MAX_RETRIES + 1):
             try:
                 structured = await self.llm_wrapper.invoke_structured(
-                    system_prompt=self.system_prompt,
+                    system_prompt=system_prompt,
                     user_prompt=user_prompt,
-                    output_schema=ScoreResultSchema,
+                    output_schema=SingleProductScoreSchema,
                     agent_type="scorer_v2",
                     user_id=user_id,
                     trace_id=trace_id,
                     task_id=task_id,
                 )
-                return self._enrich_result(
-                    self._validate_and_fix(structured.model_dump()),
-                    threshold=threshold,
-                    threshold_adjustment=threshold_adjustment,
-                )
+                data = structured.model_dump()
+                relevance = max(SCORE_MIN, min(SCORE_MAX, int(data.get("relevance", 0))))
+                event_impact = max(SCORE_MIN, min(SCORE_MAX, int(data.get("event_impact", 0))))
+                reason = str(data.get("reason", ""))[:200]
+                pr_total = relevance + event_impact
+                return {
+                    "product_relevance": relevance,
+                    "event_impact": event_impact,
+                    "pr_total_score": pr_total,
+                    "score_reason": reason,
+                    "product_scores": [],
+                    "is_pr_candidate": pr_total >= threshold,
+                    "pr_threshold": threshold,
+                    "threshold_adjustment": threshold_adjustment,
+                    "_fallback": False,
+                }
             except Exception as e:
                 if attempt == MAX_RETRIES:
                     return self._fallback_score(
@@ -381,7 +646,7 @@ class ScoringAgentV2:
     def _parse_response(text: str) -> dict:
         """从 LLM 响应中提取 JSON。
 
-        支持: 1) ```json ``` 代码块 2) 纯 JSON 3) 文本中 JSON 对象
+        支持: 1) ```json ``` 代码块 2) 纯 JSON 3) 文本中 JSON 对象（含嵌套）
         """
         code_block = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
         if code_block:
@@ -392,10 +657,13 @@ class ScoringAgentV2:
         except json.JSONDecodeError:
             pass
 
-        obj_match = re.search(r"\{[^{}]*\}", text)
-        if obj_match:
+        # 匹配最外层花括号（支持嵌套，如 product_scores 数组中的对象）
+        first_brace = text.find("{")
+        last_brace = text.rfind("}")
+        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+            candidate = text[first_brace : last_brace + 1]
             try:
-                return json.loads(obj_match.group(0))
+                return json.loads(candidate)
             except json.JSONDecodeError:
                 pass
 
@@ -411,6 +679,7 @@ class ScoringAgentV2:
           - product_relevance 在 0-100 范围内
           - event_impact 在 0-100 范围内
           - reason 不超长，tags 是列表
+          - product_scores 是有效的列表
         """
         result: dict = {}
 
@@ -424,6 +693,31 @@ class ScoringAgentV2:
         if not isinstance(tags, list):
             tags = [str(tags)]
         result["tags"] = [str(t)[:50] for t in tags[:5]]
+
+        # 校验 product_scores
+        product_scores = parsed.get("product_scores", [])
+        if not isinstance(product_scores, list):
+            product_scores = []
+        validated_ps = []
+        for ps in product_scores[:10]:
+            if not isinstance(ps, dict):
+                continue
+            try:
+                score = max(0, min(100, int(ps.get("score", 0))))
+            except (TypeError, ValueError):
+                score = 0
+            validated_ps.append({
+                "product_id": str(ps.get("product_id", ""))[:100],
+                "product_name": str(ps.get("product_name", ""))[:100],
+                "score": score,
+                "reason": str(ps.get("reason", ""))[:100],
+            })
+        result["product_scores"] = validated_ps
+
+        # 如果 product_scores 非空，取最高分作为 product_relevance
+        if validated_ps:
+            max_score = max(ps["score"] for ps in validated_ps)
+            result["product_relevance"] = max(result["product_relevance"], max_score)
 
         return result
 
@@ -454,6 +748,7 @@ class ScoringAgentV2:
             "event_impact": 0,
             "score_reason": f"Scoring failed: {error[:100]}",
             "tags": [],
+            "product_scores": [],
             "pr_total_score": 0,
             "is_pr_candidate": False,
             "pr_threshold": threshold,

@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from datetime import UTC, datetime, timedelta
@@ -1305,6 +1306,7 @@ async def _run_score_v2_batch(
                     "event_impact": result["event_impact"],
                     "pr_total_score": result["pr_total_score"],
                     "score_reason": result.get("score_reason", ""),
+                    "product_scores": result.get("product_scores", []),
                 }
             },
         )
@@ -2197,6 +2199,7 @@ async def score_v2_all(request: Request, user_id: str = Depends(get_current_user
                             "event_impact": result["event_impact"],
                             "pr_total_score": result["pr_total_score"],
                             "score_reason": result.get("score_reason", ""),
+                            "product_scores": result.get("product_scores", []),
                         }
                     },
                 )
@@ -2228,6 +2231,7 @@ def _score_payload(article: dict, *, skipped: bool) -> dict:
         "event_impact": article.get("event_impact", 0),
         "pr_total_score": total,
         "is_pr_candidate": is_candidate,
+        "product_scores": article.get("product_scores", []),
         "skipped": skipped,
     }
 
@@ -2238,7 +2242,7 @@ async def score_v2_single(
     request: Request,
     user_id: str = Depends(get_current_user),
 ):
-    """幂等打分单篇文章，并用文章级短期锁避免并发重复调用 LLM。"""
+    """对单篇文章重新打分，支持选择产品，用文章级短期锁避免并发重复调用 LLM。"""
     db = getattr(request.app.state, "db", None)
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -2250,16 +2254,31 @@ async def score_v2_single(
     log = logging.getLogger("backend.api.pipeline")
     trace_id = generate_trace_id()
 
+    # 读取请求体中的产品选择
+    body = {}
+    with contextlib.suppress(Exception):
+        body = await request.json()
+    selected_product_ids: list[str] | None = body.get("selected_product_ids")
+
     article = await db["articles"].find_one({"url_hash": url_hash})
     if article is None:
         raise HTTPException(status_code=404, detail="Article not found")
-    if article.get("pr_total_score") is not None:
-        await _log_idempotent_skip(
-            db, request, user_id, "score_v2", url_hash, trace_id, "already_scored"
-        )
-        return _score_payload(article, skipped=True)
 
+    # 单篇打分按钮：清除旧分数，强制重新打分
+    await db["articles"].update_one(
+        {"url_hash": url_hash},
+        {"$set": {
+            "pr_total_score": None,
+            "product_relevance": None,
+            "event_impact": None,
+            "product_scores": [],
+        }},
+    )
+    article["pr_total_score"] = None
+
+    # 单篇打分：清除可能的残留锁后直接获取锁
     lock_key = f"score-v2:{url_hash}"
+    await release_pipeline_lock(db, lock_key, success=True)
     acquired = await acquire_pipeline_lock(
         db,
         lock_key,
@@ -2267,64 +2286,77 @@ async def score_v2_single(
         lock_type="score",
     )
     if not acquired:
-        status = await wait_for_pipeline_lock(db, lock_key)
-        if status == "timeout":
-            raise _pipeline_timeout_error()
-        article = await db["articles"].find_one({"url_hash": url_hash})
-        if article and article.get("pr_total_score") is not None:
-            await _log_idempotent_skip(
-                db, request, user_id, "score_v2", url_hash, trace_id, "concurrent_result"
-            )
-            return _score_payload(article, skipped=True)
-        acquired = await acquire_pipeline_lock(
-            db,
-            lock_key,
-            user_id,
-            lock_type="score",
-        )
+        # 强制清除锁后重试
+        await db["pipeline_locks"].delete_one({"lock_key": lock_key})
+        acquired = await acquire_pipeline_lock(db, lock_key, user_id, lock_type="score")
         if not acquired:
             raise _pipeline_timeout_error()
 
     try:
         article = await db["articles"].find_one({"url_hash": url_hash})
-        if article and article.get("pr_total_score") is not None:
-            await release_pipeline_lock(db, lock_key, success=True)
-            await _log_idempotent_skip(
-                db, request, user_id, "score_v2", url_hash, trace_id, "locked_recheck"
-            )
-            return _score_payload(article, skipped=True)
+
+        # 构建选中产品列表（含全局+用户级产品）
+        products_for_scoring: list[dict] = []
+        if selected_product_ids:
+            from agent.product_catalog import _PRODUCTS
+
+            global_products = {
+                p.product_id: p.name
+                for p in _PRODUCTS
+                if p.product_id in selected_product_ids
+            }
+            user_docs = await db["user_products"].find({
+                "user_id": user_id,
+                "product_id": {"$in": selected_product_ids},
+                "enabled": True,
+            }).to_list(length=100)
+            user_products = {
+                d["product_id"]: d["name"] for d in user_docs
+            }
+            all_products = {**global_products, **user_products}
+            for pid in selected_product_ids:
+                if pid in all_products:
+                    products_for_scoring.append({
+                        "product_id": pid,
+                        "product_name": all_products[pid],
+                    })
 
         scores = await scorer.score_single(
             dict(article),
             user_id=user_id,
             trace_id=trace_id,
+            products=products_for_scoring if products_for_scoring else None,
         )
         scored = {
             "product_relevance": scores["product_relevance"],
             "event_impact": scores["event_impact"],
             "pr_total_score": scores["pr_total_score"],
             "score_reason": scores.get("score_reason", ""),
+            "product_scores": scores.get("product_scores", []),
             "is_pr_candidate": scores.get("is_pr_candidate", False),
         }
-        await db["articles"].update_one(
-            {"url_hash": url_hash, "pr_total_score": None},
-            {"$set": scored},
+
+        # 评分结果存入用户级集合（与用户绑定）
+        from datetime import UTC, datetime
+
+        now = datetime.now(UTC)
+        await db["user_article_scores"].update_one(
+            {"user_id": user_id, "url_hash": url_hash},
+            {"$set": {
+                "user_id": user_id,
+                "url_hash": url_hash,
+                **scored,
+                "scored_at": now,
+            }},
+            upsert=True,
         )
+
+        scored["url_hash"] = url_hash
+        await release_pipeline_lock(db, lock_key, success=True)
+        return _score_payload(scored, skipped=False)
     except Exception as exc:
         await release_pipeline_lock(db, lock_key, success=False)
         log.error("[score-v2-single] Failed: %s", exc)
-        await log_pipeline(
-            db,
-            "ERROR",
-            "score_v2",
-            "single article scoring failed",
-            user_id=user_id,
-            username=_request_username(request, user_id),
-            trace_id=trace_id,
-            action="error",
-            error=build_log_error(exc),
-            detail={"article_url_hash": url_hash},
-        )
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     await release_pipeline_lock(db, lock_key, success=True)

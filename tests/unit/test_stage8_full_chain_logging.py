@@ -140,7 +140,7 @@ async def test_draft_style_logging_uses_profile_flag() -> None:
 
 
 @pytest.mark.asyncio
-async def test_standalone_idempotent_score_writes_skip_log() -> None:
+async def test_standalone_score_clears_old_score_and_stores_user_result() -> None:
     article = {
         "url_hash": ARTICLE_HASH,
         "pr_total_score": 95,
@@ -149,17 +149,44 @@ async def test_standalone_idempotent_score_writes_skip_log() -> None:
     }
     articles = MagicMock()
     articles.find_one = AsyncMock(return_value=article)
-    pipeline_logs = _log_collection()
-    db = {"articles": articles, "pipeline_logs": pipeline_logs}
+    articles.update_one = AsyncMock()
+    locks = MagicMock()
+    locks.update_one = AsyncMock()
+    locks.delete_one = AsyncMock()
+    locks.insert_one = AsyncMock()
+    user_scores = MagicMock()
+    user_scores.update_one = AsyncMock()
+    db = {
+        "articles": articles,
+        "pipeline_locks": locks,
+        "user_article_scores": user_scores,
+    }
+    scorer = MagicMock()
+    scorer.score_single = AsyncMock(
+        return_value={
+            "product_relevance": 60,
+            "event_impact": 40,
+            "pr_total_score": 100,
+            "score_reason": "重新打分",
+            "product_scores": [{"product_id": "p1", "product_name": "P1", "score": 60, "reason": ""}],
+            "is_pr_candidate": True,
+        }
+    )
     request = SimpleNamespace(
         state=SimpleNamespace(username="alice"),
-        app=SimpleNamespace(state=SimpleNamespace(db=db, scorer_v2=MagicMock())),
+        app=SimpleNamespace(state=SimpleNamespace(db=db, scorer_v2=scorer)),
     )
 
     response = await score_v2_single(ARTICLE_HASH, request, user_id="user-a")
 
-    assert response["skipped"] is True
-    document = pipeline_logs.insert_one.await_args.args[0]
-    assert document["phase"] == "score_v2"
-    assert document["action"] == "skip"
-    assert document["detail"]["reason"] == "already_scored"
+    # 旧分数被清除（单篇打分按钮强制重新打分）
+    clear_call = articles.update_one.await_args
+    assert clear_call.args[1]["$set"]["pr_total_score"] is None
+    # 结果写入用户级评分集合（与用户绑定）
+    assert user_scores.update_one.await_args.args[0] == {
+        "user_id": "user-a",
+        "url_hash": ARTICLE_HASH,
+    }
+    assert response["skipped"] is False
+    assert response["pr_total_score"] == 100
+    assert response["is_pr_candidate"] is True

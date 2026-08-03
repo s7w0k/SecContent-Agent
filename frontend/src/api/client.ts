@@ -72,6 +72,7 @@ import type {
   PolicyUpdateRequest,
   PollLoginResult,
   ProductCatalogItem,
+  ProductScore,
   ProfilePolicy,
   ProfileRebuildResponse,
   PromptCatalogItem,
@@ -372,14 +373,21 @@ export const pipelineApi = {
   },
 
   /** V2 双维度打分（单篇） */
-  async scoreV2Single(urlHash: string): Promise<{
+  async scoreV2Single(
+    urlHash: string,
+    selectedProductIds?: string[],
+  ): Promise<{
     ok: boolean;
     product_relevance: number;
     event_impact: number;
     pr_total_score: number;
     is_pr_candidate: boolean;
+    product_scores: ProductScore[];
+    skipped: boolean;
   }> {
-    const { data } = await client.post(`/pipeline/score-v2/${urlHash}`);
+    const { data } = await client.post(`/pipeline/score-v2/${urlHash}`, {
+      selected_product_ids: selectedProductIds,
+    });
     return data;
   },
 

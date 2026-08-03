@@ -76,10 +76,9 @@ def mock_llm_high():
         return_value=AIMessage(
             content=json.dumps(
                 {
-                    "product_relevance": 85,
+                    "relevance": 85,
                     "event_impact": 72,
                     "reason": "MCP协议漏洞直接涉及产品核心能力，安全圈热传",
-                    "tags": ["MCP协议", "RCE漏洞", "身份安全"],
                 }
             )
         )
@@ -96,10 +95,9 @@ def mock_llm_low():
         return_value=AIMessage(
             content=json.dumps(
                 {
-                    "product_relevance": 25,
+                    "relevance": 25,
                     "event_impact": 30,
                     "reason": "与产品弱关联",
-                    "tags": [],
                 }
             )
         )
@@ -127,7 +125,7 @@ class TestPromptBuilding:
         prompt = scorer.system_prompt
         assert "智能体身份安全" in prompt
         assert "MCP协议" in prompt
-        assert "product_relevance" in prompt
+        assert "relevance" in prompt
         assert "event_impact" in prompt
 
     def test_system_prompt_has_scoring_rubric(self, scorer):
@@ -138,10 +136,9 @@ class TestPromptBuilding:
 
     def test_system_prompt_has_output_format(self, scorer):
         prompt = scorer.system_prompt
-        assert "product_relevance" in prompt
+        assert "relevance" in prompt
         assert "event_impact" in prompt
         assert "reason" in prompt
-        assert "tags" in prompt
 
     def test_user_prompt_contains_v2_category(self, sample_article):
         from agent.scorer_v2 import ScoringAgentV2
@@ -170,24 +167,24 @@ class TestResponseParsing:
     def test_parse_json_code_block(self):
         from agent.scorer_v2 import ScoringAgentV2
 
-        text = '```json\n{"product_relevance": 85, "event_impact": 70, "reason": "ok", "tags": ["MCP"]}\n```'
+        text = '```json\n{"relevance": 85, "event_impact": 70, "reason": "ok"}\n```'
         result = ScoringAgentV2._parse_response(text)
-        assert result["product_relevance"] == 85
+        assert result["relevance"] == 85
         assert result["event_impact"] == 70
 
     def test_parse_plain_json(self):
         from agent.scorer_v2 import ScoringAgentV2
 
-        text = '{"product_relevance": 60, "event_impact": 40, "reason": "test", "tags": []}'
+        text = '{"relevance": 60, "event_impact": 40, "reason": "test"}'
         result = ScoringAgentV2._parse_response(text)
-        assert result["product_relevance"] == 60
+        assert result["relevance"] == 60
 
     def test_parse_json_in_text(self):
         from agent.scorer_v2 import ScoringAgentV2
 
-        text = '我的分析：{"product_relevance": 50, "event_impact": 30, "reason": "...", "tags": ["x"]}。完毕。'
+        text = '我的分析：{"relevance": 50, "event_impact": 30, "reason": "..."}。完毕。'
         result = ScoringAgentV2._parse_response(text)
-        assert result["product_relevance"] == 50
+        assert result["relevance"] == 50
 
     def test_parse_invalid_raises(self):
         from agent.scorer_v2 import ScoringAgentV2
@@ -273,7 +270,6 @@ class TestScoringFlow:
         assert result["pr_total_score"] == 157
         assert result["is_pr_candidate"] is True
         assert result["_fallback"] is False
-        assert len(result["tags"]) > 0
 
     @pytest.mark.asyncio
     async def test_score_single_below_threshold(self, mock_llm_low, knowledge, sample_article):
@@ -340,10 +336,9 @@ class TestScoringFlow:
                 AIMessage(
                     content=json.dumps(
                         {
-                            "product_relevance": 88,
+                            "relevance": 88,
                             "event_impact": 66,
                             "reason": "恢复后打分",
-                            "tags": ["测试"],
                         }
                     )
                 ),
@@ -499,3 +494,84 @@ class TestConstants:
         from agent.scorer_v2 import MAX_RETRIES
 
         assert MAX_RETRIES >= 1
+
+
+# ═══════════════════════════════════════════════════════════════
+# 7. 按产品注入知识测试
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestProductKnowledgeInjection:
+    @pytest.mark.asyncio
+    async def test_single_product_prompt_injects_user_knowledge(self):
+        """用户级产品评分时，系统提示词应注入该用户该产品的知识条目（而非全局硬编码文件）。"""
+        from agent.scorer_v2 import ScoringAgentV2
+
+        llm = MagicMock()
+        llm.temperature = None
+        knowledge = MagicMock()
+        knowledge.as_scoring_prompt.return_value = "GLOBAL_KNOWLEDGE_PLACEHOLDER"
+
+        user_product = {
+            "product_id": "user-prod-1", "user_id": "u-1",
+            "name": "星海外部攻击面管理平台", "enabled": True,
+        }
+        user_entry = {
+            "entry_id": "entry-1", "user_id": "u-1",
+            "product_id": "user-prod-1", "product_scope": "user",
+            "doc_type": "overview", "title": "产品概述",
+            "content": "该产品用于外部攻击面发现与管理，可对暴露面持续监测。",
+            "enabled": True, "sort_order": 1,
+        }
+
+        user_products_col = MagicMock()
+        user_products_col.find = MagicMock(
+            return_value=MagicMock(to_list=AsyncMock(return_value=[user_product]))
+        )
+
+        def fake_find(query: dict):
+            # 用户对全局产品的补充条目查询返回空
+            if query.get("product_scope") == "global":
+                return MagicMock(
+                    sort=MagicMock(
+                        return_value=MagicMock(to_list=AsyncMock(return_value=[]))
+                    )
+                )
+            return MagicMock(
+                sort=MagicMock(
+                    return_value=MagicMock(to_list=AsyncMock(return_value=[user_entry]))
+                )
+            )
+
+        entries_col = MagicMock()
+        entries_col.find = MagicMock(side_effect=fake_find)
+
+        db = {"user_products": user_products_col, "user_knowledge_entries": entries_col}
+        scorer = ScoringAgentV2(llm=llm, knowledge=knowledge, db=db)
+
+        prompt = await scorer._build_system_prompt_for_product(
+            "user-prod-1", "星海外部攻击面管理平台", user_id="u-1"
+        )
+
+        assert "星海外部攻击面管理平台" in prompt
+        assert "外部攻击面发现与管理" in prompt
+        assert "用户级" in prompt
+        # 用户级知识存在时不应回退到全局评分知识
+        assert "GLOBAL_KNOWLEDGE_PLACEHOLDER" not in prompt
+
+    @pytest.mark.asyncio
+    async def test_single_product_prompt_falls_back_without_db(self):
+        """无 DB 时回退到全局评分知识，不抛异常。"""
+        from agent.scorer_v2 import ScoringAgentV2
+
+        llm = MagicMock()
+        llm.temperature = None
+        knowledge = MagicMock()
+        knowledge.as_scoring_prompt.return_value = "GLOBAL_KNOWLEDGE_PLACEHOLDER"
+        scorer = ScoringAgentV2(llm=llm, knowledge=knowledge, db=None)
+
+        prompt = await scorer._build_system_prompt_for_product(
+            "user-prod-1", "星海外部攻击面管理平台", user_id="u-1"
+        )
+
+        assert "GLOBAL_KNOWLEDGE_PLACEHOLDER" in prompt

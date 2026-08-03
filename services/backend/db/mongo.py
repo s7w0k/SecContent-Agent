@@ -695,6 +695,17 @@ class MongoDB:
                     name="idx_articles_crawl_run",
                 ),
             ],
+            "user_article_scores": [
+                IndexModel(
+                    [("user_id", ASCENDING), ("url_hash", ASCENDING)],
+                    unique=True,
+                    name="uq_user_article_score",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("pr_total_score", DESCENDING)],
+                    name="idx_user_score_total",
+                ),
+            ],
         }
 
         try:

@@ -364,6 +364,7 @@ class TestMongoDBIndexes:
             "search_import_items",
             "articles",
             "crawl_runs",
+            "user_article_scores",
             "user_knowledge_entries",
             "user_products",
         }
@@ -465,5 +466,5 @@ class TestMongoDBIndexes:
             second = await MongoDB.ensure_indexes()
 
         assert first == second
-        assert collection.create_indexes.await_count == 76
+        assert collection.create_indexes.await_count == 78
         assert collection.drop_index.await_count == 2

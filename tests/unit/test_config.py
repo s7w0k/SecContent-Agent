@@ -80,7 +80,7 @@ class TestSettingsDefaults:
     def test_default_api(self):
         from config import Settings
 
-        s = Settings(DEEPSEEK_API_KEY="test")
+        s = Settings(DEEPSEEK_API_KEY="test", _env_file=None)
         assert s.API_PAGE_SIZE_MAX == 100
         assert s.API_PAGE_SIZE_DEFAULT == 20
         assert s.BACKEND_PORT == 8000
@@ -88,7 +88,7 @@ class TestSettingsDefaults:
     def test_cors_origins_default(self):
         from config import Settings
 
-        s = Settings(DEEPSEEK_API_KEY="test")
+        s = Settings(DEEPSEEK_API_KEY="test", _env_file=None)
         assert "http://localhost:5173" in s.CORS_ORIGINS
         assert "http://localhost:8000" in s.CORS_ORIGINS
 

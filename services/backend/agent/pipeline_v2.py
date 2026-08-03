@@ -407,6 +407,7 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
                             "event_impact": result["event_impact"],
                             "pr_total_score": result["pr_total_score"],
                             "score_reason": result.get("score_reason", ""),
+                            "product_scores": result.get("product_scores", []),
                             "pr_threshold": result.get("pr_threshold", state["score_threshold"]),
                             "threshold_adjustment": result.get(
                                 "threshold_adjustment",

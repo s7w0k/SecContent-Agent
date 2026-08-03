@@ -78,30 +78,22 @@ class ClassifyResultSchema(BaseModel):
         return str(value or "")[:200]
 
 
-class ScoreResultSchema(BaseModel):
-    """Validated output produced by the V2 scoring agent."""
+class SingleProductScoreSchema(BaseModel):
+    """单个产品单次 LLM 评分结果。"""
 
-    product_relevance: int = Field(ge=0, le=100, description="产品能力相关度 0-100")
-    event_impact: int = Field(ge=0, le=100, description="事件影响面与传播力 0-100")
-    reason: str = Field(max_length=200, description="打分理由")
-    tags: list[str] = Field(default_factory=list, max_length=5, description="标签列表")
+    relevance: int = Field(ge=0, le=100, description="该产品相关性分数 0-100")
+    event_impact: int = Field(ge=0, le=100, description="事件影响面 0-100")
+    reason: str = Field(default="", max_length=200, description="打分理由")
 
-    @field_validator("product_relevance", "event_impact", mode="before")
+    @field_validator("relevance", "event_impact", mode="before")
     @classmethod
     def clamp_score(cls, value: Any) -> int:
         try:
-            score = int(value)
+            return max(0, min(100, int(value)))
         except (TypeError, ValueError):
-            score = 0
-        return max(0, min(100, score))
+            return 0
 
     @field_validator("reason", mode="before")
     @classmethod
     def truncate_reason(cls, value: Any) -> str:
         return str(value or "")[:200]
-
-    @field_validator("tags", mode="before")
-    @classmethod
-    def normalize_tags(cls, value: Any) -> list[str]:
-        tags = value if isinstance(value, list) else [value]
-        return [str(tag)[:50] for tag in tags[:5] if tag is not None]

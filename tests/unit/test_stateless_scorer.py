@@ -26,10 +26,9 @@ async def test_shared_scorer_keeps_concurrent_thresholds_isolated():
         return AIMessage(
             content=json.dumps(
                 {
-                    "product_relevance": 30,
+                    "relevance": 30,
                     "event_impact": 25,
                     "reason": "fixed score",
-                    "tags": [],
                 }
             )
         )
@@ -66,10 +65,9 @@ async def test_batch_propagates_explicit_threshold_metadata():
         return_value=AIMessage(
             content=json.dumps(
                 {
-                    "product_relevance": 40,
+                    "relevance": 40,
                     "event_impact": 40,
                     "reason": "batch score",
-                    "tags": [],
                 }
             )
         )

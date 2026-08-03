@@ -307,6 +307,47 @@ export default function ArticleTable({
       },
     },
     {
+      title: '产品评分',
+      key: 'product_scores',
+      width: 120,
+      render: (_: unknown, r: Article) => {
+        const scores = r.product_scores;
+        if (!scores || scores.length === 0) return null;
+        const sorted = [...scores].sort((a, b) => b.score - a.score);
+        const top = sorted[0];
+        return (
+          <Popover
+            content={
+              <div style={{ width: 280 }}>
+                {sorted.map((ps) => (
+                  <div
+                    key={ps.product_id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '4px 0',
+                      borderBottom: '1px solid #f0f0f0',
+                    }}
+                  >
+                    <span style={{ fontSize: 13 }}>{ps.product_name}</span>
+                    <Tag color={ps.score >= 70 ? 'blue' : ps.score >= 40 ? 'orange' : 'default'}>
+                      {ps.score}
+                    </Tag>
+                  </div>
+                ))}
+              </div>
+            }
+            trigger="hover"
+          >
+            <Tag color={top.score >= 70 ? 'blue' : 'default'} style={{ cursor: 'pointer' }}>
+              {top.product_name}: {top.score}
+            </Tag>
+          </Popover>
+        );
+      },
+    },
+    {
       title: '摘要',
       dataIndex: 'summary_cn',
       key: 'summary_cn',

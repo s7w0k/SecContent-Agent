@@ -225,12 +225,17 @@ async def test_concurrent_classification_calls_llm_once(fast_lock_poll):
 
 
 @pytest.mark.asyncio
-async def test_concurrent_scoring_calls_llm_once(fast_lock_poll):
+async def test_concurrent_scoring_both_rescore_and_store_per_user(fast_lock_poll):
     locks = FakeLockCollection()
     articles = FakeArticleCollection(
         {"url_hash": ARTICLE_HASH, "title": "MCP event", "pr_total_score": None},
     )
-    db = FakeDatabase(pipeline_locks=locks, articles=articles)
+    user_scores = FakeCaptureCollection()
+    db = FakeDatabase(
+        pipeline_locks=locks,
+        articles=articles,
+        user_article_scores=user_scores,
+    )
     started = asyncio.Event()
     finish = asyncio.Event()
     scorer = MagicMock()
@@ -243,6 +248,7 @@ async def test_concurrent_scoring_calls_llm_once(fast_lock_poll):
             "event_impact": 80,
             "pr_total_score": 170,
             "score_reason": "candidate",
+            "product_scores": [],
             "is_pr_candidate": True,
         }
 
@@ -256,9 +262,11 @@ async def test_concurrent_scoring_calls_llm_once(fast_lock_poll):
     finish.set()
     results = await asyncio.gather(first, second)
 
-    assert scorer.score_single.await_count == 1
-    assert {result["skipped"] for result in results} == {False, True}
-    assert articles.document["pr_total_score"] == 170
+    # 单篇打分按钮始终强制重新打分，且结果按用户分别落库（文章上旧分被清除）
+    assert scorer.score_single.await_count == 2
+    assert all(result["skipped"] is False for result in results)
+    assert articles.document["pr_total_score"] is None
+    assert len(user_scores.update_calls) == 2
 
 
 @pytest.mark.asyncio

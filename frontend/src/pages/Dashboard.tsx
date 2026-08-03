@@ -6,20 +6,22 @@
  */
 
 import { ImportOutlined, UploadOutlined } from '@ant-design/icons';
-import { Button, Col, Drawer, Row, Space, Tag, Typography, message } from 'antd';
+import { Button, Checkbox, Col, Drawer, Modal, Row, Space, Tag, Typography, message } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import api from '../api/client';
+import api, { userKnowledgeApi } from '../api/client';
 import ArticleTable from '../components/ArticleTable';
 import ArticleUpload from '../components/ArticleUpload';
 import DraftViewer from '../components/DraftViewer';
 import FilterBar from '../components/FilterBar';
-import GenerationConfigModal, { type GenerationConfig } from '../components/pipeline/GenerationConfigModal';
 import HotRankingPanel from '../components/HotRankingPanel';
 import PipelineControl from '../components/PipelineControl';
 import PipelineTaskProgress from '../components/PipelineTaskProgress';
 import ReportViewer from '../components/ReportViewer';
 import StatsCards from '../components/StatsCards';
 import TodayStatsRow from '../components/TodayStatsRow';
+import GenerationConfigModal, {
+  type GenerationConfig,
+} from '../components/pipeline/GenerationConfigModal';
 import { useActiveTasks } from '../hooks/useActiveTasks';
 import type { Article, ArticleQuery, FilterValues, SourceType, StatsData } from '../types';
 
@@ -193,24 +195,55 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
     setViewingReportId(article.report_id);
   }, []);
 
-  // ── 单文章 V2 打分 ──────────────────────────────────────
-  const handleScoreV2Single = useCallback(
-    async (article: Article) => {
-      message.loading({ content: 'V2打分中...', key: 'scoresingle', duration: 0 });
-      try {
-        const res = await api.scoreV2Single(article.url_hash);
-        message.success({
-          content: `V2打分: 产品${res.product_relevance}+事件${res.event_impact}=${res.pr_total_score} ${res.is_pr_candidate ? '达标' : '未达标'}`,
-          key: 'scoresingle',
-          duration: 4,
-        });
-        loadArticles();
-      } catch {
-        message.error({ content: 'V2打分失败', key: 'scoresingle' });
-      }
-    },
-    [loadArticles],
-  );
+  // ── 单文章 V2 打分（带产品选择弹窗） ──────────────────────
+  const [scoreModalArticle, setScoreModalArticle] = useState<Article | null>(null);
+  const [scoreProducts, setScoreProducts] = useState<{ product_id: string; name: string }[]>([]);
+  const [scoreSelectedIds, setScoreSelectedIds] = useState<string[]>([]);
+  const [scoreLoading, setScoreLoading] = useState(false);
+
+  const handleScoreV2Single = useCallback(async (article: Article) => {
+    setScoreModalArticle(article);
+    setScoreSelectedIds([]);
+    try {
+      const items = await userKnowledgeApi.listProducts();
+      const enabled = items.filter((p) => p.enabled);
+      setScoreProducts(enabled.map((p) => ({ product_id: p.product_id, name: p.name })));
+      setScoreSelectedIds(enabled.map((p) => p.product_id));
+    } catch {
+      message.error('加载产品列表失败');
+    }
+  }, []);
+
+  const handleScoreConfirm = useCallback(async () => {
+    if (!scoreModalArticle) return;
+    if (scoreSelectedIds.length === 0) {
+      message.warning('请至少选择一个产品');
+      return;
+    }
+    setScoreLoading(true);
+    message.loading({ content: 'V2打分中...', key: 'scoresingle', duration: 0 });
+    try {
+      const res = await api.scoreV2Single(scoreModalArticle.url_hash, scoreSelectedIds);
+      const topProduct =
+        res.product_scores?.length > 0
+          ? [...res.product_scores].sort((a, b) => b.score - a.score)[0]
+          : null;
+      const productInfo = topProduct
+        ? ` | 最相关: ${topProduct.product_name}(${topProduct.score})`
+        : '';
+      message.success({
+        content: `V2打分: 产品${res.product_relevance}+事件${res.event_impact}=${res.pr_total_score} ${res.is_pr_candidate ? '达标' : '未达标'}${productInfo}`,
+        key: 'scoresingle',
+        duration: 5,
+      });
+      setScoreModalArticle(null);
+      loadArticles();
+    } catch {
+      message.error({ content: 'V2打分失败', key: 'scoresingle' });
+    } finally {
+      setScoreLoading(false);
+    }
+  }, [scoreModalArticle, scoreSelectedIds, loadArticles]);
 
   // ── 单文章 V2 流水线 ────────────────────────────────────
   const [templateModalArticle, setTemplateModalArticle] = useState<Article | null>(null);
@@ -222,29 +255,32 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
     setGenConfigOpen(true);
   }, []);
 
-  const handleConfirmGenerate = useCallback(async (config: GenerationConfig) => {
-    const article = templateModalArticle;
-    if (!article) return;
-    setGenConfigLoading(true);
-    message.loading({ content: '正在创建个性化草稿任务...', key: 'v2single', duration: 0 });
-    try {
-      const res = await api.runV2Single(article.url_hash, config.reference_template, {
-        product_target_mode: config.product_target_mode,
-        selected_product_ids: config.selected_product_ids,
-        product_relevance_enabled: config.product_relevance_enabled,
-        force_generate: config.force_generate,
-      });
-      setDraftTask({ taskId: res.data.task_id, articleHash: article.url_hash });
-      message.success({ content: '草稿任务已创建', key: 'v2single', duration: 2 });
-      setGenConfigOpen(false);
-      setTemplateModalArticle(null);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : '未知错误';
-      message.error({ content: `V2失败: ${msg}`, key: 'v2single' });
-    } finally {
-      setGenConfigLoading(false);
-    }
-  }, [templateModalArticle]);
+  const handleConfirmGenerate = useCallback(
+    async (config: GenerationConfig) => {
+      const article = templateModalArticle;
+      if (!article) return;
+      setGenConfigLoading(true);
+      message.loading({ content: '正在创建个性化草稿任务...', key: 'v2single', duration: 0 });
+      try {
+        const res = await api.runV2Single(article.url_hash, config.reference_template, {
+          product_target_mode: config.product_target_mode,
+          selected_product_ids: config.selected_product_ids,
+          product_relevance_enabled: config.product_relevance_enabled,
+          force_generate: config.force_generate,
+        });
+        setDraftTask({ taskId: res.data.task_id, articleHash: article.url_hash });
+        message.success({ content: '草稿任务已创建', key: 'v2single', duration: 2 });
+        setGenConfigOpen(false);
+        setTemplateModalArticle(null);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : '未知错误';
+        message.error({ content: `V2失败: ${msg}`, key: 'v2single' });
+      } finally {
+        setGenConfigLoading(false);
+      }
+    },
+    [templateModalArticle],
+  );
 
   // ── 查看 V2 草稿 ────────────────────────────────────────
   const handleViewDrafts = useCallback((article: Article) => {
@@ -450,11 +486,38 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
       {/* 生成草稿弹窗（产品选择 + 参考稿上传） */}
       <GenerationConfigModal
         open={genConfigOpen}
-        onCancel={() => { setGenConfigOpen(false); setTemplateModalArticle(null); }}
+        onCancel={() => {
+          setGenConfigOpen(false);
+          setTemplateModalArticle(null);
+        }}
         onConfirm={handleConfirmGenerate}
         loading={genConfigLoading}
         articleScore={templateModalArticle?.pr_total_score}
       />
+
+      {/* V2 打分产品选择弹窗 */}
+      <Modal
+        title="V2 打分 - 选择产品"
+        open={!!scoreModalArticle}
+        onCancel={() => setScoreModalArticle(null)}
+        onOk={handleScoreConfirm}
+        confirmLoading={scoreLoading}
+        okText="开始打分"
+        cancelText="取消"
+      >
+        <div style={{ marginBottom: 8, color: '#666' }}>请选择要对哪些产品进行相关性评分：</div>
+        <Checkbox.Group
+          value={scoreSelectedIds}
+          onChange={(values) => setScoreSelectedIds(values as string[])}
+          style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+        >
+          {scoreProducts.map((p) => (
+            <Checkbox key={p.product_id} value={p.product_id}>
+              {p.name}
+            </Checkbox>
+          ))}
+        </Checkbox.Group>
+      </Modal>
     </div>
   );
 }

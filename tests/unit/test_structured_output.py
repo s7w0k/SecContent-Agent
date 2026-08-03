@@ -16,7 +16,7 @@ if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
 from agent.llm_wrapper import LLMWrapper  # noqa: E402
-from agent.schemas import ClassifyResultSchema, ScoreResultSchema  # noqa: E402
+from agent.schemas import ClassifyResultSchema, SingleProductScoreSchema  # noqa: E402
 from api.pipeline import list_llm_logs  # noqa: E402
 
 
@@ -85,20 +85,18 @@ def test_schemas_normalize_and_validate_model_output() -> None:
     classified = ClassifyResultSchema.model_validate(
         {"category": "自创类别", "confidence": 120, "reason": "原因"}
     )
-    scored = ScoreResultSchema.model_validate(
+    scored = SingleProductScoreSchema.model_validate(
         {
-            "product_relevance": -10,
+            "relevance": -10,
             "event_impact": 140,
             "reason": "评分理由",
-            "tags": ["a", "b", "c", "d", "e", "f"],
         }
     )
 
     assert classified.category == "不相关"
     assert classified.confidence == 100
-    assert scored.product_relevance == 0
+    assert scored.relevance == 0
     assert scored.event_impact == 100
-    assert scored.tags == ["a", "b", "c", "d", "e"]
 
 
 @pytest.mark.asyncio
@@ -141,7 +139,7 @@ async def test_provider_incompatibility_falls_back_and_records_reason() -> None:
     collection = FakeCollection()
     wrapper = LLMWrapper(
         FallbackLLM(
-            '{"product_relevance": 88, "event_impact": 77, "reason": "高度相关", "tags": ["MCP"]}'
+            '{"relevance": 88, "event_impact": 77, "reason": "高度相关"}'
         ),
         {"llm_call_logs": collection},
     )
@@ -149,11 +147,11 @@ async def test_provider_incompatibility_falls_back_and_records_reason() -> None:
     result = await wrapper.invoke_structured(
         "system",
         "user",
-        ScoreResultSchema,
+        SingleProductScoreSchema,
         "scorer_v2",
     )
 
-    assert result.product_relevance == 88
+    assert result.relevance == 88
     document = collection.insert_one.await_args.args[0]
     assert document["degraded"] is True
     assert document["structured_output"] is False

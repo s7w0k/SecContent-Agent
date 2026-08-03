@@ -171,11 +171,32 @@ async def list_articles(
     cursor = db["articles"].find(query).sort(sort_by, sort_order).skip(skip).limit(page_size)
     articles = await cursor.to_list(length=page_size)
 
+    # 批量查询当前用户的评分
+    url_hashes = [art.get("url_hash") for art in articles if art.get("url_hash")]
+    user_scores_map: dict[str, dict] = {}
+    if url_hashes:
+        score_docs = await db["user_article_scores"].find({
+            "user_id": user_id,
+            "url_hash": {"$in": url_hashes},
+        }).to_list(length=len(url_hashes))
+        user_scores_map = {d["url_hash"]: d for d in score_docs}
+
     # 后过滤（MongoDB 不支持动态计算字段筛选）
     items = []
     for art in articles:
         await _attach_user_drafts(db, art, user_id)
         art["_id"] = str(art["_id"])
+
+        # 合并用户级评分（覆盖文章上的全局评分）
+        uh = art.get("url_hash")
+        if uh and uh in user_scores_map:
+            us = user_scores_map[uh]
+            art["product_relevance"] = us.get("product_relevance")
+            art["event_impact"] = us.get("event_impact")
+            art["pr_total_score"] = us.get("pr_total_score")
+            art["product_scores"] = us.get("product_scores", [])
+            art["score_reason"] = us.get("score_reason", "")
+
         total_score = art.get("ai_relevance_score", 0) + art.get("reportability_score", 0)
         art["total_score"] = total_score
         art["is_high_value"] = total_score >= 140

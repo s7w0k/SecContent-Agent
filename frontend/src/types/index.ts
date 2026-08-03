@@ -63,6 +63,13 @@ export interface ArticleAssessment {
   assessed_at?: string;
 }
 
+export interface ProductScore {
+  product_id: string;
+  product_name: string;
+  score: number;
+  reason?: string;
+}
+
 export interface Article {
   _id: string;
   url_hash: string;
@@ -92,6 +99,7 @@ export interface Article {
   product_relevance?: number;
   event_impact?: number;
   pr_total_score?: number;
+  product_scores?: ProductScore[];
   // 用户级评估（user_article_assessments）
   assessment?: ArticleAssessment;
   // V2 PR 草稿

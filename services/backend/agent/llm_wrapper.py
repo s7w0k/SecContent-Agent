@@ -141,10 +141,11 @@ class LLMWrapper:
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
-            obj_match = re.search(r"\{[^{}]*\}", text)
-            if obj_match is None:
+            first_brace = text.find("{")
+            last_brace = text.rfind("}")
+            if first_brace == -1 or last_brace == -1 or last_brace <= first_brace:
                 raise ValueError(f"Cannot extract JSON from response: {text[:200]}") from None
-            data = json.loads(obj_match.group(0))
+            data = json.loads(text[first_brace : last_brace + 1])
         return schema.model_validate(data), response
 
     async def _log_call(self, **kwargs: Any) -> None:

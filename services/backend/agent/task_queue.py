@@ -546,6 +546,7 @@ async def _auto_classify_and_score(
                         "event_impact": score_result["event_impact"],
                         "pr_total_score": score_result["pr_total_score"],
                         "score_reason": score_result.get("score_reason", ""),
+                        "product_scores": score_result.get("product_scores", []),
                         "pipeline_status": "scored",
                     }},
                 )

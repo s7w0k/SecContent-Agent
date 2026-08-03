@@ -51,13 +51,7 @@ Copy-Item deploy/local/.env.core-local.example deploy/local/.env.core-local
 首次构建并启动项目主体：
 
 ```powershell
-docker compose -p pr-core `
-  --env-file .env `
-  --env-file deploy/local/.env.core-local `
-  -f docker-compose.yml `
-  -f deploy/core/docker-compose.remote-crawl.yml `
-  -f deploy/local/docker-compose.core-local.yml `
-  up -d --build
+docker compose -p pr-core --env-file .env --env-file deploy/local/.env.core-local -f docker-compose.yml -f deploy/core/docker-compose.remote-crawl.yml -f deploy/local/docker-compose.core-local.yml up -d --build
 ```
 
 不要添加 `--profile embedded-crawl`，否则主体会同时启动内置爬虫。默认页面地址为 `http://项目主体服务器IP:18000`，MongoDB Compass 地址为 `mongodb://项目主体服务器IP:37017`。
@@ -75,11 +69,7 @@ Copy-Item deploy/local/.env.crawler-local.example deploy/local/.env.crawler-loca
 首次构建并启动独立爬虫：
 
 ```powershell
-docker compose -p pr-crawler `
-  --env-file deploy/local/.env.crawler-local `
-  -f deploy/crawler/docker-compose.yml `
-  -f deploy/crawler/docker-compose.build.yml `
-  up -d --build
+docker compose -p pr-crawler --env-file deploy/local/.env.crawler-local -f deploy/crawler/docker-compose.yml -f deploy/crawler/docker-compose.build.yml up -d --build
 ```
 
 确保爬虫服务器防火墙允许项目主体服务器访问 TCP `18101` 端口。
