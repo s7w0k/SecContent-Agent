@@ -337,6 +337,9 @@ class TestMongoDBIndexes:
             "user_pr_templates",
             "user_pr_template_versions",
             "user_prompts",
+            "user_prompt_versions",
+            "user_generation_preferences",
+            "user_article_assessments",
             "pipeline_locks",
             "pipeline_tasks",
             "pipeline_logs",
@@ -359,6 +362,10 @@ class TestMongoDBIndexes:
             "search_sessions",
             "search_import_batches",
             "search_import_items",
+            "articles",
+            "crawl_runs",
+            "user_knowledge_entries",
+            "user_products",
         }
         assert len(result["users"]) == 3
         assert len(result["feedbacks"]) == 4
@@ -458,5 +465,5 @@ class TestMongoDBIndexes:
             second = await MongoDB.ensure_indexes()
 
         assert first == second
-        assert collection.create_indexes.await_count == 62
+        assert collection.create_indexes.await_count == 76
         assert collection.drop_index.await_count == 2

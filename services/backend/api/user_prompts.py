@@ -57,6 +57,32 @@ def _get_resolver(request: Request) -> PromptResolver:
 # ── 旧兼容端点 ───────────────────────────────────────────
 
 
+async def get_effective_prompt(db, user_id: str, prompt_key: str) -> EffectivePrompt:
+    """获取用户生效的提示词（供 pipeline 等非 HTTP 上下文调用）。"""
+    default_content = PROMPT_DEFAULTS.get(prompt_key, "")
+    required_placeholders = list(PROMPT_PLACEHOLDERS.get(prompt_key, []))
+
+    document = await db["user_prompts"].find_one(
+        {"user_id": user_id, "prompt_key": prompt_key}
+    )
+    if document is None:
+        return EffectivePrompt(
+            prompt_key=prompt_key,
+            content=default_content,
+            is_custom=False,
+            required_placeholders=required_placeholders,
+        )
+    return EffectivePrompt(
+        prompt_key=prompt_key,
+        content=document["content"],
+        is_custom=True,
+        source="user",
+        version=document.get("version"),
+        required_placeholders=required_placeholders,
+        updated_at=document.get("updated_at"),
+    )
+
+
 @router.get("/draft-system", summary="获取生效的初稿 System Prompt（兼容端点）")
 async def get_draft_system_prompt(
     request: Request,

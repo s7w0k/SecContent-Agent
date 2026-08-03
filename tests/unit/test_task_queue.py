@@ -184,6 +184,7 @@ def test_worker_settings_follow_application_config():
         "fetch_fulltext_batch",
         "process_memory_event",
         "resume_pipeline",
+        "scheduled_overseas_news_crawl",
     }
 
 
