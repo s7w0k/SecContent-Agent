@@ -41,6 +41,7 @@ import type {
   FeedbackStats,
   FeedbackUpdate,
   FeedbackUpdateResponse,
+  GenerationPreferences,
   HotArticle,
   HotRankingQuery,
   KnowledgeDocument,
@@ -70,8 +71,13 @@ import type {
   PipelineTaskResponse,
   PolicyUpdateRequest,
   PollLoginResult,
+  ProductCatalogItem,
   ProfilePolicy,
   ProfileRebuildResponse,
+  PromptCatalogItem,
+  PromptDetail,
+  PromptValidationResult,
+  PromptVersion,
   QRCodeResult,
   RegisterRequest,
   Report,
@@ -82,6 +88,9 @@ import type {
   UploadArticleResult,
   User,
   UserActivityCreate,
+  UserKnowledgeEntry,
+  UserProduct,
+  UserProductListItem,
   WebSearchResponse,
 } from '../types';
 
@@ -375,10 +384,20 @@ export const pipelineApi = {
   },
 
   /** V2 智能 PR 流水线（单文章） */
-  async runV2Single(urlHash: string, referenceTemplate?: string): Promise<PipelineTaskResponse> {
-    const { data } = await client.post(`/pipeline/run-v2/${urlHash}`, referenceTemplate ? {
-      reference_template: referenceTemplate,
-    } : undefined);
+  async runV2Single(
+    urlHash: string,
+    referenceTemplate?: string,
+    options?: {
+      product_target_mode?: string;
+      selected_product_ids?: string[];
+      product_relevance_enabled?: boolean;
+      force_generate?: boolean;
+    },
+  ): Promise<PipelineTaskResponse> {
+    const body: Record<string, unknown> = {};
+    if (referenceTemplate) body.reference_template = referenceTemplate;
+    if (options) Object.assign(body, options);
+    const { data } = await client.post(`/pipeline/run-v2/${urlHash}`, body);
     return data;
   },
 
@@ -922,6 +941,190 @@ export const promptApi = {
     const { data } = await client.post('/user-prompts/draft-system/reset');
     return data.data;
   },
+
+  // ── 提示词中心（Prompt Catalog） ──
+  async list(): Promise<PromptCatalogItem[]> {
+    const { data } = await client.get('/user-prompts');
+    return data.data.items;
+  },
+
+  async get(promptKey: string): Promise<PromptDetail> {
+    const { data } = await client.get(`/user-prompts/${promptKey}`);
+    return data.data;
+  },
+
+  async validate(promptKey: string, content: string): Promise<PromptValidationResult> {
+    const { data } = await client.post(`/user-prompts/${promptKey}/validate`, { content });
+    return data.data;
+  },
+
+  async save(promptKey: string, content: string, expectedVersion?: number): Promise<PromptDetail> {
+    const { data } = await client.put(`/user-prompts/${promptKey}`, {
+      content,
+      expected_version: expectedVersion,
+    });
+    return data.data;
+  },
+
+  async reset(promptKey: string): Promise<PromptDetail> {
+    const { data } = await client.post(`/user-prompts/${promptKey}/reset`);
+    return data.data;
+  },
+
+  async listVersions(
+    promptKey: string,
+    page = 1,
+    pageSize = 30,
+  ): Promise<{ items: PromptVersion[]; total: number; page: number; page_size: number }> {
+    const { data } = await client.get(`/user-prompts/${promptKey}/versions`, {
+      params: { page, page_size: pageSize },
+    });
+    return data.data;
+  },
+
+  async restoreVersion(promptKey: string, version: number): Promise<PromptDetail> {
+    const { data } = await client.post(`/user-prompts/${promptKey}/versions/${version}/restore`);
+    return data.data;
+  },
+
+  async preview(promptKey: string): Promise<{
+    composed_preview: string;
+    source: string;
+    version: number | null;
+    layers: Record<string, string>;
+  }> {
+    const { data } = await client.post(`/user-prompts/${promptKey}/preview`);
+    return data.data;
+  },
+};
+
+// ────────────────────────────────────────────────────────────
+// Product Catalog API（产品目录）
+// ────────────────────────────────────────────────────────────
+export const productCatalogApi = {
+  async list(purpose?: string): Promise<{ items: ProductCatalogItem[]; knowledge_hash: string }> {
+    const { data } = await client.get('/product-catalog', { params: purpose ? { purpose } : {} });
+    return data.data;
+  },
+};
+
+// ────────────────────────────────────────────────────────────
+// Generation Preferences API（生成偏好）
+// ────────────────────────────────────────────────────────────
+export const generationPreferencesApi = {
+  async get(): Promise<GenerationPreferences> {
+    const { data } = await client.get('/generation-preferences');
+    return data.data;
+  },
+
+  async save(body: {
+    product_relevance_enabled: boolean;
+    product_target_mode: string;
+    selected_product_ids: string[];
+    expected_version?: number;
+  }): Promise<GenerationPreferences> {
+    const { data } = await client.put('/generation-preferences', body);
+    return data.data;
+  },
+
+  async reset(): Promise<GenerationPreferences> {
+    const { data } = await client.post('/generation-preferences/reset');
+    return data.data;
+  },
+};
+
+// ────────────────────────────────────────────────────────────
+// User Knowledge API（用户级产品知识库）
+// ────────────────────────────────────────────────────────────
+export const userKnowledgeApi = {
+  // ── 产品 ──
+  async listProducts(): Promise<UserProductListItem[]> {
+    const { data } = await client.get('/user-knowledge/products');
+    return data.data.items;
+  },
+  async createProduct(body: {
+    name: string;
+    description?: string;
+    aliases?: string[];
+    keywords?: string[];
+    sort_order?: number;
+    enabled?: boolean;
+  }): Promise<UserProduct> {
+    const { data } = await client.post('/user-knowledge/products', body);
+    return data.data;
+  },
+  async updateProduct(
+    productId: string,
+    body: {
+      name?: string;
+      description?: string;
+      aliases?: string[];
+      keywords?: string[];
+      sort_order?: number;
+      enabled?: boolean;
+    },
+  ): Promise<UserProduct> {
+    const { data } = await client.put(`/user-knowledge/products/${productId}`, body);
+    return data.data;
+  },
+  async deleteProduct(productId: string): Promise<void> {
+    await client.delete(`/user-knowledge/products/${productId}`);
+  },
+  async listEntriesByProduct(productId: string): Promise<UserKnowledgeEntry[]> {
+    const { data } = await client.get(`/user-knowledge/products/${productId}`);
+    return data.data.items;
+  },
+
+  // ── 知识条目 ──
+  async listEntries(): Promise<UserKnowledgeEntry[]> {
+    const { data } = await client.get('/user-knowledge');
+    return data.data.items;
+  },
+  async createEntry(body: {
+    product_id: string;
+    product_scope: 'global' | 'user';
+    doc_type: 'overview' | 'market-brief' | 'sales-brief' | 'custom';
+    title: string;
+    content: string;
+    enabled?: boolean;
+    sort_order?: number;
+  }): Promise<UserKnowledgeEntry> {
+    const { data } = await client.post('/user-knowledge', body);
+    return data.data;
+  },
+  async getEntry(entryId: string): Promise<UserKnowledgeEntry> {
+    const { data } = await client.get(`/user-knowledge/${entryId}`);
+    return data.data;
+  },
+  async updateEntry(
+    entryId: string,
+    body: {
+      product_id?: string;
+      product_scope?: 'global' | 'user';
+      doc_type?: 'overview' | 'market-brief' | 'sales-brief' | 'custom';
+      title?: string;
+      content?: string;
+      enabled?: boolean;
+      sort_order?: number;
+    },
+  ): Promise<UserKnowledgeEntry> {
+    const { data } = await client.put(`/user-knowledge/${entryId}`, body);
+    return data.data;
+  },
+  async deleteEntry(entryId: string): Promise<void> {
+    await client.delete(`/user-knowledge/${entryId}`);
+  },
+  async toggleEntry(entryId: string): Promise<{ entry_id: string; enabled: boolean }> {
+    const { data } = await client.post(`/user-knowledge/${entryId}/toggle`);
+    return data.data;
+  },
+  async preview(body: { product_ids: string[]; purpose: string }): Promise<{
+    user_content: string;
+    user_file_count: number;
+  }> {
+    const { data } = await client.post('/user-knowledge/preview', body);
+    return data.data;
+  },
 };
 
 // ────────────────────────────────────────────────────────────
@@ -1053,13 +1256,19 @@ export const knowledgeAdminApi = {
   },
 
   /** 获取草稿详情（含正式内容） */
-  async getDraft(draftId: string): Promise<{ draft: KnowledgeDraft; formal_content: string; formal_hash: string }> {
+  async getDraft(
+    draftId: string,
+  ): Promise<{ draft: KnowledgeDraft; formal_content: string; formal_hash: string }> {
     const { data } = await client.get(`/admin/knowledge/drafts/${draftId}`);
     return data.data;
   },
 
   /** 保存草稿 */
-  async updateDraft(draftId: string, contentMd: string, changeSummary?: string): Promise<KnowledgeDraft> {
+  async updateDraft(
+    draftId: string,
+    contentMd: string,
+    changeSummary?: string,
+  ): Promise<KnowledgeDraft> {
     const { data } = await client.put(`/admin/knowledge/drafts/${draftId}`, {
       content_md: contentMd,
       change_summary: changeSummary,
@@ -1105,7 +1314,11 @@ export const knowledgeAdminApi = {
   },
 
   /** 发布草稿到正式知识库 */
-  async publish(draftIds: string[], versionName?: string, releaseNotes?: string): Promise<Record<string, unknown>> {
+  async publish(
+    draftIds: string[],
+    versionName?: string,
+    releaseNotes?: string,
+  ): Promise<Record<string, unknown>> {
     const { data } = await client.post('/admin/knowledge/publications', {
       draft_ids: draftIds,
       version_name: versionName,
@@ -1200,6 +1413,8 @@ const api = {
   devLogs: devLogsApi,
   prTemplates: prTemplateApi,
   prompts: promptApi,
+  productCatalog: productCatalogApi,
+  generationPreferences: generationPreferencesApi,
   knowledge: knowledgeApi,
   knowledgeAdmin: knowledgeAdminApi,
   webSearchApi,

@@ -3,6 +3,7 @@ import { Alert, Card, Progress, Space, Tag, Typography } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { pipelineApi } from '../api/client';
 import type { PipelineTask } from '../types';
+import ConfigSummaryTag from './pipeline/ConfigSummaryTag';
 
 const { Text } = Typography;
 const POLL_INTERVAL_MS = 2000;
@@ -147,6 +148,15 @@ export default function PipelineTaskProgress({
             >
               {PHASE_LABELS[phase] || phase}
             </Tag>
+            {task?.config_snapshot && (
+              <ConfigSummaryTag
+                productTargetMode={task.config_snapshot.product_target_mode}
+                scoreMode={task.config_snapshot.score_mode}
+                productRelevanceEnabled={task.config_snapshot.product_relevance_enabled ?? true}
+                selectedProductIds={task.config_snapshot.selected_product_ids}
+                resolvedProducts={task.config_snapshot.resolved_products}
+              />
+            )}
           </Space>
           <Text type="secondary">
             <ClockCircleOutlined /> 已耗时 {formatElapsed(elapsedSeconds)}

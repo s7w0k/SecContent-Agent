@@ -28,6 +28,7 @@ import { useCallback, useState } from 'react';
 import type { Key } from 'react';
 import api from '../api/client';
 import type { Article } from '../types';
+import ConfigSummaryTag from './pipeline/ConfigSummaryTag';
 
 interface ArticleTableProps {
   articles: Article[];
@@ -153,16 +154,24 @@ export default function ArticleTable({
           <Space size={2} wrap>
             <Tag color={sourceStyle.color}>{sourceStyle.label}</Tag>
             {r.content_fetch_status === 'queued' && (
-              <Tag color="orange" style={{ fontSize: 11 }}>排队中</Tag>
+              <Tag color="orange" style={{ fontSize: 11 }}>
+                排队中
+              </Tag>
             )}
             {r.content_fetch_status === 'fetching' && (
-              <Tag color="processing" style={{ fontSize: 11 }}>获取中</Tag>
+              <Tag color="processing" style={{ fontSize: 11 }}>
+                获取中
+              </Tag>
             )}
             {r.content_fetch_status === 'failed' && (
-              <Tag color="red" style={{ fontSize: 11 }}>获取失败</Tag>
+              <Tag color="red" style={{ fontSize: 11 }}>
+                获取失败
+              </Tag>
             )}
             {r.content_fetch_status === 'blocked' && (
-              <Tag color="default" style={{ fontSize: 11 }}>已阻止</Tag>
+              <Tag color="default" style={{ fontSize: 11 }}>
+                已阻止
+              </Tag>
             )}
           </Space>
         );
@@ -233,20 +242,40 @@ export default function ArticleTable({
       },
     },
     {
+      title: '产品',
+      key: 'product_config',
+      width: 80,
+      render: (_: unknown, r: Article) => {
+        const a = r.assessment;
+        if (!a?.product_target_mode) return null;
+        return (
+          <ConfigSummaryTag
+            productTargetMode={a.product_target_mode}
+            scoreMode={a.score_mode}
+            productRelevanceEnabled={a.product_relevance_enabled ?? true}
+            selectedProductIds={a.selected_product_ids}
+            resolvedProducts={a.resolved_products}
+          />
+        );
+      },
+    },
+    {
       title: '产品相关',
       dataIndex: 'product_relevance',
       key: 'product_relevance',
       width: 85,
       sorter: true,
-      render: (s: number) =>
-        s ? (
+      render: (s: number, r: Article) => {
+        const score = r.assessment?.product_relevance ?? s;
+        return score ? (
           <Progress
-            percent={s}
+            percent={score}
             size="small"
-            strokeColor={s >= 70 ? '#1890ff' : s >= 40 ? '#faad14' : '#ff4d4f'}
-            format={() => s}
+            strokeColor={score >= 70 ? '#1890ff' : score >= 40 ? '#faad14' : '#ff4d4f'}
+            format={() => score}
           />
-        ) : null,
+        ) : null;
+      },
     },
     {
       title: '事件影响',
@@ -254,15 +283,17 @@ export default function ArticleTable({
       key: 'event_impact',
       width: 85,
       sorter: true,
-      render: (s: number) =>
-        s ? (
+      render: (s: number, r: Article) => {
+        const score = r.assessment?.event_impact ?? s;
+        return score ? (
           <Progress
-            percent={s}
+            percent={score}
             size="small"
-            strokeColor={s >= 70 ? '#722ed1' : s >= 40 ? '#faad14' : '#ff4d4f'}
-            format={() => s}
+            strokeColor={score >= 70 ? '#722ed1' : score >= 40 ? '#faad14' : '#ff4d4f'}
+            format={() => score}
           />
-        ) : null,
+        ) : null;
+      },
     },
     {
       title: 'V2综合',
@@ -270,7 +301,10 @@ export default function ArticleTable({
       key: 'pr_total_score',
       width: 70,
       sorter: true,
-      render: (s: number) => (s ? <Tag color={s >= 80 ? 'red' : 'orange'}>{s}</Tag> : null),
+      render: (s: number, r: Article) => {
+        const score = r.assessment?.pr_total_score ?? s;
+        return score ? <Tag color={score >= 80 ? 'red' : 'orange'}>{score}</Tag> : null;
+      },
     },
     {
       title: '摘要',
@@ -481,7 +515,7 @@ export default function ArticleTable({
           pageSizeOptions: ['10', '20', '50'],
           showTotal: (t: number) => `total ${t}`,
         }}
-        scroll={{ x: 1300 }}
+        scroll={{ x: 1380 }}
         size="small"
         locale={{ emptyText: 'no data' }}
       />

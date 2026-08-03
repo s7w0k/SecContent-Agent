@@ -73,6 +73,8 @@ async def _attach_user_drafts(db, article: dict, user_id: str) -> dict:
     article.pop("pr_drafts", None)
     article["pr_drafts"] = drafts
     article["can_generate"] = not bool(drafts)
+    article["draft_created_at"] = user_draft.get("created_at") if user_draft else None
+    article["draft_updated_at"] = user_draft.get("updated_at") if user_draft else None
     return article
 
 
@@ -95,6 +97,8 @@ async def list_articles(
     is_high_value: bool | None = Query(default=None, description="是否高分文章(≥140)"),
     has_drafts: bool | None = Query(default=None, description="是否已生成初稿"),
     keyword: str | None = Query(default=None, description="标题/摘要关键词搜索"),
+    draft_date_from: str | None = Query(default=None, description="初稿生成日期起 (YYYY-MM-DD)"),
+    draft_date_to: str | None = Query(default=None, description="初稿生成日期止 (YYYY-MM-DD)"),
     sort_by: str = Query(default="added_at", description="排序字段"),
     order: str = Query(default="desc", description="排序方向: asc / desc"),
     user_id: str = Depends(get_current_user),
@@ -117,17 +121,34 @@ async def list_articles(
         query["is_ai_security"] = is_ai_security
 
     # 按是否已生成初稿筛选（仅在已打分且达到初稿生成阈值的文章中筛选）
-    if has_drafts is not None:
+    if has_drafts is not None or draft_date_from or draft_date_to:
+        draft_query: dict = {"user_id": user_id, "drafts.0": {"$exists": True}}
+        if draft_date_from:
+            try:
+                from_dt = datetime.strptime(draft_date_from, "%Y-%m-%d").replace(
+                    hour=0, minute=0, second=0, tzinfo=UTC
+                )
+                draft_query.setdefault("created_at", {})["$gte"] = from_dt
+            except ValueError:
+                pass
+        if draft_date_to:
+            try:
+                to_dt = datetime.strptime(draft_date_to, "%Y-%m-%d").replace(
+                    hour=23, minute=59, second=59, tzinfo=UTC
+                )
+                draft_query.setdefault("created_at", {})["$lte"] = to_dt
+            except ValueError:
+                pass
         draft_hashes = await db["user_drafts"].distinct(
             "article_url_hash",
-            {"user_id": user_id, "drafts.0": {"$exists": True}},
+            draft_query,
         )
-        if has_drafts:
-            query["url_hash"] = {"$in": draft_hashes}
-        else:
+        if has_drafts is False:
             # 未生成初稿：排除已有初稿的，且只看达到初稿生成阈值的已打分文章
             query["url_hash"] = {"$nin": draft_hashes}
             query["pr_total_score"] = {"$gte": 80}
+        else:
+            query["url_hash"] = {"$in": draft_hashes}
 
     # 排序
     sort_order = -1 if order == "desc" else 1

@@ -342,6 +342,7 @@ from api.crawl_config import router as crawl_config_router
 from api.dashboard import router as dashboard_router
 from api.dev_logs import router as dev_logs_router
 from api.feedback import router as feedback_router
+from api.generation_preferences import router as generation_preferences_router
 from api.knowledge_admin import router as knowledge_admin_router
 from api.knowledge_catalog import router as knowledge_catalog_router
 from api.logs import router as logs_router
@@ -351,10 +352,12 @@ from api.personalization import router as personalization_router
 from api.pipeline import llm_router
 from api.pipeline import router as pipeline_router
 from api.pr_templates import router as pr_templates_router
+from api.product_catalog import router as product_catalog_router
 from api.profile import router as profile_router
 from api.profile_policy import router as profile_policy_router
 from api.reports import router as reports_router
 from api.upload import router as upload_router
+from api.user_knowledge import router as user_knowledge_router
 from api.user_prompts import router as user_prompts_router
 from api.web_search import router as web_search_router
 
@@ -381,6 +384,9 @@ app.include_router(memory_router)
 app.include_router(knowledge_catalog_router)
 app.include_router(knowledge_admin_router)
 app.include_router(web_search_router)
+app.include_router(product_catalog_router)
+app.include_router(generation_preferences_router)
+app.include_router(user_knowledge_router)
 
 
 # ── System endpoints ────────────────────────────────────

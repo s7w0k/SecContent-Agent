@@ -49,6 +49,20 @@ export interface RegisterRequest extends LoginRequest {
 // Article（文章）
 // ═══════════════════════════════════════════════════════════
 
+/** 用户级文章评估（user_article_assessments） */
+export interface ArticleAssessment {
+  product_relevance?: number;
+  event_impact?: number;
+  pr_total_score?: number;
+  is_pr_candidate?: boolean;
+  product_target_mode?: string;
+  score_mode?: string;
+  product_relevance_enabled?: boolean;
+  selected_product_ids?: string[];
+  resolved_products?: string[];
+  assessed_at?: string;
+}
+
 export interface Article {
   _id: string;
   url_hash: string;
@@ -78,9 +92,13 @@ export interface Article {
   product_relevance?: number;
   event_impact?: number;
   pr_total_score?: number;
+  // 用户级评估（user_article_assessments）
+  assessment?: ArticleAssessment;
   // V2 PR 草稿
   pr_drafts?: DraftItem[];
   pr_template_used?: string;
+  draft_created_at?: string | null;
+  draft_updated_at?: string | null;
   // V1 评分（保留兼容）
   ai_relevance_score: number;
   reportability_score: number;
@@ -102,6 +120,8 @@ export interface ArticleQuery {
   is_high_value?: boolean;
   has_drafts?: boolean;
   keyword?: string;
+  draft_date_from?: string;
+  draft_date_to?: string;
   sort_by?: string;
   order?: 'asc' | 'desc';
 }
@@ -296,6 +316,15 @@ export interface PipelineTaskProgress {
   message: string;
 }
 
+/** 任务配置快照（生成时保存的配置摘要） */
+export interface TaskConfigSnapshot {
+  product_target_mode?: string;
+  score_mode?: string;
+  product_relevance_enabled?: boolean;
+  selected_product_ids?: string[];
+  resolved_products?: string[];
+}
+
 export interface PipelineTask {
   id?: string;
   task_id: string;
@@ -305,6 +334,7 @@ export interface PipelineTask {
   status: PipelineTaskStatus;
   progress: PipelineTaskProgress;
   result?: Record<string, unknown> | null;
+  config_snapshot?: TaskConfigSnapshot | null;
   error?: string | null;
   created_at: string;
   updated_at: string;
@@ -524,8 +554,18 @@ export interface KnowledgePromptPreview {
 }
 
 export interface KnowledgeScorePreview {
-  old_score: { product_relevance: number; event_impact: number; pr_total_score: number; error?: string } | null;
-  new_score: { product_relevance: number; event_impact: number; pr_total_score: number; error?: string } | null;
+  old_score: {
+    product_relevance: number;
+    event_impact: number;
+    pr_total_score: number;
+    error?: string;
+  } | null;
+  new_score: {
+    product_relevance: number;
+    event_impact: number;
+    pr_total_score: number;
+    error?: string;
+  } | null;
   score_changed: boolean;
 }
 
@@ -1092,4 +1132,114 @@ export interface SearchStatusResponse {
   allowed_categories: string[];
   allowed_languages: string[];
   max_import_items: number;
+}
+
+// ═══════════════════════════════════════════════════════════
+// 提示词中心（Prompt Catalog）
+// ═══════════════════════════════════════════════════════════
+
+// ── 提示词中心 ──
+export interface PromptCatalogItem {
+  prompt_key: string;
+  display_name: string;
+  stage: string;
+  description: string;
+  source: 'system' | 'user';
+  version: number | null;
+  default_version: number;
+  is_custom: boolean;
+  updated_at: string | null;
+}
+
+export interface PromptDetail {
+  prompt_key: string;
+  display_name?: string;
+  content: string;
+  is_custom: boolean;
+  source: 'system' | 'user';
+  version: number | null;
+  default_version: number;
+  required_placeholders: string[];
+  allowed_placeholders: string[];
+  updated_at: string | null;
+}
+
+export interface PromptValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  estimated_tokens: number;
+  char_count: number;
+}
+
+export interface PromptVersion {
+  version_id: string;
+  prompt_key: string;
+  version: number;
+  content: string;
+  content_hash: string;
+  base_default_version: number;
+  change_type: string;
+  created_at: string;
+}
+
+export interface ProductCatalogItem {
+  product_id: string;
+  name: string;
+  description: string;
+  published: boolean;
+  available_for: string[];
+}
+
+export interface GenerationPreferences {
+  user_id: string;
+  product_relevance_enabled: boolean;
+  product_target_mode: 'none' | 'auto' | 'selected';
+  selected_product_ids: string[];
+  product_event_threshold: number;
+  event_only_threshold: number;
+  version: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+// ── 用户级产品知识库 ──
+export interface UserKnowledgeEntry {
+  entry_id: string;
+  user_id: string;
+  product_id: string;
+  product_scope: 'global' | 'user';
+  doc_type: 'overview' | 'market-brief' | 'sales-brief' | 'custom';
+  title: string;
+  content: string;
+  enabled: boolean;
+  sort_order: number;
+  content_hash: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface UserProduct {
+  product_id: string;
+  user_id: string;
+  name: string;
+  description: string;
+  aliases: string[];
+  keywords: string[];
+  sort_order: number;
+  enabled: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface UserProductListItem {
+  product_id: string;
+  name: string;
+  description: string;
+  scope: 'global' | 'user';
+  aliases: string[];
+  keywords: string[];
+  sort_order: number;
+  enabled: boolean;
+  available_for: string[];
 }

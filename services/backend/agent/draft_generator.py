@@ -163,6 +163,9 @@ class DraftGenerator:
         system_prompt_template: str | None = None,
         reference_template: str | None = None,
         memory_pack: Any | None = None,
+        *,
+        knowledge_slice: str | None = None,
+        user_business_prompt: str | None = None,
     ) -> dict:
         """为单篇文章生成 4 篇 PR 草稿。
 
@@ -172,6 +175,8 @@ class DraftGenerator:
             style_hints: 用户风格偏好提示词（可选）
             templates: 已按当前用户解析并冻结的有效模板；None 时使用系统默认模板
             system_prompt_template: 当前用户的 System Prompt 模板覆盖；None 时使用系统默认
+            knowledge_slice: 用户选择产品的知识切片；None 时使用全局知识库
+            user_business_prompt: 用户自定义业务提示词补充；None 时不追加
 
         Returns:
             {
@@ -215,6 +220,8 @@ class DraftGenerator:
                         system_prompt_template,
                         reference_template,
                         memory_pack,
+                        knowledge_slice=knowledge_slice,
+                        user_business_prompt=user_business_prompt,
                     ),
                 )
 
@@ -251,6 +258,9 @@ class DraftGenerator:
         system_prompt_template: str | None = None,
         reference_template: str | None = None,
         memory_pack: Any | None = None,
+        *,
+        knowledge_slice: str | None = None,
+        user_business_prompt: str | None = None,
     ) -> dict | None:
         """生成单篇草稿（含重试）。"""
         # 如果有 Memory Pack，用其渲染文本替代 style_hints
@@ -268,6 +278,8 @@ class DraftGenerator:
             effective_style_hints,
             template_override=system_prompt_template,
             reference_template=reference_template,
+            knowledge_slice=knowledge_slice,
+            user_business_prompt=user_business_prompt,
         )
         user_prompt = self._build_user_prompt(article, scores)
 
@@ -311,10 +323,20 @@ class DraftGenerator:
         style_hints: str | None = None,
         template_override: str | None = None,
         reference_template: str | None = None,
+        *,
+        knowledge_slice: str | None = None,
+        user_business_prompt: str | None = None,
     ) -> str:
-        knowledge_context = self.knowledge.as_system_prompt()
+        # 如果提供了知识切片，使用切片替代全局知识库
+        if knowledge_slice is not None and knowledge_slice.strip():
+            knowledge_context = knowledge_slice
+        else:
+            knowledge_context = self.knowledge.as_system_prompt()
         if not knowledge_context:
             knowledge_context = "（知识库未加载）"
+        # 如果提供了用户业务提示词，追加到知识上下文后
+        if user_business_prompt and user_business_prompt.strip():
+            knowledge_context += f"\n\n【用户业务配置】\n{user_business_prompt.strip()}"
         template_spec = self._build_template_spec(template, perspective)
         style_section = (
             f"\n{self._sanitize_low_trust_text(style_hints.strip())}\n"

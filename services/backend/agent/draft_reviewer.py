@@ -202,8 +202,20 @@ class DraftReviewer:
         self.timeout_seconds = timeout_seconds
         self.max_retries = max(0, max_retries)
 
-    async def review(self, article: dict[str, Any], draft: dict[str, Any]) -> DraftReview:
-        """检查单篇稿件；审核失败不会修改或丢弃稿件。"""
+    async def review(
+        self,
+        article: dict[str, Any],
+        draft: dict[str, Any],
+        *,
+        user_focus_items: str | None = None,
+    ) -> DraftReview:
+        """检查单篇稿件；审核失败不会修改或丢弃稿件。
+
+        Args:
+            article: 文章数据
+            draft: 稿稿数据
+            user_focus_items: 用户自定义审核关注项（追加到固定红线之后）
+        """
 
         draft_title = str(draft.get("title") or "")
         draft_content = str(draft.get("content_md") or "")
@@ -225,9 +237,13 @@ class DraftReviewer:
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
+                # 构建系统提示词：固定红线 + 用户关注项（只增不减）
+                effective_system_prompt = SYSTEM_PROMPT
+                if user_focus_items and user_focus_items.strip():
+                    effective_system_prompt += f"\n\n## 当前用户额外关注项\n{user_focus_items.strip()}"
                 response = await asyncio.wait_for(
                     self.json_llm.ainvoke(
-                        [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=prompt)]
+                        [SystemMessage(content=effective_system_prompt), HumanMessage(content=prompt)]
                     ),
                     timeout=self.timeout_seconds,
                 )

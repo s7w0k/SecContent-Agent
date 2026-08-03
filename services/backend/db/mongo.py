@@ -260,6 +260,35 @@ class MongoDB:
                     name="uq_user_prompt_key",
                 ),
             ],
+            "user_prompt_versions": [
+                IndexModel(
+                    [("user_id", ASCENDING), ("prompt_key", ASCENDING), ("version", DESCENDING)],
+                    unique=True,
+                    name="uq_user_prompt_version",
+                ),
+            ],
+            "user_generation_preferences": [
+                IndexModel(
+                    [("user_id", ASCENDING)],
+                    unique=True,
+                    name="uq_user_generation_preferences",
+                ),
+            ],
+            "user_article_assessments": [
+                IndexModel(
+                    [("user_id", ASCENDING), ("article_url_hash", ASCENDING)],
+                    unique=True,
+                    name="uq_user_article_assessment",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("scoring.candidate_score", DESCENDING), ("updated_at", DESCENDING)],
+                    name="idx_user_candidate_score",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("classification.category_v2", ASCENDING), ("updated_at", DESCENDING)],
+                    name="idx_user_assessment_category",
+                ),
+            ],
             "pipeline_locks": [
                 IndexModel(
                     [("lock_key", ASCENDING)],
@@ -590,6 +619,80 @@ class MongoDB:
                     [("expires_at", ASCENDING)],
                     name="idx_import_item_ttl",
                     expireAfterSeconds=0,
+                ),
+            ],
+            "user_knowledge_entries": [
+                IndexModel(
+                    [("entry_id", ASCENDING)],
+                    unique=True,
+                    name="uq_user_knowledge_entry",
+                ),
+                IndexModel(
+                    [
+                        ("user_id", ASCENDING),
+                        ("product_id", ASCENDING),
+                        ("doc_type", ASCENDING),
+                    ],
+                    name="idx_user_knowledge_product_doc",
+                ),
+                IndexModel(
+                    [
+                        ("user_id", ASCENDING),
+                        ("enabled", ASCENDING),
+                        ("sort_order", ASCENDING),
+                    ],
+                    name="idx_user_knowledge_enabled",
+                ),
+            ],
+            "user_products": [
+                IndexModel(
+                    [("user_id", ASCENDING), ("product_id", ASCENDING)],
+                    unique=True,
+                    name="uq_user_product",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("enabled", ASCENDING)],
+                    name="idx_user_product_enabled",
+                ),
+            ],
+            "crawl_runs": [
+                IndexModel(
+                    [("run_key", ASCENDING)],
+                    unique=True,
+                    name="uq_crawl_run_key",
+                ),
+                IndexModel(
+                    [("job_type", ASCENDING), ("started_at", DESCENDING)],
+                    name="idx_crawl_run_job_started",
+                ),
+                IndexModel(
+                    [("status", ASCENDING), ("updated_at", DESCENDING)],
+                    name="idx_crawl_run_status_updated",
+                ),
+                IndexModel(
+                    [("expires_at", ASCENDING)],
+                    expireAfterSeconds=0,
+                    name="idx_crawl_run_expires",
+                ),
+            ],
+            "articles": [
+                IndexModel(
+                    [("url_hash", ASCENDING)],
+                    unique=True,
+                    name="idx_url_hash",
+                ),
+                IndexModel(
+                    [("added_at", DESCENDING)],
+                    name="idx_added_at",
+                ),
+                IndexModel(
+                    [("source_type", ASCENDING), ("added_at", DESCENDING)],
+                    name="idx_source_added",
+                ),
+                IndexModel(
+                    [("crawl_run_id", ASCENDING)],
+                    sparse=True,
+                    name="idx_articles_crawl_run",
                 ),
             ],
         }

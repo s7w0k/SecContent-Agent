@@ -769,10 +769,7 @@ async def pipeline_crawl(
 async def crawl_overseas_only(
     request: Request, days: int = 1, _user_id: str = Depends(get_current_user)
 ):
-    """仅调 mcp-crawl 爬取海外新闻 -> 入库"""
-    import hashlib
-    from datetime import datetime
-
+    """仅调 mcp-crawl 爬取海外新闻 -> 入库（使用统一入库服务）"""
     db = getattr(request.app.state, "db", None)
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -785,72 +782,42 @@ async def crawl_overseas_only(
         raise HTTPException(status_code=503, detail="Pipeline not initialized")
 
     try:
+        from agent.overseas_news_service import CrawlServiceError, OverseasNewsIngestionService
+
         trace_id = generate_trace_id()
         request_id = _request_id(request)
-        result = await tools.tools["crawl_overseas_news"].ainvoke(
-            {
-                "payload": {
-                    "days": days,
-                    "_request_context": {
-                        "request_id": request_id,
-                        "trace_id": trace_id,
-                        "initiator_user_id": _user_id,
-                    },
-                }
-            }
+        run_id = f"crawl-overseas-manual-{trace_id[:16]}"
+
+        service = OverseasNewsIngestionService(
+            db=db,
+            tools=tools.tools,
+            arq_pool=arq_pool,
         )
-        data: dict[str, Any] = {}
-        articles = []
-        if result.get("ok") and result.get("data"):
-            data = result["data"]
-            articles = data.get("articles", []) if isinstance(data, dict) else data
+        result = await service.run(
+            crawl_days=days,
+            trigger="manual",
+            actor_id=_user_id,
+            trace_id=trace_id,
+            request_id=request_id,
+            run_id=run_id,
+        )
 
-        saved = 0
-        new_urls: list[dict] = []
-        for art in articles:
-            url = art.get("url", "")
-            if not url:
-                continue
-            url_hash = hashlib.md5(url.encode()).hexdigest()
-            existing = await db["articles"].find_one({"url_hash": url_hash})
-            if existing:
-                continue
-            await db["articles"].insert_one(
-                {
-                    "url_hash": url_hash,
-                    "title": art.get("title", ""),
-                    "url": url,
-                    "source": art.get("source", ""),
-                    "source_type": "overseas_news",
-                    "published_at": art.get("published_at", ""),
-                    "added_at": datetime.now(UTC),
-                    "summary": art.get("summary", ""),
-                    "content_md": "",
-                    "pipeline_status": "crawled",
-                }
-            )
-            new_urls.append({"url_hash": url_hash, "url": url})
-            saved += 1
-
-        # 全文抓取交由 ARQ Worker，API 进程不持有后台协程。
-        if new_urls:
-            await arq_pool.enqueue_job(
-                "fetch_fulltext_batch",
-                new_urls,
-                trace_id=trace_id,
-                user_id=_user_id,
-                request_id=request_id,
-            )
-
-        errors = data.get("errors", {}) if isinstance(data, dict) else {}
-        per_site = data.get("per_site", {}) if isinstance(data, dict) else {}
         return {
             "ok": True,
-            "total": len(articles),
-            "saved": saved,
-            "errors": errors,
-            "per_site": per_site,
+            "run_id": result.get("run_id", run_id),
+            "total": result["total"],
+            "saved": result["saved"],
+            "duplicates": result["duplicates"],
+            "invalid": result["invalid"],
+            "fulltext_queued": result["fulltext_queued"],
+            "status": result["status"],
+            "errors": result["errors"],
+            "per_site": result["per_site"],
         }
+    except CrawlServiceError as e:
+        if e.retryable:
+            raise HTTPException(status_code=502, detail=e.message) from e
+        raise HTTPException(status_code=502, detail=e.message) from e
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
@@ -1654,12 +1621,20 @@ async def run_v2_single(
     if await db["articles"].find_one({"url_hash": url_hash}) is None:
         raise HTTPException(status_code=404, detail="Article not found")
 
-    # 读取可选的 reference_template
+    # 读取可选的 reference_template 和 product 配置
     reference_template: str | None = None
+    product_target_mode: str | None = None
+    selected_product_ids: list[str] | None = None
+    product_relevance_enabled: bool | None = None
+    force_generate: bool = False
     try:
         body = await request.json()
         if isinstance(body, dict):
             reference_template = body.get("reference_template")
+            product_target_mode = body.get("product_target_mode")
+            selected_product_ids = body.get("selected_product_ids")
+            product_relevance_enabled = body.get("product_relevance_enabled")
+            force_generate = body.get("force_generate", False)
     except Exception:
         pass
 
@@ -1674,11 +1649,21 @@ async def run_v2_single(
         username=username,
     )
 
-    # 将 reference_template 存入任务文档
+    # 将 reference_template 和 product 配置存入任务文档
+    task_update: dict = {}
     if reference_template and reference_template.strip():
+        task_update["reference_template"] = reference_template.strip()[:15000]
+    if product_target_mode or selected_product_ids or product_relevance_enabled is not None:
+        task_update["generation_options"] = {
+            "product_target_mode": product_target_mode,
+            "selected_product_ids": selected_product_ids or [],
+            "product_relevance_enabled": product_relevance_enabled,
+            "force_generate": force_generate,
+        }
+    if task_update:
         await db["pipeline_tasks"].update_one(
             {"task_id": task["task_id"]},
-            {"$set": {"reference_template": reference_template.strip()[:15000]}},
+            {"$set": task_update},
         )
 
     await _enqueue_pipeline_task(
@@ -1980,6 +1965,34 @@ async def _run_v2_single_workflow(
                             if settings.MEMORY_READ_MODE == "memory":
                                 memory_pack = None
 
+                    # 解析用户级知识切片
+                    knowledge_slice_content: str | None = None
+                    try:
+                        from agent.knowledge_slice import KnowledgeSliceResolver
+                        settings = get_settings()
+                        if settings.USER_KNOWLEDGE_ENABLED:
+                            # 读取任务的 generation_options
+                            task_doc = await db["pipeline_tasks"].find_one({"task_id": task_id}) if task_id else None
+                            gen_opts = (task_doc or {}).get("generation_options", {})
+                            task_product_ids = gen_opts.get("selected_product_ids", [])
+                            task_mode = gen_opts.get("product_target_mode", "auto")
+
+                            if task_mode == "none":
+                                knowledge_slice_content = None
+                            else:
+                                slice_resolver = KnowledgeSliceResolver(
+                                    settings.KNOWLEDGE_BASE_DIR, db=db
+                                )
+                                slice_result = await slice_resolver.resolve(
+                                    purpose="draft",
+                                    product_ids=task_product_ids if task_product_ids else None,
+                                    include_shared=True,
+                                    user_id=user_id,
+                                )
+                                knowledge_slice_content = slice_result.content if slice_result.content else None
+                    except Exception as ks_err:
+                        log.warning("[run-v2-single] knowledge slice failed: %s", ks_err)
+
                     drafts = await draft_gen.generate(
                         dict(article),
                         scores,
@@ -1988,6 +2001,7 @@ async def _run_v2_single_workflow(
                         system_prompt_template=system_prompt_template,
                         reference_template=reference_template,
                         memory_pack=memory_pack,
+                        knowledge_slice=knowledge_slice_content,
                     )
                     result["steps"].append(
                         {

@@ -11,8 +11,11 @@ import {
   UserOutlined,
   WechatOutlined,
 } from '@ant-design/icons';
-import { Layout, Menu, Modal, Typography } from 'antd';
+import { ConfigProvider, Layout, Menu, Modal, Typography } from 'antd';
+import zhCN from 'antd/locale/zh_CN';
+import dayjs from 'dayjs';
 import { useState } from 'react';
+import 'dayjs/locale/zh-cn';
 import { AuthProvider } from './auth/AuthContext';
 import ProtectedRoute from './auth/ProtectedRoute';
 import { useAuth } from './auth/useAuth';
@@ -56,7 +59,9 @@ export function MainLayout() {
   const [tab, setTab] = useState('dashboard');
   const [templateDirty, setTemplateDirty] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
-  const [dashboardEntry, setDashboardEntry] = useState<{ sourceType?: string; refreshKey: number }>({ refreshKey: 0 });
+  const [dashboardEntry, setDashboardEntry] = useState<{ sourceType?: string; refreshKey: number }>(
+    { refreshKey: 0 },
+  );
   const { user } = useAuth();
   const menuItems = user?.is_developer
     ? [
@@ -156,11 +161,14 @@ export function MainLayout() {
 }
 
 export default function App() {
+  dayjs.locale('zh-cn');
   return (
-    <AuthProvider>
-      <ProtectedRoute fallback={<LoginPage />}>
-        <MainLayout />
-      </ProtectedRoute>
-    </AuthProvider>
+    <ConfigProvider locale={zhCN}>
+      <AuthProvider>
+        <ProtectedRoute fallback={<LoginPage />}>
+          <MainLayout />
+        </ProtectedRoute>
+      </AuthProvider>
+    </ConfigProvider>
   );
 }

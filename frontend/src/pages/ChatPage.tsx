@@ -12,6 +12,7 @@ import {
   EditOutlined,
   ExpandAltOutlined,
   QuestionCircleOutlined,
+  SearchOutlined,
   SendOutlined,
 } from '@ant-design/icons';
 import {
@@ -19,10 +20,12 @@ import {
   Button,
   Card,
   Collapse,
+  DatePicker,
   Drawer,
   Empty,
   Input,
   Layout,
+  List,
   Radio,
   Select,
   Space,
@@ -31,12 +34,9 @@ import {
   Typography,
   message,
 } from 'antd';
+import dayjs from 'dayjs';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type {
-  KeyboardEvent as ReactKeyboardEvent,
-  PointerEvent as ReactPointerEvent,
-} from 'react';
-import ReactMarkdown from 'react-markdown';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import api, { chatApi, memoryApi } from '../api/client';
 import ChatBubble from '../components/ChatBubble';
 import DraftBlockView, { type DraftBlock } from '../components/DraftBlockView';
@@ -45,6 +45,7 @@ import DraftReviewPanel from '../components/DraftReviewPanel';
 import RevisionList from '../components/RevisionList';
 import type {
   Article,
+  ArticleQuery,
   ChatMessage,
   DraftReview,
   DraftReviseResponse,
@@ -72,22 +73,19 @@ function getMaximumSiderWidth(layoutWidth?: number) {
       : typeof window !== 'undefined'
         ? window.innerWidth
         : DEFAULT_SIDER_WIDTH + MIN_CONTENT_WIDTH + RESIZE_HANDLE_WIDTH;
-  return Math.max(
-    MIN_SIDER_WIDTH,
-    availableWidth - MIN_CONTENT_WIDTH - RESIZE_HANDLE_WIDTH,
-  );
+  return Math.max(MIN_SIDER_WIDTH, availableWidth - MIN_CONTENT_WIDTH - RESIZE_HANDLE_WIDTH);
 }
 
 function clampSiderWidth(width: number, layoutWidth?: number) {
-  return Math.round(
-    Math.min(Math.max(width, MIN_SIDER_WIDTH), getMaximumSiderWidth(layoutWidth)),
-  );
+  return Math.round(Math.min(Math.max(width, MIN_SIDER_WIDTH), getMaximumSiderWidth(layoutWidth)));
 }
 
 function getInitialSiderWidth() {
   if (typeof window === 'undefined') return DEFAULT_SIDER_WIDTH;
   const storedWidth = Number(window.localStorage.getItem(SIDER_WIDTH_STORAGE_KEY));
-  return clampSiderWidth(Number.isFinite(storedWidth) && storedWidth > 0 ? storedWidth : DEFAULT_SIDER_WIDTH);
+  return clampSiderWidth(
+    Number.isFinite(storedWidth) && storedWidth > 0 ? storedWidth : DEFAULT_SIDER_WIDTH,
+  );
 }
 
 const modeOptions = [
@@ -112,6 +110,10 @@ export default function ChatPage() {
   const [articlesLoading, setArticlesLoading] = useState(true);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [draftIndex, setDraftIndex] = useState<number>(0);
+
+  // ── 筛选 ─────────────────────────────────────────────────
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [dateRange, setDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
 
   // ── 对话 ─────────────────────────────────────────────────
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -215,11 +217,27 @@ export default function ChatPage() {
     persistSiderWidth(defaultWidth);
   };
 
-  // ── 加载有草稿的文章列表 ──────────────────────────────────
+  // ── 加载有草稿的文章列表（支持服务端筛选） ────────────────
   const loadArticles = useCallback(async () => {
     setArticlesLoading(true);
     try {
-      const resp = await api.getArticles({ page: 1, page_size: 100 });
+      const params: Record<string, unknown> = {
+        page: 1,
+        page_size: 100,
+        has_drafts: true,
+        sort_by: 'added_at',
+        order: 'desc',
+      };
+      if (searchKeyword.trim()) {
+        params.keyword = searchKeyword.trim();
+      }
+      if (dateRange?.[0]) {
+        params.draft_date_from = dateRange[0].format('YYYY-MM-DD');
+      }
+      if (dateRange?.[1]) {
+        params.draft_date_to = dateRange[1].format('YYYY-MM-DD');
+      }
+      const resp = await api.getArticles(params as ArticleQuery);
       const withDrafts = resp.items.filter((a) => a.pr_drafts && a.pr_drafts.length > 0);
       setArticles(withDrafts);
     } catch {
@@ -227,7 +245,7 @@ export default function ChatPage() {
     } finally {
       setArticlesLoading(false);
     }
-  }, []);
+  }, [searchKeyword, dateRange]);
 
   useEffect(() => {
     loadArticles();
@@ -340,9 +358,15 @@ export default function ChatPage() {
               const maxPolls = 20; // 最多轮询 60 秒（20 × 3s）
               const pollMemory = async () => {
                 try {
-                  const res = await memoryApi.listItems({ status: 'pending_approval', page: 1, page_size: 5 });
+                  const res = await memoryApi.listItems({
+                    status: 'pending_approval',
+                    page: 1,
+                    page_size: 5,
+                  });
                   if ((res.data?.items?.length ?? 0) > 0) {
-                    message.success(`偏好学习完成，已提取 ${res.data.items.length} 条记忆，可在「个人偏好」页面查看`);
+                    message.success(
+                      `偏好学习完成，已提取 ${res.data.items.length} 条记忆，可在「个人偏好」页面查看`,
+                    );
                     return;
                   }
                 } catch {
@@ -595,20 +619,84 @@ export default function ChatPage() {
                     <span>加载中...</span>
                   </div>
                 ) : (
-                  <Select
-                    showSearch
-                    aria-label="选择有草稿的文章"
-                    placeholder="选择有草稿的文章"
-                    style={{ width: '100%' }}
-                    value={selectedArticle?.url_hash}
-                    onChange={handleArticleChange}
-                    options={articles.map((a) => ({
-                      label: a.title?.slice(0, 50),
-                      value: a.url_hash,
-                    }))}
-                    optionFilterProp="label"
-                    size="small"
-                  />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <Input.Search
+                      placeholder="搜索新闻标题..."
+                      allowClear
+                      size="small"
+                      value={searchKeyword}
+                      onChange={(e) => setSearchKeyword(e.target.value)}
+                      onSearch={() => loadArticles()}
+                      enterButton={<SearchOutlined />}
+                    />
+                    <DatePicker.RangePicker
+                      size="small"
+                      style={{ width: '100%' }}
+                      placeholder={['初稿日期起', '初稿日期止']}
+                      value={dateRange as [dayjs.Dayjs | null, dayjs.Dayjs | null] | null}
+                      onChange={(dates) => {
+                        setDateRange(dates as [dayjs.Dayjs | null, dayjs.Dayjs | null] | null);
+                      }}
+                    />
+                    <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                      {articles.length === 0 ? (
+                        <Empty description="无匹配文章" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                      ) : (
+                        <List
+                          size="small"
+                          dataSource={articles}
+                          renderItem={(a) => (
+                            <List.Item
+                              key={a.url_hash}
+                              onClick={() => handleArticleChange(a.url_hash)}
+                              style={{
+                                cursor: 'pointer',
+                                padding: '6px 10px',
+                                borderRadius: 4,
+                                background:
+                                  selectedArticle?.url_hash === a.url_hash
+                                    ? 'var(--ant-color-primary-bg, #e6f4ff)'
+                                    : 'transparent',
+                                border:
+                                  selectedArticle?.url_hash === a.url_hash
+                                    ? '1px solid var(--ant-color-primary-border, #91caff)'
+                                    : '1px solid transparent',
+                                transition: 'all 0.2s',
+                              }}
+                            >
+                              <div style={{ width: '100%', minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {a.title}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    color: 'var(--ant-color-text-tertiary, #999)',
+                                    marginTop: 2,
+                                  }}
+                                >
+                                  {a.draft_created_at
+                                    ? dayjs(a.draft_created_at).format('MM-DD HH:mm')
+                                    : a.added_at
+                                      ? dayjs(a.added_at).format('MM-DD HH:mm')
+                                      : ''}
+                                  {a.source ? ` · ${a.source}` : ''}
+                                </div>
+                              </div>
+                            </List.Item>
+                          )}
+                        />
+                      )}
+                    </div>
+                  </div>
                 ),
               },
               ...(selectedArticle && currentDraft
@@ -861,10 +949,17 @@ export default function ChatPage() {
                 }}
               >
                 <EditOutlined style={{ color: '#1677ff' }} />
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span
+                  style={{
+                    flex: 1,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   已选中第 {selectedBlock.index + 1} 段：
                   {selectedBlock.text.length > 50
-                    ? selectedBlock.text.slice(0, 50) + '...'
+                    ? `${selectedBlock.text.slice(0, 50)}...`
                     : selectedBlock.text}
                 </span>
                 <Button

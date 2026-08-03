@@ -173,6 +173,80 @@ class Settings(BaseSettings):
         default=180, ge=1, le=3650, description="导入审计保留天数"
     )
 
+    # ── 阶段十四 Feature Flags ──────────────────────────
+    USER_PROMPT_V2_ENABLED: bool = Field(
+        default=True, description="启用用户级提示词中心（T1-T2）"
+    )
+    PRODUCT_CATALOG_ENABLED: bool = Field(
+        default=True, description="启用产品目录和知识切片（T3）"
+    )
+    GENERATION_PREFERENCES_ENABLED: bool = Field(
+        default=True, description="启用用户级生成偏好（T4）"
+    )
+    USER_ASSESSMENT_ENABLED: bool = Field(
+        default=True, description="启用用户级文章评估（T5）"
+    )
+    PIPELINE_CONFIG_FREEZE_ENABLED: bool = Field(
+        default=True, description="启用流水线配置冻结（T6）"
+    )
+    LEGACY_GLOBAL_SCORE_AS_FALLBACK: bool = Field(
+        default=True, description="旧全局分数作为回退（关闭后仅展示用户级分数）"
+    )
+    USER_KNOWLEDGE_ENABLED: bool = Field(
+        default=True, description="启用用户级产品知识库（阶段十五）"
+    )
+
+    # ── 海外新闻每日定时抓取（阶段十六） ──────────────
+    OVERSEAS_NEWS_SCHEDULE_ENABLED: bool = Field(
+        default=True, description="是否启用每日定时抓取"
+    )
+    OVERSEAS_NEWS_SCHEDULE_TIMEZONE: str = Field(
+        default="Asia/Shanghai", description="业务时区（IANA 时区名）"
+    )
+    OVERSEAS_NEWS_SCHEDULE_HOUR: int = Field(
+        default=7, ge=0, le=23, description="当地小时（0-23）"
+    )
+    OVERSEAS_NEWS_SCHEDULE_MINUTE: int = Field(
+        default=0, ge=0, le=59, description="当地分钟（0-59）"
+    )
+    OVERSEAS_NEWS_SCHEDULE_CRAWL_DAYS: int = Field(
+        default=1, ge=1, le=7, description="抓取最近天数（1-7）"
+    )
+    OVERSEAS_NEWS_JOB_TIMEOUT_SECONDS: int = Field(
+        default=1200, ge=300, le=3600, description="元数据任务超时（秒）"
+    )
+    OVERSEAS_NEWS_LOCK_TTL_SECONDS: int = Field(
+        default=1500, ge=600, le=7200, description="共享锁 TTL（秒，须大于任务超时）"
+    )
+    OVERSEAS_NEWS_RUN_RETENTION_DAYS: int = Field(
+        default=90, ge=7, le=365, description="执行记录保留天数"
+    )
+    OVERSEAS_NEWS_STARTUP_CATCHUP_ENABLED: bool = Field(
+        default=True, description="是否启用当日漏跑补偿"
+    )
+
+    @field_validator("OVERSEAS_NEWS_SCHEDULE_TIMEZONE")
+    @classmethod
+    def validate_timezone(cls, v: str) -> str:
+        from zoneinfo import ZoneInfo
+
+        try:
+            ZoneInfo(v)
+        except Exception as exc:
+            raise ValueError(f"无效的 IANA 时区: {v}") from exc
+        return v
+
+    @field_validator("OVERSEAS_NEWS_LOCK_TTL_SECONDS")
+    @classmethod
+    def validate_lock_ttl(cls, v: int, info) -> int:
+        timeout = info.data.get("OVERSEAS_NEWS_JOB_TIMEOUT_SECONDS", 1200)
+        if v <= timeout:
+            raise ValueError(
+                f"OVERSEAS_NEWS_LOCK_TTL_SECONDS({v}) 必须大于 "
+                f"OVERSEAS_NEWS_JOB_TIMEOUT_SECONDS({timeout})"
+            )
+        return v
+
     # ── LLM 配置 ─────────────────────────────────────
     DEEPSEEK_API_KEY: str = Field(
         default="",

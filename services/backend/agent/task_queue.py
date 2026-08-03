@@ -403,6 +403,465 @@ async def cleanup_expired_articles(ctx: dict[str, Any]) -> dict:
     }
 
 
+# ── 16.5: ARQ 每日定时海外新闻抓取 ──────────────────────
+
+
+async def _auto_classify_and_score(
+    *,
+    ctx: dict[str, Any],
+    db,
+    run_id: str,
+    trace_id: str,
+    settings,
+) -> dict[str, Any]:
+    """对本次抓取的新文章自动执行分类 + 打分。
+
+    Returns:
+        {"classified": int, "scored": int, "pr_candidates": int, "errors": dict}
+    """
+    import asyncio
+
+    result = {"classified": 0, "scored": 0, "pr_candidates": 0, "errors": {}}
+
+    # 从 worker 上下文获取分类器和打分器
+    app = ctx.get("app")
+    if app is None:
+        logger.warning("[overseas-schedule] app not in ctx, skip classify+score")
+        result["errors"]["classify"] = "app not available"
+        return result
+
+    classifier = getattr(app.state, "classifier_v2", None)
+    scorer = getattr(app.state, "scorer_v2", None)
+    if classifier is None or scorer is None:
+        logger.warning("[overseas-schedule] classifier/scorer not available, skip")
+        result["errors"]["classify"] = "classifier or scorer not available"
+        return result
+
+    # 1. 查询本次抓取的未分类文章
+    articles = await db["articles"].find({
+        "crawl_run_id": run_id,
+        "$or": [
+            {"category_v2": {"$in": ["", None]}},
+            {"category_v2": {"$exists": False}},
+        ],
+    }).to_list(length=500)
+
+    if not articles:
+        logger.info("[overseas-schedule] no new articles to classify")
+        return result
+
+    logger.info(
+        "[overseas-schedule] auto-classifying %d articles for run_id=%s",
+        len(articles), run_id,
+    )
+
+    # 2. 并发分类（并发度 5）
+    semaphore = asyncio.Semaphore(5)
+
+    async def classify_one(article: dict[str, Any]) -> dict[str, Any] | None:
+        async with semaphore:
+            try:
+                return await classifier.classify_single(
+                    article,
+                    user_id="system:scheduler",
+                    trace_id=trace_id,
+                    task_id=run_id,
+                )
+            except Exception as exc:
+                logger.warning("[overseas-schedule] classify failed for %s: %s",
+                               article.get("url_hash", ""), exc)
+                return None
+
+    futures = [asyncio.create_task(classify_one(a)) for a in articles]
+    classified_articles: list[dict[str, Any]] = []
+    for future in asyncio.as_completed(futures):
+        cls_result = await future
+        if cls_result is not None:
+            # 查找原始文章并更新
+            for art in articles:
+                if art.get("url_hash") == getattr(cls_result, "url_hash", None):
+                    try:
+                        update_fields = {
+                            "category_v2": cls_result.category,
+                            "category_v2_confidence": cls_result.confidence,
+                            "category_v2_reason": cls_result.reason,
+                            "category_v2_fallback": cls_result.fallback,
+                            "is_pr_eligible": cls_result.is_pr_eligible,
+                            "is_ai_agent_security_relevant": cls_result.is_ai_agent_security_relevant,
+                            "ai_agent_security_relevance_confidence": cls_result.ai_agent_security_relevance_confidence,
+                            "ai_agent_security_relevance_reason": cls_result.ai_agent_security_relevance_reason,
+                            "pipeline_status": "classified",
+                        }
+                        await db["articles"].update_one(
+                            {"_id": art["_id"]},
+                            {"$set": update_fields},
+                        )
+                        result["classified"] += 1
+                        # 传递分类结果给打分阶段
+                        art.update(update_fields)
+                        if cls_result.is_pr_eligible:
+                            classified_articles.append(art)
+                    except Exception as exc:
+                        logger.warning("[overseas-schedule] DB update failed: %s", exc)
+                    break
+
+    logger.info(
+        "[overseas-schedule] classified %d/%d, %d PR-eligible",
+        result["classified"], len(articles), len(classified_articles),
+    )
+
+    # 3. 对 PR-eligible 文章打分
+    if not classified_articles:
+        logger.info("[overseas-schedule] no PR-eligible articles to score")
+        return result
+
+    logger.info(
+        "[overseas-schedule] auto-scoring %d PR-eligible articles for run_id=%s",
+        len(classified_articles), run_id,
+    )
+
+    async def score_one(article: dict[str, Any]) -> dict[str, Any] | None:
+        async with semaphore:
+            try:
+                return await scorer.score_single(
+                    article,
+                    user_id="system:scheduler",
+                    trace_id=trace_id,
+                    task_id=run_id,
+                )
+            except Exception as exc:
+                logger.warning("[overseas-schedule] score failed for %s: %s",
+                               article.get("url_hash", ""), exc)
+                return None
+
+    score_futures = [asyncio.create_task(score_one(a)) for a in classified_articles]
+    for future in asyncio.as_completed(score_futures):
+        score_result = await future
+        if score_result is not None and not score_result.get("_fallback", True):
+            try:
+                await db["articles"].update_one(
+                    {"url_hash": score_result.get("url_hash", "")},
+                    {"$set": {
+                        "product_relevance": score_result["product_relevance"],
+                        "event_impact": score_result["event_impact"],
+                        "pr_total_score": score_result["pr_total_score"],
+                        "score_reason": score_result.get("score_reason", ""),
+                        "pipeline_status": "scored",
+                    }},
+                )
+                result["scored"] += 1
+                if score_result.get("is_pr_candidate", False):
+                    result["pr_candidates"] += 1
+            except Exception as exc:
+                logger.warning("[overseas-schedule] score DB update failed: %s", exc)
+
+    logger.info(
+        "[overseas-schedule] scored %d/%d, %d PR candidates",
+        result["scored"], len(classified_articles), result["pr_candidates"],
+    )
+
+    return result
+
+
+async def scheduled_overseas_news_crawl(ctx: dict[str, Any]) -> dict[str, Any]:
+    """ARQ 定时任务：每日北京时间 07:00 抓取海外新闻。
+
+    处理流程：
+    1. 计算业务日期
+    2. 原子声明每日 run（幂等）
+    3. 获取共享锁
+    4. 调用统一入库服务
+    5. 更新 crawl_runs 结果
+    6. 释放锁
+    7. 可恢复错误触发 Retry
+    """
+    from datetime import UTC, datetime
+    from zoneinfo import ZoneInfo
+
+    from agent.overseas_news_service import CrawlServiceError, OverseasNewsIngestionService
+    from models.crawl_run import (
+        CrawlRunStatus,
+        build_lock_key,
+        build_run_id,
+        build_run_key,
+        create_initial_run,
+    )
+
+    settings = get_settings()
+    tz = ZoneInfo(settings.OVERSEAS_NEWS_SCHEDULE_TIMEZONE)
+    local_now = datetime.now(tz)
+    schedule_date = local_now.date().isoformat()
+    run_key = build_run_key("scheduled", schedule_date)
+    run_id = build_run_id(schedule_date)
+    lock_key = build_lock_key(schedule_date)
+    trace_id = f"scheduler:{run_id}"
+    request_id = f"scheduler:{run_id}"
+
+    db = ctx.get("db")
+    if db is None:
+        logger.error("[overseas-schedule] db not available in ctx")
+        return {"ok": False, "error": "DATABASE_UNAVAILABLE"}
+
+    # 1. 原子声明每日 run
+    now = datetime.now(UTC)
+    initial_doc = create_initial_run(
+        run_id=run_id,
+        run_key=run_key,
+        trigger="scheduled",
+        actor_id="system:scheduler",
+        schedule_date=schedule_date,
+        timezone=settings.OVERSEAS_NEWS_SCHEDULE_TIMEZONE,
+        crawl_days=settings.OVERSEAS_NEWS_SCHEDULE_CRAWL_DAYS,
+        trace_id=trace_id,
+        lock_key=lock_key,
+        retention_days=settings.OVERSEAS_NEWS_RUN_RETENTION_DAYS,
+    )
+
+    # 移除与 $set 冲突的字段（MongoDB 不允许同一字段同时出现在 $set 和 $setOnInsert）
+    for field in ("status", "started_at", "updated_at", "run_id", "expires_at", "attempt"):
+        initial_doc.pop(field, None)
+
+    try:
+        from pymongo import ReturnDocument
+
+        await db["crawl_runs"].find_one_and_update(
+            {
+                "run_key": run_key,
+                "status": {"$in": ["pending", "failed"]},
+            },
+            {
+                "$set": {
+                    "status": CrawlRunStatus.RUNNING.value,
+                    "started_at": now,
+                    "updated_at": now,
+                    "run_id": run_id,
+                },
+                "$inc": {"attempt": 1},
+                "$setOnInsert": initial_doc,
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+    except Exception as exc:
+        logger.warning("[overseas-schedule] run_key=%s upsert failed: %s", run_key, exc)
+        return {"ok": True, "status": "skipped", "reason": "daily_run_exists"}
+
+    # 2. 获取共享锁
+    lock_expires = now + timedelta(seconds=settings.OVERSEAS_NEWS_LOCK_TTL_SECONDS)
+    try:
+        await db["pipeline_locks"].update_one(
+            {"lock_key": lock_key, "status": {"$in": [None, "completed", "failed", "expired"]}},
+            {"$set": {
+                "lock_key": lock_key,
+                "lock_type": "crawl",
+                "source": "overseas_news",
+                "status": "running",
+                "user_id": "system:scheduler",
+                "run_id": run_id,
+                "created_at": now,
+                "expires_at": lock_expires,
+            }},
+            upsert=True,
+        )
+    except Exception:
+        logger.info("[overseas-schedule] lock_key=%s held by another run", lock_key)
+        await db["crawl_runs"].update_one(
+            {"run_key": run_key},
+            {"$set": {"status": CrawlRunStatus.SKIPPED.value, "updated_at": now}},
+        )
+        return {"ok": True, "status": "skipped", "reason": "lock_held"}
+
+    # 3. 调用统一入库服务
+    app = ctx.get("app")
+    tools = getattr(app.state, "pipeline_manager", None) if app else None
+    if tools and hasattr(tools, "tools"):
+        crawl_tools = tools.tools
+    elif ctx.get("pipeline_v2"):
+        crawl_tools = ctx["pipeline_v2"].tools
+    else:
+        crawl_tools = None
+
+    if crawl_tools is None:
+        logger.error("[overseas-schedule] tools not available")
+        await db["crawl_runs"].update_one(
+            {"run_key": run_key},
+            {"$set": {"status": CrawlRunStatus.FAILED.value, "updated_at": now}},
+        )
+        return {"ok": False, "error": "TOOLS_UNAVAILABLE"}
+
+    arq_pool = ctx.get("redis")
+
+    service = OverseasNewsIngestionService(
+        db=db,
+        tools=crawl_tools,
+        arq_pool=arq_pool,
+    )
+
+    try:
+        result = await service.run(
+            crawl_days=settings.OVERSEAS_NEWS_SCHEDULE_CRAWL_DAYS,
+            trigger="scheduled",
+            actor_id="system:scheduler",
+            trace_id=trace_id,
+            request_id=request_id,
+            run_id=run_id,
+        )
+
+        # 4. 更新 crawl_runs 结果
+        finished = datetime.now(UTC)
+        from models.crawl_run import CrawlRun
+        run = CrawlRun(
+            run_key=run_key,
+            run_id=run_id,
+            trigger="scheduled",
+            actor_id="system:scheduler",
+            schedule_date=schedule_date,
+            timezone=settings.OVERSEAS_NEWS_SCHEDULE_TIMEZONE,
+            crawl_days=settings.OVERSEAS_NEWS_SCHEDULE_CRAWL_DAYS,
+            status=CrawlRunStatus(result["status"]),
+            trace_id=trace_id,
+            lock_key=lock_key,
+            started_at=now,
+            finished_at=finished,
+        )
+
+        await db["crawl_runs"].update_one(
+            {"run_key": run_key},
+            {"$set": {
+                "status": result["status"],
+                "total": result["total"],
+                "saved": result["saved"],
+                "duplicates": result["duplicates"],
+                "invalid": result["invalid"],
+                "fulltext_queued": result["fulltext_queued"],
+                "fulltext_status": result["fulltext_status"],
+                "per_site": result["per_site"],
+                "errors": result["errors"],
+                "finished_at": finished,
+                "updated_at": finished,
+                "expires_at": run.compute_expires_at(settings.OVERSEAS_NEWS_RUN_RETENTION_DAYS),
+            }},
+        )
+
+        # 6. 自动分类 + 打分（仅当有新文章入库时）
+        classify_score_result = {"classified": 0, "scored": 0, "pr_candidates": 0}
+        if result["saved"] > 0:
+            classify_score_result = await _auto_classify_and_score(
+                ctx=ctx,
+                db=db,
+                run_id=run_id,
+                trace_id=trace_id,
+                settings=settings,
+            )
+
+            # 更新 crawl_runs 记录分类打分结果
+            finished_cs = datetime.now(UTC)
+            await db["crawl_runs"].update_one(
+                {"run_key": run_key},
+                {"$set": {
+                    "classified": classify_score_result["classified"],
+                    "scored": classify_score_result["scored"],
+                    "pr_candidates": classify_score_result["pr_candidates"],
+                    "classify_errors": classify_score_result.get("errors", {}),
+                    "updated_at": finished_cs,
+                }},
+            )
+
+        # 7. 释放锁
+        await db["pipeline_locks"].update_one(
+            {"lock_key": lock_key},
+            {"$set": {"status": "completed", "updated_at": finished}},
+        )
+
+        logger.info(
+            "[overseas-schedule] completed: run_id=%s status=%s saved=%d duplicates=%d "
+            "classified=%d scored=%d pr_candidates=%d",
+            run_id, result["status"], result["saved"], result["duplicates"],
+            classify_score_result["classified"], classify_score_result["scored"],
+            classify_score_result["pr_candidates"],
+        )
+        result["classified"] = classify_score_result["classified"]
+        result["scored"] = classify_score_result["scored"]
+        result["pr_candidates"] = classify_score_result["pr_candidates"]
+        return result
+
+    except CrawlServiceError as exc:
+        finished = datetime.now(UTC)
+        await db["crawl_runs"].update_one(
+            {"run_key": run_key},
+            {"$set": {
+                "status": CrawlRunStatus.FAILED.value,
+                "errors": {exc.code: exc.message},
+                "finished_at": finished,
+                "updated_at": finished,
+            }},
+        )
+        # 释放锁
+        await db["pipeline_locks"].update_one(
+            {"lock_key": lock_key},
+            {"$set": {"status": "failed", "updated_at": finished}},
+        )
+
+        if exc.retryable:
+            logger.warning("[overseas-schedule] retryable error: %s", exc.code)
+            raise Retry(defer=60) from exc
+        else:
+            logger.error("[overseas-schedule] non-retryable error: %s", exc.code)
+            return {"ok": False, "error": exc.code, "message": exc.message}
+
+    except Exception as exc:
+        finished = datetime.now(UTC)
+        await db["crawl_runs"].update_one(
+            {"run_key": run_key},
+            {"$set": {
+                "status": CrawlRunStatus.FAILED.value,
+                "errors": {"UNEXPECTED": str(exc)[:500]},
+                "finished_at": finished,
+                "updated_at": finished,
+            }},
+        )
+        await db["pipeline_locks"].update_one(
+            {"lock_key": lock_key},
+            {"$set": {"status": "failed", "updated_at": finished}},
+        )
+        logger.error("[overseas-schedule] unexpected error: %s", exc)
+        raise Retry(defer=120) from exc
+
+
+def build_cron_jobs(settings: Any = None) -> list[Any]:
+    """构建 cron 任务列表，支持配置驱动的时区和开关。
+
+    Args:
+        settings: Settings 实例，默认从 get_settings() 获取
+
+    Returns:
+        cron 任务列表
+    """
+    if settings is None:
+        settings = get_settings()
+
+    # 统一使用业务时区；原有 hour=19/20（UTC）改为 hour=3/4（本地）
+    jobs = [
+        cron(cleanup_expired_articles, hour=3, minute=0, microsecond=0),
+        cron(decay_user_memories, hour=4, minute=0, microsecond=0),
+    ]
+
+    if settings.OVERSEAS_NEWS_SCHEDULE_ENABLED:
+        jobs.append(
+            cron(
+                scheduled_overseas_news_crawl,
+                hour=settings.OVERSEAS_NEWS_SCHEDULE_HOUR,
+                minute=settings.OVERSEAS_NEWS_SCHEDULE_MINUTE,
+                second=0,
+                microsecond=0,
+                unique=True,
+                timeout=settings.OVERSEAS_NEWS_JOB_TIMEOUT_SECONDS,
+            )
+        )
+
+    return jobs
+
+
 class WorkerSettings:
     """ARQ worker configuration shared by the worker entry point and tests."""
 
@@ -413,11 +872,13 @@ class WorkerSettings:
         func(enrich_web_search_articles, max_tries=_settings.ARQ_MAX_RETRIES + 1),
         func(process_memory_event, max_tries=_settings.ARQ_MAX_RETRIES + 1),
         func(compile_memory_summaries, max_tries=_settings.ARQ_MAX_RETRIES + 1),
+        func(scheduled_overseas_news_crawl, max_tries=_settings.ARQ_MAX_RETRIES + 1),
     ]
-    cron_jobs: ClassVar[list[Any]] = [
-        cron(cleanup_expired_articles, hour=19, minute=0),  # 每天 03:00 UTC+8
-        cron(decay_user_memories, hour=20, minute=0),  # 每天 04:00 UTC+8
-    ]
+    # 使用业务时区，cron 中的 hour/minute 为本地时间
+    from zoneinfo import ZoneInfo
+
+    timezone = ZoneInfo(_settings.OVERSEAS_NEWS_SCHEDULE_TIMEZONE)
+    cron_jobs: ClassVar[list[Any]] = build_cron_jobs(_settings)
     redis_settings = redis_settings()
     max_jobs = _settings.ARQ_MAX_JOBS
     job_timeout = _settings.ARQ_JOB_TIMEOUT

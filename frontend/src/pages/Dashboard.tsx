@@ -5,14 +5,15 @@
  * 管理全局状态（筛选/分页/排序/报道查看）。
  */
 
-import { InboxOutlined, ImportOutlined, UploadOutlined } from '@ant-design/icons';
-import { Button, Col, Drawer, Modal, Row, Space, Tag, Typography, Upload, message } from 'antd';
+import { ImportOutlined, UploadOutlined } from '@ant-design/icons';
+import { Button, Col, Drawer, Row, Space, Tag, Typography, message } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../api/client';
 import ArticleTable from '../components/ArticleTable';
 import ArticleUpload from '../components/ArticleUpload';
 import DraftViewer from '../components/DraftViewer';
 import FilterBar from '../components/FilterBar';
+import GenerationConfigModal, { type GenerationConfig } from '../components/pipeline/GenerationConfigModal';
 import HotRankingPanel from '../components/HotRankingPanel';
 import PipelineControl from '../components/PipelineControl';
 import PipelineTaskProgress from '../components/PipelineTaskProgress';
@@ -212,33 +213,38 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
   );
 
   // ── 单文章 V2 流水线 ────────────────────────────────────
-  const MAX_TEMPLATE_FILES = 3;
-  const MAX_TEMPLATE_CHARS = 15000;
   const [templateModalArticle, setTemplateModalArticle] = useState<Article | null>(null);
-  const [uploadedTemplates, setUploadedTemplates] = useState<{ name: string; text: string }[]>([]);
+  const [genConfigOpen, setGenConfigOpen] = useState(false);
+  const [genConfigLoading, setGenConfigLoading] = useState(false);
 
   const handleRunV2Single = useCallback((article: Article) => {
-    setUploadedTemplates([]);
     setTemplateModalArticle(article);
+    setGenConfigOpen(true);
   }, []);
 
-  const handleConfirmGenerate = useCallback(async () => {
+  const handleConfirmGenerate = useCallback(async (config: GenerationConfig) => {
     const article = templateModalArticle;
     if (!article) return;
-    setTemplateModalArticle(null);
-    const combined = uploadedTemplates.length > 0
-      ? uploadedTemplates.map((t, i) => `### 参考稿件 ${i + 1}：${t.name}\n\n${t.text}`).join('\n\n---\n\n')
-      : undefined;
+    setGenConfigLoading(true);
     message.loading({ content: '正在创建个性化草稿任务...', key: 'v2single', duration: 0 });
     try {
-      const res = await api.runV2Single(article.url_hash, combined);
+      const res = await api.runV2Single(article.url_hash, config.reference_template, {
+        product_target_mode: config.product_target_mode,
+        selected_product_ids: config.selected_product_ids,
+        product_relevance_enabled: config.product_relevance_enabled,
+        force_generate: config.force_generate,
+      });
       setDraftTask({ taskId: res.data.task_id, articleHash: article.url_hash });
       message.success({ content: '草稿任务已创建', key: 'v2single', duration: 2 });
+      setGenConfigOpen(false);
+      setTemplateModalArticle(null);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '未知错误';
       message.error({ content: `V2失败: ${msg}`, key: 'v2single' });
+    } finally {
+      setGenConfigLoading(false);
     }
-  }, [templateModalArticle, uploadedTemplates]);
+  }, [templateModalArticle]);
 
   // ── 查看 V2 草稿 ────────────────────────────────────────
   const handleViewDrafts = useCallback((article: Article) => {
@@ -441,68 +447,14 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
         )}
       </Drawer>
 
-      {/* 模板注入对话框 */}
-      <Modal
-        title="生成草稿"
-        open={!!templateModalArticle}
-        onOk={handleConfirmGenerate}
-        onCancel={() => setTemplateModalArticle(null)}
-        okText="确认生成"
-        cancelText="取消"
-        width={520}
-      >
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-          是否需要上传优秀 PR 稿作为参考模板？LLM 将学习其结构布局、段落节奏、表达技巧和行文风格，
-          草稿中的事实和数据仍完全基于当前文章。
-        </Typography.Paragraph>
-        <Upload.Dragger
-          accept=".txt,.md,.markdown"
-          maxCount={MAX_TEMPLATE_FILES}
-          multiple
-          fileList={uploadedTemplates.map((t, i) => ({
-            uid: String(i),
-            name: t.name,
-            status: 'done' as const,
-          }))}
-          beforeUpload={(file) => {
-            if (uploadedTemplates.length >= MAX_TEMPLATE_FILES) {
-              message.warning(`最多上传 ${MAX_TEMPLATE_FILES} 篇`);
-              return false;
-            }
-            const reader = new FileReader();
-            reader.onload = (e) => {
-              const text = e.target?.result as string;
-              const totalChars = uploadedTemplates.reduce((s, t) => s + t.text.length, 0) + text.length;
-              if (totalChars > MAX_TEMPLATE_CHARS) {
-                message.error(`总字符数超出限制（${totalChars}/${MAX_TEMPLATE_CHARS}），请减少或缩短文件`);
-                return;
-              }
-              setUploadedTemplates((prev) => [...prev, { name: file.name, text }]);
-              message.success(`已加载: ${file.name}（${text.length} 字符）`);
-            };
-            reader.readAsText(file);
-            return false;
-          }}
-          onRemove={(file) => {
-            setUploadedTemplates((prev) => prev.filter((_, i) => String(i) !== file.uid));
-          }}
-        >
-          <p className="ant-upload-drag-icon">
-            <InboxOutlined />
-          </p>
-          <p className="ant-upload-text">点击或拖拽文件到此处</p>
-          <p className="ant-upload-hint">最多 {MAX_TEMPLATE_FILES} 篇，总字符 ≤ {MAX_TEMPLATE_CHARS}，支持 .txt / .md</p>
-        </Upload.Dragger>
-        {uploadedTemplates.length > 0 && (
-          <Typography.Paragraph
-            type="success"
-            style={{ marginTop: 12, marginBottom: 0, fontSize: 13 }}
-          >
-            已加载 {uploadedTemplates.length} 篇参考模板（共{' '}
-            {uploadedTemplates.reduce((s, t) => s + t.text.length, 0)} 字符），将注入生成上下文。
-          </Typography.Paragraph>
-        )}
-      </Modal>
+      {/* 生成草稿弹窗（产品选择 + 参考稿上传） */}
+      <GenerationConfigModal
+        open={genConfigOpen}
+        onCancel={() => { setGenConfigOpen(false); setTemplateModalArticle(null); }}
+        onConfirm={handleConfirmGenerate}
+        loading={genConfigLoading}
+        articleScore={templateModalArticle?.pr_total_score}
+      />
     </div>
   );
 }
