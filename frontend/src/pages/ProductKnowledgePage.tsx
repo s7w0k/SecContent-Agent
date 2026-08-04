@@ -12,6 +12,7 @@ import {
   EditOutlined,
   FileOutlined,
   FolderOutlined,
+  InboxOutlined,
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
@@ -40,6 +41,7 @@ import {
   Tree,
   type TreeDataNode,
   Typography,
+  Upload,
   message,
 } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -539,6 +541,36 @@ export default function ProductKnowledgePage() {
       }));
     },
     [products],
+  );
+
+  const handleEntryFileUpload = useCallback(
+    (file: File) => {
+      const extension = file.name.includes('.')
+        ? `.${file.name.split('.').pop()?.toLowerCase()}`
+        : '';
+      if (extension !== '.md') {
+        message.error('仅支持上传 .md 文件');
+        return false;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        message.error('文件不能超过 5MB');
+        return false;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = (e.target?.result as string) ?? '';
+        setEntryForm((prev) => ({
+          ...prev,
+          content: text,
+          title: prev.title.trim() || file.name.replace(/\.md$/i, ''),
+        }));
+        message.success(`已解析 ${file.name}（${text.length} 字）`);
+      };
+      reader.onerror = () => message.error('文件读取失败，请重试');
+      reader.readAsText(file, 'utf-8');
+      return false;
+    },
+    [],
   );
 
   const handleSaveEntry = useCallback(async () => {
@@ -1330,6 +1362,25 @@ export default function ProductKnowledgePage() {
               placeholder="条目标题"
             />
           </div>
+          {!editingEntry && (
+            <div>
+              <Text strong style={{ display: 'block', marginBottom: 4 }}>
+                上传 Markdown 文件（可选）
+              </Text>
+              <Upload.Dragger
+                accept=".md"
+                maxCount={1}
+                showUploadList={false}
+                beforeUpload={handleEntryFileUpload}
+              >
+                <p className="ant-upload-drag-icon">
+                  <InboxOutlined />
+                </p>
+                <p className="ant-upload-text">点击或拖拽 .md 文件到此区域</p>
+                <p className="ant-upload-hint">上传后自动解析文本填充到内容和标题</p>
+              </Upload.Dragger>
+            </div>
+          )}
           <div>
             <Text strong style={{ display: 'block', marginBottom: 4 }}>
               内容（Markdown）
