@@ -853,6 +853,7 @@ class A2AClient:
                 raise self._http_error(cfg, resp)
             task_id = message.task_id or f"a2a-{uuid.uuid4().hex[:12]}"
             last_status: TaskStatus | None = None
+            interrupted = False
             try:
                 async for line in resp.aiter_lines():
                     if not line.startswith("data: "):
@@ -865,12 +866,20 @@ class A2AClient:
                         break
                     task_id = payload.get("task_id", task_id)
                     last_status = payload.get("status", last_status)
+            except httpx.HTTPError:
+                # 断流（读流中断）：不做重放，先查询远端 Task 决定继续/失败
+                interrupted = True
             finally:
                 await resp.aclose()
-            # 流结束后拉取终态 Task（远端已终态则保留观测到的状态）
+            # 恢复一致性：流结束/中断后一律先查询远端 Task（远端权威）
             task = await self.get_task(cfg.key, task_id, principal="")
             if task is not None:
                 return task
+            if interrupted:
+                # 远端状态未知 → 可解释失败，不伪造成功（4B-5）
+                raise RemoteUnavailableError(
+                    f"stream interrupted and remote task unknown: {cfg.key} (task={task_id})"
+                )
             now = self._now_provider()
             return Task(
                 id=task_id[: _MAX_TASK_ID_CHARS],
