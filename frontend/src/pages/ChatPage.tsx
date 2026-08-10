@@ -46,6 +46,7 @@ import RevisionList from '../components/RevisionList';
 import type {
   Article,
   ArticleQuery,
+  ChatAgentEvent,
   ChatMessage,
   DraftReview,
   DraftReviseResponse,
@@ -120,6 +121,7 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<ChatMode>('问答');
   const [sending, setSending] = useState(false);
+  const [toolStatus, setToolStatus] = useState<string | null>(null);
 
   // ── 修订稿预览 ───────────────────────────────────────────
   const [revisionResult, setRevisionResult] = useState<DraftReviseResponse | null>(null);
@@ -148,6 +150,7 @@ export default function ChatPage() {
   const layoutRef = useRef<HTMLDivElement>(null);
   const resizeStartRef = useRef<{ pointerX: number; width: number } | null>(null);
   const resizeWidthRef = useRef(siderWidth);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const getLayoutWidth = useCallback(
     () => layoutRef.current?.getBoundingClientRect().width || window.innerWidth,
@@ -273,6 +276,13 @@ export default function ChatPage() {
     }
   }, [messages]);
 
+  // ── 页面卸载时取消正在进行的流式请求 ────────────────────────
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
   // ── 选择文章 ─────────────────────────────────────────────
   const handleArticleChange = (urlHash: string) => {
     const article = articles.find((a) => a.url_hash === urlHash) || null;
@@ -320,12 +330,16 @@ export default function ChatPage() {
     setInput('');
     setSending(true);
     setError(null);
+    setToolStatus(null);
 
     try {
       if (mode === '问答') {
         // 流式问答：先插入空 assistant 消息，逐 chunk 更新
         const assistantIdx = newMessages.length;
         setMessages([...newMessages, { role: 'assistant', content: '' }]);
+
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
 
         let firstChunk = true;
         await chatApi.askStream(
@@ -395,6 +409,18 @@ export default function ChatPage() {
               return updated;
             });
           },
+          (status: ChatAgentEvent) => {
+            if (status.type === 'tool_started' && status.tool_name) {
+              setToolStatus(`正在调用 ${status.tool_name}...`);
+            } else if (
+              status.type === 'tool_finished' ||
+              status.type === 'run_finished' ||
+              status.type === 'error'
+            ) {
+              setToolStatus(null);
+            }
+          },
+          controller.signal,
         );
       } else {
         // 流式改稿：先插入空 assistant 消息，逐 chunk 更新
@@ -456,6 +482,8 @@ export default function ChatPage() {
       setMessages([...newMessages, { role: 'assistant', content: `错误：${errMsg}` }]);
     } finally {
       setSending(false);
+      setToolStatus(null);
+      abortControllerRef.current = null;
     }
   };
 
@@ -894,6 +922,14 @@ export default function ChatPage() {
               onClose={() => setError(null)}
               className={styles.errorAlert}
             />
+          )}
+
+          {/* 工具状态 */}
+          {toolStatus && (
+            <div className={styles.loadingIndicator} style={{ marginBottom: 8 }}>
+              <Spin size="small" />
+              <span>{toolStatus}</span>
+            </div>
           )}
 
           {/* 消息列表 */}

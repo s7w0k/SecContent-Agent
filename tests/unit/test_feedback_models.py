@@ -344,6 +344,7 @@ class TestMongoDBIndexes:
             "pipeline_tasks",
             "pipeline_logs",
             "llm_call_logs",
+            "agent_run_events",
             "execution_runs",
             "execution_events",
             "execution_links",
@@ -378,7 +379,8 @@ class TestMongoDBIndexes:
         assert len(result["pipeline_locks"]) == 2
         assert len(result["pipeline_tasks"]) == 4
         assert len(result["pipeline_logs"]) == 5
-        assert len(result["llm_call_logs"]) == 5
+        assert len(result["llm_call_logs"]) == 7
+        assert len(result["agent_run_events"]) == 4
         assert len(result["execution_runs"]) == 6
         assert len(result["execution_events"]) == 7
         assert len(result["execution_links"]) == 4
@@ -466,5 +468,5 @@ class TestMongoDBIndexes:
             second = await MongoDB.ensure_indexes()
 
         assert first == second
-        assert collection.create_indexes.await_count == 78
+        assert collection.create_indexes.await_count == 80
         assert collection.drop_index.await_count == 2

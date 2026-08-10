@@ -660,6 +660,26 @@ export interface ChatAskRequest {
 export interface ChatAskResponse {
   answer: string;
   references: string[];
+  // Agent 模式额外返回字段（非流式 answer）
+  agent_mode?: 'loop' | 'degraded';
+  run_id?: string;
+  degraded?: boolean;
+  rounds?: number;
+  tool_names_used?: string[];
+}
+
+/** SSE v1 Agent 事件类型（前端解析用） */
+export interface ChatAgentEvent {
+  schema_version?: string;
+  type: 'text_delta' | 'tool_started' | 'tool_finished' | 'run_finished' | 'error';
+  run_id?: string;
+  sequence?: number;
+  chunk?: string;
+  tool_name?: string;
+  answer?: string;
+  error?: string;
+  code?: string;
+  retryable?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════

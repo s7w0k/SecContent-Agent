@@ -367,6 +367,34 @@ class MongoDB:
                     expireAfterSeconds=0,
                     name="idx_llm_expires",
                 ),
+                IndexModel(
+                    [("run_id", ASCENDING), ("loop_round", ASCENDING)],
+                    name="idx_llm_run_loop_round",
+                ),
+                IndexModel(
+                    [("trace_id", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_llm_trace_created",
+                ),
+            ],
+            "agent_run_events": [
+                IndexModel(
+                    [("run_id", ASCENDING), ("sequence", ASCENDING)],
+                    unique=True,
+                    name="idx_agent_event_run_sequence",
+                ),
+                IndexModel(
+                    [("trace_id", ASCENDING), ("created_at", ASCENDING)],
+                    name="idx_agent_event_trace_created",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_agent_event_user_created",
+                ),
+                IndexModel(
+                    [("expires_at", ASCENDING)],
+                    expireAfterSeconds=0,
+                    name="idx_agent_event_expires",
+                ),
             ],
             "execution_runs": [
                 IndexModel([("execution_id", ASCENDING)], unique=True, name="idx_run_execution_id"),

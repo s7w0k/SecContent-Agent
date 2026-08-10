@@ -11,8 +11,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, TypeVar
 from uuid import uuid4
 
+from agent.agent_contracts import BudgetUsage, RunContext
+from agent.retry import RetryPolicy, RetryState, with_retry
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel
 
 logger = logging.getLogger("backend.agent.llm_wrapper")
@@ -113,6 +115,208 @@ class LLMWrapper:
             schema_name=output_schema.__name__,
         )
         return result
+
+    async def invoke_agent_step(
+        self,
+        *,
+        bound_llm: Any,
+        messages: list[Any],
+        run_context: RunContext,
+        loop_round: int = 0,
+        retry_policy: RetryPolicy | None = None,
+    ) -> AIMessage:
+        """执行一次 Agent Loop 决策轮 LLM 调用（非流式 ainvoke）。
+
+        基于 Step 1 探针结论：非流式 ainvoke 的 tool_calls 稳定可靠。
+
+        Args:
+            bound_llm: 已 bind_tools 的 LLM 实例
+            messages: 消息列表（含 system + 历史 + 工具观察）
+            run_context: 运行上下文（身份/追踪/预算）
+            loop_round: 当前轮次（0-based，日志用）
+            retry_policy: 重试策略（None 时用默认）
+
+        Returns:
+            AIMessage：含 content 和 tool_calls
+
+        Raises:
+            最后一个异常（如果所有重试都失败）
+        """
+        from datetime import datetime, timezone
+
+        started = time.perf_counter()
+        retry_state = RetryState()
+
+        # 默认重试策略：2 次重试，共享 run_context 的 deadline
+        deadline_at = None
+        if run_context.deadline_at is not None:
+            remaining = (run_context.deadline_at - datetime.now(timezone.utc)).total_seconds()
+            deadline_at = time.monotonic() + max(0, remaining)
+
+        policy = retry_policy or RetryPolicy(
+            max_attempts=3,
+            base_delay=1.0,
+            multiplier=2.0,
+            max_delay=8.0,
+            deadline_at=deadline_at,
+        )
+
+        tool_names: list[str] = []
+        response: AIMessage | None = None
+
+        try:
+            response = await with_retry(
+                lambda: bound_llm.ainvoke(messages),
+                policy=policy,
+                retry_state=retry_state,
+                trace_id=run_context.trace_id,
+            )
+        except Exception:
+            # 日志仍写入（含 retry 信息），然后重新抛出
+            await self._log_agent_call(
+                run_context=run_context,
+                loop_round=loop_round,
+                messages=messages,
+                response=None,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                retry_state=retry_state,
+                error="LLM call failed",
+            )
+            raise
+
+        # 提取 tool names 用于日志
+        if isinstance(response, AIMessage):
+            tool_calls = getattr(response, "tool_calls", []) or []
+            tool_names = [tc.get("name", "") for tc in tool_calls if isinstance(tc, dict)]
+
+        await self._log_agent_call(
+            run_context=run_context,
+            loop_round=loop_round,
+            messages=messages,
+            response=response,
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            retry_state=retry_state,
+            tool_names=tool_names,
+        )
+
+        return response
+
+    async def _log_agent_call(
+        self,
+        *,
+        run_context: RunContext,
+        loop_round: int,
+        messages: list[Any],
+        response: AIMessage | None,
+        duration_ms: int,
+        retry_state: RetryState,
+        tool_names: list[str] | None = None,
+        error: str = "",
+    ) -> None:
+        """记录 Agent 步级 LLM 调用日志到 llm_call_logs。
+
+        安全约束：
+          - 不写原始 prompt、完整工具内容或私有推理
+          - 只写 hash、token 计数、工具名、重试信息
+        """
+        if self.db is None:
+            return
+
+        # 计算 token usage（优先用 provider 返回的 usage_metadata）
+        input_tokens, output_tokens = self._agent_token_usage(messages, response)
+        model_name = self._model_name()
+        pricing = PRICING.get(model_name, {"input": 0.001, "output": 0.002})
+        cost_usd = (input_tokens * pricing["input"] + output_tokens * pricing["output"]) / 1000
+        now = datetime.now(UTC)
+
+        # 计算 messages 的 hash（不含完整内容）
+        messages_hash = self._messages_hash(messages)
+
+        document = {
+            "call_id": f"llm-{uuid4().hex[:12]}",
+            "model_name": model_name,
+            "prompt_version": PROMPT_VERSIONS.get("draft_chat", "v1.0"),
+            "system_prompt_hash": messages_hash,
+            "user_prompt_hash": "",
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+            "cost_usd": round(cost_usd, 8),
+            "created_at": now,
+            "expires_at": now + timedelta(days=30),
+            "agent_type": "draft_chat",
+            "user_id": run_context.user_id,
+            "trace_id": run_context.trace_id,
+            "task_id": "",
+            "run_id": run_context.run_id,
+            "loop_round": loop_round,
+            "tool_names": tool_names or [],
+            "retry": [a for a in retry_state.attempts],
+            "degraded": bool(error),
+            "degrade_reason": error[:200] if error else "",
+            "duration_ms": duration_ms,
+            "structured_output": False,
+            "schema_name": "agent_step",
+        }
+
+        try:
+            await self.db["llm_call_logs"].insert_one(document)
+        except Exception:
+            logger.exception("Failed to persist agent LLM call metadata")
+
+    @staticmethod
+    def _messages_hash(messages: list[Any]) -> str:
+        """计算消息列表的联合 hash（不含完整内容）。"""
+        parts: list[str] = []
+        for msg in messages:
+            msg_type = type(msg).__name__
+            content = getattr(msg, "content", "")
+            if isinstance(content, str):
+                parts.append(f"{msg_type}:{len(content)}")
+            else:
+                parts.append(f"{msg_type}:{type(content).__name__}")
+            # 工具调用也只记 hash
+            tool_calls = getattr(msg, "tool_calls", None)
+            if tool_calls:
+                for tc in tool_calls:
+                    if isinstance(tc, dict):
+                        parts.append(f"tc:{tc.get('name', '')}:{tc.get('id', '')}")
+        combined = "|".join(parts)
+        return f"sha256:{hashlib.sha256(combined.encode('utf-8')).hexdigest()}"
+
+    @staticmethod
+    def _agent_token_usage(
+        messages: list[Any],
+        response: AIMessage | None,
+    ) -> tuple[int, int]:
+        """从 LLM 响应中提取 token 用量。
+
+        Step 1 探针确认：DeepSeek 返回 usage_metadata 可直接读取。
+        无数据时估算。
+        """
+        if response is not None:
+            usage = getattr(response, "usage_metadata", None) or {}
+            if not usage:
+                metadata = getattr(response, "response_metadata", None) or {}
+                usage = metadata.get("token_usage", {})
+            input_tokens = usage.get("input_tokens", usage.get("prompt_tokens"))
+            output_tokens = usage.get("output_tokens", usage.get("completion_tokens"))
+            if input_tokens is not None and output_tokens is not None:
+                return int(input_tokens), int(output_tokens)
+
+        # 估算：按字符数 / 4
+        total_chars = 0
+        for msg in messages:
+            content = getattr(msg, "content", "")
+            if isinstance(content, str):
+                total_chars += len(content)
+        input_tokens = max(1, total_chars // 4)
+        output_tokens = 0
+        if response is not None:
+            content = getattr(response, "content", "")
+            if isinstance(content, str):
+                output_tokens = max(1, len(content) // 4) if content else 0
+        return input_tokens, output_tokens
 
     @staticmethod
     def _messages(system_prompt: str, user_prompt: str) -> list[Any]:

@@ -23,6 +23,7 @@ import type {
   AuthResponse,
   ChatAskRequest,
   ChatAskResponse,
+  ChatAgentEvent,
   ChatMessage,
   DevLogQuery,
   DevLogQueryResult,
@@ -603,17 +604,22 @@ export const chatApi = {
    * 流式对话问答（SSE）
    *
    * 通过 fetch + ReadableStream 接收 SSE 事件，逐 chunk 回调。
+   * 兼容旧格式（chunk/done/error）与 v1 Agent SSE（含 schema_version + type）。
    *
-   * @param request 问答请求
-   * @param onChunk  每收到一个文本片段时的回调
-   * @param onDone   流结束时的回调（收到完整回答）
-   * @param onError  出错时的回调
+   * @param request   问答请求
+   * @param onChunk   每收到一个文本片段时的回调
+   * @param onDone    流结束时的回调（收到完整回答）
+   * @param onError   出错时的回调
+   * @param onStatus  v1 Agent 事件回调（tool_started/tool_finished 等）
+   * @param signal    AbortSignal，支持取消请求
    */
   async askStream(
     request: ChatAskRequest,
     onChunk: (chunk: string) => void,
     onDone?: (fullAnswer: string, meta?: { memory_learning?: boolean }) => void,
     onError?: (error: string) => void,
+    onStatus?: (status: ChatAgentEvent) => void,
+    signal?: AbortSignal,
   ): Promise<void> {
     const url = buildSSEUrl('/chat/ask_stream');
 
@@ -622,6 +628,7 @@ export const chatApi = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
+        signal,
       });
 
       if (!response.ok) {
@@ -657,12 +664,31 @@ export const chatApi = {
 
           try {
             const event = JSON.parse(jsonStr);
-            if (event.chunk) {
+
+            // v1 Agent SSE：含 type 字段且 schema_version 存在
+            if (event.type && event.schema_version) {
+              const agentEvent = event as ChatAgentEvent;
+              onStatus?.(agentEvent);
+
+              // text_delta 仍需将 chunk 传给 onChunk 以逐步渲染文本
+              if (agentEvent.type === 'text_delta' && agentEvent.chunk) {
+                onChunk(agentEvent.chunk);
+              } else if (agentEvent.type === 'run_finished' && agentEvent.answer !== undefined) {
+                onDone?.(agentEvent.answer, { memory_learning: event.memory_learning });
+                return;
+              } else if (agentEvent.type === 'error' && agentEvent.error) {
+                onError?.(agentEvent.error);
+                return;
+              }
+            } else if (event.chunk) {
+              // 旧格式：文本片段
               onChunk(event.chunk);
             } else if (event.done && event.answer !== undefined) {
+              // 旧格式：流结束
               onDone?.(event.answer, { memory_learning: event.memory_learning });
               return;
             } else if (event.error) {
+              // 旧格式：错误
               onError?.(event.error);
               return;
             }
@@ -672,6 +698,8 @@ export const chatApi = {
         }
       }
     } catch (err) {
+      // AbortError 不视为错误
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       onError?.(err instanceof Error ? err.message : '网络错误');
     }
   },

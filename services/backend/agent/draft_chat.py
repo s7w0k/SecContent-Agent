@@ -44,7 +44,9 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import AsyncIterator
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import uuid4
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -97,6 +99,19 @@ ANSWER_USER_PROMPT = """请回答以下问题：
 {draft_context}
 
 {history_context}
+"""
+
+# Agent Loop 系统提示词（紧凑版，不注入全量知识，知识通过工具按需获取）
+AGENT_ANSWER_SYSTEM_PROMPT = """你是一个智能体安全行业的 PR 情报分析助手。
+
+## 回答规则
+1. 如果需要产品知识、用户偏好或文章详情，使用提供的工具查询
+2. 只能基于工具返回的信息和已提供的上下文回答
+3. 不确定时说明缺少依据，不编造数据、客户、产品能力
+4. 输出中文
+5. 回答简洁有力，避免空泛套话
+
+{style_hints}
 """
 
 REVISE_SYSTEM_PROMPT = """你是一个智能体安全行业的 PR 改稿专家。
@@ -248,9 +263,16 @@ def apply_section_revise(
 class DraftChatAgent:
     """对话改稿 Agent，提供问答和改稿两种能力。
 
+    双轨模式（阶段一）：
+      - CHAT_AGENT_ENABLED=false（默认）：走 legacy 单轮 LLM 路径
+      - CHAT_AGENT_ENABLED=true + CHAT_ASK_AGENT_ENABLED=true：走 Agent Loop
+
     Args:
         llm: LangChain ChatModel 实例（如 ChatOpenAI）
         knowledge_loader: KnowledgeLoader 实例（产品知识库）
+        temperature: LLM 温度
+        db: MongoDB 实例（Agent 模式必需，legacy 可选）
+        llm_wrapper: LLMWrapper 实例（Agent 模式必需，legacy 可选）
     """
 
     def __init__(
@@ -258,10 +280,14 @@ class DraftChatAgent:
         llm: BaseChatModel,
         knowledge_loader: Any,
         temperature: float = DEFAULT_TEMPERATURE,
+        db: Any = None,
+        llm_wrapper: Any = None,
     ):
         self.llm = llm
         self.llm.temperature = temperature
         self.knowledge_loader = knowledge_loader
+        self.db = db
+        self.llm_wrapper = llm_wrapper
 
     # ── 问答 ──────────────────────────────────────────────────
 
@@ -273,8 +299,14 @@ class DraftChatAgent:
         revision: dict | None = None,
         history: list[dict] | None = None,
         style_hints: str | None = None,
+        *,
+        run_context: Any = None,
     ) -> dict:
         """问答模式：基于上下文回答用户问题。
+
+        双轨路由：
+          - flag 关闭 -> _answer_legacy（单轮 LLM，行为不变）
+          - flag 开启 -> _answer_agent（Agent Loop，工具增强）
 
         Args:
             message: 用户问题
@@ -282,13 +314,49 @@ class DraftChatAgent:
             draft: PR 草稿数据（可选）
             revision: 修订稿数据（可选）
             history: 对话历史 [{role, content}, ...]
+            style_hints: 风格提示
+            run_context: Agent 运行上下文（Agent 模式必需）
 
         Returns:
             {"answer": str, "references": list[str]}
+            Agent 模式额外返回: agent_mode, run_id, degraded, rounds
 
         Raises:
             LLMError: LLM 调用失败时抛出
         """
+        from config import get_settings
+
+        settings = get_settings()
+        if settings.CHAT_AGENT_ENABLED and settings.CHAT_ASK_AGENT_ENABLED and run_context is not None:
+            return await self._answer_agent(
+                message=message,
+                article=article,
+                draft=draft,
+                revision=revision,
+                history=history,
+                style_hints=style_hints,
+                run_context=run_context,
+            )
+
+        return await self._answer_legacy(
+            message=message,
+            article=article,
+            draft=draft,
+            revision=revision,
+            history=history,
+            style_hints=style_hints,
+        )
+
+    async def _answer_legacy(
+        self,
+        message: str,
+        article: dict | None = None,
+        draft: dict | None = None,
+        revision: dict | None = None,
+        history: list[dict] | None = None,
+        style_hints: str | None = None,
+    ) -> dict:
+        """Legacy 问答：单次 LLM 调用（flag 关闭时走此路径）。"""
         knowledge_context = self._get_knowledge_prompt()
         system_prompt = ANSWER_SYSTEM_PROMPT.format(
             knowledge_context=knowledge_context,
@@ -330,6 +398,84 @@ class DraftChatAgent:
 
         return {"answer": answer, "references": references}
 
+    async def _answer_agent(
+        self,
+        *,
+        message: str,
+        article: dict | None = None,
+        draft: dict | None = None,
+        revision: dict | None = None,
+        history: list[dict] | None = None,
+        style_hints: str | None = None,
+        run_context: Any = None,
+    ) -> dict:
+        """Agent 问答：Agent Loop 工具增强（flag 开启时走此路径）。"""
+        from agent.agent_contracts import LoopBudget
+        from agent.agent_loop import AgentLoop
+        from agent.agent_tools import create_agent_tools
+        from config import get_settings
+
+        settings = get_settings()
+
+        # 构建预算
+        budget = LoopBudget(
+            max_rounds=settings.CHAT_AGENT_MAX_ROUNDS,
+            max_input_tokens=settings.CHAT_AGENT_MAX_INPUT_TOKENS,
+            max_output_tokens=settings.CHAT_AGENT_MAX_OUTPUT_TOKENS,
+            max_tool_calls=settings.CHAT_AGENT_MAX_TOOL_CALLS,
+            max_parallel_tools=settings.CHAT_AGENT_MAX_PARALLEL_TOOLS,
+            deadline_seconds=settings.CHAT_AGENT_DEADLINE_SECONDS,
+            tool_timeout_seconds=settings.CHAT_AGENT_TOOL_TIMEOUT_SECONDS,
+            max_cost_usd=settings.CHAT_AGENT_MAX_COST_USD,
+        )
+
+        # 构建 system prompt（紧凑版，不注入全量知识）
+        style = self._style_hints_section(style_hints)
+        system_prompt = AGENT_ANSWER_SYSTEM_PROMPT.format(style_hints=style)
+
+        # 构建初始上下文（文章/草稿摘要，非全量）
+        context_parts: list[str] = []
+        if article:
+            context_parts.append(self._build_article_context(article))
+        if draft:
+            context_parts.append(self._build_draft_context(draft, revision))
+        if history:
+            context_parts.append(self._build_history_context(history))
+        initial_context = "\n\n".join(context_parts)
+
+        # 创建工具
+        knowledge_base_dir = getattr(settings, "KNOWLEDGE_BASE_DIR", "/app/docs")
+        tools = create_agent_tools(
+            db=self.db,
+            run_context=run_context,
+            knowledge_base_dir=knowledge_base_dir,
+        )
+
+        # 创建并运行 Loop
+        loop = AgentLoop(
+            llm_wrapper=self.llm_wrapper,
+            tools=tools,
+            budget=budget,
+            run_context=run_context,
+        )
+
+        result = await loop.run(
+            system_prompt=system_prompt,
+            user_message=message,
+            initial_context=initial_context,
+        )
+
+        # 构建返回（兼容旧格式 + Agent 元数据）
+        return {
+            "answer": result.answer,
+            "references": result.references or self._build_references(article, draft, revision),
+            "agent_mode": "loop" if result.ok else "degraded",
+            "run_id": run_context.run_id,
+            "degraded": result.degraded,
+            "rounds": result.rounds,
+            "tool_names_used": result.tool_names_used,
+        }
+
     # ── 流式问答 ─────────────────────────────────────────────
 
     async def stream_answer(
@@ -340,19 +486,50 @@ class DraftChatAgent:
         revision: dict | None = None,
         history: list[dict] | None = None,
         style_hints: str | None = None,
+        *,
+        run_context: Any = None,
     ) -> AsyncIterator[str]:
         """流式问答模式：逐 chunk 产出回答文本。
 
-        用法:
-            async for chunk in agent.stream_answer(message=...):
-                print(chunk, end="", flush=True)
-
-        Yields:
-            str: LLM 产出的文本片段
-
-        Raises:
-            LLMError: LLM 调用失败时抛出
+        双轨路由同 answer()。Agent 模式下中间轮只输出工具状态，
+        最终内容输出 text_delta（兼容旧 SSE chunk 字段）。
         """
+        from config import get_settings
+
+        settings = get_settings()
+        if settings.CHAT_AGENT_ENABLED and settings.CHAT_ASK_AGENT_ENABLED and run_context is not None:
+            async for chunk in self._stream_answer_agent(
+                message=message,
+                article=article,
+                draft=draft,
+                revision=revision,
+                history=history,
+                style_hints=style_hints,
+                run_context=run_context,
+            ):
+                yield chunk
+            return
+
+        async for chunk in self._stream_answer_legacy(
+            message=message,
+            article=article,
+            draft=draft,
+            revision=revision,
+            history=history,
+            style_hints=style_hints,
+        ):
+            yield chunk
+
+    async def _stream_answer_legacy(
+        self,
+        message: str,
+        article: dict | None = None,
+        draft: dict | None = None,
+        revision: dict | None = None,
+        history: list[dict] | None = None,
+        style_hints: str | None = None,
+    ) -> AsyncIterator[str]:
+        """Legacy 流式问答：单次 LLM astream（flag 关闭时走此路径）。"""
         knowledge_context = self._get_knowledge_prompt()
         system_prompt = ANSWER_SYSTEM_PROMPT.format(
             knowledge_context=knowledge_context,
@@ -383,6 +560,41 @@ class DraftChatAgent:
         except Exception as e:
             logger.error("LLM stream_answer failed: %s", e)
             raise LLMError(f"LLM 流式调用失败: {e}") from e
+
+    async def _stream_answer_agent(
+        self,
+        *,
+        message: str,
+        article: dict | None = None,
+        draft: dict | None = None,
+        revision: dict | None = None,
+        history: list[dict] | None = None,
+        style_hints: str | None = None,
+        run_context: Any = None,
+    ) -> AsyncIterator[str]:
+        """Agent 流式问答：Loop 执行后一次性输出最终回答。
+
+        基于 Step 1 探针结论：流式 tool call 不稳定，决策轮用非流式 ainvoke。
+        最终回答通过流式 astream 输出 text_delta（兼容旧 SSE chunk）。
+        """
+        # 先执行 Agent Loop（非流式决策）
+        result_dict = await self._answer_agent(
+            message=message,
+            article=article,
+            draft=draft,
+            revision=revision,
+            history=history,
+            style_hints=style_hints,
+            run_context=run_context,
+        )
+
+        # 逐字 yield 最终回答（模拟流式输出，兼容旧 SSE chunk 消费）
+        answer = result_dict.get("answer", "")
+        if answer:
+            # 按 20 字一组 yield（模拟流式体验）
+            chunk_size = 20
+            for i in range(0, len(answer), chunk_size):
+                yield answer[i:i + chunk_size]
 
     # ── 改稿 ──────────────────────────────────────────────────
 

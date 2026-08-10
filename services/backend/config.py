@@ -225,6 +225,53 @@ class Settings(BaseSettings):
         default=True, description="是否启用当日漏跑补偿"
     )
 
+    # ── Agent Loop（阶段一）──────────────────────────────
+    CHAT_AGENT_ENABLED: bool = Field(
+        default=False, description="Agent Loop 总开关（默认关闭，灰度时开启）"
+    )
+    CHAT_ASK_AGENT_ENABLED: bool = Field(
+        default=False, description="问答 Agent 子开关（总开关开启后仍需单独开启）"
+    )
+    CHAT_REVISE_AGENT_ENABLED: bool = Field(
+        default=False, description="改稿 Agent 子开关（ask 稳定后再开启）"
+    )
+    CHAT_AGENT_SHADOW_ENABLED: bool = Field(
+        default=False, description="影子模式：后台执行 Agent 但不返回给用户"
+    )
+    CHAT_AGENT_ROLLOUT_PERCENT: int = Field(
+        default=0, ge=0, le=100, description="灰度百分比（0-100）"
+    )
+    CHAT_AGENT_MAX_ROUNDS: int = Field(
+        default=5, ge=1, le=20, description="Agent Loop 最大轮次"
+    )
+    CHAT_AGENT_MAX_INPUT_TOKENS: int = Field(
+        default=24000, ge=1000, le=128000, description="Agent Loop 输入 token 上限"
+    )
+    CHAT_AGENT_MAX_OUTPUT_TOKENS: int = Field(
+        default=4000, ge=100, le=32000, description="Agent Loop 输出 token 上限"
+    )
+    CHAT_AGENT_MAX_TOOL_CALLS: int = Field(
+        default=8, ge=1, le=50, description="Agent Loop 最大工具调用次数"
+    )
+    CHAT_AGENT_MAX_PARALLEL_TOOLS: int = Field(
+        default=3, ge=1, le=10, description="同轮最大并行工具数"
+    )
+    CHAT_AGENT_DEADLINE_SECONDS: int = Field(
+        default=30, ge=5, le=120, description="Agent Loop 运行超时秒数"
+    )
+    CHAT_AGENT_TOOL_TIMEOUT_SECONDS: int = Field(
+        default=5, ge=1, le=30, description="单个工具执行超时秒数"
+    )
+    CHAT_AGENT_EVENT_TTL_DAYS: int = Field(
+        default=30, ge=1, le=365, description="Agent 事件保留天数"
+    )
+    CHAT_AGENT_MAX_COST_USD: float = Field(
+        default=0.0, ge=0, description="单次 Agent 运行成本上限（USD），0=不限制"
+    )
+    CHAT_SSE_SCHEMA_VERSION: str = Field(
+        default="1.0", description="SSE 事件 schema 版本"
+    )
+
     @field_validator("OVERSEAS_NEWS_SCHEDULE_TIMEZONE")
     @classmethod
     def validate_timezone(cls, v: str) -> str:

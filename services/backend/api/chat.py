@@ -73,13 +73,54 @@ def _get_draft_chat_agent(request: Request):
         )
 
     from agent.draft_chat import DraftChatAgent
+    from agent.llm_wrapper import LLMWrapper
+
+    db = getattr(request.app.state, "db", None)
+    llm_wrapper = getattr(request.app.state, "llm_wrapper", None)
+    if llm_wrapper is None and db is not None:
+        llm_wrapper = LLMWrapper(draft_gen.llm, db)
+        request.app.state.llm_wrapper = llm_wrapper
 
     agent = DraftChatAgent(
         llm=draft_gen.llm,
         knowledge_loader=knowledge_loader,
+        db=db,
+        llm_wrapper=llm_wrapper,
     )
     request.app.state.draft_chat_agent = agent
     return agent
+
+
+def _build_run_context(request: Request, user_id: str, article_url_hash: str | None = None) -> Any:
+    """构建 Agent 运行上下文（每请求独立）。"""
+    from datetime import datetime, timedelta, timezone
+    from uuid import uuid4
+
+    from agent.agent_contracts import RunContext
+    from config import get_settings
+    from logging_config import get_trace_id
+
+    settings = get_settings()
+    trace_id = get_trace_id()
+    run_id = f"run-{uuid4().hex[:12]}"
+
+    # 文章白名单：只允许当前请求已加载的文章
+    allowed_article_hashes = frozenset({article_url_hash}) if article_url_hash else frozenset()
+
+    # 产品白名单：从产品目录获取（简化：允许所有全局产品）
+    # 实际使用时由 API 层根据用户选择的产品填充
+    allowed_product_ids = frozenset()
+
+    deadline_at = datetime.now(timezone.utc) + timedelta(seconds=settings.CHAT_AGENT_DEADLINE_SECONDS)
+
+    return RunContext(
+        trace_id=trace_id,
+        run_id=run_id,
+        user_id=user_id,
+        allowed_article_hashes=allowed_article_hashes,
+        allowed_product_ids=allowed_product_ids,
+        deadline_at=deadline_at,
+    )
 
 
 def _get_draft_reviewer(request: Request) -> DraftReviewer | None:
@@ -375,6 +416,9 @@ async def chat_ask(
     # 调用 Agent
     from agent.draft_chat import LLMError
 
+    # 构建 RunContext（Agent 模式需要，flag 关闭时不会使用）
+    run_context = _build_run_context(request, user_id, body.article_url_hash)
+
     try:
         result = await agent.answer(
             message=body.message,
@@ -383,6 +427,7 @@ async def chat_ask(
             revision=revision,
             history=[m.model_dump() for m in body.history] if body.history else None,
             style_hints=style_hints,
+            run_context=run_context,
         )
     except LLMError as e:
         await _log_chat_operation(
@@ -540,6 +585,9 @@ async def chat_ask_stream(
 
     from agent.draft_chat import LLMError
 
+    # 构建 RunContext（Agent 模式需要，flag 关闭时不会使用）
+    run_context = _build_run_context(request, user_id, body.article_url_hash)
+
     async def event_stream():
         """SSE 事件生成器"""
         full_answer = []
@@ -551,6 +599,7 @@ async def chat_ask_stream(
                 revision=revision,
                 history=[m.model_dump() for m in body.history] if body.history else None,
                 style_hints=style_hints,
+                run_context=run_context,
             ):
                 full_answer.append(chunk)
                 yield f"data: {json.dumps({'chunk': chunk}, ensure_ascii=False)}\n\n"
