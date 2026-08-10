@@ -3,7 +3,8 @@
 模块：
   - models.py     协议数据模型 / Agent Card / Task 八态；
   - mapper.py     协议 ↔ 内部 RuntimeState 映射与不可信输入净化；
-  - task_store.py A2A Task 持久化（版本乐观锁 + 幂等 + 多租户）。
+  - task_store.py A2A Task 持久化（版本乐观锁 + 幂等 + 多租户）；
+  - server.py     A2A Server 协议编排（复用自主运行服务执行内部运行）。
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from agent.a2a.models import (
     TaskStatusUpdateEvent,
     TERMINAL_TASK_STATUSES,
 )
+from agent.a2a.server import A2AServer
 from agent.a2a.task_store import A2ATaskConflictError, A2ATaskStore
 
 __all__ = [
@@ -36,6 +38,7 @@ __all__ = [
     "SDK_VERSION",
     "VERSION_HEADER",
     "A2AError",
+    "A2AServer",
     "A2ATaskConflictError",
     "A2ATaskStore",
     "AgentCard",
@@ -52,3 +55,4 @@ __all__ = [
     "TaskStatusUpdateEvent",
     "TERMINAL_TASK_STATUSES",
 ]
+

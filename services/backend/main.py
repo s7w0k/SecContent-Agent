@@ -252,8 +252,35 @@ async def lifespan(app: FastAPI):
                 db=app.state.db,
             )
             _log("INFO", "Autonomous agent service initialized (enabled)")
+
+            # A2A 1.0 协议服务（阶段四 4B，默认关闭；关闭时 app.state.a2a_server=None）
+            if settings.A2A_ENABLED:
+                from agent.a2a import A2AServer, A2ATaskStore, Skill
+
+                app.state.a2a_server = A2AServer(
+                    run_service=app.state.autonomous_service,
+                    task_store=A2ATaskStore(app.state.db),
+                    skills=[
+                        Skill(
+                            id=settings.A2A_SKILL_ID,
+                            name=settings.A2A_SKILL_NAME,
+                            description=settings.A2A_SKILL_DESCRIPTION,
+                            tags=["pr-intel", "read-only"],
+                            examples=["分析近 7 天 PR 情报并给出报告"],
+                        )
+                    ],
+                    card_name=settings.A2A_AGENT_NAME,
+                    card_description=settings.A2A_AGENT_DESCRIPTION,
+                    card_url=settings.A2A_AGENT_URL,
+                    principal_prefix=settings.A2A_PRINCIPAL_PREFIX,
+                )
+                _log("INFO", "A2A server initialized (enabled, skills=%s)", settings.A2A_SKILL_ID)
+            else:
+                app.state.a2a_server = None
+                _log("INFO", "A2A server disabled (A2A_ENABLED=false)")
         else:
             app.state.autonomous_service = None
+            app.state.a2a_server = None
             _log("INFO", "Autonomous agent service disabled (AUTONOMOUS_AGENT_ENABLED=false)")
     except Exception as e:
         _log("WARNING", f"Agent init skipped: {e}")
@@ -388,6 +415,7 @@ async def log_requests(request: Request, call_next):
 from api.accounts import router as accounts_router
 from api.activity import router as activity_router
 from api.auth import router as auth_router
+from api.a2a import router as a2a_router
 from api.autonomous import router as autonomous_router
 from api.chat import router as chat_router
 from api.crawl_config import router as crawl_config_router
@@ -440,6 +468,7 @@ app.include_router(product_catalog_router)
 app.include_router(generation_preferences_router)
 app.include_router(user_knowledge_router)
 app.include_router(autonomous_router)
+app.include_router(a2a_router)
 
 
 # ── System endpoints ────────────────────────────────────

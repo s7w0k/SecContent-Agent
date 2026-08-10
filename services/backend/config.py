@@ -394,9 +394,47 @@ class Settings(BaseSettings):
         default=12000, ge=1000, le=100000, description="自主运行上下文最大字符数（记忆/历史压缩）"
     )
 
+    # ── A2A 互操作（阶段四 4B，默认关闭）────────────────────────
+    A2A_ENABLED: bool = Field(
+        default=False, description="A2A 1.0 协议服务总开关（默认关闭；开启需先启用自主模式）"
+    )
+    A2A_ALLOWED_PEERS: list[str] = Field(
+        default_factory=list, description="外部 Agent 允许列表（base_url）；空=仅本机闭环"
+    )
+    A2A_SKILL_ID: str = Field(
+        default="pr_intel", max_length=100, description="首批试点开放的只读 Skill id"
+    )
+    A2A_SKILL_NAME: str = Field(
+        default="PR 情报分析", max_length=200, description="首批试点开放的 Skill 名称"
+    )
+    A2A_SKILL_DESCRIPTION: str = Field(
+        default="PR 情报检索、分类、打分与导出（只读低风险，供受控试点）",
+        max_length=2000,
+    )
+    A2A_AGENT_NAME: str = Field(
+        default="PR 情报智能体", max_length=200, description="Agent Card 名称"
+    )
+    A2A_AGENT_DESCRIPTION: str = Field(
+        default="PR 情报分析 A2A Agent（A2A 1.0，HTTP+JSON/REST）",
+        max_length=4000,
+    )
+    A2A_AGENT_URL: str = Field(
+        default="http://a2a.internal/.well-known/agent-card.json",
+        max_length=2000,
+        description="Agent Card 对外 URL",
+    )
+    A2A_PRINCIPAL_PREFIX: str = Field(
+        default="a2a", max_length=32, description="A2A service principal 用户前缀（不冒充最终用户）"
+    )
+
     @model_validator(mode="after")
     def autonomous_enabled_requires_bounded_budget(self) -> Settings:
         """配置非法时阻止自主模式启动，而不是使用无上限默认值。"""
+        if self.A2A_ENABLED and not self.AUTONOMOUS_AGENT_ENABLED:
+            raise ValueError(
+                "A2A_ENABLED=true 必须同时启用 AUTONOMOUS_AGENT_ENABLED；"
+                "A2A 复用自主运行服务，不允许单独暴露"
+            )
         if not self.AUTONOMOUS_AGENT_ENABLED:
             return self
         required_positive = {
