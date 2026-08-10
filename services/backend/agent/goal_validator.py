@@ -207,24 +207,32 @@ class LoopDetector:
         self.repeated_error_limit = repeated_error_limit
         self.no_evidence_limit = no_evidence_limit
 
+    def _execution_summaries(self, state: RuntimeState) -> list[DecisionSummary]:
+        """仅取实际执行阶段（phase=execute）的决策摘要，避免把单轮内部
+        plan/policy/validate 摘要误判为重复执行。"""
+        return [d for d in state.decision_summaries if d.phase == "execute"]
+
     def _recent_fingerprints(self, state: RuntimeState) -> list[str]:
         # 相似度只看 工具+参数 指纹（忽略 step_id，检测重复动作）
-        return [d.tool_name + ":" + d.args_hash for d in state.decision_summaries[-self.window:]]
+        return [
+            d.tool_name + ":" + d.args_hash
+            for d in self._execution_summaries(state)[-self.window:]
+        ]
 
     def _recent_error_signatures(self, state: RuntimeState) -> list[str]:
         sigs = []
-        for d in state.decision_summaries[-self.window:]:
+        for d in self._execution_summaries(state)[-self.window:]:
             if d.outcome in ("failed", "skipped"):
                 sigs.append(f"{d.tool_name}:{d.result_hash}:{d.reason}")
         return sigs
 
     def detect_loop(self, state: RuntimeState) -> LoopSignal:
-        summaries = state.decision_summaries
-        if len(summaries) < 2:
+        exec_sums = self._execution_summaries(state)
+        if len(exec_sums) < 2:
             return LoopSignal(detected=False)
 
         # 1. 相同计划重复（step_id 不前进）
-        if len({s.step_id for s in summaries[-self.window:]}) <= 1:
+        if len({s.step_id for s in exec_sums[-self.window:]}) <= 1:
             return LoopSignal(detected=True, kind="identical_plan",
                               detail="same step repeated without plan advance")
 
@@ -240,7 +248,7 @@ class LoopDetector:
                               detail=f"recent {similar}/{len(fps)} actions share fingerprints")
 
         # 3. 无新增证据（连续无进展）
-        last_n = summaries[-self.no_evidence_limit:]
+        last_n = exec_sums[-self.no_evidence_limit:]
         if len(last_n) >= self.no_evidence_limit and all(
             d.outcome != "success" for d in last_n
         ) and not state.evidence:
