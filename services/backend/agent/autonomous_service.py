@@ -19,17 +19,17 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from agent.agent_runtime import AgentRuntime, PlannedAction
 from agent.goal_validator import GoalValidator
-from agent.model_router import ModelRouter, RouteRequest, SensitivityLevel
+from agent.model_router import ModelRouter
 from agent.policy_engine import ApprovalService, PolicyEngine
 from agent.runtime_events import RuntimeEventStore
 from agent.runtime_state import (
     BudgetUsage,
-    PendingApproval,
     RunBudget,
     RuntimeState,
     RuntimeStatus,
@@ -70,14 +70,18 @@ class DemoPlanner:
         return PlannedAction(
             step_id=f"step-{len(state.completed_steps) + 1}",
             tool_name=next_tool,
-            args={} if next_tool != "export_articles_csv" else {"idempotency_key": f"ik-{state.run_id}-export"},
+            args={}
+            if next_tool != "export_articles_csv"
+            else {"idempotency_key": f"ik-{state.run_id}-export"},
         )
 
 
 class DemoExecutor:
     """确定性执行器：按工具名返回结构化结果（含证据，驱动端到端演示）。"""
 
-    async def __call__(self, state: RuntimeState, action: PlannedAction, meta: dict[str, Any]) -> dict[str, Any]:
+    async def __call__(
+        self, state: RuntimeState, action: PlannedAction, meta: dict[str, Any]
+    ) -> dict[str, Any]:
         if action.tool_name == "export_articles_csv":
             return {
                 "ok": True,
@@ -174,9 +178,14 @@ class AutonomousRunService:
         )
         await self.store.save(state)
         await self.event_store.append(
-            run_id=state.run_id, event_type="run_created", status=state.status.value,
-            payload={"goal_len": len(state.goal), "criteria": len(state.acceptance_criteria),
-                     "chain": list(chain)},
+            run_id=state.run_id,
+            event_type="run_created",
+            status=state.status.value,
+            payload={
+                "goal_len": len(state.goal),
+                "criteria": len(state.acceptance_criteria),
+                "chain": list(chain),
+            },
         )
         return state
 
@@ -186,7 +195,9 @@ class AutonomousRunService:
             return None
         return state
 
-    async def list_runs(self, user_id: str, *, status: str = "", limit: int = 50) -> list[RuntimeState]:
+    async def list_runs(
+        self, user_id: str, *, status: str = "", limit: int = 50
+    ) -> list[RuntimeState]:
         return await self.store.list_runs(user_id=user_id, status=status, limit=limit)
 
     # ── 启动 / 取消 / 恢复 ────────────────────────────────────
@@ -201,9 +212,7 @@ class AutonomousRunService:
             return False
         cancel_event = asyncio.Event()
         self._cancel_events[run_id] = cancel_event
-        task = asyncio.create_task(
-            self._execute(state, cancel_event), name=f"autonomous-{run_id}"
-        )
+        task = asyncio.create_task(self._execute(state, cancel_event), name=f"autonomous-{run_id}")
         self._tasks[run_id] = task
         return True
 
@@ -236,7 +245,8 @@ class AutonomousRunService:
         if state is None or state.user_id != user_id:
             return None
         pending = next(
-            (a for a in state.approval_state.pending_approvals if a.approval_id == approval_id), None
+            (a for a in state.approval_state.pending_approvals if a.approval_id == approval_id),
+            None,
         )
         if pending is None:
             return None
@@ -248,16 +258,22 @@ class AutonomousRunService:
                 "approval_state": state.approval_state.model_copy(
                     update={
                         "pending_approvals": [
-                            a if a.approval_id != approval_id else approved for a in state.approval_state.pending_approvals
+                            a if a.approval_id != approval_id else approved
+                            for a in state.approval_state.pending_approvals
                         ],
-                        "approved_tokens": state.approval_state.approved_tokens + [approved.one_time_token],
+                        "approved_tokens": [
+                            *state.approval_state.approved_tokens,
+                            approved.one_time_token,
+                        ],
                     }
                 )
             }
         )
         await self.store.save(new_state)
         await self.event_store.append(
-            run_id=run_id, event_type="approval_approved", status=new_state.status.value,
+            run_id=run_id,
+            event_type="approval_approved",
+            status=new_state.status.value,
             payload={"approval_id": approval_id, "approver": user_id},
         )
         return new_state
@@ -270,17 +286,21 @@ class AutonomousRunService:
         if state is None or state.user_id != user_id:
             return None
         pending = next(
-            (a for a in state.approval_state.pending_approvals if a.approval_id == approval_id), None
+            (a for a in state.approval_state.pending_approvals if a.approval_id == approval_id),
+            None,
         )
         if pending is None:
             return None
-        rejected = await self.approval_service.reject(pending, approver=user_id, reason="rejected by user")
+        rejected = await self.approval_service.reject(
+            pending, approver=user_id, reason="rejected by user"
+        )
         new_state = state.model_copy(
             update={
                 "approval_state": state.approval_state.model_copy(
                     update={
                         "pending_approvals": [
-                            a if a.approval_id != approval_id else rejected for a in state.approval_state.pending_approvals
+                            a if a.approval_id != approval_id else rejected
+                            for a in state.approval_state.pending_approvals
                         ]
                     }
                 )
@@ -288,7 +308,9 @@ class AutonomousRunService:
         )
         await self.store.save(new_state)
         await self.event_store.append(
-            run_id=run_id, event_type="approval_rejected", status=new_state.status.value,
+            run_id=run_id,
+            event_type="approval_rejected",
+            status=new_state.status.value,
             payload={"approval_id": approval_id, "approver": user_id},
         )
         return new_state
@@ -320,7 +342,11 @@ class AutonomousRunService:
     # ── 内部 ─────────────────────────────────────────────────
 
     def _build_runtime(self, state: RuntimeState) -> AgentRuntime:
-        planner = self.planner_factory(state) if self.planner_factory else DemoPlanner(chain=state.pending_steps)
+        planner = (
+            self.planner_factory(state)
+            if self.planner_factory
+            else DemoPlanner(chain=state.pending_steps)
+        )
         executor = self.executor_factory(state) if self.executor_factory else DemoExecutor()
 
         async def _checkpoint(s: RuntimeState) -> None:
@@ -331,7 +357,9 @@ class AutonomousRunService:
             executor=executor,
             policy=self.policy,
             approval_service=self.approval_service,
-            goal_validator=GoalValidator(required_artifact_keys=(), high_risk_requires_confirm=False),
+            goal_validator=GoalValidator(
+                required_artifact_keys=(), high_risk_requires_confirm=False
+            ),
             model_router=self.model_router,
             checkpointer=_checkpoint,
             event_emitter=self._emit_event,
@@ -339,17 +367,26 @@ class AutonomousRunService:
             backoff_jitter=0.0,
         )
 
-    async def _emit_event(self, event_type: str, state: RuntimeState, payload: dict[str, Any]) -> None:
+    async def _emit_event(
+        self, event_type: str, state: RuntimeState, payload: dict[str, Any]
+    ) -> None:
         await self.event_store.append(
             run_id=state.run_id, event_type=event_type, status=state.status.value, payload=payload
         )
 
-    async def _execute(self, state: RuntimeState, cancel_event: asyncio.Event | None = None) -> None:
+    async def _execute(
+        self, state: RuntimeState, cancel_event: asyncio.Event | None = None
+    ) -> None:
         runtime = self._build_runtime(state)
         try:
             result = await runtime.run(state, cancel_event=cancel_event)
             await self.store.save(result.final_state)
-            logger.info("[autonomous] run %s finished: %s (%s)", state.run_id, result.status.value, result.reason_code)
+            logger.info(
+                "[autonomous] run %s finished: %s (%s)",
+                state.run_id,
+                result.status.value,
+                result.reason_code,
+            )
         except asyncio.CancelledError:
             logger.info("[autonomous] run %s task canceled", state.run_id)
         except Exception:

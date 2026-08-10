@@ -766,7 +766,9 @@ async def review_node(state: dict, reviewer: Any, db: Any) -> dict:
                     raise RuntimeError("Draft reviewer not initialized")
                 result = await reviewer.review(article, draft)
             except Exception as exc:
-                logger.warning("[review] Draft review failed for %s/%d: %s", url_hash, position, exc)
+                logger.warning(
+                    "[review] Draft review failed for %s/%d: %s", url_hash, position, exc
+                )
                 result = DraftReview(
                     status="failed",
                     content_hash=compute_content_hash(str(draft.get("content_md") or "")),
@@ -794,7 +796,9 @@ async def review_node(state: dict, reviewer: Any, db: Any) -> dict:
     # 前向恢复：任一草稿评审失败 → 文档级 review_status=pending_review，禁止发布；
     # 草稿保留未发布状态，等待人工重放 review 后再发布。
     pending_docs: set[str] = {
-        url_hash for (url_hash, _pos, _art, _draft), status in zip(jobs, statuses) if status == "failed"
+        url_hash
+        for (url_hash, _pos, _art, _draft), status in zip(jobs, statuses, strict=False)
+        if status == "failed"
     }
     for url_hash in pending_docs:
         await db["user_drafts"].update_one(

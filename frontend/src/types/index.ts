@@ -609,6 +609,9 @@ export interface WeWeAccount {
   vid?: string;
   token?: string;
   last_login?: string;
+  /** 后端 /accounts/status 返回的中文状态标签与原始状态码 */
+  status_label?: string;
+  status_code?: number;
 }
 
 export interface AccountStatusResult {
@@ -1367,4 +1370,3 @@ export interface RuntimeEventEnvelope {
   timestamp: string;
   payload: Record<string, unknown>;
 }
-

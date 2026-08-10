@@ -21,24 +21,22 @@ import hashlib
 import json
 import secrets
 from datetime import UTC, datetime, timedelta
-from enum import Enum
+from enum import StrEnum
 from typing import Any
-
-from pydantic import BaseModel, ConfigDict, Field
 
 from agent.runtime_state import (
     BudgetUsage,
     PendingApproval,
     RunBudget,
 )
-
+from pydantic import BaseModel, ConfigDict, Field
 
 # ═══════════════════════════════════════════════════════════════
 # 风险分级与规则
 # ═══════════════════════════════════════════════════════════════
 
 
-class RiskLevel(str, Enum):
+class RiskLevel(StrEnum):
     """操作风险分级。"""
 
     L0 = "L0"  # 检索、读取授权数据
@@ -47,7 +45,7 @@ class RiskLevel(str, Enum):
     L3 = "L3"  # 删除、权限、凭证、不可恢复操作
 
 
-class PolicyAction(str, Enum):
+class PolicyAction(StrEnum):
     ALLOW = "allow"
     REQUIRE_APPROVAL = "require_approval"
     DENY = "deny"
@@ -80,10 +78,14 @@ DEFAULT_RULES: dict[str, PolicyRule] = {
     ),
     "get_crawl_stats": PolicyRule(tool_name="get_crawl_stats", risk_level=RiskLevel.L0),
     "classify_articles": PolicyRule(
-        tool_name="classify_articles", risk_level=RiskLevel.L0, allowed_args=frozenset({"article_ids"})
+        tool_name="classify_articles",
+        risk_level=RiskLevel.L0,
+        allowed_args=frozenset({"article_ids"}),
     ),
     "score_articles": PolicyRule(
-        tool_name="score_articles", risk_level=RiskLevel.L0, allowed_args=frozenset({"article_ids", "product_ids"})
+        tool_name="score_articles",
+        risk_level=RiskLevel.L0,
+        allowed_args=frozenset({"article_ids", "product_ids"}),
     ),
     "crawl_overseas_news": PolicyRule(
         tool_name="crawl_overseas_news",
@@ -243,14 +245,17 @@ class PolicyEngine:
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
             return False
-        if rule.allowed_domains:
-            host = (parsed.hostname or "").lower()
-            if not any(host == d or host.endswith("." + d) for d in rule.allowed_domains):
-                return False
-        if rule.allowed_path_prefixes:
-            if not any(parsed.path.startswith(p) for p in rule.allowed_path_prefixes):
-                return False
-        return True
+        if rule.allowed_domains and not any(
+            (parsed.hostname or "").lower() == d
+            or (parsed.hostname or "").lower().endswith("." + d)
+            for d in rule.allowed_domains
+        ):
+            return False
+        # 若配置了路径前缀白名单，则至少需匹配其一（否则拒绝）
+        return not (
+            rule.allowed_path_prefixes
+            and not any(parsed.path.startswith(p) for p in rule.allowed_path_prefixes)
+        )
 
     def evaluate(
         self,
@@ -271,18 +276,26 @@ class PolicyEngine:
         # 1. 权限交集：不在 Runtime/Skill/用户允许列表内 → 拒绝
         if allowed_tool_names is not None and tool_name not in allowed_tool_names:
             return PolicyDecision(
-                allowed=False, action=PolicyAction.DENY, risk_level=RiskLevel.L0,
-                reason="tool not in allowlist", reason_code="not_in_allowlist",
-                params_hash=params_hash(args), params_summary=params_summary(args),
+                allowed=False,
+                action=PolicyAction.DENY,
+                risk_level=RiskLevel.L0,
+                reason="tool not in allowlist",
+                reason_code="not_in_allowlist",
+                params_hash=params_hash(args),
+                params_summary=params_summary(args),
                 created_at=stamp,
             )
         rule = self._rules.get(tool_name)
         if rule is None:
             # 无规则默认拒绝（安全优先）
             return PolicyDecision(
-                allowed=False, action=PolicyAction.DENY, risk_level=RiskLevel.L3,
-                reason=f"unknown tool: {tool_name}", reason_code="unknown_tool",
-                params_hash=params_hash(args), params_summary=params_summary(args),
+                allowed=False,
+                action=PolicyAction.DENY,
+                risk_level=RiskLevel.L3,
+                reason=f"unknown tool: {tool_name}",
+                reason_code="unknown_tool",
+                params_hash=params_hash(args),
+                params_summary=params_summary(args),
                 created_at=stamp,
             )
 
@@ -290,9 +303,13 @@ class PolicyEngine:
         unexpected = set(args) - set(rule.allowed_args)
         if unexpected:
             return PolicyDecision(
-                allowed=False, action=PolicyAction.DENY, risk_level=rule.risk_level,
-                reason=f"unexpected args: {sorted(unexpected)}", reason_code="unexpected_args",
-                params_hash=params_hash(args), params_summary=params_summary(args),
+                allowed=False,
+                action=PolicyAction.DENY,
+                risk_level=rule.risk_level,
+                reason=f"unexpected args: {sorted(unexpected)}",
+                reason_code="unexpected_args",
+                params_hash=params_hash(args),
+                params_summary=params_summary(args),
                 created_at=stamp,
             )
 
@@ -300,51 +317,82 @@ class PolicyEngine:
         url = args.get("url") or args.get("target_url")
         if url is not None and not self._url_allowed(str(url), rule):
             return PolicyDecision(
-                allowed=False, action=PolicyAction.DENY, risk_level=rule.risk_level,
-                reason="url not allowed by data scope", reason_code="url_not_allowed",
-                params_hash=params_hash(args), params_summary=params_summary(args),
+                allowed=False,
+                action=PolicyAction.DENY,
+                risk_level=rule.risk_level,
+                reason="url not allowed by data scope",
+                reason_code="url_not_allowed",
+                params_hash=params_hash(args),
+                params_summary=params_summary(args),
                 created_at=stamp,
             )
 
         # 4. 预算检查点（模型调用前/工具调用前）
-        if usage is not None and budget is not None and not usage.can_start_next_action(budget, now=stamp):
+        if (
+            usage is not None
+            and budget is not None
+            and not usage.can_start_next_action(budget, now=stamp)
+        ):
             return PolicyDecision(
-                allowed=False, action=PolicyAction.DENY, risk_level=rule.risk_level,
-                reason="budget exhausted", reason_code="budget_exhausted",
-                params_hash=params_hash(args), params_summary=params_summary(args),
+                allowed=False,
+                action=PolicyAction.DENY,
+                risk_level=rule.risk_level,
+                reason="budget exhausted",
+                reason_code="budget_exhausted",
+                params_hash=params_hash(args),
+                params_summary=params_summary(args),
                 created_at=stamp,
             )
 
         # 5. 风险动作：L3 永久禁止；L2 需要审批；其余按规则默认
         if rule.default_action == PolicyAction.DENY or rule.risk_level == RiskLevel.L3:
             return PolicyDecision(
-                allowed=False, action=PolicyAction.DENY, risk_level=rule.risk_level,
-                reason="permanently forbidden", reason_code="risk_level_l3",
-                params_hash=params_hash(args), params_summary=params_summary(args),
+                allowed=False,
+                action=PolicyAction.DENY,
+                risk_level=rule.risk_level,
+                reason="permanently forbidden",
+                reason_code="risk_level_l3",
+                params_hash=params_hash(args),
+                params_summary=params_summary(args),
                 created_at=stamp,
             )
         if rule.default_action == PolicyAction.REQUIRE_APPROVAL or rule.risk_level == RiskLevel.L2:
             return PolicyDecision(
-                allowed=False, action=PolicyAction.REQUIRE_APPROVAL, risk_level=rule.risk_level,
-                reason="requires human approval", reason_code="requires_approval",
-                params_hash=params_hash(args), params_summary=params_summary(args),
-                requires_idempotency_key=rule.has_side_effect, created_at=stamp,
+                allowed=False,
+                action=PolicyAction.REQUIRE_APPROVAL,
+                risk_level=rule.risk_level,
+                reason="requires human approval",
+                reason_code="requires_approval",
+                params_hash=params_hash(args),
+                params_summary=params_summary(args),
+                requires_idempotency_key=rule.has_side_effect,
+                created_at=stamp,
             )
 
         # 6. 外部副作用必须携带幂等键
         if rule.has_side_effect and not args.get("idempotency_key"):
             return PolicyDecision(
-                allowed=False, action=PolicyAction.DENY, risk_level=rule.risk_level,
-                reason="side effect requires idempotency_key", reason_code="missing_idempotency_key",
-                params_hash=params_hash(args), params_summary=params_summary(args),
-                requires_idempotency_key=True, created_at=stamp,
+                allowed=False,
+                action=PolicyAction.DENY,
+                risk_level=rule.risk_level,
+                reason="side effect requires idempotency_key",
+                reason_code="missing_idempotency_key",
+                params_hash=params_hash(args),
+                params_summary=params_summary(args),
+                requires_idempotency_key=True,
+                created_at=stamp,
             )
 
         return PolicyDecision(
-            allowed=True, action=PolicyAction.ALLOW, risk_level=rule.risk_level,
-            reason="ok", reason_code="allowed",
-            params_hash=params_hash(args), params_summary=params_summary(args),
-            requires_idempotency_key=rule.has_side_effect, created_at=stamp,
+            allowed=True,
+            action=PolicyAction.ALLOW,
+            risk_level=rule.risk_level,
+            reason="ok",
+            reason_code="allowed",
+            params_hash=params_hash(args),
+            params_summary=params_summary(args),
+            requires_idempotency_key=rule.has_side_effect,
+            created_at=stamp,
         )
 
 
@@ -430,10 +478,19 @@ class ApprovalService:
         return updated
 
     async def reject(
-        self, approval: PendingApproval, *, approver: str, reason: str = "", now: datetime | None = None
+        self,
+        approval: PendingApproval,
+        *,
+        approver: str,
+        reason: str = "",
+        now: datetime | None = None,
     ) -> PendingApproval:
         updated = approval.model_copy(
-            update={"status": "rejected", "approver": approver, "trigger_rule": reason or approval.trigger_rule}
+            update={
+                "status": "rejected",
+                "approver": approver,
+                "trigger_rule": reason or approval.trigger_rule,
+            }
         )
         if self.db is not None:
             await self.db["runtime_approvals"].find_one_and_update(

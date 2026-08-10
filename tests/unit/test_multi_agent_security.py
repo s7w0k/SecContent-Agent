@@ -11,16 +11,13 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
-from pymongo import ReturnDocument
-
 from agent.execution_step_ledger import ExecutionStepLedger
 from agent.multi_agent import MultiAgentReplayError, MultiAgentRuntime
 from agent.orchestrator import Orchestrator
-from agent.plan_contracts import PlanValidator, PlanStep, PipelinePlan, build_default_plan
+from agent.plan_contracts import PipelinePlan, PlanStep, PlanValidator, build_default_plan
 from agent.planner import PLANNER_VERSION, Planner, PlannerArticleInput, PlannerChoice
 from agent.worker_registry import (
     FORBIDDEN_WORKERS,
@@ -29,7 +26,7 @@ from agent.worker_registry import (
     WorkerResult,
     WorkerSpec,
 )
-
+from pymongo import ReturnDocument
 
 # ═══════════════════════════════════════════════════════════════
 # Fake MongoDB（与 test_execution_step_ledger 同构）

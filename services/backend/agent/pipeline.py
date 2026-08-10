@@ -236,7 +236,7 @@ async def crawl_node(
                 import xml.etree.ElementTree as ET
 
                 NS = {"atom": "http://www.w3.org/2005/Atom"}
-                root = ET.fromstring(resp.text)
+                root = ET.fromstring(resp.text)  # nosec B314 - 固定内部 WeWe Atom feed 源
                 entries = root.findall("atom:entry", NS)
                 for entry in entries:
                     title_el = entry.find("atom:title", NS)
@@ -277,7 +277,7 @@ async def crawl_node(
                         continue
                     import hashlib
 
-                    url_hash = art.get("url_hash") or hashlib.md5(url.encode()).hexdigest()
+                    url_hash = art.get("url_hash") or hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()
 
                     # 去重：检查是否已存在
                     existing = await db["articles"].find_one({"url_hash": url_hash})
@@ -337,7 +337,7 @@ async def crawl_node(
             for art in articles:
                 if art.get("source_type", "overseas_news") == "overseas_news":
                     url = art.get("url", "")
-                    url_hash = art.get("url_hash") or hashlib.md5(url.encode()).hexdigest()
+                    url_hash = art.get("url_hash") or hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()
                     if url:
                         overseas_urls.append({"url_hash": url_hash, "url": url})
 

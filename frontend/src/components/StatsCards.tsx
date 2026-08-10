@@ -9,14 +9,14 @@
  *   reportCount: number       — 已生成报道数
  */
 
-import { Card, Col, Row, Skeleton, Statistic } from "antd";
 import {
   FileTextOutlined,
   SafetyCertificateOutlined,
   StarOutlined,
   ThunderboltOutlined,
-} from "@ant-design/icons";
-import type { StatsData } from "../types";
+} from '@ant-design/icons';
+import { Card, Col, Row, Skeleton, Statistic } from 'antd';
+import type { StatsData } from '../types';
 
 interface StatsCardsProps {
   stats: StatsData | null;
@@ -45,30 +45,30 @@ export default function StatsCards({ stats, loading, reportCount }: StatsCardsPr
 
   const cards = [
     {
-      title: "总文章数",
+      title: '总文章数',
       value: total,
       icon: <FileTextOutlined />,
-      color: "#1677ff",
+      color: '#1677ff',
     },
     {
-      title: "AI 安全相关",
+      title: 'AI 安全相关',
       value: aiCount,
       icon: <SafetyCertificateOutlined />,
-      color: "#52c41a",
+      color: '#52c41a',
       suffix: total > 0 ? `${((aiCount / total) * 100).toFixed(0)}%` : undefined,
     },
     {
-      title: "高价值文章 (≥140)",
+      title: '高价值文章 (≥140)',
       value: highValue,
       icon: <StarOutlined />,
-      color: "#fa8c16",
+      color: '#fa8c16',
       suffix: total > 0 ? `${((highValue / total) * 100).toFixed(0)}%` : undefined,
     },
     {
-      title: "已生成报道",
+      title: '已生成报道',
       value: reportCount,
       icon: <ThunderboltOutlined />,
-      color: "#722ed1",
+      color: '#722ed1',
     },
   ];
 

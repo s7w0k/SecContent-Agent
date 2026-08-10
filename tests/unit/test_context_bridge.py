@@ -21,14 +21,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "backend"))
 
-from agent.context_bridge import (  # noqa: E402
+from agent.context_bridge import (
     ContextBridge,
     context_mode,
     user_in_rollout,
 )
-from agent.skill_registry import SkillRegistry  # noqa: E402
-from config import Settings  # noqa: E402
-
+from agent.skill_registry import SkillRegistry
+from config import Settings
 
 # ═══════════════════════════════════════════════════════════════
 # Helpers

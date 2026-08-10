@@ -20,8 +20,6 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from pydantic import ValidationError
-
 from agent.a2a.client import (
     A2AClient,
     DiscoveryError,
@@ -29,12 +27,13 @@ from agent.a2a.client import (
     RemoteUnavailableError,
 )
 from agent.a2a.models import AGENT_CARD_PATH, PROTOCOL_VERSION, Skill, TaskStatus
-from agent.a2a.server import A2AServer, A2A_SKILL_TOOL_CHAIN
+from agent.a2a.server import A2A_SKILL_TOOL_CHAIN, A2AServer
 from agent.a2a.task_store import A2ATaskStore
 from agent.autonomous_service import AutonomousRunService
 from agent.policy_engine import ApprovalService, PolicyEngine, RiskLevel
 from agent.runtime_events import RuntimeEventStore
 from agent.runtime_store import RuntimeStateStore
+from pydantic import ValidationError
 
 PEER_BASE = "http://peer-a2a.test"
 PUBLIC_IP = "93.184.216.34"
@@ -162,10 +161,9 @@ def _make_service(db) -> AutonomousRunService:
 
 def _make_interop_stack(*, stream: bool = False):
     """真实 AutonomousRunService + Fake Mongo + A2AServer + FastAPI 路由。"""
+    from api.a2a import router as a2a_router
     from auth.deps import get_current_user
     from fastapi import FastAPI
-
-    from api.a2a import router as a2a_router
 
     db = _FakeDB()
     service = _make_service(db)
@@ -235,8 +233,10 @@ async def _poll_task(client, task_id, timeout=8.0):
         if task is not None:
             last = task.status.value
             if task.status in (
-                TaskStatus.COMPLETED, TaskStatus.FAILED,
-                TaskStatus.CANCELED, TaskStatus.REJECTED,
+                TaskStatus.COMPLETED,
+                TaskStatus.FAILED,
+                TaskStatus.CANCELED,
+                TaskStatus.REJECTED,
             ):
                 return task
         await asyncio.sleep(0.01)
@@ -266,9 +266,7 @@ class TestClosedLoopInterop:
     async def test_closed_loop_stream_send(self):
         _, _, app = _make_interop_stack(stream=True)
         client = _make_interop_client(app)
-        task = await client.send(
-            "peer-1", _msg("流式分析", message_id="ms1", task_id="a2a-s1")
-        )
+        task = await client.send("peer-1", _msg("流式分析", message_id="ms1", task_id="a2a-s1"))
         # 流结束 + get_task 拉取远端终态
         assert task.id == "a2a-s1"
         assert task.status == TaskStatus.COMPLETED
@@ -283,8 +281,8 @@ class TestClosedLoopInterop:
         principal = server.principal("u1")
         state = await server.run_service.get_run(task.internal_run_id, user_id=principal)
         assert state is not None
-        assert state.thread_id == "th-9"          # context_id <-> thread_id
-        assert state.trace_id == "trace-1"        # message_id <-> trace_id（审计追溯）
+        assert state.thread_id == "th-9"  # context_id <-> thread_id
+        assert state.trace_id == "trace-1"  # message_id <-> trace_id（审计追溯）
         # 反向：internal_run_id -> a2a Task
         back = await server.task_store.load_by_run_id(state.run_id, user_id=principal)
         assert back is not None and back.id == "a2a-tr"
@@ -331,9 +329,7 @@ class TestBidirectionalRecovery:
         """远端不可用（断流）后恢复：恢复链路先查询远端 Task 决定继续/失败。"""
         _, _, app = _make_interop_stack()
         client = _make_interop_client(app)
-        task = await client.send(
-            "peer-1", _msg("恢复测试", message_id="rc-1", task_id="a2a-rc")
-        )
+        await client.send("peer-1", _msg("恢复测试", message_id="rc-1", task_id="a2a-rc"))
         await _poll_task(client, "a2a-rc")
         # 恢复语义：get_task 以远端为权威拉取一致终态
         reconciled = await client.get_task("peer-1", "a2a-rc")
@@ -369,9 +365,9 @@ class TestPilotIsolation:
 
         s = Settings(DEEPSEEK_API_KEY="test", _env_file=None)
         assert s.AUTONOMOUS_AGENT_ENABLED is False
-        assert s.A2A_ENABLED is False                    # A2A Server 默认关
-        assert s.A2A_CLIENT_ENABLED is False             # A2A Client 默认关
-        assert s.A2A_ALLOWED_PEERS == []                 # 外部 Agent 允许列表默认空
+        assert s.A2A_ENABLED is False  # A2A Server 默认关
+        assert s.A2A_CLIENT_ENABLED is False  # A2A Client 默认关
+        assert s.A2A_ALLOWED_PEERS == []  # 外部 Agent 允许列表默认空
         # 客户端默认低值/保守
         assert s.A2A_CLIENT_RETRY_MAX == 2
         assert s.A2A_CLIENT_CARD_TTL_SECONDS == 300

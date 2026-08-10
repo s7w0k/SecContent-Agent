@@ -30,15 +30,14 @@ from agent.a2a.models import (
     AGENT_CARD_PATH,
     PROTOCOL_VERSION,
     VERSION_HEADER,
-    AgentCard,
     A2AError,
+    AgentCard,
     InvalidInputError,
     Message,
     MethodNotImplementedError,
     ProtocolError,
     Task,
     TaskSendResult,
-    TaskStatusUpdateEvent,
 )
 from agent.a2a.server import A2AServer
 from auth.deps import get_current_user

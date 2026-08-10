@@ -12,6 +12,7 @@ from typing import Any, TypeVar
 from uuid import uuid4
 
 from agent.agent_contracts import RunContext
+from agent.pricing_catalog import compute_cost
 from agent.retry import RetryPolicy, RetryState, with_retry
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -28,12 +29,6 @@ PROMPT_VERSIONS = {
     "draft_chat": "v1.0",
     "memory_learner": "v1.0",
     "memory_compiler": "v1.0",
-}
-
-# USD per 1,000 tokens. Values are deliberately configurable in one place and
-# are estimates only; provider billing remains the source of truth.
-PRICING = {
-    "deepseek-chat": {"input": 0.001, "output": 0.002},
 }
 
 
@@ -229,11 +224,19 @@ class LLMWrapper:
         if self.db is None:
             return
 
-        # 计算 token usage（优先用 provider 返回的 usage_metadata）
-        input_tokens, output_tokens = self._agent_token_usage(messages, response)
+        # 计算 token usage（优先用 provider 返回的 usage_metadata；缺失时保守估算）
+        input_tokens, output_tokens, cached_input_tokens, usage_estimated = self._resolve_usage(
+            messages, response
+        )
         model_name = self._model_name()
-        pricing = PRICING.get(model_name, {"input": 0.001, "output": 0.002})
-        cost_usd = (input_tokens * pricing["input"] + output_tokens * pricing["output"]) / 1000
+        cost = compute_cost(
+            model_name,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cached_input_tokens=cached_input_tokens,
+            input_tokens_estimated=usage_estimated,
+            output_tokens_estimated=usage_estimated,
+        )
         now = datetime.now(UTC)
 
         # 计算 messages 的 hash（不含完整内容）
@@ -248,7 +251,12 @@ class LLMWrapper:
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": input_tokens + output_tokens,
-            "cost_usd": round(cost_usd, 8),
+            "cost_usd": cost["cost_usd"],
+            "currency": cost["currency"],
+            "pricing_version": cost["pricing_version"],
+            "pricing_source": cost["pricing_source"],
+            "pricing_estimated": cost["pricing_estimated"],
+            "usage_estimated": cost["usage_estimated"],
             "created_at": now,
             "expires_at": now + timedelta(days=30),
             "agent_type": "draft_chat",
@@ -292,14 +300,19 @@ class LLMWrapper:
         return f"sha256:{hashlib.sha256(combined.encode('utf-8')).hexdigest()}"
 
     @staticmethod
-    def _agent_token_usage(
+    def _resolve_usage(
         messages: list[Any],
         response: AIMessage | None,
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, int, bool]:
         """从 LLM 响应中提取 token 用量。
 
+        返回 (input_tokens, output_tokens, cached_input_tokens, estimated)。
+        - 优先 provider 返回值（usage_metadata / response_metadata.token_usage），
+          并读取缓存命中输入 token（input_token_details.cache_read 或
+          prompt_cache_hit_tokens）；estimated=False。
+        - 无数据时按字符数 /4 保守估算；estimated=True。
+
         Step 1 探针确认：DeepSeek 返回 usage_metadata 可直接读取。
-        无数据时估算。
         """
         if response is not None:
             usage = getattr(response, "usage_metadata", None) or {}
@@ -309,7 +322,13 @@ class LLMWrapper:
             input_tokens = usage.get("input_tokens", usage.get("prompt_tokens"))
             output_tokens = usage.get("output_tokens", usage.get("completion_tokens"))
             if input_tokens is not None and output_tokens is not None:
-                return int(input_tokens), int(output_tokens)
+                cached = 0
+                details = usage.get("input_token_details") or {}
+                if isinstance(details, dict):
+                    cached = details.get("cache_read", 0)
+                if not cached:
+                    cached = usage.get("prompt_cache_hit_tokens", 0)
+                return int(input_tokens), int(output_tokens), int(cached or 0), False
 
         # 估算：按字符数 / 4
         total_chars = 0
@@ -323,6 +342,16 @@ class LLMWrapper:
             content = getattr(response, "content", "")
             if isinstance(content, str):
                 output_tokens = max(1, len(content) // 4) if content else 0
+        return input_tokens, output_tokens, 0, True
+
+    @classmethod
+    def _agent_token_usage(
+        cls,
+        messages: list[Any],
+        response: AIMessage | None,
+    ) -> tuple[int, int]:
+        """兼容接口：返回 (input_tokens, output_tokens)。"""
+        input_tokens, output_tokens, _, _ = cls._resolve_usage(messages, response)
         return input_tokens, output_tokens
 
     @staticmethod
@@ -368,14 +397,19 @@ class LLMWrapper:
         result = kwargs.pop("result", None)
         raw_response = kwargs.pop("raw_response", None)
         model_name = self._model_name()
-        input_tokens, output_tokens = self._token_usage(
+        input_tokens, output_tokens, usage_estimated = self._token_usage(
             raw_response,
             system_prompt,
             user_prompt,
             result,
         )
-        pricing = PRICING.get(model_name, {"input": 0.001, "output": 0.002})
-        cost_usd = (input_tokens * pricing["input"] + output_tokens * pricing["output"]) / 1000
+        cost = compute_cost(
+            model_name,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            input_tokens_estimated=usage_estimated,
+            output_tokens_estimated=usage_estimated,
+        )
         now = datetime.now(UTC)
         document = {
             "call_id": f"llm-{uuid4().hex[:12]}",
@@ -386,7 +420,12 @@ class LLMWrapper:
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": input_tokens + output_tokens,
-            "cost_usd": round(cost_usd, 8),
+            "cost_usd": cost["cost_usd"],
+            "currency": cost["currency"],
+            "pricing_version": cost["pricing_version"],
+            "pricing_source": cost["pricing_source"],
+            "pricing_estimated": cost["pricing_estimated"],
+            "usage_estimated": cost["usage_estimated"],
             "created_at": now,
             "expires_at": now + timedelta(days=30),
             **kwargs,
@@ -411,16 +450,19 @@ class LLMWrapper:
         system_prompt: str,
         user_prompt: str,
         result: BaseModel | None,
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, bool]:
         usage = getattr(response, "usage_metadata", None) or {}
         if not usage and response is not None:
             metadata = getattr(response, "response_metadata", None) or {}
             usage = metadata.get("token_usage", {})
         input_tokens = usage.get("input_tokens", usage.get("prompt_tokens"))
         output_tokens = usage.get("output_tokens", usage.get("completion_tokens"))
+        estimated = False
         if input_tokens is None:
             input_tokens = max(1, (len(system_prompt) + len(user_prompt)) // 4)
+            estimated = True
         if output_tokens is None:
             rendered = result.model_dump_json() if result is not None else ""
             output_tokens = max(1, len(rendered) // 4) if rendered else 0
-        return int(input_tokens), int(output_tokens)
+            estimated = True
+        return int(input_tokens), int(output_tokens), estimated

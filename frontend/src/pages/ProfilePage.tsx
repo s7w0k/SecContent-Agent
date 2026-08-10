@@ -70,7 +70,10 @@ function summarizePolicy(policy: ProfilePolicy | null): string {
     const labels = policy.content_focus.map((v) => CONTENT_FOCUS_LABELS[v] || v).join('、');
     parts.push(`内容侧重「${labels}」`);
   }
-  if (policy.structure_preference) parts.push(`结构「${STRUCTURE_LABELS[policy.structure_preference] || policy.structure_preference}」`);
+  if (policy.structure_preference)
+    parts.push(
+      `结构「${STRUCTURE_LABELS[policy.structure_preference] || policy.structure_preference}」`,
+    );
   if (policy.required_patterns?.length) parts.push(`${policy.required_patterns.length} 项必含要素`);
   if (policy.avoid_patterns?.length) parts.push(`${policy.avoid_patterns.length} 项规避要素`);
   if (policy.custom_instructions) parts.push('含自定义说明');
@@ -82,7 +85,8 @@ function summarizeMemory(stats: Record<string, number> | undefined, pending: num
   if (total === 0) return '暂无自动学习记忆';
   const active = stats?.active ?? 0;
   const candidate = stats?.candidate ?? 0;
-  if (candidate > 0) return `已学习 ${total} 条记忆，其中 ${active} 条已生效、${candidate} 条待确认`;
+  if (candidate > 0)
+    return `已学习 ${total} 条记忆，其中 ${active} 条已生效、${candidate} 条待确认`;
   if (pending > 0) return `已学习 ${total} 条记忆，其中 ${active} 条已生效、${pending} 条待审批`;
   return `已学习 ${total} 条记忆，全部已生效`;
 }
@@ -123,7 +127,9 @@ export default function ProfilePage() {
   // ── 记忆审计状态 ──────────────────────────────────
   const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
   const [memoryLoading, setMemoryLoading] = useState(false);
-  const [memoryStatusFilter, setMemoryStatusFilter] = useState<string>('active,pending_approval,candidate');
+  const [memoryStatusFilter, setMemoryStatusFilter] = useState<string>(
+    'active,pending_approval,candidate',
+  );
   const [memoryStats, setMemoryStats] = useState<Record<string, number>>({});
   const [memoryPending, setMemoryPending] = useState(0);
   const [evidenceItem, setEvidenceItem] = useState<MemoryItem | null>(null);
@@ -200,28 +206,31 @@ export default function ProfilePage() {
     }
   };
 
-  const handleMemoryAction = useCallback(async (action: string, memoryId: string) => {
-    if (action === 'edit') {
-      const item = memoryItems.find((m) => m.memory_id === memoryId);
-      if (item) {
-        setEditItem(item);
-        setEditText(item.display_text);
-        setEditPolarity(item.polarity);
+  const handleMemoryAction = useCallback(
+    async (action: string, memoryId: string) => {
+      if (action === 'edit') {
+        const item = memoryItems.find((m) => m.memory_id === memoryId);
+        if (item) {
+          setEditItem(item);
+          setEditText(item.display_text);
+          setEditPolarity(item.polarity);
+        }
+        return;
       }
-      return;
-    }
-    try {
-      if (action === 'approve') await memoryApi.approveItem(memoryId);
-      else if (action === 'reject') await memoryApi.rejectItem(memoryId);
-      else if (action === 'suppress') await memoryApi.suppressItem(memoryId);
-      else if (action === 'activate') await memoryApi.activateItem(memoryId);
-      else if (action === 'delete') await memoryApi.deleteItem(memoryId);
-      message.success('操作成功');
-      await loadMemoryItems();
-    } catch {
-      message.error('操作失败');
-    }
-  }, [loadMemoryItems, memoryItems]);
+      try {
+        if (action === 'approve') await memoryApi.approveItem(memoryId);
+        else if (action === 'reject') await memoryApi.rejectItem(memoryId);
+        else if (action === 'suppress') await memoryApi.suppressItem(memoryId);
+        else if (action === 'activate') await memoryApi.activateItem(memoryId);
+        else if (action === 'delete') await memoryApi.deleteItem(memoryId);
+        message.success('操作成功');
+        await loadMemoryItems();
+      } catch {
+        message.error('操作失败');
+      }
+    },
+    [loadMemoryItems, memoryItems],
+  );
 
   const handleEditSave = useCallback(async () => {
     if (!editItem) return;
@@ -313,13 +322,17 @@ export default function ProfilePage() {
                     <Card title="偏好概览" style={{ height: '100%' }}>
                       <Space direction="vertical" size="large" style={{ width: '100%' }}>
                         <div>
-                          <Text type="secondary" style={{ fontSize: 13 }}>显式偏好</Text>
+                          <Text type="secondary" style={{ fontSize: 13 }}>
+                            显式偏好
+                          </Text>
                           <Paragraph style={{ margin: '4px 0 0' }}>
                             {summarizePolicy(policy)}
                           </Paragraph>
                         </div>
                         <div>
-                          <Text type="secondary" style={{ fontSize: 13 }}>自动记忆</Text>
+                          <Text type="secondary" style={{ fontSize: 13 }}>
+                            自动记忆
+                          </Text>
                           <Paragraph style={{ margin: '4px 0 0' }}>
                             {summarizeMemory(memoryStats, memoryPending)}
                           </Paragraph>
@@ -347,9 +360,10 @@ export default function ProfilePage() {
                         color={memoryStatusFilter === 'active' ? 'blue' : 'orange'}
                         style={{ cursor: 'pointer' }}
                         onClick={() => {
-                          const next = memoryStatusFilter === 'active'
-                            ? 'active,pending_approval,candidate'
-                            : 'active';
+                          const next =
+                            memoryStatusFilter === 'active'
+                              ? 'active,pending_approval,candidate'
+                              : 'active';
                           setMemoryStatusFilter(next);
                         }}
                       >

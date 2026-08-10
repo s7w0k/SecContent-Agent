@@ -15,7 +15,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 DATASET_PATH = Path(__file__).parent / "dataset.v1.jsonl"
 
 

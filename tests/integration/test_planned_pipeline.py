@@ -9,8 +9,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from agent.multi_agent import (
     MODE_CURRENT,
     MODE_PLANNED,
@@ -32,7 +30,6 @@ from tests.integration._multi_agent_helpers import (
     make_registry,
 )
 
-
 # ═══════════════════════════════════════════════════════════════
 # 完整闭环
 # ═══════════════════════════════════════════════════════════════
@@ -49,7 +46,9 @@ class TestEndToEndPlanned:
         outcome = await orchestrator.run(plan, user_id="u1")
 
         assert outcome.status == "completed"
-        assert outcome.waves == 8  # crawl/classify/filter/score/draft/quality_check/rewrite(可选)/review
+        assert (
+            outcome.waves == 8
+        )  # crawl/classify/filter/score/draft/quality_check/rewrite(可选)/review
         by_step = {s.step_id: s for s in outcome.steps}
         assert all(s.status == "succeeded" for s in by_step.values())
         # 全部步骤在账本中均为 succeeded，租约已释放
@@ -65,7 +64,6 @@ class TestEndToEndPlanned:
 
         wrapper = _FakeLLMWrapper()
         planner = make_planner(db=db, wrapper=wrapper)
-        plan_id = ""
 
         async def _plan_once():
             outcome = await planner.plan(
@@ -79,7 +77,6 @@ class TestEndToEndPlanned:
         planner_outcome = await _plan_once()
         assert planner_outcome.source == "planner"
         assert not planner_outcome.rejected
-        assert plan_id or True  # 占位：plan_id 由服务端生成
         assert planner_outcome.plan.run_id == "run-2"
 
         await ledger.init_run(planner_outcome.plan)
@@ -116,7 +113,7 @@ class TestEndToEndPlanned:
 
     async def test_draft_without_review_never_reaches_execution(self):
         """即使有人绕过 Planner 直接构造缺 review 的计划，验证器也会拒绝。"""
-        from agent.plan_contracts import PlanValidator, PipelinePlan, _step
+        from agent.plan_contracts import PipelinePlan, PlanValidator, _step
 
         plan = PipelinePlan(
             plan_id="plan-x",
@@ -140,17 +137,37 @@ class TestEndToEndPlanned:
 
 class TestExecutionMode:
     def test_flag_off_always_current(self):
-        assert decide_execution_mode(enabled=False, shadow_enabled=True, rollout_percent=100, user_id="u1") == MODE_CURRENT
+        assert (
+            decide_execution_mode(
+                enabled=False, shadow_enabled=True, rollout_percent=100, user_id="u1"
+            )
+            == MODE_CURRENT
+        )
 
     def test_shadow_when_enabled(self):
-        assert decide_execution_mode(enabled=True, shadow_enabled=True, rollout_percent=100, user_id="u1") == MODE_SHADOW
+        assert (
+            decide_execution_mode(
+                enabled=True, shadow_enabled=True, rollout_percent=100, user_id="u1"
+            )
+            == MODE_SHADOW
+        )
 
     def test_rollout_hit_planned(self):
         # percent=100 命中所有用户
-        assert decide_execution_mode(enabled=True, shadow_enabled=False, rollout_percent=100, user_id="u1") == MODE_PLANNED
+        assert (
+            decide_execution_mode(
+                enabled=True, shadow_enabled=False, rollout_percent=100, user_id="u1"
+            )
+            == MODE_PLANNED
+        )
 
     def test_rollout_zero_never_planned(self):
-        assert decide_execution_mode(enabled=True, shadow_enabled=False, rollout_percent=0, user_id="u1") == MODE_CURRENT
+        assert (
+            decide_execution_mode(
+                enabled=True, shadow_enabled=False, rollout_percent=0, user_id="u1"
+            )
+            == MODE_CURRENT
+        )
 
 
 # ═══════════════════════════════════════════════════════════════

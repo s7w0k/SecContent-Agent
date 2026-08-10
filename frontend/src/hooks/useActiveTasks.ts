@@ -56,13 +56,11 @@ export function useActiveTasks(): UseActiveTasksResult {
         if (activeTasks.length === 0) return;
 
         // 单文章任务（run-v2 + article_url_hash）-> draftTask
-        const single = activeTasks.find(
-          (t) => t.task_type === 'run-v2' && t.article_url_hash,
-        );
+        const single = activeTasks.find((t) => t.task_type === 'run-v2' && t.article_url_hash);
         if (single) {
           setDraftTask({
             taskId: single.task_id,
-            articleHash: single.article_url_hash!,
+            articleHash: single.article_url_hash ?? '',
           });
         }
 

@@ -19,7 +19,6 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
-
 from agent.autonomous_service import AutonomousRunService
 from agent.policy_engine import ApprovalService, PolicyEngine
 from agent.runtime_events import RuntimeEventStore
@@ -334,10 +333,9 @@ class TestAutonomousService:
 
 class TestAutonomousAPI:
     def _app(self, service, *, user="u1"):
+        from api.autonomous import router as autonomous_router
         from auth.deps import get_current_user
         from fastapi import FastAPI
-
-        from api.autonomous import router as autonomous_router
 
         app = FastAPI()
         app.state.autonomous_service = service

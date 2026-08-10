@@ -79,6 +79,7 @@ async def lifespan(app: FastAPI):
     if settings.WEB_SEARCH_ENABLED:
         try:
             from clients.searxng import SearXNGClient
+
             app.state.searxng_client = SearXNGClient.from_settings(settings)
             _log("INFO", f"SearXNG client initialized: {settings.SEARXNG_URL}")
         except Exception as e:
@@ -294,7 +295,7 @@ async def lifespan(app: FastAPI):
                         key=key,
                         base_url=base_url.strip(),
                         enabled_skills=[settings.A2A_SKILL_ID],
-                        require_https=False if base_url.strip().startswith("http://") else True,
+                        require_https=not base_url.strip().startswith("http://"),
                         card_ttl_seconds=settings.A2A_CLIENT_CARD_TTL_SECONDS,
                         max_concurrency=settings.A2A_CLIENT_MAX_CONCURRENCY,
                         rps=settings.A2A_CLIENT_RPS,
@@ -450,10 +451,10 @@ async def log_requests(request: Request, call_next):
 
 # ── Routers ─────────────────────────────────────────────
 
+from api.a2a import router as a2a_router
 from api.accounts import router as accounts_router
 from api.activity import router as activity_router
 from api.auth import router as auth_router
-from api.a2a import router as a2a_router
 from api.autonomous import router as autonomous_router
 from api.chat import router as chat_router
 from api.crawl_config import router as crawl_config_router

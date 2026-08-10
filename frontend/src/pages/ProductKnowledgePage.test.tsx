@@ -25,6 +25,10 @@ vi.mock('../api/client', () => ({
   },
 }));
 
+vi.mock('../auth/useAuth', () => ({
+  useAuth: () => ({ user: { username: 'alice', is_admin: false } }),
+}));
+
 const mockTree: KnowledgeTree = {
   root_name: 'knowledge',
   knowledge_hash: 'abc123def456',
@@ -189,11 +193,7 @@ describe('ProductKnowledgePage', () => {
     const resultItem = await screen.findByText('guide.md');
     fireEvent.click(resultItem);
 
-    await waitFor(() =>
-      expect(knowledgeApi.getDocument).toHaveBeenCalledWith(
-        'docs/guide.md',
-      ),
-    );
+    await waitFor(() => expect(knowledgeApi.getDocument).toHaveBeenCalledWith('docs/guide.md'));
   });
 
   it('renders usage legend items', async () => {

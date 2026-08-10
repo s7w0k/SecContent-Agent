@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from typing import ClassVar
 
 import pytest
-
 from agent.plan_contracts import build_default_plan, input_snapshot_hash
 from agent.worker_registry import (
-    CONCURRENCY_GROUP_CRAWL,
     CONCURRENCY_GROUP_LLM,
     CONCURRENCY_GROUP_LOCAL,
     REVIEW_WORKER,
@@ -22,7 +21,6 @@ from agent.worker_registry import (
     _crawl_input_resolver,
     build_default_registry,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 # Helpers
@@ -103,17 +101,29 @@ class TestWorkerSpec:
 class TestWorkerLease:
     def test_expired(self):
         past = datetime.now(UTC) - timedelta(seconds=10)
-        assert WorkerLease(
-            owner_id="w1", run_id="run-1", step_id="s1",
-            expires_at=past, fencing_token=1,
-        ).expired is True
+        assert (
+            WorkerLease(
+                owner_id="w1",
+                run_id="run-1",
+                step_id="s1",
+                expires_at=past,
+                fencing_token=1,
+            ).expired
+            is True
+        )
 
     def test_active(self):
         future = datetime.now(UTC) + timedelta(seconds=120)
-        assert WorkerLease(
-            owner_id="w1", run_id="run-1", step_id="s1",
-            expires_at=future, fencing_token=2,
-        ).expired is False
+        assert (
+            WorkerLease(
+                owner_id="w1",
+                run_id="run-1",
+                step_id="s1",
+                expires_at=future,
+                fencing_token=2,
+            ).expired
+            is False
+        )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -124,8 +134,11 @@ class TestWorkerLease:
 class TestWorkerResult:
     def test_defaults(self):
         result = WorkerResult(
-            step_id="s1", worker="crawl",
-            idempotency_key="k", input_hash="i", result_hash="r",
+            step_id="s1",
+            worker="crawl",
+            idempotency_key="k",
+            input_hash="i",
+            result_hash="r",
         )
         assert result.status == "succeeded"
         assert result.retryable is False
@@ -134,8 +147,11 @@ class TestWorkerResult:
     def test_status_enum(self):
         with pytest.raises(ValueError):
             WorkerResult(
-                step_id="s1", worker="crawl",
-                idempotency_key="k", input_hash="i", result_hash="r",
+                step_id="s1",
+                worker="crawl",
+                idempotency_key="k",
+                input_hash="i",
+                result_hash="r",
                 status="running",  # type: ignore[arg-type]
             )
 
@@ -148,7 +164,9 @@ class TestWorkerResult:
 class TestIdempotencyKey:
     def test_format(self):
         adapter = _adapter()
-        resolved = adapter.resolve_input({"crawl_days": 1, "user_id": "u-1", "trace_id": "t"}, _ctx())
+        resolved = adapter.resolve_input(
+            {"crawl_days": 1, "user_id": "u-1", "trace_id": "t"}, _ctx()
+        )
         input_hash = adapter.compute_input_hash(resolved)
         key = adapter.idempotency_key(_ctx(), input_hash)
         assert key.startswith("u-1:run-1:s1:")
@@ -275,8 +293,16 @@ class TestWorkerRegistry:
 
     def test_validate_plan_coverage(self):
         registry = WorkerRegistry()
-        for name in ("crawl", "classify", "filter", "score", "draft",
-                     "quality_check", "rewrite", "review"):
+        for name in (
+            "crawl",
+            "classify",
+            "filter",
+            "score",
+            "draft",
+            "quality_check",
+            "rewrite",
+            "review",
+        ):
             registry.register(_adapter(name=name, handler=_ok_handler))
         plan = build_default_plan(
             run_id="run-1",
@@ -313,7 +339,7 @@ class TestBuildDefaultRegistry:
     def _manager(self):
         class _Manager:
             db = None
-            tools = {}
+            tools: ClassVar[dict] = {}
             classifier_v2 = None
             scorer_v2 = None
             draft_gen = None
@@ -327,8 +353,17 @@ class TestBuildDefaultRegistry:
     def test_all_nine_workers_registered(self):
         registry = build_default_registry(self._manager())
         assert registry.names() == frozenset(
-            {"crawl", "enrich", "classify", "filter", "score", "draft",
-             "quality_check", "rewrite", "review"}
+            {
+                "crawl",
+                "enrich",
+                "classify",
+                "filter",
+                "score",
+                "draft",
+                "quality_check",
+                "rewrite",
+                "review",
+            }
         )
 
     def test_review_registered_and_required(self):
@@ -351,7 +386,11 @@ class TestBuildDefaultRegistry:
         assert filter_spec.concurrency_group == CONCURRENCY_GROUP_LOCAL
         assert review.concurrency_group == CONCURRENCY_GROUP_LLM
         assert registry.get("draft").spec.required_scopes == {
-            "articles", "user_drafts", "knowledge", "templates", "user_profile"
+            "articles",
+            "user_drafts",
+            "knowledge",
+            "templates",
+            "user_profile",
         }
 
     def test_default_plan_coverage(self):

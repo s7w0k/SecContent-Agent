@@ -16,10 +16,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
-
 
 # ═══════════════════════════════════════════════════════════════
 # RunContext
@@ -68,7 +67,7 @@ class RunContext:
         """检查是否已过截止时间。"""
         if self.deadline_at is None:
             return False
-        current = now or datetime.now(timezone.utc)
+        current = now or datetime.now(UTC)
         return current >= self.deadline_at
 
 
@@ -103,7 +102,7 @@ class BudgetUsage:
     output_tokens: int = 0
     tool_calls: int = 0
     cost_usd: float = 0.0
-    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def can_continue(self, budget: LoopBudget, *, now: datetime | None = None) -> bool:
         """检查是否还有预算继续运行。"""
@@ -117,11 +116,9 @@ class BudgetUsage:
             return False
         if budget.max_cost_usd > 0 and self.cost_usd >= budget.max_cost_usd:
             return False
-        current = now or datetime.now(timezone.utc)
+        current = now or datetime.now(UTC)
         elapsed = (current - self.started_at).total_seconds()
-        if elapsed >= budget.deadline_seconds:
-            return False
-        return True
+        return elapsed < budget.deadline_seconds
 
     @property
     def total_tokens(self) -> int:
@@ -133,7 +130,7 @@ class BudgetUsage:
 # ═══════════════════════════════════════════════════════════════
 
 
-class ToolPermission(str, Enum):
+class ToolPermission(StrEnum):
     """工具执行权限级别。"""
 
     ALLOWED = "allowed"
@@ -224,7 +221,7 @@ class TypedToolResult:
 # ═══════════════════════════════════════════════════════════════
 
 
-class LoopStatus(str, Enum):
+class LoopStatus(StrEnum):
     """Agent Loop 运行状态。"""
 
     RUNNING = "running"
@@ -273,7 +270,7 @@ class LoopResult:
 # ═══════════════════════════════════════════════════════════════
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     """Agent 事件类型。"""
 
     LOOP_START = "loop_start"
@@ -303,7 +300,7 @@ class AgentEvent:
     sequence: int
     run_id: str
     trace_id: str
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     tool_name: str = ""
     tool_args_hash: str = ""
     tool_result_hash: str = ""

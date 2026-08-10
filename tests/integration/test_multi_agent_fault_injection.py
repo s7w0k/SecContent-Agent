@@ -11,10 +11,9 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 import pytest
-
 from agent.execution_step_ledger import LeaseConflictError
 from agent.orchestrator import build_waves
 from agent.worker_registry import WorkerResult
@@ -36,7 +35,9 @@ class TestWorkerFaults:
     async def test_worker_timeout_becomes_dead_lettered_partial(self, worker):
         """每个 Worker 挂起超时 → 重试耗尽 → dead_lettered；optional 步骤按策略跳过。"""
         db = make_db()
-        registry = make_registry(overrides={worker: {"hang": True, "timeout_s": 1, "max_attempts": 1}})
+        registry = make_registry(
+            overrides={worker: {"hang": True, "timeout_s": 1, "max_attempts": 1}}
+        )
         _, ledger, orchestrator = make_execution_stack(db, registry)
         plan = default_plan(run_id=f"run-timeout-{worker}")
         await ledger.init_run(plan)
@@ -102,12 +103,15 @@ class TestLeaseFencing:
         """租约接管后旧 owner 迟到写因 fencing 不匹配被拒，新 owner 可提交。"""
         db = make_db()
         registry = make_registry()
-        _, ledger, orchestrator = make_execution_stack(db, registry)
+        _, ledger, _ = make_execution_stack(db, registry)
         plan = default_plan(run_id="run-fence")
         await ledger.init_run(plan)
 
         old = await ledger.begin_attempt(
-            run_id="run-fence", step_id="s1_crawl", owner_id="old", attempt=1,
+            run_id="run-fence",
+            step_id="s1_crawl",
+            owner_id="old",
+            attempt=1,
             now=fixed_now() - timedelta(seconds=300),
         )
         # 接管（模拟 recoverer 发现租约过期）
@@ -119,17 +123,28 @@ class TestLeaseFencing:
         stale = WorkerResult(step_id="s1_crawl", worker="crawl", status="succeeded", attempt=1)
         with pytest.raises(LeaseConflictError):
             await ledger.complete(
-                run_id="run-fence", step_id="s1_crawl", owner_id="old",
-                fencing_token=1, result=stale,
+                run_id="run-fence",
+                step_id="s1_crawl",
+                owner_id="old",
+                fencing_token=1,
+                result=stale,
             )
         # 新 owner 提交成功
         fresh = WorkerResult(
-            step_id="s1_crawl", worker="crawl", status="succeeded",
-            attempt=2, idempotency_key="k", input_hash="h", result_hash="r",
+            step_id="s1_crawl",
+            worker="crawl",
+            status="succeeded",
+            attempt=2,
+            idempotency_key="k",
+            input_hash="h",
+            result_hash="r",
         )
         entry = await ledger.complete(
-            run_id="run-fence", step_id="s1_crawl", owner_id="new",
-            fencing_token=2, result=fresh,
+            run_id="run-fence",
+            step_id="s1_crawl",
+            owner_id="new",
+            fencing_token=2,
+            result=fresh,
         )
         assert entry.status == "succeeded"
 
@@ -137,17 +152,29 @@ class TestLeaseFencing:
         """步骤进入终态后再次 complete 被 CAS 拒绝。"""
         db = make_db()
         registry = make_registry()
-        _, ledger, orchestrator = make_execution_stack(db, registry)
+        _, ledger, _ = make_execution_stack(db, registry)
         plan = default_plan(run_id="run-late")
         await ledger.init_run(plan)
 
-        claim = await ledger.begin_attempt(run_id="run-late", step_id="s1_crawl", owner_id="o", attempt=1)
+        claim = await ledger.begin_attempt(
+            run_id="run-late", step_id="s1_crawl", owner_id="o", attempt=1
+        )
         ok = WorkerResult(step_id="s1_crawl", worker="crawl", status="succeeded", attempt=1)
-        await ledger.complete(run_id="run-late", step_id="s1_crawl", owner_id="o",
-                              fencing_token=claim.fencing_token, result=ok)
+        await ledger.complete(
+            run_id="run-late",
+            step_id="s1_crawl",
+            owner_id="o",
+            fencing_token=claim.fencing_token,
+            result=ok,
+        )
         with pytest.raises(LeaseConflictError):
-            await ledger.complete(run_id="run-late", step_id="s1_crawl", owner_id="o",
-                                  fencing_token=claim.fencing_token, result=ok)
+            await ledger.complete(
+                run_id="run-late",
+                step_id="s1_crawl",
+                owner_id="o",
+                fencing_token=claim.fencing_token,
+                result=ok,
+            )
 
 
 class TestCancelRace:

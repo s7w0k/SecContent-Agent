@@ -224,7 +224,8 @@ export default function ProfilePolicyEditor() {
     >
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Text type="secondary">
-          配置 PR 初稿生成的内容侧重、标题风格、开篇方式与结构偏好，LLM 将在生成时遵循这些偏好。保存时携带版本号，若策略已被其他会话更新将提示冲突。
+          配置 PR 初稿生成的内容侧重、标题风格、开篇方式与结构偏好，LLM
+          将在生成时遵循这些偏好。保存时携带版本号，若策略已被其他会话更新将提示冲突。
         </Text>
         {error && (
           <Alert
@@ -254,19 +255,11 @@ export default function ProfilePolicyEditor() {
             />
           </Form.Item>
 
-          <Form.Item
-            label="开篇方式"
-            name="opening_style"
-            tooltip="PR 稿正文开头的切入方式"
-          >
+          <Form.Item label="开篇方式" name="opening_style" tooltip="PR 稿正文开头的切入方式">
             <Select allowClear placeholder="选择开篇方式" options={OPENING_STYLE_OPTIONS} />
           </Form.Item>
 
-          <Form.Item
-            label="结构偏好"
-            name="structure_preference"
-            tooltip="PR 稿整体行文结构"
-          >
+          <Form.Item label="结构偏好" name="structure_preference" tooltip="PR 稿整体行文结构">
             <Select allowClear placeholder="选择结构偏好" options={STRUCTURE_OPTIONS} />
           </Form.Item>
 

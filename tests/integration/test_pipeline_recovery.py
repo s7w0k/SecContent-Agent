@@ -9,10 +9,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 import pytest
-
 from agent.execution_step_ledger import LeaseConflictError
 
 from tests.integration._multi_agent_helpers import (
@@ -38,8 +37,7 @@ class TestRecovery:
         assert outcome.status == "completed"
 
         executions_before = {
-            name: len(adapter_by_name(registry, name).executions)
-            for name in registry.names()
+            name: len(adapter_by_name(registry, name).executions) for name in registry.names()
         }
 
         async def _load_plan(run_id: str):
@@ -97,13 +95,16 @@ class TestRecovery:
     async def test_takes_over_expired_running_increments_fencing(self):
         db = make_db()
         registry = make_registry()
-        _, ledger, orchestrator = make_execution_stack(db, registry)
+        _, ledger, _ = make_execution_stack(db, registry)
         plan = default_plan()
         await ledger.init_run(plan)
 
         # 旧执行者领取后租约过期
         claim = await ledger.begin_attempt(
-            run_id="run-1", step_id="s1_crawl", owner_id="old-owner", attempt=1,
+            run_id="run-1",
+            step_id="s1_crawl",
+            owner_id="old-owner",
+            attempt=1,
             now=fixed_now() - timedelta(seconds=300),
         )
         assert claim.fencing_token == 1
@@ -112,7 +113,9 @@ class TestRecovery:
             return plan
 
         result = await ledger.recover_run(
-            run_id="run-1", owner_id="recoverer", load_plan=_load_plan,
+            run_id="run-1",
+            owner_id="recoverer",
+            load_plan=_load_plan,
             now=fixed_now(),
         )
         assert result.taken_over and result.taken_over[0].step_id == "s1_crawl"
@@ -126,17 +129,28 @@ class TestRecovery:
         stale = WorkerResult(step_id="s1_crawl", worker="crawl", status="succeeded", attempt=1)
         with pytest.raises(LeaseConflictError):
             await ledger.complete(
-                run_id="run-1", step_id="s1_crawl", owner_id="old-owner",
-                fencing_token=1, result=stale,
+                run_id="run-1",
+                step_id="s1_crawl",
+                owner_id="old-owner",
+                fencing_token=1,
+                result=stale,
             )
         # 新 owner 以新 token 提交成功
         fresh = WorkerResult(
-            step_id="s1_crawl", worker="crawl", status="succeeded",
-            attempt=2, idempotency_key="k", input_hash="h", result_hash="r",
+            step_id="s1_crawl",
+            worker="crawl",
+            status="succeeded",
+            attempt=2,
+            idempotency_key="k",
+            input_hash="h",
+            result_hash="r",
         )
         entry = await ledger.complete(
-            run_id="run-1", step_id="s1_crawl", owner_id="recoverer",
-            fencing_token=2, result=fresh,
+            run_id="run-1",
+            step_id="s1_crawl",
+            owner_id="recoverer",
+            fencing_token=2,
+            result=fresh,
         )
         assert entry.status == "succeeded"
 
@@ -157,24 +171,34 @@ class TestRecovery:
     async def test_recovery_only_executes_pending_and_retryable(self):
         db = make_db()
         registry = make_registry()
-        _, ledger, orchestrator = make_execution_stack(db, registry)
+        _, ledger, _ = make_execution_stack(db, registry)
         plan = default_plan()
         await ledger.init_run(plan)
 
         # 手工制造混合状态：s1 成功、s2 失败(可重试)、s3 pending、s4 skipped
-        claim1 = await ledger.begin_attempt(run_id="run-1", step_id="s1_crawl", owner_id="o", attempt=1)
+        claim1 = await ledger.begin_attempt(
+            run_id="run-1", step_id="s1_crawl", owner_id="o", attempt=1
+        )
         from agent.worker_registry import WorkerResult
 
         await ledger.complete(
-            run_id="run-1", step_id="s1_crawl", owner_id="o",
+            run_id="run-1",
+            step_id="s1_crawl",
+            owner_id="o",
             fencing_token=claim1.fencing_token,
             result=WorkerResult(step_id="s1_crawl", worker="crawl", status="succeeded", attempt=1),
         )
-        claim2 = await ledger.begin_attempt(run_id="run-1", step_id="s3_classify", owner_id="o", attempt=1)
+        claim2 = await ledger.begin_attempt(
+            run_id="run-1", step_id="s3_classify", owner_id="o", attempt=1
+        )
         await ledger.fail(
-            run_id="run-1", step_id="s3_classify", owner_id="o",
-            fencing_token=claim2.fencing_token, status="failed",
-            error_type="boom", retryable=True,
+            run_id="run-1",
+            step_id="s3_classify",
+            owner_id="o",
+            fencing_token=claim2.fencing_token,
+            status="failed",
+            error_type="boom",
+            retryable=True,
         )
         await ledger.skip(run_id="run-1", step_id="s4_filter", reason="skipped manually")
 
@@ -185,14 +209,17 @@ class TestRecovery:
             return True
 
         result = await ledger.recover_run(
-            run_id="run-1", owner_id="r", load_plan=_load_plan, verify_artifact=_verify,
+            run_id="run-1",
+            owner_id="r",
+            load_plan=_load_plan,
+            verify_artifact=_verify,
         )
         runnable = {e.step_id for e in result.to_execute}
         skipped_ids = {e.step_id for e in result.skipped}
-        assert "s1_crawl" in skipped_ids      # 已验证 succeeded → 跳过
-        assert "s3_classify" in runnable      # failed 可重试 → 执行
-        assert "s5_score" in runnable         # pending → 执行
-        assert "s4_filter" not in runnable    # skipped 不执行
+        assert "s1_crawl" in skipped_ids  # 已验证 succeeded → 跳过
+        assert "s3_classify" in runnable  # failed 可重试 → 执行
+        assert "s5_score" in runnable  # pending → 执行
+        assert "s4_filter" not in runnable  # skipped 不执行
 
 
 class TestReconciliation:
@@ -219,8 +246,13 @@ class TestReconciliation:
         async def _read_checkpoint(run_id: str):
             return {
                 "completed_steps": [
-                    "s1_crawl", "s3_classify", "s4_filter", "s5_score",
-                    "s6_draft", "s7_quality_check", "s9_review",
+                    "s1_crawl",
+                    "s3_classify",
+                    "s4_filter",
+                    "s5_score",
+                    "s6_draft",
+                    "s7_quality_check",
+                    "s9_review",
                 ]
             }
 

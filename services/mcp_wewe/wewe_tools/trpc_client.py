@@ -52,7 +52,7 @@ def call(method: str, procedure: str, params=None) -> dict:
     req.add_header("Content-Type", "application/json")
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 - 内部 tRPC 服务固定 URL
             body = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = None

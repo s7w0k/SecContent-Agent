@@ -43,6 +43,21 @@ jobs:
             --skip B101,B104,B301,B403 \
             --exit-zero
 
+      - name: Check bandit results (fail-closed)
+        run: |
+          python -c "
+          import json
+          with open('bandit-report.json') as f:
+              report = json.load(f)
+          results = report.get('results', [])
+          blocking = [r for r in results if r.get('issue_severity') in ('HIGH', 'MEDIUM')]
+          print(f'Bandit: {len(results)} issues total, {len(blocking)} HIGH/MEDIUM blocking')
+          if blocking:
+              for r in blocking:
+                  print(f'  [{r[\"issue_severity\"]}] {r[\"filename\"]}:{r[\"line_number\"]} — {r[\"issue_text\"]}')
+              exit(1)
+          "
+
       - name: Publish bandit report
         uses: actions/upload-artifact@v4
         if: always()
@@ -70,7 +85,7 @@ jobs:
           pip install -r services/backend/requirements.txt
 
       - name: Run pip-audit
-        run: pip-audit --format json -o pip-audit-report.json 2>&1 || echo "Vulnerabilities detected"
+        run: pip-audit --format json -o pip-audit-report.json 2>&1
 
       - name: Publish pip-audit report
         uses: actions/upload-artifact@v4
@@ -95,7 +110,14 @@ jobs:
         run: |
           cd frontend
           npm ci
-          npm audit --audit-level=high || echo "High/Critical vulnerabilities found"
+          npm audit --audit-level=high --json > npm-audit-report.json
+
+      - name: Publish npm audit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dep-audit-node-report
+          path: frontend/npm-audit-report.json
 
   # ── 密钥泄露扫描 ──────────────────────────────────────────
   secret-scan:
@@ -117,14 +139,26 @@ jobs:
           # 扫描当前代码库
           detect-secrets scan --all-files \
             --exclude-files "\.secrets\.baseline$|\.env\.example$|poetry\.lock$|package-lock\.json$" \
-            > secrets-report.json 2>&1 || true
+            > secrets-report.json 2>&1
 
       - name: Check for new secrets
         run: |
-          # 如果有 .secrets.baseline，使用 audit 模式对比
+          # 有 baseline 时用 audit 对比；无 baseline 时任何扫描发现均视为新增风险
           if [ -f .secrets.baseline ]; then
             pip install detect-secrets
-            detect-secrets audit .secrets.baseline 2>&1 || echo "Review needed"
+            detect-secrets audit .secrets.baseline 2>&1 || exit 1
+          else
+            python -c "
+            import json
+            with open('secrets-report.json') as f:
+                report = json.load(f)
+            results = report.get('results', {})
+            total = sum(len(secrets) for secrets in results.values())
+            print(f'detect-secrets: found {total} potential secret(s)')
+            if total > 0:
+                print('ERROR: potential secrets found but no .secrets.baseline exists')
+                exit(1)
+            "
           fi
 
       - name: Publish secret scan report

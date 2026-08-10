@@ -10,10 +10,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from agent.agent_contracts import (
     AgentEvent,
     BudgetUsage,
@@ -22,11 +21,9 @@ from agent.agent_contracts import (
     LoopResult,
     LoopStatus,
     RunContext,
-    ToolPermission,
     ToolPolicy,
     TypedToolResult,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 # RunContext
@@ -68,12 +65,12 @@ class TestRunContext:
         assert not ctx.is_product_allowed("p3")
 
     def test_expired(self):
-        past = datetime.now(timezone.utc) - timedelta(seconds=1)
+        past = datetime.now(UTC) - timedelta(seconds=1)
         ctx = RunContext(trace_id="t1", run_id="r1", user_id="u1", deadline_at=past)
         assert ctx.is_expired()
 
     def test_not_expired(self):
-        future = datetime.now(timezone.utc) + timedelta(seconds=30)
+        future = datetime.now(UTC) + timedelta(seconds=30)
         ctx = RunContext(trace_id="t1", run_id="r1", user_id="u1", deadline_at=future)
         assert not ctx.is_expired()
 
@@ -126,7 +123,7 @@ class TestBudgetUsage:
         assert not usage.can_continue(budget)
 
     def test_deadline_exceeded(self):
-        usage = BudgetUsage(started_at=datetime.now(timezone.utc) - timedelta(seconds=31))
+        usage = BudgetUsage(started_at=datetime.now(UTC) - timedelta(seconds=31))
         budget = LoopBudget(deadline_seconds=30)
         assert not usage.can_continue(budget)
 
@@ -311,10 +308,10 @@ class TestConfigDefaults:
     """验证 Agent Loop 配置默认值（flag 全部关闭）。"""
 
     def test_all_flags_disabled_by_default(self):
-        from config import Settings
-
         # 不从 .env 读取，用空环境
         import os
+
+        from config import Settings
         old_environ = dict(os.environ)
         try:
             # 清除可能影响的环境变量

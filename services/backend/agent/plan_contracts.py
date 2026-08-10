@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -47,20 +47,22 @@ DEFAULT_MAX_TOTAL_TIMEOUT_S = 7200
 DEFAULT_MAX_RATIONALE_CHARS = 500
 
 # 允许的 input_refs 目标 key（state/artifact 白名单，禁止任意 key）
-ALLOWED_INPUT_KEYS = frozenset({
-    "crawl_days",
-    "article_ids",
-    "article_url_hashes",
-    "product_ids",
-    "categories",
-    "score_threshold",
-    "needs_fulltext",
-    "breaking_article_ids",
-    "style_hints",
-    "template_ids",
-    "user_id",
-    "trace_id",
-})
+ALLOWED_INPUT_KEYS = frozenset(
+    {
+        "crawl_days",
+        "article_ids",
+        "article_url_hashes",
+        "product_ids",
+        "categories",
+        "score_threshold",
+        "needs_fulltext",
+        "breaking_article_ids",
+        "style_hints",
+        "template_ids",
+        "user_id",
+        "trace_id",
+    }
+)
 
 # 禁止注册的 Worker：发布 / 删除 / 外发一律不进入 Planner 能力面
 FORBIDDEN_WORKERS = frozenset({"publish", "delete", "external_send", "notify"})
@@ -72,7 +74,9 @@ WORKER_INPUT_CONTRACT: dict[str, frozenset[str]] = {
     "classify": frozenset({"article_ids", "categories"}),
     "filter": frozenset({"article_ids"}),
     "score": frozenset({"article_ids", "product_ids", "score_threshold"}),
-    "draft": frozenset({"article_ids", "product_ids", "style_hints", "template_ids", "breaking_article_ids"}),
+    "draft": frozenset(
+        {"article_ids", "product_ids", "style_hints", "template_ids", "breaking_article_ids"}
+    ),
     "quality_check": frozenset({"article_ids"}),
     "rewrite": frozenset({"article_ids", "style_hints"}),
     "review": frozenset({"article_ids"}),
@@ -264,9 +268,7 @@ class PlanValidator:
         # 8. token、工具、并发与总 deadline 预算
         groups = {s.concurrency_key for s in plan.steps if s.concurrency_key}
         if len(groups) > self.max_concurrency_groups:
-            return self._reject(
-                plan, f"concurrency groups > max({self.max_concurrency_groups})"
-            )
+            return self._reject(plan, f"concurrency groups > max({self.max_concurrency_groups})")
         total_timeout = sum(s.timeout_s for s in plan.steps)
         if total_timeout > self.max_total_timeout_s:
             return self._reject(
@@ -278,11 +280,12 @@ class PlanValidator:
         if optional_count > int(self.max_optional_ratio * len(plan.steps)):
             return self._reject(
                 plan,
-                f"optional steps {optional_count} exceed ratio "
-                f"{self.max_optional_ratio:.0%}",
+                f"optional steps {optional_count} exceed ratio {self.max_optional_ratio:.0%}",
             )
         special_count = sum(
-            len(_as_list(s.input_refs.get(key))) for s in plan.steps for key in SPECIAL_HANDLING_KEYS
+            len(_as_list(s.input_refs.get(key)))
+            for s in plan.steps
+            for key in SPECIAL_HANDLING_KEYS
         )
         if special_count > self.max_special_handling:
             return self._reject(
@@ -328,7 +331,7 @@ class PlanValidator:
             dfs(step.step_id)
             if cycle:
                 idx = stack.index(cycle[0]) if cycle[0] in stack else 0
-                return stack[idx:] + [cycle[0]], 0
+                return [*stack[idx:], cycle[0]], 0
         max_depth = max(depth_map.values(), default=0)
         return None, max_depth
 
@@ -354,10 +357,7 @@ class PlanValidator:
             if not (closure(gid) & draft_ids):
                 return False
         # 任一 draft 不得依赖 guard（guard 必须在 draft 之后）
-        for did in draft_ids:
-            if closure(did) & guard_ids:
-                return False
-        return True
+        return all(not (closure(did) & guard_ids) for did in draft_ids)
 
     def _reject(self, plan: PipelinePlan, reason: str) -> PlanValidationResult:
         return PlanValidationResult(rejected=True, reason=reason, plan_hash=plan.plan_hash)
@@ -376,8 +376,9 @@ def _as_list(value: Any) -> list[Any]:
 # ═══════════════════════════════════════════════════════════════
 
 
-def input_snapshot_hash(*, user_id: str = "", product_ids: list[str] | None = None,
-                        article_ids: list[str] | None = None) -> str:
+def input_snapshot_hash(
+    *, user_id: str = "", product_ids: list[str] | None = None, article_ids: list[str] | None = None
+) -> str:
     """输入快照指纹：user + 产品集合 + 文章集合。"""
     payload = {
         "user_id": user_id,

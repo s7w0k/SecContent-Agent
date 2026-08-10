@@ -13,17 +13,13 @@
 
 from __future__ import annotations
 
-import json
-
 import httpx
 import pytest
-
 from agent.a2a.client import (
     A2AClient,
     BudgetExceededError,
     CapabilityError,
     DiscoveryError,
-    MemoryCallLedger,
     PolicyDeniedError,
     ProtocolClientError,
     RateLimitedError,
@@ -98,9 +94,7 @@ class _AsyncNoSleep:
 
 def _make_client(handler, *, base_url=CARD_BASE, skills=None, resolver=None, **cfg_extra):
     transport = httpx.MockTransport(handler)
-    http = httpx.AsyncClient(
-        transport=transport, follow_redirects=False, trust_env=False
-    )
+    http = httpx.AsyncClient(transport=transport, follow_redirects=False, trust_env=False)
     cfg = RemoteAgentConfig(
         key="peer-1",
         base_url=base_url,
@@ -165,7 +159,9 @@ class TestDiscovery:
 
         client = _make_client(handler, card_ttl_seconds=30)
         client._sleep = sleep
-        client._now_provider = lambda: __import__("datetime").datetime.fromtimestamp(now["t"], __import__("datetime").UTC)
+        client._now_provider = lambda: __import__("datetime").datetime.fromtimestamp(
+            now["t"], __import__("datetime").UTC
+        )
         await client.discover("peer-1")
         now["t"] += 60.0  # 超过 TTL
         await client.discover("peer-1")
@@ -262,18 +258,14 @@ class TestRedirects:
             if request.url.path == "/.well-known/agent-card.json":
                 # 初始源应带 Authorization
                 assert request.headers.get("authorization") is None  # card 发现不带内部凭证
-                return httpx.Response(
-                    302, headers={"location": "http://other.test/card"}
-                )
+                return httpx.Response(302, headers={"location": "http://other.test/card"})
             if request.url.host == "other.test":
                 seen["other"].append(dict(request.headers))
                 return httpx.Response(200, json=_card_json(name="Other"))
             return httpx.Response(404)
 
         client = _make_client(handler)
-        client.resolver = lambda host: (
-            ["93.184.216.34"] if host == "other.test" else ["93.184.216.34"]
-        )
+        client.resolver = lambda host: ["93.184.216.34"]
         client.token_provider = TokenProvider()
         card = await client.discover("peer-1")
         assert card.name == "Other"
@@ -289,20 +281,34 @@ class TestRedirects:
 class TestCapability:
     def test_mode_task_when_text_only(self):
         card = AgentCard.model_validate(
-            _card_json(skills=[{
-                "id": "pr_intel", "name": "PR", "description": "",
-                "input_modes": ["text"], "output_modes": ["text"],
-            }])
+            _card_json(
+                skills=[
+                    {
+                        "id": "pr_intel",
+                        "name": "PR",
+                        "description": "",
+                        "input_modes": ["text"],
+                        "output_modes": ["text"],
+                    }
+                ]
+            )
         )
         client = A2AClient(allowlist={})
         assert client._select_mode(card, "pr_intel") == "task"
 
     def test_mode_stream_when_sse_capable(self):
         card = AgentCard.model_validate(
-            _card_json(skills=[{
-                "id": "pr_intel", "name": "PR", "description": "",
-                "input_modes": ["text"], "output_modes": ["text", "stream"],
-            }])
+            _card_json(
+                skills=[
+                    {
+                        "id": "pr_intel",
+                        "name": "PR",
+                        "description": "",
+                        "input_modes": ["text"],
+                        "output_modes": ["text", "stream"],
+                    }
+                ]
+            )
         )
         client = A2AClient(allowlist={})
         assert client._select_mode(card, "pr_intel") == "stream"
@@ -321,7 +327,9 @@ class TestCapability:
 
         client = _make_client(handler, skills=None)
         client.allowlist["peer-1"] = RemoteAgentConfig(
-            key="peer-1", base_url=CARD_BASE, require_https=False,
+            key="peer-1",
+            base_url=CARD_BASE,
+            require_https=False,
             enabled_skills=["ghost"],
         )
         with pytest.raises(CapabilityError):
@@ -433,7 +441,9 @@ class TestSend:
 
         client = _make_client(handler)
         client.allowlist["peer-1"] = RemoteAgentConfig(
-            key="peer-1", base_url=CARD_BASE, require_https=False,
+            key="peer-1",
+            base_url=CARD_BASE,
+            require_https=False,
             enabled_skills=["pr_intel"],
             budget=RunBudget(max_steps=10, remote_agent_quota=1),
         )

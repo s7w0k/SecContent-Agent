@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-08-10T13:40:35.389175+00:00",
+  "runs": 3,
+  "sample_size": 40,
+  "llm_backend": "mock",
+  "model_name": "deepseek-chat",
+  "overall": {
+    "total_requests": 120,
+    "success_rate": 1.0,
+    "fact_support_rate": 1.0,
+    "llm_calls": 120,
+    "tool_calls": 0,
+    "retries": 0
+  },
+  "tokens": {
+    "input_total": 369,
+    "output_total": 453,
+    "cached_input_total": 0,
+    "usage_estimated_ratio": 0.0
+  },
+  "latency_ms": {
+    "e2e_p50": 15.336,
+    "e2e_p95": 16.251
+  },
+  "cost": {
+    "total_usd": 0.00059793,
+    "usd_per_request": 4.98e-06,
+    "usd_per_success": 4.98e-06,
+    "currency": "USD"
+  },
+  "errors": {
+    "error_rate": 0.0,
+    "by_type": {}
+  }
+}

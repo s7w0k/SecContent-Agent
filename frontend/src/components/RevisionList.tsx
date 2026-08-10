@@ -59,6 +59,7 @@ export default function RevisionList({
             {rev.change_summary?.length > 0 && (
               <div style={{ marginTop: 2 }}>
                 {rev.change_summary.slice(0, 3).map((s, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: 变更摘要可能重复，索引 key 保持渲染稳定
                   <Tag key={i} style={{ fontSize: 11, marginBottom: 2 }}>
                     {s}
                   </Tag>

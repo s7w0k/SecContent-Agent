@@ -34,24 +34,30 @@ import asyncio
 import logging
 import random
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from enum import Enum
-from typing import Any, Awaitable, Callable
+from typing import Any
 
-from pydantic import BaseModel, Field
-
-from agent.goal_validator import GoalValidator, LoopDetector, TerminationDecision, decide_termination
-from agent.policy_engine import PolicyAction, PolicyDecision, PolicyEngine, params_hash, params_summary
+from agent.goal_validator import (
+    GoalValidator,
+    LoopDetector,
+    TerminationDecision,
+    decide_termination,
+)
+from agent.policy_engine import (
+    PolicyAction,
+    PolicyDecision,
+    PolicyEngine,
+)
 from agent.runtime_state import (
-    BudgetUsage,
     DecisionSummary,
     EvidenceRecord,
     PendingApproval,
-    RunBudget,
     RuntimeState,
     RuntimeStatus,
     ToolResultRecord,
 )
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger("backend.agent.agent_runtime")
 
@@ -112,7 +118,9 @@ def _hash_json(payload: dict[str, Any]) -> str:
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def _backoff_delay(attempt: int, *, base: float = 1.0, multiplier: float = 2.0, jitter: float = 0.1) -> float:
+def _backoff_delay(
+    attempt: int, *, base: float = 1.0, multiplier: float = 2.0, jitter: float = 0.1
+) -> float:
     """指数退避 + 抖动（attempt 从 1 开始：第 1 次重试 delay=base）。"""
     delay = base * (multiplier ** (attempt - 1))
     if jitter > 0:
@@ -133,7 +141,8 @@ class AgentRuntime:
         self,
         *,
         planner: Callable[[RuntimeState], Awaitable[PlannedAction | None]] | None = None,
-        executor: Callable[[RuntimeState, PlannedAction, dict[str, Any]], Awaitable[dict[str, Any]]] | None = None,
+        executor: Callable[[RuntimeState, PlannedAction, dict[str, Any]], Awaitable[dict[str, Any]]]
+        | None = None,
         policy: PolicyEngine | None = None,
         approval_service: Any = None,
         goal_validator: GoalValidator | None = None,
@@ -141,7 +150,8 @@ class AgentRuntime:
         model_router: Any = None,
         context_builder: Callable[[RuntimeState], Awaitable[dict[str, Any]]] | None = None,
         checkpointer: Callable[[RuntimeState], Awaitable[Any]] | None = None,
-        ledger: Callable[[RuntimeState, PlannedAction, dict[str, Any]], Awaitable[Any]] | None = None,
+        ledger: Callable[[RuntimeState, PlannedAction, dict[str, Any]], Awaitable[Any]]
+        | None = None,
         event_emitter: Callable[[str, RuntimeState, dict[str, Any]], Awaitable[Any]] | None = None,
         max_retries: int = 2,
         backoff_base: float = 1.0,
@@ -191,17 +201,30 @@ class AgentRuntime:
         """
         stamp = now or self._now_provider()
         if state.is_terminal:
-            return self._result(state, rounds=0, phases=[], status=state.status,
-                                reason="already terminal", reason_code="terminal")
+            return self._result(
+                state,
+                rounds=0,
+                phases=[],
+                status=state.status,
+                reason="already terminal",
+                reason_code="terminal",
+            )
         if state.status == RuntimeStatus.CANCEL_REQUESTED:
             # 重启前已请求取消：不再启动任何新调用，立即转为 CANCELED
             state, _ = state.transition_to(
-                RuntimeStatus.CANCELED, reason="cancel requested before run",
-                reason_code="user_canceled", now=stamp,
+                RuntimeStatus.CANCELED,
+                reason="cancel requested before run",
+                reason_code="user_canceled",
+                now=stamp,
             )
-            return self._result(state, rounds=0, phases=[],
-                                status=RuntimeStatus.CANCELED, reason="user canceled",
-                                reason_code="user_canceled")
+            return self._result(
+                state,
+                rounds=0,
+                phases=[],
+                status=RuntimeStatus.CANCELED,
+                reason="user canceled",
+                reason_code="user_canceled",
+            )
         state, _ = state.transition_to(RuntimeStatus.RUNNING, reason="runtime start", now=stamp)
 
         rounds = 0
@@ -209,20 +232,14 @@ class AgentRuntime:
         phases: list[str] = []
         while rounds < max_rounds:
             if cancel_event is not None and cancel_event.is_set():
-                last_decision = decide_termination(
-                    state, user_canceled=True, now=stamp
-                )
+                last_decision = decide_termination(state, user_canceled=True, now=stamp)
                 break
             if lease_lost:
-                last_decision = decide_termination(
-                    state, lease_lost=True, now=stamp
-                )
+                last_decision = decide_termination(state, lease_lost=True, now=stamp)
                 break
             if state.status == RuntimeStatus.CANCEL_REQUESTED:
                 # 持久化的取消请求：API 已置 cancel_requested，安全点立即停止
-                last_decision = decide_termination(
-                    state, user_canceled=True, now=stamp
-                )
+                last_decision = decide_termination(state, user_canceled=True, now=stamp)
                 break
             state, last_decision, round_phases = await self._one_round(
                 state, cancel_event=cancel_event, lease_lost=lease_lost, now=now
@@ -234,14 +251,26 @@ class AgentRuntime:
             if state.is_terminal:
                 break
 
-        state = self._finalize(state, last_decision, rounds=rounds, max_rounds=max_rounds, now=stamp)
-        await self._emit(
-            "run_finished", state,
-            {"status": state.status.value, "reason_code": last_decision.reason_code, "rounds": rounds},
+        state = self._finalize(
+            state, last_decision, rounds=rounds, max_rounds=max_rounds, now=stamp
         )
-        return self._result(state, rounds=rounds, phases=phases,
-                            status=state.status, reason=last_decision.reason,
-                            reason_code=last_decision.reason_code)
+        await self._emit(
+            "run_finished",
+            state,
+            {
+                "status": state.status.value,
+                "reason_code": last_decision.reason_code,
+                "rounds": rounds,
+            },
+        )
+        return self._result(
+            state,
+            rounds=rounds,
+            phases=phases,
+            status=state.status,
+            reason=last_decision.reason,
+            reason_code=last_decision.reason_code,
+        )
 
     # ═══════════════════════════════════════════════════════════
     # 单轮
@@ -278,25 +307,39 @@ class AgentRuntime:
         action = await self.planner(state)
         if action is None:
             state = self._record_decision(
-                state, step_id=state.current_step, phase=PHASE_PLAN,
-                action="end_plan", outcome="skipped", reason="no executable steps", now=stamp,
+                state,
+                step_id=state.current_step,
+                phase=PHASE_PLAN,
+                action="end_plan",
+                outcome="skipped",
+                reason="no executable steps",
+                now=stamp,
             )
             decision = TerminationDecision(
-                stop=True, status=RuntimeStatus.STOPPED,
-                reason="no executable steps", reason_code="no_executable_steps",
+                stop=True,
+                status=RuntimeStatus.STOPPED,
+                reason="no executable steps",
+                reason_code="no_executable_steps",
             )
             return state, decision, phases
         if not isinstance(action, PlannedAction):
-            raise AgentRuntimeError(f"planner must return PlannedAction, got {type(action).__name__}")
+            raise AgentRuntimeError(
+                f"planner must return PlannedAction, got {type(action).__name__}"
+            )
         state = state.model_copy(update={"current_step": action.step_id})
         state = self._record_decision(
-            state, step_id=action.step_id, phase=PHASE_PLAN,
-            action=f"plan:{action.tool_name}", outcome="planned",
-            reason=action.note or "", now=stamp,
+            state,
+            step_id=action.step_id,
+            phase=PHASE_PLAN,
+            action=f"plan:{action.tool_name}",
+            outcome="planned",
+            reason=action.note or "",
+            now=stamp,
         )
         phases.append(PHASE_PLAN)
         await self._emit(
-            "step_planned", state,
+            "step_planned",
+            state,
             {"step_id": action.step_id, "tool_name": action.tool_name, "note": action.note[:100]},
         )
 
@@ -312,17 +355,27 @@ class AgentRuntime:
             now=stamp,
         )
         state = self._record_decision(
-            state, step_id=action.step_id, phase=PHASE_POLICY,
-            action=action.tool_name, tool_name=action.tool_name,
-            args_hash=policy_decision.params_hash, result_hash=policy_decision.params_hash,
+            state,
+            step_id=action.step_id,
+            phase=PHASE_POLICY,
+            action=action.tool_name,
+            tool_name=action.tool_name,
+            args_hash=policy_decision.params_hash,
+            result_hash=policy_decision.params_hash,
             outcome="approved" if policy_decision.allowed else "denied",
-            reason=policy_decision.reason_code, now=stamp,
+            reason=policy_decision.reason_code,
+            now=stamp,
         )
         phases.append(PHASE_POLICY)
         await self._emit(
-            "policy_checked", state,
-            {"step_id": action.step_id, "tool_name": action.tool_name,
-             "action": policy_decision.action.value, "reason_code": policy_decision.reason_code},
+            "policy_checked",
+            state,
+            {
+                "step_id": action.step_id,
+                "tool_name": action.tool_name,
+                "action": policy_decision.action.value,
+                "reason_code": policy_decision.reason_code,
+            },
         )
 
         approval_granted = False
@@ -330,7 +383,8 @@ class AgentRuntime:
             if policy_decision.action == PolicyAction.DENY:
                 # PolicyEngine 熔断：立即进入可解释终态
                 decision = TerminationDecision(
-                    stop=True, status=RuntimeStatus.STOPPED,
+                    stop=True,
+                    status=RuntimeStatus.STOPPED,
                     reason=f"policy breaker: {policy_decision.reason_code}",
                     reason_code="policy_breaker",
                 )
@@ -338,16 +392,21 @@ class AgentRuntime:
             # REQUIRE_APPROVAL：恢复运行后若同一工具已有审批通过，消费一次性授权并放行
             if self.approval_service is not None:
                 approved = next(
-                    (a for a in state.approval_state.pending_approvals
-                     if a.status == "approved"
-                     and a.action == action.tool_name
-                     and (not a.params_hash or a.params_hash == policy_decision.params_hash)),
+                    (
+                        a
+                        for a in state.approval_state.pending_approvals
+                        if a.status == "approved"
+                        and a.action == action.tool_name
+                        and (not a.params_hash or a.params_hash == policy_decision.params_hash)
+                    ),
                     None,
                 )
                 if approved is not None and self.approval_service.is_usable(approved, now=stamp):
                     tokens = list(state.approval_state.approved_tokens)
                     consumed = list(state.approval_state.consumed_tokens)
-                    if self.approval_service.consume_token(tokens, consumed, approved.one_time_token):
+                    if self.approval_service.consume_token(
+                        tokens, consumed, approved.one_time_token
+                    ):
                         state = state.model_copy(
                             update={
                                 "approval_state": state.approval_state.model_copy(
@@ -355,7 +414,8 @@ class AgentRuntime:
                                         "approved_tokens": tokens,
                                         "consumed_tokens": consumed,
                                         "pending_approvals": [
-                                            a for a in state.approval_state.pending_approvals
+                                            a
+                                            for a in state.approval_state.pending_approvals
                                             if a.approval_id != approved.approval_id
                                         ],
                                     }
@@ -363,24 +423,37 @@ class AgentRuntime:
                             }
                         )
                         state = self._record_decision(
-                            state, step_id=action.step_id, phase=PHASE_POLICY,
-                            action=action.tool_name, tool_name=action.tool_name,
-                            args_hash=policy_decision.params_hash, result_hash=policy_decision.params_hash,
-                            outcome="approved", reason="approved_token_consumed", now=stamp,
+                            state,
+                            step_id=action.step_id,
+                            phase=PHASE_POLICY,
+                            action=action.tool_name,
+                            tool_name=action.tool_name,
+                            args_hash=policy_decision.params_hash,
+                            result_hash=policy_decision.params_hash,
+                            outcome="approved",
+                            reason="approved_token_consumed",
+                            now=stamp,
                         )
                         approval_granted = True
             if not approval_granted:
                 # 登记待审批，暂停运行
                 state = await self._register_approval(state, action, policy_decision, stamp)
                 decision = TerminationDecision(
-                    stop=True, status=RuntimeStatus.WAITING_APPROVAL,
-                    reason="waiting human approval", reason_code="waiting_approval",
+                    stop=True,
+                    status=RuntimeStatus.WAITING_APPROVAL,
+                    reason="waiting human approval",
+                    reason_code="waiting_approval",
                 )
                 await self._emit(
-                    "waiting_approval", state,
-                    {"step_id": action.step_id, "tool_name": action.tool_name,
-                     "approval_id": state.approval_state.pending_approvals[-1].approval_id
-                     if state.approval_state.pending_approvals else ""},
+                    "waiting_approval",
+                    state,
+                    {
+                        "step_id": action.step_id,
+                        "tool_name": action.tool_name,
+                        "approval_id": state.approval_state.pending_approvals[-1].approval_id
+                        if state.approval_state.pending_approvals
+                        else "",
+                    },
                 )
                 return state, decision, phases
 
@@ -398,10 +471,16 @@ class AgentRuntime:
             if existing is not None:
                 # 对不确定副作用先查询幂等结果，不盲目重放
                 state = self._record_decision(
-                    state, step_id=action.step_id, phase=PHASE_EXECUTE,
-                    action=action.tool_name, tool_name=action.tool_name,
-                    args_hash=policy_decision.params_hash, result_hash=existing.result_hash,
-                    outcome="success", reason="idempotent replay skipped", now=stamp,
+                    state,
+                    step_id=action.step_id,
+                    phase=PHASE_EXECUTE,
+                    action=action.tool_name,
+                    tool_name=action.tool_name,
+                    args_hash=policy_decision.params_hash,
+                    result_hash=existing.result_hash,
+                    outcome="success",
+                    reason="idempotent replay skipped",
+                    now=stamp,
                 )
                 return state, TerminationDecision(stop=False), phases
 
@@ -415,10 +494,16 @@ class AgentRuntime:
         phases.append(PHASE_OBSERVE)
         success = self._is_success(result)
         await self._emit(
-            "tool_executed", state,
-            {"step_id": action.step_id, "tool_name": action.tool_name, "ok": success,
-             "duration_ms": tool_record.duration_ms, "result_hash": tool_record.result_hash,
-             "error_code": tool_record.error_code},
+            "tool_executed",
+            state,
+            {
+                "step_id": action.step_id,
+                "tool_name": action.tool_name,
+                "ok": success,
+                "duration_ms": tool_record.duration_ms,
+                "result_hash": tool_record.result_hash,
+                "error_code": tool_record.error_code,
+            },
         )
 
         # 不可重试错误：直接进入可解释终态（FAILED），不再继续下一轮
@@ -427,23 +512,36 @@ class AgentRuntime:
                 result.get("error", "") or result.get("error_code", "") or "non-retryable error"
             )[:200]
             decision = TerminationDecision(
-                stop=True, status=RuntimeStatus.FAILED,
-                reason=f"non-retryable error: {reason}", reason_code="non_retryable_error",
+                stop=True,
+                status=RuntimeStatus.FAILED,
+                reason=f"non-retryable error: {reason}",
+                reason_code="non_retryable_error",
             )
             await self._emit(
-                "step_failed", state,
-                {"step_id": action.step_id, "tool_name": action.tool_name,
-                 "error_code": tool_record.error_code, "retryable": False},
+                "step_failed",
+                state,
+                {
+                    "step_id": action.step_id,
+                    "tool_name": action.tool_name,
+                    "error_code": tool_record.error_code,
+                    "retryable": False,
+                },
             )
             return state, decision, phases
 
         # ── VALIDATE：GoalValidator + LoopDetector ─────────────
-        goal_result = self.goal_validator.validate(state, artifacts=self._collect_artifacts(state), now=stamp)
+        goal_result = self.goal_validator.validate(
+            state, artifacts=self._collect_artifacts(state), now=stamp
+        )
         loop_signal = self.loop_detector.detect_loop(state)
         state = self._record_decision(
-            state, step_id=action.step_id, phase=PHASE_VALIDATE,
-            action="validate", outcome=goal_result.status,
-            reason=goal_result.reason[:200], now=stamp,
+            state,
+            step_id=action.step_id,
+            phase=PHASE_VALIDATE,
+            action="validate",
+            outcome=goal_result.status,
+            reason=goal_result.reason[:200],
+            now=stamp,
         )
         phases.append(PHASE_VALIDATE)
 
@@ -466,7 +564,9 @@ class AgentRuntime:
     # 内部
     # ═══════════════════════════════════════════════════════════
 
-    async def _route_model(self, state: RuntimeState, context: dict[str, Any], stamp: datetime) -> RuntimeState:
+    async def _route_model(
+        self, state: RuntimeState, context: dict[str, Any], stamp: datetime
+    ) -> RuntimeState:
         """模型路由（advisory）：只记录模型标识 + 原因码，不记录敏感正文。"""
         try:
             from agent.model_router import RouteRequest, SensitivityLevel
@@ -482,16 +582,24 @@ class AgentRuntime:
             )
             decision = self.model_router.route(request)
             return self._record_decision(
-                state, step_id=state.current_step, phase=PHASE_LOAD,
-                action="model_route", outcome="ok",
-                reason=f"model={decision.model}:{decision.reason_code}", now=stamp,
+                state,
+                step_id=state.current_step,
+                phase=PHASE_LOAD,
+                action="model_route",
+                outcome="ok",
+                reason=f"model={decision.model}:{decision.reason_code}",
+                now=stamp,
             )
         except Exception as exc:
             logger.warning("[runtime] model route failed: %s", exc)
             return self._record_decision(
-                state, step_id=state.current_step, phase=PHASE_LOAD,
-                action="model_route", outcome="failed",
-                reason=f"model_route_error:{type(exc).__name__}", now=stamp,
+                state,
+                step_id=state.current_step,
+                phase=PHASE_LOAD,
+                action="model_route",
+                outcome="failed",
+                reason=f"model_route_error:{type(exc).__name__}",
+                now=stamp,
             )
 
     async def _register_approval(
@@ -528,15 +636,23 @@ class AgentRuntime:
         new_state = state.model_copy(
             update={
                 "approval_state": state.approval_state.model_copy(
-                    update={"pending_approvals": state.approval_state.pending_approvals + [approval]}
+                    update={
+                        "pending_approvals": [*state.approval_state.pending_approvals, approval]
+                    }
                 )
             }
         )
         return self._record_decision(
-            new_state, step_id=action.step_id, phase=PHASE_POLICY,
-            action=action.tool_name, tool_name=action.tool_name,
-            args_hash=approval.params_hash, result_hash="",
-            outcome="blocked", reason="requires_approval", now=stamp,
+            new_state,
+            step_id=action.step_id,
+            phase=PHASE_POLICY,
+            action=action.tool_name,
+            tool_name=action.tool_name,
+            args_hash=approval.params_hash,
+            result_hash="",
+            outcome="blocked",
+            reason="requires_approval",
+            now=stamp,
         )
 
     async def _execute_with_retry(
@@ -602,7 +718,7 @@ class AgentRuntime:
     ) -> RuntimeState:
         """把执行结果规范化为 Observation 与证据。"""
         success = self._is_success(result)
-        tool_results = state.tool_results + [tool_record]
+        tool_results = [*state.tool_results, tool_record]
         if len(tool_results) > _MAX_TOOL_RESULTS:
             tool_results = tool_results[-_MAX_TOOL_RESULTS:]
 
@@ -627,16 +743,26 @@ class AgentRuntime:
             update={
                 "tool_results": tool_results,
                 "evidence": evidence,
-                "completed_steps": state.completed_steps + [action.step_id] if success else state.completed_steps,
-                "failed_steps": state.failed_steps + [action.step_id] if not success else state.failed_steps,
+                "completed_steps": [*state.completed_steps, action.step_id]
+                if success
+                else state.completed_steps,
+                "failed_steps": [*state.failed_steps, action.step_id]
+                if not success
+                else state.failed_steps,
             }
         )
         return self._record_decision(
-            updated, step_id=action.step_id, phase=PHASE_EXECUTE,
-            action=action.tool_name, tool_name=action.tool_name,
-            args_hash=tool_record.args_hash, result_hash=tool_record.result_hash,
+            updated,
+            step_id=action.step_id,
+            phase=PHASE_EXECUTE,
+            action=action.tool_name,
+            tool_name=action.tool_name,
+            args_hash=tool_record.args_hash,
+            result_hash=tool_record.result_hash,
             outcome="success" if success else "failed",
-            reason=str(result.get("error", "") or result.get("error_code", "") or "")[:200] if not success else "",
+            reason=str(result.get("error", "") or result.get("error_code", "") or "")[:200]
+            if not success
+            else "",
             now=stamp,
         )
 
@@ -690,7 +816,8 @@ class AgentRuntime:
         now: datetime | None = None,
     ) -> RuntimeState:
         stamp = now or self._now_provider()
-        summaries = state.decision_summaries + [
+        summaries = [
+            *state.decision_summaries,
             DecisionSummary(
                 step_id=step_id,
                 phase=phase,
@@ -701,7 +828,7 @@ class AgentRuntime:
                 outcome=outcome[:32],
                 reason=reason[:200],
                 created_at=stamp,
-            )
+            ),
         ]
         if len(summaries) > _MAX_DECISION_SUMMARIES:
             summaries = summaries[-_MAX_DECISION_SUMMARIES:]
@@ -727,10 +854,15 @@ class AgentRuntime:
             target = decision.status
             if target == RuntimeStatus.RUNNING or target is None:
                 target = RuntimeStatus.STOPPED
-            state, _ = state.transition_to(target, reason=decision.reason, reason_code=decision.reason_code, now=now)
+            state, _ = state.transition_to(
+                target, reason=decision.reason, reason_code=decision.reason_code, now=now
+            )
         elif rounds >= max_rounds:
             state, _ = state.transition_to(
-                RuntimeStatus.STOPPED, reason="max rounds reached", reason_code="max_rounds", now=now
+                RuntimeStatus.STOPPED,
+                reason="max rounds reached",
+                reason_code="max_rounds",
+                now=now,
             )
         return state
 

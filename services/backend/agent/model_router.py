@@ -17,13 +17,13 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class TaskType(str, Enum):
+class TaskType(StrEnum):
     """任务类型与复杂度。"""
 
     PLAN = "plan"
@@ -33,7 +33,7 @@ class TaskType(str, Enum):
     MEMORY = "memory"
 
 
-class SensitivityLevel(str, Enum):
+class SensitivityLevel(StrEnum):
     """数据敏感等级（与 PolicyEngine.RiskLevel 语义对齐）。"""
 
     L0 = "L0"
@@ -73,7 +73,9 @@ class RouteDecision(BaseModel):
     model: str
     degraded: bool = False
     reason_code: str = ""
-    log: list[dict[str, Any]] = Field(default_factory=list)  # [{model, reason_code, 用量}]，无敏感正文
+    log: list[dict[str, Any]] = Field(
+        default_factory=list
+    )  # [{model, reason_code, 用量}]，无敏感正文
 
 
 class ModelRoutingError(Exception):
@@ -153,9 +155,7 @@ class ModelRouter:
                 pool = affordable  # 预算不足时收缩候选集（record 到日志）
         return pool
 
-    def _select(
-        self, candidates: list[ModelCapability]
-    ) -> tuple[ModelCapability | None, str]:
+    def _select(self, candidates: list[ModelCapability]) -> tuple[ModelCapability | None, str]:
         """选择顺序：默认模型 → 回退链 → 最高能力。"""
         for m in candidates:
             if m.name == self.default_model:

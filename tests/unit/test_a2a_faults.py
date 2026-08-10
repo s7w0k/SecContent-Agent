@@ -15,7 +15,6 @@ import json
 
 import httpx
 import pytest
-
 from agent.a2a.client import (
     A2AClient,
     AuthError,
@@ -120,7 +119,7 @@ def _sse_frame(payload: dict) -> bytes:
         f"id: {payload.get('sequence', 0)}\n"
         "event: task_status_update\n"
         f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-    ).encode("utf-8")
+    ).encode()
 
 
 # ═══════════════════════════════════════════════════════════════

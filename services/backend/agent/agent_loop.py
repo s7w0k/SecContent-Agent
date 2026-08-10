@@ -19,8 +19,6 @@ import asyncio
 import hashlib
 import logging
 import time
-from collections import Counter
-from datetime import datetime, timezone
 
 from agent.agent_contracts import (
     AgentEvent,
@@ -31,10 +29,9 @@ from agent.agent_contracts import (
     LoopStatus,
     RunContext,
     ToolPolicy,
-    TypedToolResult,
 )
 from agent.llm_wrapper import LLMWrapper
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
 
 logger = logging.getLogger("backend.agent.agent_loop")
 
@@ -259,7 +256,7 @@ class AgentLoop:
                         duration_ms=duration_ms,
                     ))
 
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     duration_ms = int((time.perf_counter() - started) * 1000)
                     msg = f"[工具超时] {tc_name} 执行超过 {self.budget.tool_timeout_seconds}s"
                     tool_results.append((tc_name, tc_id, ToolMessage(content=msg, tool_call_id=tc_id)))

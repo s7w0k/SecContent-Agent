@@ -25,7 +25,6 @@ from agent.a2a.models import (
     ProtocolError,
     Task,
     TaskStatus,
-    TERMINAL_TASK_STATUSES,
 )
 from agent.runtime_state import RuntimeState, RuntimeStatus
 
@@ -130,10 +129,9 @@ def map_state_to_task(state: RuntimeState, *, task_id: str) -> Task:
             parts=[
                 Part(
                     kind="text",
-                    text=(
-                        f"[{d.phase}] {d.action}"
-                        f"{(' → ' + d.reason) if d.reason else ''}"
-                    )[:MAX_TEXT_PART_CHARS],
+                    text=(f"[{d.phase}] {d.action}{(' → ' + d.reason) if d.reason else ''}")[
+                        :MAX_TEXT_PART_CHARS
+                    ],
                 )
             ],
             metadata={"outcome": d.outcome},
@@ -198,9 +196,7 @@ def validate_external_input(
 
     encoded = _encode_message_size(message)
     if encoded > max_bytes:
-        raise InvalidInputError(
-            f"message too large: {encoded} bytes > {max_bytes} bytes"
-        )
+        raise InvalidInputError(f"message too large: {encoded} bytes > {max_bytes} bytes")
     if total_chars > MAX_TEXT_PART_CHARS:
         raise InvalidInputError("aggregate text content exceeds limit")
 
@@ -215,13 +211,11 @@ def _validate_part(part: Part, *, allow_file_uri: bool) -> int:
         if _MALICIOUS_TEXT_PATTERNS.search(text):
             raise InvalidInputError("text contains malicious content pattern")
     elif part.kind == "file":
-        if part.uri:
-            if not allow_file_uri:
-                # 首版禁用 file:// 与 data: URI（SSRF/注入防线之一）
-                if part.uri.lower().startswith(("file:", "data:")):
-                    raise InvalidInputError("file URI scheme not allowed")
-            if not part.uri.lower().startswith(("https://", "http://")):
-                raise InvalidInputError("uri must be http(s)")
+        if part.uri and not allow_file_uri and part.uri.lower().startswith(("file:", "data:")):
+            # 首版禁用 file:// 与 data: URI（SSRF/注入防线之一）
+            raise InvalidInputError("file URI scheme not allowed")
+        if part.uri and not part.uri.lower().startswith(("https://", "http://")):
+            raise InvalidInputError("uri must be http(s)")
         if not part.name and not part.uri:
             raise InvalidInputError("file part requires name or uri")
     elif part.kind == "data":
@@ -234,11 +228,7 @@ def _encode_message_size(message: Message) -> int:
     try:
         import json
 
-        return len(
-            json.dumps(message.model_dump(mode="json"), ensure_ascii=False).encode(
-                "utf-8"
-            )
-        )
+        return len(json.dumps(message.model_dump(mode="json"), ensure_ascii=False).encode("utf-8"))
     except Exception:
         return 0
 
@@ -268,9 +258,7 @@ def validate_external_task(
         encoded = 0
         for part in art.parts:
             total_chars += _validate_part(part, allow_file_uri=allow_file_uri)
-            encoded += len(
-                part.model_dump_json(exclude_none=True).encode("utf-8")
-            )
+            encoded += len(part.model_dump_json(exclude_none=True).encode("utf-8"))
         if encoded > max_artifact_bytes:
             raise InvalidInputError(
                 f"artifact too large: {encoded} bytes > {max_artifact_bytes} bytes"

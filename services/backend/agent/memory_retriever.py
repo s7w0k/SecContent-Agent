@@ -43,7 +43,7 @@ def assign_experiment_group(user_id: str, enabled: bool = False) -> tuple[str, s
         return ("", "control")
 
     # 稳定哈希
-    hash_val = int(hashlib.md5(user_id.encode()).hexdigest(), 16)
+    hash_val = int(hashlib.md5(user_id.encode(), usedforsecurity=False).hexdigest(), 16)
     percentage = (hash_val % 100) + 1  # 1-100
 
     if percentage <= 5:

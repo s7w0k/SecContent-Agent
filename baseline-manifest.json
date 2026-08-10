@@ -1,0 +1,145 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-08-10T13:42:26.564415+00:00",
+  "git_revision": "fb19b0ba55f5574f41a0671ebe72d0bfd95d82be",
+  "runtime": {
+    "python": "3.12",
+    "node": "22"
+  },
+  "dependencies": {
+    "python_requirements": {
+      "backend": {
+        "file_sha256": "5ac7a709cd716bb9e8a3b3dee62fb9052bcc8b8395fb8992c1b823e47b4f55fb",
+        "locked": false
+      },
+      "mcp_crawl": {
+        "file_sha256": "ec40328842a9cbacd2a9982e1c473345e54fb3488f68c2121c7cb209dc699503",
+        "locked": false
+      },
+      "mcp_wewe": {
+        "file_sha256": "ac41c06c7ed2323405aa99bef5fb8b49c029575fb49607b8725b321ab215f725",
+        "locked": false
+      }
+    },
+    "node": {
+      "package_version": "0.1.0",
+      "package_json_sha256": "28f057a8f4f5fbe29fa8e7123f4bde9f8814105b5b4613b617fbe1506a43d76a",
+      "package_lock_sha256": "54996eb5473645bb77d52d95024de7daeb6623a5f6f83342282f0b22ac3bbcf7",
+      "locked": true
+    }
+  },
+  "docker_images": {
+    "backend": "sha256:29d20da73c4e7722f10702dd3a3d55f2d988ac6d3c6f8fec1e5c84a8436969d4",
+    "backend-worker": "sha256:229e0897cfc65d3ace31c69147f28698b23ecc0ae5e71809ea7aec5554c75f18",
+    "mcp-wewe": "sha256:c62d092a2f09ed87c39858d19cc9565c5dd902b61a2d05359dd0f59d8f7a30a3",
+    "mcp-crawl": "sha256:ef5db0a70e0c21cb77f34719d135486041c5ae4660bb4d1a78fab0a7a8073745"
+  },
+  "infrastructure": {
+    "mongodb": {
+      "image": "mongo:7",
+      "database": "pr_agent"
+    },
+    "redis": {
+      "image": "redis:7-alpine",
+      "db": 1
+    },
+    "arq": {
+      "max_jobs": "3",
+      "job_timeout_seconds": "600",
+      "max_retries": "3"
+    },
+    "searxng": {
+      "image": "searxng/searxng:latest"
+    }
+  },
+  "models": {
+    "default": {
+      "provider": "deepseek",
+      "model_id": "deepseek-chat",
+      "endpoint": "https://api.deepseek.com",
+      "timeout_seconds": 60.0,
+      "max_tokens": 8192,
+      "temperature": 0.4
+    },
+    "autonomous": {
+      "model_id": "deepseek-chat",
+      "fallback_model": "",
+      "max_input_tokens": "24000",
+      "max_output_tokens": "4000",
+      "max_steps": "20"
+    },
+    "chat_agent": {
+      "max_input_tokens": "24000",
+      "max_output_tokens": "4000",
+      "max_rounds": "5",
+      "max_tool_calls": "8"
+    }
+  },
+  "prompts_and_knowledge": {
+    "prompt_versions": {
+      "classifier_v2": "v2.1",
+      "scorer_v2": "v2.1",
+      "draft_generator": "v1.0",
+      "draft_chat": "v1.0",
+      "memory_learner": "v1.0",
+      "memory_compiler": "v1.0"
+    },
+    "planner_version": "planner-v1",
+    "a2a_protocol_version": "1.0",
+    "knowledge_base_dir": "/app/docs",
+    "skills_enabled_by_default": "false"
+  },
+  "pricing": {
+    "version": "2026-08-10.1",
+    "currency": "USD",
+    "entries": [
+      {
+        "provider": "deepseek",
+        "model_id": "deepseek-chat",
+        "effective_from": "2025-02-09",
+        "input_price_per_million": 0.27,
+        "cached_input_price_per_million": 0.07,
+        "output_price_per_million": 1.1,
+        "currency": "USD",
+        "source": "https://api-docs.deepseek.com/quick_start/pricing"
+      },
+      {
+        "provider": "deepseek",
+        "model_id": "deepseek-v4-flash",
+        "effective_from": "2026-04-23",
+        "input_price_per_million": 0.14,
+        "cached_input_price_per_million": 0.0028,
+        "output_price_per_million": 0.28,
+        "currency": "USD",
+        "source": "https://api-docs.deepseek.com/quick_start/pricing"
+      },
+      {
+        "provider": "deepseek",
+        "model_id": "deepseek-v4-pro",
+        "effective_from": "2026-04-23",
+        "input_price_per_million": 0.435,
+        "cached_input_price_per_million": 0.003625,
+        "output_price_per_million": 0.87,
+        "currency": "USD",
+        "source": "https://api-docs.deepseek.com/quick_start/pricing"
+      }
+    ]
+  },
+  "feature_flags": {
+    "WEB_SEARCH_ENABLED": "false",
+    "CHAT_AGENT_ENABLED": "false",
+    "CHAT_ASK_AGENT_ENABLED": "false",
+    "CHAT_REVISE_AGENT_ENABLED": "false",
+    "CHAT_AGENT_SHADOW_ENABLED": "false",
+    "CHAT_AGENT_ROLLOUT_PERCENT": "0",
+    "KNOWLEDGE_SKILLS_ENABLED": "false",
+    "KNOWLEDGE_SKILLS_SHADOW_ENABLED": "false",
+    "KNOWLEDGE_SKILLS_ROLLOUT_PERCENT": "0",
+    "MULTI_AGENT_ENABLED": "false",
+    "MULTI_AGENT_SHADOW_ENABLED": "false",
+    "MULTI_AGENT_ROLLOUT_PERCENT": "0",
+    "AUTONOMOUS_AGENT_ENABLED": "false",
+    "AUTONOMOUS_AGENT_SHADOW_ENABLED": "false",
+    "AUTONOMOUS_AGENT_ROLLOUT_PERCENT": "0"
+  }
+}

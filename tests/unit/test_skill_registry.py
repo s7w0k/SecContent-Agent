@@ -21,14 +21,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "backend"))
 
-from agent.skill_registry import (  # noqa: E402
+from agent.skill_registry import (
     PURPOSE_SKILLS,
     SkillError,
     SkillRegistry,
     SkillResolutionError,
     SkillSecurityError,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 # Helpers

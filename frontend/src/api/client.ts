@@ -21,9 +21,9 @@ import type {
   Article,
   ArticleQuery,
   AuthResponse,
+  ChatAgentEvent,
   ChatAskRequest,
   ChatAskResponse,
-  ChatAgentEvent,
   ChatMessage,
   CreateAutonomousRunRequest,
   DevLogQuery,
@@ -639,7 +639,12 @@ export const accountsApi = {
   },
 
   /** 更新全部最新文章 */
-  async refreshArticles(): Promise<{ ok: boolean; saved: number; total: number }> {
+  async refreshArticles(): Promise<{
+    ok: boolean;
+    message?: string;
+    saved?: number;
+    total?: number;
+  }> {
     const { data } = await client.post('/accounts/refresh');
     return data;
   },
@@ -1528,13 +1533,17 @@ export const autonomousApi = {
   },
 
   /** 审批通过 */
-  async approveApproval(approvalId: string): Promise<{ approval_id: string; status: string; run_id: string }> {
+  async approveApproval(
+    approvalId: string,
+  ): Promise<{ approval_id: string; status: string; run_id: string }> {
     const { data } = await client.post(`/autonomous/approvals/${approvalId}/approve`);
     return data;
   },
 
   /** 审批拒绝 */
-  async rejectApproval(approvalId: string): Promise<{ approval_id: string; status: string; run_id: string }> {
+  async rejectApproval(
+    approvalId: string,
+  ): Promise<{ approval_id: string; status: string; run_id: string }> {
     const { data } = await client.post(`/autonomous/approvals/${approvalId}/reject`);
     return data;
   },

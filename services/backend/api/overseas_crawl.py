@@ -80,7 +80,7 @@ async def import_article(art: ArticleImport, request: Request):
     db = getattr(request.app.state, "db", None)
     if db is None:
         return {"ok": False, "error": "DB not available"}
-    url_hash = hashlib.md5(art.url.encode()).hexdigest()
+    url_hash = hashlib.md5(art.url.encode(), usedforsecurity=False).hexdigest()
     existing = await db["articles"].find_one({"url_hash": url_hash})
     if existing:
         return {"ok": True, "saved": False, "reason": "duplicate"}
@@ -161,7 +161,7 @@ async def crawl_overseas(request: Request, hours: int = Query(default=24, le=72)
     saved, skipped = 0, 0
     new_articles: list[dict] = []
     for art in all_articles:
-        url_hash = hashlib.md5(art["url"].encode()).hexdigest()
+        url_hash = hashlib.md5(art["url"].encode(), usedforsecurity=False).hexdigest()
         if db is not None:
             existing = await db["articles"].find_one({"url_hash": url_hash})
             if existing:

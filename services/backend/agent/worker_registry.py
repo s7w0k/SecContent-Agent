@@ -22,12 +22,17 @@ import json
 import logging
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Literal
 
+from agent.plan_contracts import (
+    ALLOWED_INPUT_KEYS,
+    FORBIDDEN_WORKERS,
+    WORKER_INPUT_CONTRACT,
+    WorkerName,
+)
 from pydantic import BaseModel, Field
-
-from agent.plan_contracts import ALLOWED_INPUT_KEYS, FORBIDDEN_WORKERS, WORKER_INPUT_CONTRACT, WorkerName
 
 logger = logging.getLogger("backend.agent.worker_registry")
 
@@ -94,15 +99,18 @@ class WorkerResult(BaseModel):
     step_id: str = Field(..., min_length=1, max_length=64)
     worker: WorkerName
     idempotency_key: str = Field(
-        default="", max_length=500,
+        default="",
+        max_length=500,
         description="写操作幂等键；失败/跳过/超时时为空串",
     )
     input_hash: str = Field(
-        default="", max_length=100,
+        default="",
+        max_length=100,
         description="输入指纹；失败/跳过/超时时为空串",
     )
     result_hash: str = Field(
-        default="", max_length=100,
+        default="",
+        max_length=100,
         description="业务结果指纹；失败/跳过时为空串",
     )
     status: Literal["succeeded", "failed", "skipped", "dead_lettered", "canceled"] = "succeeded"
@@ -134,7 +142,9 @@ class WorkerAdapter(ABC):
     version: str
 
     @abstractmethod
-    async def execute(self, state: dict, ctx: dict, lease: WorkerLease | None = None) -> WorkerResult:
+    async def execute(
+        self, state: dict, ctx: dict, lease: WorkerLease | None = None
+    ) -> WorkerResult:
         """执行步骤。ctx 含 run_id/plan_id/step_id/user_id/attempt/input_refs。"""
 
     # ── 输入解析（服务端权威，不信任 Planner 自由文本）──────────
@@ -301,44 +311,78 @@ class WorkerRegistry:
 # ═══════════════════════════════════════════════════════════════
 
 _DEFAULT_SPEC: dict[str, dict[str, Any]] = {
-    "crawl": dict(
-        side_effect="internal_write", retry_safe=True, timeout_s=900, max_attempts=3,
-        required_scopes={"articles"}, concurrency_group=CONCURRENCY_GROUP_CRAWL,
-    ),
-    "enrich": dict(
-        side_effect="internal_write", retry_safe=True, timeout_s=600, max_attempts=3,
-        required_scopes={"articles"}, concurrency_group=CONCURRENCY_GROUP_CRAWL,
-    ),
-    "classify": dict(
-        side_effect="internal_write", retry_safe=True, timeout_s=600, max_attempts=3,
-        required_scopes={"articles"}, concurrency_group=CONCURRENCY_GROUP_LLM,
-    ),
-    "filter": dict(
-        side_effect="none", retry_safe=True, timeout_s=300, max_attempts=2,
-        required_scopes={"articles"}, concurrency_group=CONCURRENCY_GROUP_LOCAL,
-    ),
-    "score": dict(
-        side_effect="internal_write", retry_safe=True, timeout_s=900, max_attempts=3,
-        required_scopes={"articles", "knowledge"}, concurrency_group=CONCURRENCY_GROUP_LLM,
-    ),
-    "draft": dict(
-        side_effect="internal_write", retry_safe=True, timeout_s=1200, max_attempts=3,
-        required_scopes={"articles", "user_drafts", "knowledge", "templates", "user_profile"},
-        concurrency_group=CONCURRENCY_GROUP_LLM,
-    ),
-    "quality_check": dict(
-        side_effect="none", retry_safe=True, timeout_s=300, max_attempts=2,
-        required_scopes={"user_drafts"}, concurrency_group=CONCURRENCY_GROUP_LOCAL,
-    ),
-    "rewrite": dict(
-        side_effect="internal_write", retry_safe=True, timeout_s=600, max_attempts=3,
-        required_scopes={"articles", "user_drafts", "knowledge", "templates", "user_profile"},
-        concurrency_group=CONCURRENCY_GROUP_LLM,
-    ),
-    "review": dict(
-        side_effect="internal_write", retry_safe=True, timeout_s=600, max_attempts=3,
-        required_scopes={"articles", "user_drafts"}, concurrency_group=CONCURRENCY_GROUP_LLM,
-    ),
+    "crawl": {
+        "side_effect": "internal_write",
+        "retry_safe": True,
+        "timeout_s": 900,
+        "max_attempts": 3,
+        "required_scopes": {"articles"},
+        "concurrency_group": CONCURRENCY_GROUP_CRAWL,
+    },
+    "enrich": {
+        "side_effect": "internal_write",
+        "retry_safe": True,
+        "timeout_s": 600,
+        "max_attempts": 3,
+        "required_scopes": {"articles"},
+        "concurrency_group": CONCURRENCY_GROUP_CRAWL,
+    },
+    "classify": {
+        "side_effect": "internal_write",
+        "retry_safe": True,
+        "timeout_s": 600,
+        "max_attempts": 3,
+        "required_scopes": {"articles"},
+        "concurrency_group": CONCURRENCY_GROUP_LLM,
+    },
+    "filter": {
+        "side_effect": "none",
+        "retry_safe": True,
+        "timeout_s": 300,
+        "max_attempts": 2,
+        "required_scopes": {"articles"},
+        "concurrency_group": CONCURRENCY_GROUP_LOCAL,
+    },
+    "score": {
+        "side_effect": "internal_write",
+        "retry_safe": True,
+        "timeout_s": 900,
+        "max_attempts": 3,
+        "required_scopes": {"articles", "knowledge"},
+        "concurrency_group": CONCURRENCY_GROUP_LLM,
+    },
+    "draft": {
+        "side_effect": "internal_write",
+        "retry_safe": True,
+        "timeout_s": 1200,
+        "max_attempts": 3,
+        "required_scopes": {"articles", "user_drafts", "knowledge", "templates", "user_profile"},
+        "concurrency_group": CONCURRENCY_GROUP_LLM,
+    },
+    "quality_check": {
+        "side_effect": "none",
+        "retry_safe": True,
+        "timeout_s": 300,
+        "max_attempts": 2,
+        "required_scopes": {"user_drafts"},
+        "concurrency_group": CONCURRENCY_GROUP_LOCAL,
+    },
+    "rewrite": {
+        "side_effect": "internal_write",
+        "retry_safe": True,
+        "timeout_s": 600,
+        "max_attempts": 3,
+        "required_scopes": {"articles", "user_drafts", "knowledge", "templates", "user_profile"},
+        "concurrency_group": CONCURRENCY_GROUP_LLM,
+    },
+    "review": {
+        "side_effect": "internal_write",
+        "retry_safe": True,
+        "timeout_s": 600,
+        "max_attempts": 3,
+        "required_scopes": {"articles", "user_drafts"},
+        "concurrency_group": CONCURRENCY_GROUP_LLM,
+    },
 }
 
 _OUTPUT_KEYS: dict[str, tuple[str, ...]] = {
@@ -350,7 +394,12 @@ _OUTPUT_KEYS: dict[str, tuple[str, ...]] = {
     "draft": ("draft_count",),
     "quality_check": ("needs_rewrite",),
     "rewrite": ("rewritten_count",),
-    "review": ("review_count", "review_failed_count", "review_reused_count", "review_pending_count"),
+    "review": (
+        "review_count",
+        "review_failed_count",
+        "review_reused_count",
+        "review_pending_count",
+    ),
 }
 
 

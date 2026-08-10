@@ -7,7 +7,6 @@ import time
 from unittest.mock import MagicMock
 
 import pytest
-
 from agent.retry import (
     RetryPolicy,
     RetryState,
@@ -21,7 +20,7 @@ class TestRetryableClassification:
     """异常分类测试。"""
 
     def test_asyncio_timeout_is_retryable(self):
-        assert is_retryable(asyncio.TimeoutError())
+        assert is_retryable(TimeoutError())
 
     def test_connection_error_is_retryable(self):
         assert is_retryable(ConnectionError())
@@ -38,6 +37,7 @@ class TestRetryableClassification:
     def test_openai_timeout_is_retryable(self):
         try:
             from openai import APITimeoutError
+
             assert is_retryable(APITimeoutError(request=None))  # type: ignore
         except ImportError:
             pytest.skip("openai not installed")
@@ -45,6 +45,7 @@ class TestRetryableClassification:
     def test_openai_auth_error_not_retryable(self):
         try:
             from openai import AuthenticationError
+
             # AuthenticationError 需要一个带 request 属性的 response 对象
             mock_response = MagicMock()
             mock_response.request = MagicMock()
@@ -78,7 +79,7 @@ class TestWithRetry:
             nonlocal call_count
             call_count += 1
             if call_count < 3:
-                raise asyncio.TimeoutError()
+                raise TimeoutError()
             return "ok"
 
         result = await with_retry(
@@ -109,7 +110,7 @@ class TestWithRetry:
         async def coro():
             nonlocal call_count
             call_count += 1
-            raise asyncio.TimeoutError()
+            raise TimeoutError()
 
         with pytest.raises(asyncio.TimeoutError):
             await with_retry(
@@ -132,7 +133,7 @@ class TestWithRetry:
         state = RetryState()
 
         async def coro():
-            raise asyncio.TimeoutError()
+            raise TimeoutError()
 
         with pytest.raises(asyncio.TimeoutError):
             await with_retry(
@@ -150,10 +151,9 @@ class TestWithRetry:
     @pytest.mark.asyncio
     async def test_full_jitter_delays(self):
         """验证 jitter 产生的延迟在 [0, base*multiplier^(n-1)] 范围内。"""
-        delays: list[float] = []
 
         async def coro():
-            raise asyncio.TimeoutError()
+            raise TimeoutError()
 
         state = RetryState()
         with pytest.raises(asyncio.TimeoutError):
@@ -183,7 +183,7 @@ class TestWithRetry:
         async def coro():
             nonlocal call_count
             call_count += 1
-            raise asyncio.TimeoutError()
+            raise TimeoutError()
 
         # deadline 已过期
         policy = RetryPolicy(

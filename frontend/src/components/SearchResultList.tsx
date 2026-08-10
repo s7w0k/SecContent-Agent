@@ -1,5 +1,5 @@
-import { Card, Checkbox, Empty, Space, Tag, Typography } from 'antd';
 import { LinkOutlined } from '@ant-design/icons';
+import { Card, Checkbox, Empty, Space, Tag, Typography } from 'antd';
 import type { WebSearchResult } from '../types';
 
 const { Text, Paragraph } = Typography;
@@ -11,7 +11,12 @@ interface SearchResultListProps {
   maxSelection: number;
 }
 
-export default function SearchResultList({ results, selectedIds, onToggle, maxSelection }: SearchResultListProps) {
+export default function SearchResultList({
+  results,
+  selectedIds,
+  onToggle,
+  maxSelection,
+}: SearchResultListProps) {
   if (!results.length) {
     return <Empty description="暂无搜索结果" />;
   }
@@ -23,11 +28,7 @@ export default function SearchResultList({ results, selectedIds, onToggle, maxSe
         const isDisabled = result.is_imported || (!isSelected && selectedIds.size >= maxSelection);
 
         return (
-          <Card
-            key={result.result_id}
-            size="small"
-            styles={{ body: { padding: '12px 16px' } }}
-          >
+          <Card key={result.result_id} size="small" styles={{ body: { padding: '12px 16px' } }}>
             <Space align="start" style={{ width: '100%' }}>
               <Checkbox
                 checked={isSelected}
@@ -46,7 +47,8 @@ export default function SearchResultList({ results, selectedIds, onToggle, maxSe
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     {result.display_domain}
                     {result.published_at && ` · ${result.published_at.split('T')[0]}`}
-                    {result.engines.length > 0 && ` · ${result.engines.slice(0, 3).join(' / ')}${result.engines.length > 3 ? ` +${result.engines.length - 3}` : ''}`}
+                    {result.engines.length > 0 &&
+                      ` · ${result.engines.slice(0, 3).join(' / ')}${result.engines.length > 3 ? ` +${result.engines.length - 3}` : ''}`}
                   </Text>
                 </div>
                 <Paragraph
@@ -55,7 +57,12 @@ export default function SearchResultList({ results, selectedIds, onToggle, maxSe
                 >
                   {result.snippet}
                 </Paragraph>
-                <a href={result.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>
+                <a
+                  href={result.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: 12 }}
+                >
                   <LinkOutlined /> 打开原文
                 </a>
               </div>

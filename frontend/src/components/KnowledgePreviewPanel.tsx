@@ -12,7 +12,20 @@ import {
   PlayCircleOutlined,
   SafetyCertificateOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Col, Input, Row, Space, Spin, Statistic, Tabs, Tag, Typography, message } from 'antd';
+import {
+  Alert,
+  Button,
+  Col,
+  Input,
+  Row,
+  Space,
+  Spin,
+  Statistic,
+  Tabs,
+  Tag,
+  Typography,
+  message,
+} from 'antd';
 import { useState } from 'react';
 import { knowledgeAdminApi } from '../api/client';
 import type {
@@ -56,7 +69,10 @@ const PROMPT_PRE_STYLE: React.CSSProperties = {
   margin: 0,
 };
 
-export default function KnowledgePreviewPanel({ draftId, relativePath }: KnowledgePreviewPanelProps) {
+export default function KnowledgePreviewPanel({
+  draftId,
+  relativePath,
+}: KnowledgePreviewPanelProps) {
   // ── 校验 ──
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState<KnowledgeValidationResult | null>(null);
@@ -137,7 +153,10 @@ export default function KnowledgePreviewPanel({ draftId, relativePath }: Knowled
       {validating && !validationResult && <Spin size="small" />}
       {validationResult && (
         <>
-          <Tag color={validationResult.status === 'passed' ? 'success' : 'error'} style={{ marginInlineStart: 0 }}>
+          <Tag
+            color={validationResult.status === 'passed' ? 'success' : 'error'}
+            style={{ marginInlineStart: 0 }}
+          >
             {validationResult.status === 'passed' ? '校验通过' : '校验失败'}
           </Tag>
           <Row gutter={16}>
@@ -155,7 +174,9 @@ export default function KnowledgePreviewPanel({ draftId, relativePath }: Knowled
               message="错误"
               description={
                 <ul style={{ margin: 0, paddingLeft: 20 }}>
+                  {/* 校验错误消息可能重复，使用索引作为稳定 key */}
                   {validationResult.errors.map((err, idx) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: 错误消息可能重复，索引 key 保持渲染稳定
                     <li key={`err-${idx}`}>{err}</li>
                   ))}
                 </ul>
@@ -169,7 +190,9 @@ export default function KnowledgePreviewPanel({ draftId, relativePath }: Knowled
               message="警告"
               description={
                 <ul style={{ margin: 0, paddingLeft: 20 }}>
+                  {/* 校验警告消息可能重复，使用索引作为稳定 key */}
                   {validationResult.warnings.map((warn, idx) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: 警告消息可能重复，索引 key 保持渲染稳定
                     <li key={`warn-${idx}`}>{warn}</li>
                   ))}
                 </ul>
@@ -328,7 +351,10 @@ export default function KnowledgePreviewPanel({ draftId, relativePath }: Knowled
       {previewingScore && <Spin size="small" />}
       {scorePreview && (
         <>
-          <Tag color={scorePreview.score_changed ? 'orange' : 'green'} style={{ marginInlineStart: 0 }}>
+          <Tag
+            color={scorePreview.score_changed ? 'orange' : 'green'}
+            style={{ marginInlineStart: 0 }}
+          >
             {scorePreview.score_changed ? '分数已变化' : '分数未变化'}
           </Tag>
           <Row gutter={24}>
@@ -343,10 +369,7 @@ export default function KnowledgePreviewPanel({ draftId, relativePath }: Knowled
                     />
                   </Col>
                   <Col span={8}>
-                    <Statistic
-                      title="事件影响力"
-                      value={scorePreview.old_score.event_impact}
-                    />
+                    <Statistic title="事件影响力" value={scorePreview.old_score.event_impact} />
                   </Col>
                   <Col span={8}>
                     <Statistic title="PR 总分" value={scorePreview.old_score.pr_total_score} />
@@ -374,10 +397,7 @@ export default function KnowledgePreviewPanel({ draftId, relativePath }: Knowled
                     />
                   </Col>
                   <Col span={8}>
-                    <Statistic
-                      title="事件影响力"
-                      value={scorePreview.new_score.event_impact}
-                    />
+                    <Statistic title="事件影响力" value={scorePreview.new_score.event_impact} />
                   </Col>
                   <Col span={8}>
                     <Statistic title="PR 总分" value={scorePreview.new_score.pr_total_score} />

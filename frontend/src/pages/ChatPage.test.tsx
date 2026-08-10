@@ -118,15 +118,9 @@ describe('ChatPage', () => {
   });
 
   async function selectArticle() {
-    const articleSelect = await screen.findByRole('combobox', {
-      name: '选择有草稿的文章',
-    });
-    fireEvent.mouseDown(articleSelect);
-    const option = Array.from(document.querySelectorAll('.ant-select-item-option')).find(
-      (item) => item.textContent === mockArticle.title,
-    );
-    expect(option).toBeDefined();
-    fireEvent.click(option as Element);
+    // 文章选择区域是 Collapse 内的 List，点击文章标题行即可选中
+    const articleTitle = await screen.findByText(mockArticle.title);
+    fireEvent.click(articleTitle);
     await waitFor(() =>
       expect(chatApi.getChatHistory).toHaveBeenCalledWith(mockArticle.url_hash, 0),
     );
@@ -144,7 +138,15 @@ describe('ChatPage', () => {
   it('loads articles on mount', async () => {
     render(<ChatPage />);
     await waitFor(() => {
-      expect(api.getArticles).toHaveBeenCalledWith({ page: 1, page_size: 100 });
+      expect(api.getArticles).toHaveBeenCalledWith(
+        expect.objectContaining({
+          page: 1,
+          page_size: 100,
+          has_drafts: true,
+          sort_by: 'added_at',
+          order: 'desc',
+        }),
+      );
     });
   });
 
@@ -193,6 +195,8 @@ describe('ChatPage', () => {
         expect.any(Function),
         expect.any(Function),
         expect.any(Function),
+        expect.any(Function),
+        expect.any(AbortSignal),
       );
     });
   });

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { activityApi, profileApi } from '../api/client';
-import type { ActivityStats, StyleProfile, UserActivity } from '../types';
+import { memoryApi, policyApi, profileApi } from '../api/client';
+import type { ProfilePolicy, StyleProfile } from '../types';
 import ProfilePage from './ProfilePage';
 
 vi.mock('../api/client', () => ({
@@ -9,9 +9,11 @@ vi.mock('../api/client', () => ({
     getStyle: vi.fn(),
     rebuild: vi.fn(),
   },
-  activityApi: {
-    list: vi.fn(),
-    stats: vi.fn(),
+  policyApi: {
+    getPolicy: vi.fn(),
+  },
+  memoryApi: {
+    listItems: vi.fn(),
   },
 }));
 
@@ -76,53 +78,21 @@ const mockProfile: StyleProfile = {
   updated_at: '2026-07-10T10:00:00Z',
 };
 
-const mockActivity: UserActivity = {
-  activity_id: 'activity-1',
-  user_id: 'local-user',
-  action: 'draft_download',
-  target: {
-    article_url_hash: 'abc123def45678901234567890123456',
-    draft_index: 1,
-    template: '爆点A',
-    perspective: '产品能力视角',
-  },
-  context: {
-    article_title: '关键漏洞事件',
-  },
-  metadata: {},
-  created_at: '2026-07-10T10:00:00Z',
-};
-
-const mockStats: ActivityStats = {
-  total: 4,
-  by_action: {
-    draft_download: 2,
-    revision_apply: 1,
-    draft_revise: 1,
-  },
-  by_template: {
-    爆点A: 2,
-  },
-  daily_trend: [
-    { date: '2026-07-09', count: 1 },
-    { date: '2026-07-10', count: 3 },
-  ],
-};
-
-function mockActivities() {
-  vi.mocked(activityApi.list).mockResolvedValue({
-    items: [mockActivity],
-    total: 1,
-    page: 1,
-    page_size: 20,
+function mockMemoryAndPolicy() {
+  vi.mocked(memoryApi.listItems).mockResolvedValue({
+    ok: true,
+    data: { items: [], total: 0, page: 1, page_size: 5, status_stats: {}, pending_count: 0 },
   });
-  vi.mocked(activityApi.stats).mockResolvedValue(mockStats);
+  vi.mocked(policyApi.getPolicy).mockResolvedValue({
+    ok: true,
+    data: { policy: null as unknown as ProfilePolicy, is_default: true, version: 1 },
+  });
 }
 
 describe('ProfilePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockActivities();
+    mockMemoryAndPolicy();
     vi.mocked(profileApi.getStyle).mockResolvedValue(mockProfile);
     vi.mocked(profileApi.rebuild).mockResolvedValue({
       rebuilt: true,
@@ -135,15 +105,13 @@ describe('ProfilePage', () => {
 
   it('renders loading state before requests resolve', () => {
     vi.mocked(profileApi.getStyle).mockReturnValue(new Promise(() => {}));
-    vi.mocked(activityApi.list).mockReturnValue(new Promise(() => {}));
-    vi.mocked(activityApi.stats).mockReturnValue(new Promise(() => {}));
 
     render(<ProfilePage />);
 
     expect(screen.getByTestId('profile-loading')).toBeDefined();
   });
 
-  it('renders profile, preferences and activity timeline', async () => {
+  it('renders profile and preferences', async () => {
     render(<ProfilePage />);
 
     await waitFor(() => {
@@ -151,13 +119,13 @@ describe('ProfilePage', () => {
     });
 
     expect(screen.getAllByText('爆点A').length).toBeGreaterThan(0);
-    expect(screen.getByText('我的爆点模板')).toBeDefined();
-    expect(screen.getByText('历史名称：爆点A')).toBeDefined();
     expect(screen.getAllByText('产品能力视角').length).toBeGreaterThan(0);
     expect(screen.getByText('市场传播向')).toBeDefined();
-    expect(screen.getByText('结构清晰')).toBeDefined();
-    expect(screen.getByText('操作记录时间线')).toBeDefined();
-    expect(screen.getByText('关键漏洞事件')).toBeDefined();
+    expect(screen.getByText('中等篇幅')).toBeDefined();
+    expect(screen.getByText('减少技术细节')).toBeDefined();
+    expect(screen.getByText('标题太平')).toBeDefined();
+    expect(screen.getByText('尚未配置显式偏好')).toBeDefined();
+    expect(screen.getByText('暂无自动学习记忆')).toBeDefined();
   });
 
   it('renders empty guidance when profile is not found', async () => {

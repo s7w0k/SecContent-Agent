@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-
 from agent.agent_contracts import RunContext
 from agent.llm_wrapper import LLMWrapper
 from agent.retry import RetryPolicy
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 
 def _make_run_context(**kwargs) -> RunContext:
-    defaults = dict(trace_id="trace-1", run_id="run-1", user_id="user-1")
+    defaults = {"trace_id": "trace-1", "run_id": "run-1", "user_id": "user-1"}
     defaults.update(kwargs)
     return RunContext(**defaults)
 
@@ -52,7 +50,14 @@ class TestInvokeAgentStep:
         """tool_calls 被正确提取到日志（通过 db 写入验证）。"""
         expected = AIMessage(
             content="",
-            tool_calls=[{"name": "search_knowledge", "id": "call_001", "args": {"q": "test"}, "type": "tool_call"}],
+            tool_calls=[
+                {
+                    "name": "search_knowledge",
+                    "id": "call_001",
+                    "args": {"q": "test"},
+                    "type": "tool_call",
+                }
+            ],
         )
         bound_llm = _make_mock_llm(expected)
 
@@ -93,7 +98,10 @@ class TestInvokeAgentStep:
         wrapper = LLMWrapper(llm=MagicMock(), db=db)
         await wrapper.invoke_agent_step(
             bound_llm=bound_llm,
-            messages=[SystemMessage(content="SECRET_SYSTEM_PROMPT"), HumanMessage(content="SECRET_USER")],
+            messages=[
+                SystemMessage(content="SECRET_SYSTEM_PROMPT"),
+                HumanMessage(content="SECRET_USER"),
+            ],
             run_context=_make_run_context(),
         )
 
@@ -141,7 +149,9 @@ class TestInvokeAgentStep:
         wrapper = LLMWrapper(llm=MagicMock(), db=db)
         await wrapper.invoke_agent_step(
             bound_llm=bound_llm,
-            messages=[HumanMessage(content="hello world"),],  # 11 chars -> ~2 tokens
+            messages=[
+                HumanMessage(content="hello world"),
+            ],  # 11 chars -> ~2 tokens
             run_context=_make_run_context(),
         )
 
@@ -218,7 +228,9 @@ class TestInvokeAgentStep:
         mock_llm.model_name = "deepseek-chat"
         mock_llm.with_structured_output = MagicMock()
         structured_llm = MagicMock()
-        structured_llm.ainvoke = AsyncMock(return_value={"relevance": 85, "event_impact": 70, "reason": "test"})
+        structured_llm.ainvoke = AsyncMock(
+            return_value={"relevance": 85, "event_impact": 70, "reason": "test"}
+        )
         mock_llm.with_structured_output.return_value = structured_llm
 
         wrapper = LLMWrapper(llm=mock_llm, db=None)

@@ -16,6 +16,7 @@ import {
   Tag,
   Tooltip,
   Tree,
+  type TreeDataNode,
   Typography,
 } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -152,8 +153,8 @@ export default function MultiAgentRunTree({ runId }: MultiAgentRunTreeProps) {
     void load();
   }, [load]);
 
-  const treeData = useMemo(() => {
-    const planChildren: { key: string; title: ReactNode; children?: { key: string; title: ReactNode }[] }[] = [];
+  const treeData = useMemo<TreeDataNode[]>(() => {
+    const planChildren: TreeDataNode[] = [];
     for (const step of sortSteps(steps)) {
       const attempts = step.attempt || 0;
       const retried = attempts > 1;
@@ -309,7 +310,11 @@ export default function MultiAgentRunTree({ runId }: MultiAgentRunTreeProps) {
               column={2}
               bordered
               items={[
-                { key: 'status', label: '状态', children: statusTag(plan.status || plan.source || '') },
+                {
+                  key: 'status',
+                  label: '状态',
+                  children: statusTag(plan.status || plan.source || ''),
+                },
                 {
                   key: 'version',
                   label: 'Planner 版本',
@@ -348,8 +353,8 @@ export default function MultiAgentRunTree({ runId }: MultiAgentRunTreeProps) {
             showIcon={false}
             blockNode
             defaultExpandAll
-            treeData={treeData as any}
-            titleRender={(node: any) => node.title}
+            treeData={treeData}
+            titleRender={(node) => node.title as ReactNode}
           />
           {events.some((ev) => ['failed', 'dead_lettered'].includes(ev.event_type)) && (
             <Alert

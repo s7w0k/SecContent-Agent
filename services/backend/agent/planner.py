@@ -22,8 +22,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from agent.plan_contracts import (
-    PlanValidator,
     PipelinePlan,
+    PlanValidator,
     _step,
     build_default_plan,
     input_snapshot_hash,
@@ -316,7 +316,7 @@ class Planner:
                 ),
                 timeout=self.timeout_seconds,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             choice_error = "planner timeout"
         except Exception as exc:
             choice_error = f"planner error: {type(exc).__name__}"

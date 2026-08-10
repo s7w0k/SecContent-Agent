@@ -9,29 +9,28 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from agent.runtime_state import (
+    TERMINAL_STATUSES,
     BudgetUsage,
     RunBudget,
     RuntimeState,
     RuntimeStateConflictError,
     RuntimeStateTransitionError,
-    TERMINAL_STATUSES,
     apply_state_mutation,
     migrate_runtime_state,
 )
 
 
 def _state(**overrides) -> RuntimeState:
-    base = dict(
-        run_id="run-1",
-        thread_id="thread-1",
-        trace_id="trace-1",
-        user_id="u1",
-        goal="生成一篇 PR 报道",
-        acceptance_criteria=["产出一篇中文 PR 报道", "引用至少 2 条证据"],
-        budget=RunBudget(max_steps=3, max_tool_calls=5, max_consecutive_failures=2),
-    )
+    base = {
+        "run_id": "run-1",
+        "thread_id": "thread-1",
+        "trace_id": "trace-1",
+        "user_id": "u1",
+        "goal": "生成一篇 PR 报道",
+        "acceptance_criteria": ["产出一篇中文 PR 报道", "引用至少 2 条证据"],
+        "budget": RunBudget(max_steps=3, max_tool_calls=5, max_consecutive_failures=2),
+    }
     base.update(overrides)
     return RuntimeState(**base)
 
@@ -126,8 +125,13 @@ class TestVersionConflict:
 
 class TestBudget:
     def test_exceeded_returns_limits(self):
-        budget = RunBudget(max_steps=2, max_tool_calls=3, max_consecutive_failures=2,
-                           max_input_tokens=100, max_output_tokens=100)
+        budget = RunBudget(
+            max_steps=2,
+            max_tool_calls=3,
+            max_consecutive_failures=2,
+            max_input_tokens=100,
+            max_output_tokens=100,
+        )
         usage = BudgetUsage()
         assert usage.exceeded(budget) == []
         usage.record_step(tokens_in=60, tokens_out=50)
@@ -175,7 +179,6 @@ class TestBudget:
         assert usage.consecutive_failures == 0
 
     def test_retry_and_remote_agent_quota(self):
-        budget = RunBudget(max_retries=2, remote_agent_quota=2)
         usage = BudgetUsage()
         usage.record_retry()
         usage.record_retry()
@@ -207,5 +210,7 @@ class TestSensitiveDataAbsent:
         assert "thinking" not in raw
         # decision_summaries 只保存摘要哈希
         state2 = _state()
-        assert all(not s.get("reason") or len(s.get("reason", "")) <= 200
-                   for s in state2.model_dump()["decision_summaries"])
+        assert all(
+            not s.get("reason") or len(s.get("reason", "")) <= 200
+            for s in state2.model_dump()["decision_summaries"]
+        )

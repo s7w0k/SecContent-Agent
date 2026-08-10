@@ -11,17 +11,15 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from pymongo import ReturnDocument
-
 from agent.execution_step_ledger import (
     COLLECTION,
     ExecutionStepLedger,
     LeaseConflictError,
     StepLedgerEntry,
 )
-from agent.plan_contracts import PlanStep, PipelinePlan
+from agent.plan_contracts import PipelinePlan, PlanStep
 from agent.worker_registry import WorkerResult
-
+from pymongo import ReturnDocument
 
 # ═══════════════════════════════════════════════════════════════
 # Fake MongoDB（Motor 风格异步接口）
@@ -150,16 +148,28 @@ def _plan() -> PipelinePlan:
     steps = [
         PlanStep(step_id="crawl", worker="crawl", policy="required", timeout_s=600, max_attempts=3),
         PlanStep(
-            step_id="score", worker="score", depends_on=["crawl"],
-            policy="required", timeout_s=600, max_attempts=3,
+            step_id="score",
+            worker="score",
+            depends_on=["crawl"],
+            policy="required",
+            timeout_s=600,
+            max_attempts=3,
         ),
         PlanStep(
-            step_id="draft", worker="draft", depends_on=["score"],
-            policy="required", timeout_s=600, max_attempts=3,
+            step_id="draft",
+            worker="draft",
+            depends_on=["score"],
+            policy="required",
+            timeout_s=600,
+            max_attempts=3,
         ),
         PlanStep(
-            step_id="review", worker="review", depends_on=["draft"],
-            policy="required", timeout_s=600, max_attempts=3,
+            step_id="review",
+            worker="review",
+            depends_on=["draft"],
+            policy="required",
+            timeout_s=600,
+            max_attempts=3,
         ),
     ]
     return PipelinePlan(
@@ -173,7 +183,9 @@ def _plan() -> PipelinePlan:
     )
 
 
-def _ok_result(step_id: str, worker: str, *, idem: str = "k", input_hash: str = "h") -> WorkerResult:
+def _ok_result(
+    step_id: str, worker: str, *, idem: str = "k", input_hash: str = "h"
+) -> WorkerResult:
     return WorkerResult(
         step_id=step_id,
         worker=worker,
@@ -242,8 +254,13 @@ class TestCASLease:
         ledger = await _populate(db, _plan())
         now = _fixed_now()
         entry = await ledger.begin_attempt(
-            run_id="run-1", step_id="crawl", owner_id="orch-1",
-            attempt=1, idempotency_key="u:r:crawl:h", input_hash="h", now=now,
+            run_id="run-1",
+            step_id="crawl",
+            owner_id="orch-1",
+            attempt=1,
+            idempotency_key="u:r:crawl:h",
+            input_hash="h",
+            now=now,
         )
         assert entry.status == "running"
         assert entry.lease_owner == "orch-1"
@@ -266,18 +283,27 @@ class TestCASLease:
         # 错误 owner → 拒绝
         with pytest.raises(LeaseConflictError):
             await ledger.complete(
-                run_id="run-1", step_id="crawl", owner_id="o2", fencing_token=1,
+                run_id="run-1",
+                step_id="crawl",
+                owner_id="o2",
+                fencing_token=1,
                 result=_ok_result("crawl", "crawl"),
             )
         # 错误 fencing → 拒绝
         with pytest.raises(LeaseConflictError):
             await ledger.complete(
-                run_id="run-1", step_id="crawl", owner_id="o1", fencing_token=99,
+                run_id="run-1",
+                step_id="crawl",
+                owner_id="o1",
+                fencing_token=99,
                 result=_ok_result("crawl", "crawl"),
             )
         # 正确 owner + token → 成功，租约释放
         entry = await ledger.complete(
-            run_id="run-1", step_id="crawl", owner_id="o1", fencing_token=1,
+            run_id="run-1",
+            step_id="crawl",
+            owner_id="o1",
+            fencing_token=1,
             result=_ok_result("crawl", "crawl", idem="k1", input_hash="h1"),
         )
         assert entry.status == "succeeded"
@@ -291,7 +317,10 @@ class TestCASLease:
         ledger = await _populate(db, _plan())
         await ledger.begin_attempt(run_id="run-1", step_id="crawl", owner_id="o1", attempt=1)
         await ledger.complete(
-            run_id="run-1", step_id="crawl", owner_id="o1", fencing_token=1,
+            run_id="run-1",
+            step_id="crawl",
+            owner_id="o1",
+            fencing_token=1,
             result=_ok_result("crawl", "crawl"),
         )
         with pytest.raises(LeaseConflictError):
@@ -302,11 +331,18 @@ class TestCASLease:
         ledger = await _populate(db, _plan())
         await ledger.begin_attempt(run_id="run-1", step_id="crawl", owner_id="o1", attempt=1)
         await ledger.fail(
-            run_id="run-1", step_id="crawl", owner_id="o1", fencing_token=1,
-            status="dead_lettered", error_type="timeout", retryable=True,
+            run_id="run-1",
+            step_id="crawl",
+            owner_id="o1",
+            fencing_token=1,
+            status="dead_lettered",
+            error_type="timeout",
+            retryable=True,
         )
         # 人工重放：dead_lettered → 再次领取，fencing 递增
-        entry = await ledger.begin_attempt(run_id="run-1", step_id="crawl", owner_id="o1", attempt=2)
+        entry = await ledger.begin_attempt(
+            run_id="run-1", step_id="crawl", owner_id="o1", attempt=2
+        )
         assert entry.status == "running"
         assert entry.fencing_token == 2
 
@@ -315,8 +351,13 @@ class TestCASLease:
         ledger = await _populate(db, _plan())
         await ledger.begin_attempt(run_id="run-1", step_id="crawl", owner_id="o1", attempt=1)
         entry = await ledger.fail(
-            run_id="run-1", step_id="crawl", owner_id="o1", fencing_token=1,
-            status="dead_lettered", error_type="timeout", retryable=True,
+            run_id="run-1",
+            step_id="crawl",
+            owner_id="o1",
+            fencing_token=1,
+            status="dead_lettered",
+            error_type="timeout",
+            retryable=True,
             error_message="exhausted",
         )
         assert entry.status == "dead_lettered"
@@ -371,7 +412,10 @@ class TestCASLease:
         ledger = await _populate(db, _plan())
         await ledger.begin_attempt(run_id="run-1", step_id="crawl", owner_id="o1", attempt=1)
         await ledger.complete(
-            run_id="run-1", step_id="crawl", owner_id="o1", fencing_token=1,
+            run_id="run-1",
+            step_id="crawl",
+            owner_id="o1",
+            fencing_token=1,
             result=_ok_result("crawl", "crawl"),
         )
         n = await ledger.cancel_run("run-1")
@@ -388,8 +432,12 @@ class TestTakeover:
         db, _ = _db()
         ledger = await _populate(db, _plan())
         now = _fixed_now()
-        await ledger.begin_attempt(run_id="run-1", step_id="crawl", owner_id="old", attempt=1, now=now)
-        taken = await ledger.takeover_expired(run_id="run-1", owner_id="new", now=now + timedelta(seconds=300))
+        await ledger.begin_attempt(
+            run_id="run-1", step_id="crawl", owner_id="old", attempt=1, now=now
+        )
+        taken = await ledger.takeover_expired(
+            run_id="run-1", owner_id="new", now=now + timedelta(seconds=300)
+        )
         assert len(taken) == 1
         entry = taken[0]
         assert entry.lease_owner == "new"
@@ -400,8 +448,12 @@ class TestTakeover:
         db, _ = _db()
         ledger = await _populate(db, _plan())
         now = _fixed_now()
-        await ledger.begin_attempt(run_id="run-1", step_id="crawl", owner_id="old", attempt=1, now=now)
-        taken = await ledger.takeover_expired(run_id="run-1", owner_id="new", now=now + timedelta(seconds=30))
+        await ledger.begin_attempt(
+            run_id="run-1", step_id="crawl", owner_id="old", attempt=1, now=now
+        )
+        taken = await ledger.takeover_expired(
+            run_id="run-1", owner_id="new", now=now + timedelta(seconds=30)
+        )
         assert taken == []
         entry = await ledger.get_step("run-1", "crawl")
         assert entry.lease_owner == "old"
@@ -410,10 +462,16 @@ class TestTakeover:
         db, _ = _db()
         ledger = await _populate(db, _plan())
         now = _fixed_now()
-        await ledger.begin_attempt(run_id="run-1", step_id="crawl", owner_id="old", attempt=1, now=now)
+        await ledger.begin_attempt(
+            run_id="run-1", step_id="crawl", owner_id="old", attempt=1, now=now
+        )
         # 第一个接管者延长期限后，第二个接管者的 CAS 必须失败
-        await ledger.takeover_expired(run_id="run-1", owner_id="new1", now=now + timedelta(seconds=300))
-        again = await ledger.takeover_expired(run_id="run-1", owner_id="new2", now=now + timedelta(seconds=300))
+        await ledger.takeover_expired(
+            run_id="run-1", owner_id="new1", now=now + timedelta(seconds=300)
+        )
+        again = await ledger.takeover_expired(
+            run_id="run-1", owner_id="new2", now=now + timedelta(seconds=300)
+        )
         assert again == []
         entry = await ledger.get_step("run-1", "crawl")
         assert entry.lease_owner == "new1"
@@ -422,12 +480,19 @@ class TestTakeover:
         db, _ = _db()
         ledger = await _populate(db, _plan())
         now = _fixed_now()
-        await ledger.begin_attempt(run_id="run-1", step_id="crawl", owner_id="old", attempt=1, now=now)
-        await ledger.takeover_expired(run_id="run-1", owner_id="new", now=now + timedelta(seconds=300))
+        await ledger.begin_attempt(
+            run_id="run-1", step_id="crawl", owner_id="old", attempt=1, now=now
+        )
+        await ledger.takeover_expired(
+            run_id="run-1", owner_id="new", now=now + timedelta(seconds=300)
+        )
         # 旧 Worker 用旧 fencing token 迟到提交 → 拒绝
         with pytest.raises(LeaseConflictError):
             await ledger.complete(
-                run_id="run-1", step_id="crawl", owner_id="old", fencing_token=1,
+                run_id="run-1",
+                step_id="crawl",
+                owner_id="old",
+                fencing_token=1,
                 result=_ok_result("crawl", "crawl"),
             )
 
@@ -451,7 +516,10 @@ class TestRecovery:
         # crawl 成功，score pending，draft skipped，review pending
         await ledger.begin_attempt(run_id="run-1", step_id="crawl", owner_id="o", attempt=1)
         await ledger.complete(
-            run_id="run-1", step_id="crawl", owner_id="o", fencing_token=1,
+            run_id="run-1",
+            step_id="crawl",
+            owner_id="o",
+            fencing_token=1,
             result=_ok_result("crawl", "crawl"),
         )
         await ledger.skip(run_id="run-1", step_id="draft", reason="optional")
@@ -472,14 +540,20 @@ class TestRecovery:
         db, _ = _db()
         ledger = await _populate(db, _plan())
         now = _fixed_now()
-        await ledger.begin_attempt(run_id="run-1", step_id="crawl", owner_id="dead", attempt=1, now=now)
-        await ledger.begin_attempt(run_id="run-1", step_id="score", owner_id="dead", attempt=1, now=now)
+        await ledger.begin_attempt(
+            run_id="run-1", step_id="crawl", owner_id="dead", attempt=1, now=now
+        )
+        await ledger.begin_attempt(
+            run_id="run-1", step_id="score", owner_id="dead", attempt=1, now=now
+        )
 
         async def load_plan(run_id):
             return _plan()
 
         result = await ledger.recover_run(
-            run_id="run-1", owner_id="new", load_plan=load_plan,
+            run_id="run-1",
+            owner_id="new",
+            load_plan=load_plan,
             now=now + timedelta(seconds=300),
         )
         assert len(result.taken_over) == 2
@@ -492,7 +566,10 @@ class TestRecovery:
         ledger = await _populate(db, _plan())
         await ledger.begin_attempt(run_id="run-1", step_id="crawl", owner_id="o", attempt=1)
         await ledger.complete(
-            run_id="run-1", step_id="crawl", owner_id="o", fencing_token=1,
+            run_id="run-1",
+            step_id="crawl",
+            owner_id="o",
+            fencing_token=1,
             result=_ok_result("crawl", "crawl"),
         )
 
@@ -503,7 +580,9 @@ class TestRecovery:
             return False
 
         result = await ledger.recover_run(
-            run_id="run-1", owner_id="o", load_plan=load_plan,
+            run_id="run-1",
+            owner_id="o",
+            load_plan=load_plan,
             verify_artifact=verify_artifact,
         )
         assert result.skipped == []
@@ -532,7 +611,9 @@ class TestReconcile:
         missing = [i for i in result.issues if i.issue_type == "missing_ledger"]
         assert [i.step_id for i in missing] == ["extra-step"]
         assert result.repair_enqueued == 1
-        repair = await db["ledger_repair_queue"].find_one({"run_id": "run-1", "step_id": "extra-step"})
+        repair = await db["ledger_repair_queue"].find_one(
+            {"run_id": "run-1", "step_id": "extra-step"}
+        )
         assert repair["status"] == "open"
 
     async def test_succeeded_without_checkpoint_and_artifact_fails(self):
@@ -540,7 +621,10 @@ class TestReconcile:
         ledger = await _populate(db, _plan())
         await ledger.begin_attempt(run_id="run-1", step_id="crawl", owner_id="o", attempt=1)
         await ledger.complete(
-            run_id="run-1", step_id="crawl", owner_id="o", fencing_token=1,
+            run_id="run-1",
+            step_id="crawl",
+            owner_id="o",
+            fencing_token=1,
             result=_ok_result("crawl", "crawl"),
         )
 
@@ -551,7 +635,9 @@ class TestReconcile:
             return False
 
         result = await ledger.reconcile(
-            run_id="run-1", read_checkpoint=read_checkpoint, verify_artifact=verify_artifact,
+            run_id="run-1",
+            read_checkpoint=read_checkpoint,
+            verify_artifact=verify_artifact,
         )
         assert any(i.issue_type == "succeeded_without_checkpoint" for i in result.issues)
 
@@ -560,7 +646,9 @@ class TestReconcile:
         ledger = _ledger(db, stale_running_grace_seconds=60)
         await _populate(db, _plan())
         now = _fixed_now()
-        await ledger.begin_attempt(run_id="run-1", step_id="crawl", owner_id="o", attempt=1, now=now)
+        await ledger.begin_attempt(
+            run_id="run-1", step_id="crawl", owner_id="o", attempt=1, now=now
+        )
 
         result = await ledger.reconcile(
             run_id="run-1",
@@ -576,7 +664,10 @@ class TestReconcile:
         ledger = await _populate(db, _plan())
         await ledger.begin_attempt(run_id="run-1", step_id="crawl", owner_id="o", attempt=1)
         await ledger.complete(
-            run_id="run-1", step_id="crawl", owner_id="o", fencing_token=1,
+            run_id="run-1",
+            step_id="crawl",
+            owner_id="o",
+            fencing_token=1,
             result=_ok_result("crawl", "crawl"),
         )
 
@@ -591,7 +682,7 @@ class TestReconcile:
 
 class TestEnsureIndexes:
     async def test_creates_expected_indexes(self):
-        db, col = _db()
+        db, _ = _db()
         ledger = _ledger(db)
         created = await ledger.ensure_indexes()
         names = set(created)
@@ -612,14 +703,20 @@ class TestEnsureIndexes:
 class TestLedgerEntryModel:
     def test_lease_expired_property(self):
         entry = StepLedgerEntry(
-            run_id="r", plan_id="p", step_id="s", worker="crawl",
+            run_id="r",
+            plan_id="p",
+            step_id="s",
+            worker="crawl",
             lease_expires_at=datetime(2020, 1, 1, tzinfo=UTC),
         )
         assert entry.lease_expired is True
 
     def test_lease_not_expired(self):
         entry = StepLedgerEntry(
-            run_id="r", plan_id="p", step_id="s", worker="crawl",
+            run_id="r",
+            plan_id="p",
+            step_id="s",
+            worker="crawl",
             lease_expires_at=datetime(2099, 1, 1, tzinfo=UTC),
         )
         assert entry.lease_expired is False

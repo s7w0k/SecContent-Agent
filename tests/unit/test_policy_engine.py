@@ -9,13 +9,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
 from agent.policy_engine import (
-    ApprovalService,
     DEFAULT_RULES,
+    ApprovalService,
     PolicyAction,
-    PolicyDecision,
     PolicyEngine,
     PolicyRule,
     RiskLevel,

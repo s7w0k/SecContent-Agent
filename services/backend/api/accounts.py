@@ -30,7 +30,7 @@ async def _trpc(procedure: str, params=None, method: str = "GET", timeout: int =
     r.add_header("Authorization", AUTH)
     r.add_header("Content-Type", "application/json")
     logger.info(f"[accounts] tRPC {method} {procedure}")
-    with _req.urlopen(r, timeout=timeout) as resp:
+    with _req.urlopen(r, timeout=timeout) as resp:  # nosec B310 - 内部 tRPC 服务固定 URL
         data = json.loads(resp.read())
     return data.get("result", {}).get("data", data)
 
@@ -79,7 +79,7 @@ async def create_qrcode(request: FastAPIRequest):
         except Exception:
             try:
                 qr_api = f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={quote(scan_url, safe='')}"
-                qr_base64 = base64.b64encode(urlopen(qr_api, timeout=5).read()).decode()
+                qr_base64 = base64.b64encode(urlopen(qr_api, timeout=5).read()).decode()  # nosec B310 - 固定 https 二维码服务
             except Exception:
                 pass
         return {"ok": True, "uuid": uuid, "scan_url": scan_url, "qr_base64": qr_base64}

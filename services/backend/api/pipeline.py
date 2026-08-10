@@ -23,8 +23,8 @@ import httpx
 from agent.checkpointer import create_checkpointer, supports_mongodb_checkpoints
 from agent.knowledge_slice import KnowledgeSliceResolver
 from agent.multi_agent import MultiAgentReplayError, decide_execution_mode
-from agent.plan_contracts import input_snapshot_hash
 from agent.pipeline_state import PipelineStateManager
+from agent.plan_contracts import input_snapshot_hash
 from agent.style_profiler import load_style_hints
 from api.activity import log_activity
 from api.logs import build_log_error, generate_trace_id, log_pipeline
@@ -1146,7 +1146,7 @@ async def crawl_wewe_only(request: Request, _user_id: str = Depends(get_current_
             xml_text = resp.text
 
         ns = {"atom": "http://www.w3.org/2005/Atom"}
-        root = ET.fromstring(xml_text)
+        root = ET.fromstring(xml_text)  # nosec B314 - 固定内部 WeWe Atom feed 源
         entries = root.findall("atom:entry", ns)
         saved = 0
         for entry in entries:
@@ -1164,7 +1164,7 @@ async def crawl_wewe_only(request: Request, _user_id: str = Depends(get_current_
             )
             if not url:
                 continue
-            url_hash = hashlib.md5(url.encode()).hexdigest()
+            url_hash = hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()
             existing = await db["articles"].find_one({"url_hash": url_hash})
             if existing:
                 continue
@@ -1289,7 +1289,7 @@ async def crawl_via_api(request: Request, days: int = 1, _user_id: str = Depends
                 if not url:
                     continue
 
-                url_hash = hashlib.md5(url.encode()).hexdigest()
+                url_hash = hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()
                 existing = await db["articles"].find_one({"url_hash": url_hash})
                 if existing:
                     skipped += 1
@@ -1365,7 +1365,7 @@ async def import_wewe_articles(request: Request, _user_id: str = Depends(get_cur
             xml_text = resp.text
 
         ns = {"atom": "http://www.w3.org/2005/Atom"}
-        root = ET.fromstring(xml_text)
+        root = ET.fromstring(xml_text)  # nosec B314 - 固定内部 WeWe Atom feed 源
         entries = root.findall("atom:entry", ns)
         log.info(f"[import-wewe] Atom feed has {len(entries)} articles")
 
@@ -1392,7 +1392,7 @@ async def import_wewe_articles(request: Request, _user_id: str = Depends(get_cur
                 else ""
             )
 
-            url_hash = hashlib.md5(url.encode()).hexdigest()
+            url_hash = hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()
             existing = await db["articles"].find_one({"url_hash": url_hash})
             if existing:
                 continue

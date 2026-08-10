@@ -12,7 +12,6 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -148,7 +147,7 @@ def run_all() -> dict[str, Any]:
 def print_report(report: dict[str, Any]) -> None:
     """打印评测报告。"""
     print(f"\n{'=' * 60}")
-    print(f"  Golden Set 评测报告")
+    print("  Golden Set 评测报告")
     print(f"{'=' * 60}")
     print(f"  总计: {report['total']}")
     print(f"  通过: {report['passed']}")

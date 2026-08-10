@@ -414,7 +414,7 @@ class KnowledgeLoader:
 
     def _compute_hash(self, files: list[Path]) -> str:
         """计算所有文件的联合 MD5 哈希（用于变更检测）。"""
-        hasher = hashlib.md5()
+        hasher = hashlib.md5(usedforsecurity=False)
         for fp in files:
             try:
                 content = self._read_file(fp)

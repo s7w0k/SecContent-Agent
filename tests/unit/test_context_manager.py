@@ -17,17 +17,13 @@ from __future__ import annotations
 import os
 import sys
 
-import pytest
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "backend"))
 
-from agent.context_manager import (  # noqa: E402
+from agent.context_manager import (
     ALLOCATION_ORDER,
-    CHARS_PER_TOKEN,
     ContextManager,
     ContextRequest,
     ContextSource,
-    DropRecord,
     estimate_tokens,
     resolve_model_window,
 )

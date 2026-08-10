@@ -125,7 +125,7 @@ def compute_url_hash(canonical_url: str) -> str:
     """MD5 hash of canonical URL (matches articles.url_hash format)."""
     import hashlib
 
-    return hashlib.md5(canonical_url.encode("utf-8")).hexdigest()
+    return hashlib.md5(canonical_url.encode("utf-8"), usedforsecurity=False).hexdigest()
 
 
 def extract_domain(url: str) -> str:

@@ -158,7 +158,7 @@ class SearchSessionService:
     @staticmethod
     def _compute_url_hash(canonical_url: str) -> str:
         """MD5 hash of canonical URL (matches articles.url_hash format)."""
-        return hashlib.md5(canonical_url.encode("utf-8")).hexdigest()
+        return hashlib.md5(canonical_url.encode("utf-8"), usedforsecurity=False).hexdigest()
 
     def normalize_results(
         self,

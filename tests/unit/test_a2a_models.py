@@ -13,12 +13,11 @@
 
 from __future__ import annotations
 
-import pytest
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+import pytest
 from agent.a2a.mapper import (
-    DEFAULT_MAX_MESSAGE_BYTES,
     build_denied_task,
     map_runtime_to_task,
     map_state_to_task,
@@ -29,6 +28,7 @@ from agent.a2a.models import (
     AGENT_CARD_PATH,
     PROTOCOL_VERSION,
     SDK_VERSION,
+    TERMINAL_TASK_STATUSES,
     VERSION_HEADER,
     AgentCard,
     InvalidInputError,
@@ -40,7 +40,6 @@ from agent.a2a.models import (
     TaskSendResult,
     TaskStatus,
     TaskStatusUpdateEvent,
-    TERMINAL_TASK_STATUSES,
 )
 from agent.a2a.task_store import A2ATaskConflictError, A2ATaskStore
 from agent.runtime_state import (

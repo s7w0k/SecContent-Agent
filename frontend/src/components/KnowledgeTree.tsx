@@ -19,15 +19,12 @@ interface KnowledgeTreeProps {
   selectedPath?: string;
 }
 
-function toAntdTree(
-  nodes: KnowledgeTreeNode[],
-  directScoringPaths?: Set<string>,
-): TreeDataNode[] {
+function toAntdTree(nodes: KnowledgeTreeNode[], directScoringPaths?: Set<string>): TreeDataNode[] {
   return nodes.map((node) => {
     const isFile = node.node_type === 'file';
     const isDirect = isFile && directScoringPaths?.has(node.path);
     const title = (
-      <span>
+      <span key={node.path}>
         {node.name}
         {isDirect && (
           <StarOutlined

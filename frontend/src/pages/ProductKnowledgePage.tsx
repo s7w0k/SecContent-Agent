@@ -543,35 +543,32 @@ export default function ProductKnowledgePage() {
     [products],
   );
 
-  const handleEntryFileUpload = useCallback(
-    (file: File) => {
-      const extension = file.name.includes('.')
-        ? `.${file.name.split('.').pop()?.toLowerCase()}`
-        : '';
-      if (extension !== '.md') {
-        message.error('仅支持上传 .md 文件');
-        return false;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        message.error('文件不能超过 5MB');
-        return false;
-      }
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const text = (e.target?.result as string) ?? '';
-        setEntryForm((prev) => ({
-          ...prev,
-          content: text,
-          title: prev.title.trim() || file.name.replace(/\.md$/i, ''),
-        }));
-        message.success(`已解析 ${file.name}（${text.length} 字）`);
-      };
-      reader.onerror = () => message.error('文件读取失败，请重试');
-      reader.readAsText(file, 'utf-8');
+  const handleEntryFileUpload = useCallback((file: File) => {
+    const extension = file.name.includes('.')
+      ? `.${file.name.split('.').pop()?.toLowerCase()}`
+      : '';
+    if (extension !== '.md') {
+      message.error('仅支持上传 .md 文件');
       return false;
-    },
-    [],
-  );
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      message.error('文件不能超过 5MB');
+      return false;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = (e.target?.result as string) ?? '';
+      setEntryForm((prev) => ({
+        ...prev,
+        content: text,
+        title: prev.title.trim() || file.name.replace(/\.md$/i, ''),
+      }));
+      message.success(`已解析 ${file.name}（${text.length} 字）`);
+    };
+    reader.onerror = () => message.error('文件读取失败，请重试');
+    reader.readAsText(file, 'utf-8');
+    return false;
+  }, []);
 
   const handleSaveEntry = useCallback(async () => {
     if (!entryForm.product_id) {

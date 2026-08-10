@@ -5,13 +5,12 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from agent.agent_contracts import RunContext
-from agent.agent_tools import create_agent_tools, TOOL_POLICIES
+from agent.agent_tools import TOOL_POLICIES, create_agent_tools
 
 
 def _make_ctx(**kwargs) -> RunContext:
-    defaults = dict(trace_id="t1", run_id="r1", user_id="u1")
+    defaults = {"trace_id": "t1", "run_id": "r1", "user_id": "u1"}
     defaults.update(kwargs)
     return RunContext(**defaults)
 
@@ -221,13 +220,15 @@ class TestGetArticle:
         ctx = _make_ctx(allowed_article_hashes=frozenset({"hash_a"}))
         db = _make_db()
         db["articles"] = MagicMock()
-        db["articles"].find_one = AsyncMock(return_value={
-            "title": "测试文章",
-            "source": "Help Net Security",
-            "category_v2": "ai_progress",
-            "summary": "AI security news",
-            "content_md": "正文内容" * 100,
-        })
+        db["articles"].find_one = AsyncMock(
+            return_value={
+                "title": "测试文章",
+                "source": "Help Net Security",
+                "category_v2": "ai_progress",
+                "summary": "AI security news",
+                "content_md": "正文内容" * 100,
+            }
+        )
 
         tools = create_agent_tools(db=db, run_context=ctx)
         get_article = tools[2]
@@ -242,13 +243,15 @@ class TestGetArticle:
         ctx = _make_ctx(allowed_article_hashes=frozenset({"hash_a"}))
         db = _make_db()
         db["articles"] = MagicMock()
-        db["articles"].find_one = AsyncMock(return_value={
-            "title": "测试",
-            "source": "src",
-            "content_md": "正文",
-            "_id": "secret_object_id",
-            "user_id": "secret_user",
-        })
+        db["articles"].find_one = AsyncMock(
+            return_value={
+                "title": "测试",
+                "source": "src",
+                "content_md": "正文",
+                "_id": "secret_object_id",
+                "user_id": "secret_user",
+            }
+        )
 
         tools = create_agent_tools(db=db, run_context=ctx)
         get_article = tools[2]
@@ -277,10 +280,12 @@ class TestGetArticle:
         db = _make_db()
         db["articles"] = MagicMock()
         long_content = "A" * 5000
-        db["articles"].find_one = AsyncMock(return_value={
-            "title": "长文",
-            "content_md": long_content,
-        })
+        db["articles"].find_one = AsyncMock(
+            return_value={
+                "title": "长文",
+                "content_md": long_content,
+            }
+        )
 
         tools = create_agent_tools(db=db, run_context=ctx)
         get_article = tools[2]

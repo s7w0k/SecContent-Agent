@@ -12,11 +12,10 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
-
 from agent.agent_runtime import AgentRuntime, PlannedAction
 from agent.goal_validator import GoalValidator
 from agent.memory_extractor import (
@@ -146,14 +145,14 @@ class _FakeDB(dict):
 
 
 def _state(**overrides) -> RuntimeState:
-    base = dict(
-        run_id="run-1",
-        user_id="u1",
-        goal="完成一个测试目标",
-        acceptance_criteria=["完成一个动作"],
-        budget=RunBudget(max_steps=10, max_consecutive_failures=2),
-        usage=BudgetUsage(started_at=FIXED_NOW, last_action_at=FIXED_NOW),
-    )
+    base = {
+        "run_id": "run-1",
+        "user_id": "u1",
+        "goal": "完成一个测试目标",
+        "acceptance_criteria": ["完成一个动作"],
+        "budget": RunBudget(max_steps=10, max_consecutive_failures=2),
+        "usage": BudgetUsage(started_at=FIXED_NOW, last_action_at=FIXED_NOW),
+    }
     base.update(overrides)
     return RuntimeState(**base)
 
@@ -175,15 +174,15 @@ def _make_planner(actions: list[PlannedAction | None]):
 
 
 def _runtime(*, planner, executor, **kw) -> AgentRuntime:
-    base = dict(
-        planner=planner,
-        executor=executor,
-        goal_validator=GoalValidator(
+    base = {
+        "planner": planner,
+        "executor": executor,
+        "goal_validator": GoalValidator(
             required_artifact_keys=(), high_risk_requires_confirm=False
         ),
-        sleep=_no_sleep,
-        backoff_jitter=0.0,
-    )
+        "sleep": _no_sleep,
+        "backoff_jitter": 0.0,
+    }
     base.update(kw)
     return AgentRuntime(**base)
 
@@ -224,7 +223,9 @@ class TestMemoryExtractor:
         assert result.records[0].kind == RuntimeMemoryKind.CONSTRAINT
 
     def test_extract_solution_from_success(self):
-        result = self._extract("校验通过，方案可用", outcome="success", kind_hint=RuntimeMemoryKind.SOLUTION)
+        result = self._extract(
+            "校验通过，方案可用", outcome="success", kind_hint=RuntimeMemoryKind.SOLUTION
+        )
         assert len(result.records) == 1
         assert result.records[0].kind == RuntimeMemoryKind.SOLUTION
         assert result.records[0].confidence == pytest.approx(0.9)  # 显式 hint 置信度更高
@@ -235,7 +236,9 @@ class TestMemoryExtractor:
         assert result.records[0].kind == RuntimeMemoryKind.FAILURE
 
     def test_kind_hint_overrides_autoclass(self):
-        result = self._extract("用户偏好简洁标题", outcome="failed", kind_hint=RuntimeMemoryKind.PREFERENCE)
+        result = self._extract(
+            "用户偏好简洁标题", outcome="failed", kind_hint=RuntimeMemoryKind.PREFERENCE
+        )
         assert result.records[0].kind == RuntimeMemoryKind.PREFERENCE
 
     def test_security_drops_sensitive_key(self):
@@ -244,7 +247,9 @@ class TestMemoryExtractor:
         assert result.dropped and result.dropped[0]["reason"] == "sensitive_key"
 
     def test_security_drops_access_token(self):
-        result = self._extract("authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.signature")
+        result = self._extract(
+            "authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.signature"
+        )
         assert result.records == []
         assert result.dropped[0]["reason"] in ("access_token", "sensitive_key")
 
@@ -266,8 +271,12 @@ class TestMemoryExtractor:
     def test_scope_isolation(self):
         extractor = RuntimeMemoryExtractor(now_provider=lambda: FIXED_NOW)
         sig = MemorySignal(
-            run_id="run-1", user_id="u1", step_id="s1", text="偏好简洁标题",
-            scope=RuntimeMemoryScope.REPOSITORY, scope_value="repoA",
+            run_id="run-1",
+            user_id="u1",
+            step_id="s1",
+            text="偏好简洁标题",
+            scope=RuntimeMemoryScope.REPOSITORY,
+            scope_value="repoA",
         )
         rec = extractor.extract([sig]).records[0]
         assert rec.scope == RuntimeMemoryScope.REPOSITORY
@@ -277,7 +286,13 @@ class TestMemoryExtractor:
     def test_failure_ttl_shorter_than_preference(self):
         extractor = RuntimeMemoryExtractor(now_provider=lambda: FIXED_NOW)
         sigs = [
-            MemorySignal(run_id="r", user_id="u", step_id="s1", text="偏好简洁", kind_hint=RuntimeMemoryKind.PREFERENCE),
+            MemorySignal(
+                run_id="r",
+                user_id="u",
+                step_id="s1",
+                text="偏好简洁",
+                kind_hint=RuntimeMemoryKind.PREFERENCE,
+            ),
             MemorySignal(run_id="r", user_id="u", step_id="s2", text="接口超时", outcome="failed"),
         ]
         recs = extractor.extract(sigs).records
@@ -337,7 +352,9 @@ class TestRuntimeEventStore:
 
     async def test_event_has_schema_and_timestamp(self):
         store = self._store()
-        ev = await store.append(run_id="run-1", event_type="validate", status="complete", payload={"ok": True})
+        ev = await store.append(
+            run_id="run-1", event_type="validate", status="complete", payload={"ok": True}
+        )
         assert ev.schema_version == "1.0"
         assert ev.run_id == "run-1"
         assert ev.event_id.startswith("ev-")
@@ -391,7 +408,8 @@ class TestRuntimeStateStore:
         base = await store.load("run-1")
         # 新执行器通过 apply_state_mutation 推进到 v2 并保存
         new_state = apply_state_mutation(
-            base, expected_version=base.checkpoint_version,
+            base,
+            expected_version=base.checkpoint_version,
             mutation=lambda s: s.model_copy(update={"current_step": "s2"}),
         )
         await store.save(new_state, expected_checkpoint_version=base.checkpoint_version)
@@ -430,9 +448,7 @@ class TestRuntimeStateStore:
         await store.save(_state(run_id="r1", user_id="u1"))
         await store.save(_state(run_id="r2", user_id="u2"))
         await store.save(
-            _state(run_id="r3", user_id="u1").model_copy(
-                update={"status": RuntimeStatus.COMPLETED}
-            )
+            _state(run_id="r3", user_id="u1").model_copy(update={"status": RuntimeStatus.COMPLETED})
         )
         mine = await store.list_runs(user_id="u1")
         assert {s.run_id for s in mine} == {"r1", "r3"}
@@ -485,7 +501,8 @@ class TestRecoveryFlow:
         base = await store.load("run-1")
         # 新执行器通过 apply_state_mutation 推进并保存
         new_state = apply_state_mutation(
-            base, expected_version=base.checkpoint_version,
+            base,
+            expected_version=base.checkpoint_version,
             mutation=lambda s: s.model_copy(update={"current_step": "s2"}),
         )
         await store.save(new_state, expected_checkpoint_version=base.checkpoint_version)

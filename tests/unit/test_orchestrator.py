@@ -6,11 +6,9 @@ import asyncio
 from datetime import UTC, datetime
 
 import pytest
-
 from agent.orchestrator import Orchestrator, OrchestratorError, build_waves
 from agent.plan_contracts import PipelinePlan, PlanStep
 from agent.worker_registry import WorkerAdapter, WorkerRegistry, WorkerResult, WorkerSpec
-
 
 # ═══════════════════════════════════════════════════════════════
 # Helpers
@@ -102,8 +100,9 @@ async def _run(plan, registry, **kwargs):
 
 class TestBuildWaves:
     def test_linear_plan(self):
-        plan = _plan([_step("s1", "crawl"), _step("s2", "classify", ["s1"]),
-                      _step("s3", "filter", ["s2"])])
+        plan = _plan(
+            [_step("s1", "crawl"), _step("s2", "classify", ["s1"]), _step("s3", "filter", ["s2"])]
+        )
         waves = build_waves(plan)
         assert [[s.step_id for s in w] for w in waves] == [["s1"], ["s2"], ["s3"]]
 
@@ -113,11 +112,13 @@ class TestBuildWaves:
         assert {s.step_id for s in waves[0]} == {"a", "b"}
 
     def test_multi_dep_wave(self):
-        plan = _plan([_step("a", "crawl"), _step("b", "filter"),
-                      _step("c", "classify", ["a", "b"])])
+        plan = _plan(
+            [_step("a", "crawl"), _step("b", "filter"), _step("c", "classify", ["a", "b"])]
+        )
         waves = build_waves(plan)
         assert [sorted(s.step_id for s in w) for w in waves] == [
-            ["a", "b"], ["c"],
+            ["a", "b"],
+            ["c"],
         ]
 
     def test_cycle_raises(self):
@@ -134,7 +135,7 @@ class TestBuildWaves:
 class TestExecution:
     def test_completed_run(self):
         registry = WorkerRegistry()
-        registry.register(_FakeAdapter("crawl", behavior=lambda s, c, l: _ok_result(c)))
+        registry.register(_FakeAdapter("crawl", behavior=lambda s, c, lease: _ok_result(c)))
         plan = _plan([_step("s1", "crawl")])
         outcome = asyncio.run(_run(plan, registry, user_id="u-1"))
         assert outcome.status == "completed"
@@ -188,12 +189,14 @@ class TestExecution:
 class TestFailureAndRetry:
     def test_required_failure_blocks_dependents(self):
         registry = WorkerRegistry()
-        registry.register(_FakeAdapter("crawl", behavior=lambda s, c, l: _fail_result(c)))
-        registry.register(_FakeAdapter("filter", behavior=lambda s, c, l: _ok_result(c)))
-        plan = _plan([
-            _step("s1", "crawl", max_attempts=1),
-            _step("s2", "filter", ["s1"]),
-        ])
+        registry.register(_FakeAdapter("crawl", behavior=lambda s, c, lease: _fail_result(c)))
+        registry.register(_FakeAdapter("filter", behavior=lambda s, c, lease: _ok_result(c)))
+        plan = _plan(
+            [
+                _step("s1", "crawl", max_attempts=1),
+                _step("s2", "filter", ["s1"]),
+            ]
+        )
         outcome = asyncio.run(_run(plan, registry, user_id="u-1"))
         assert outcome.status == "failed"
         assert outcome.steps[0].status == "failed"
@@ -202,12 +205,14 @@ class TestFailureAndRetry:
 
     def test_optional_failure_continues(self):
         registry = WorkerRegistry()
-        registry.register(_FakeAdapter("enrich", behavior=lambda s, c, l: _fail_result(c)))
-        registry.register(_FakeAdapter("filter", behavior=lambda s, c, l: _ok_result(c)))
-        plan = _plan([
-            _step("s1", "enrich", policy="optional", max_attempts=1),
-            _step("s2", "filter", ["s1"]),
-        ])
+        registry.register(_FakeAdapter("enrich", behavior=lambda s, c, lease: _fail_result(c)))
+        registry.register(_FakeAdapter("filter", behavior=lambda s, c, lease: _ok_result(c)))
+        plan = _plan(
+            [
+                _step("s1", "enrich", policy="optional", max_attempts=1),
+                _step("s2", "filter", ["s1"]),
+            ]
+        )
         outcome = asyncio.run(_run(plan, registry, user_id="u-1"))
         assert outcome.status == "completed"
         assert outcome.steps[0].status == "skipped"  # optional 失败→跳过
@@ -244,7 +249,7 @@ class TestFailureAndRetry:
 
     def test_non_retryable_failure(self):
         registry = WorkerRegistry()
-        registry.register(_FakeAdapter("crawl", behavior=lambda s, c, l: _fail_result(c)))
+        registry.register(_FakeAdapter("crawl", behavior=lambda s, c, lease: _fail_result(c)))
         plan = _plan([_step("s1", "crawl", max_attempts=3)])
         outcome = asyncio.run(_run(plan, registry, user_id="u-1"))
         assert outcome.steps[0].status == "failed"
@@ -283,8 +288,9 @@ class TestControl:
         registry.register(_FakeAdapter("crawl", behavior=behavior))
         registry.register(_FakeAdapter("filter", behavior=behavior))
         registry.register(_FakeAdapter("classify", behavior=behavior))
-        plan = _plan([_step("s1", "crawl"), _step("s2", "filter", ["s1"]),
-                      _step("s3", "classify", ["s2"])])
+        plan = _plan(
+            [_step("s1", "crawl"), _step("s2", "filter", ["s1"]), _step("s3", "classify", ["s2"])]
+        )
 
         async def scenario():
             cancel_event = asyncio.Event()
@@ -356,7 +362,7 @@ class TestControl:
 
     def test_unregistered_worker_fails(self):
         registry = WorkerRegistry()
-        registry.register(_FakeAdapter("crawl", behavior=lambda s, c, l: _ok_result(c)))
+        registry.register(_FakeAdapter("crawl", behavior=lambda s, c, lease: _ok_result(c)))
         plan = _plan([_step("s1", "score")])  # score 未注册
         outcome = asyncio.run(_run(plan, registry, user_id="u-1"))
         assert outcome.status == "failed"

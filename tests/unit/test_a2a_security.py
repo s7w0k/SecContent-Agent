@@ -12,11 +12,9 @@
 from __future__ import annotations
 
 import pytest
-
 from agent.a2a.client import A2AClient, SSRFBlockedError, validate_peer_url
 from agent.a2a.mapper import validate_external_input, validate_external_task
 from agent.a2a.models import Artifact, InvalidInputError, Message, Part, Task
-
 
 # ═══════════════════════════════════════════════════════════════
 # SSRF：URL 静态校验
@@ -65,31 +63,33 @@ class TestSSRFUrlValidation:
         ],
     )
     def test_allowed_urls(self, url):
-        resolver = lambda host: ["93.184.216.34"]
+        def resolver(host: str) -> list[str]:
+            return ["93.184.216.34"]
+
         assert validate_peer_url(url, require_https=False, resolver=resolver) == url
 
     def test_dns_rebinding_to_private_blocked(self):
-        resolver = lambda host: ["127.0.0.1"]
+        def resolver(host: str) -> list[str]:
+            return ["127.0.0.1"]
+
         with pytest.raises(SSRFBlockedError):
-            validate_peer_url(
-                "http://safe.example.com/x", require_https=False, resolver=resolver
-            )
+            validate_peer_url("http://safe.example.com/x", require_https=False, resolver=resolver)
 
     def test_dns_to_public_allowed(self):
-        resolver = lambda host: ["93.184.216.34"]
+        def resolver(host: str) -> list[str]:
+            return ["93.184.216.34"]
+
         assert (
-            validate_peer_url(
-                "http://safe.example.com/x", require_https=False, resolver=resolver
-            )
+            validate_peer_url("http://safe.example.com/x", require_https=False, resolver=resolver)
             == "http://safe.example.com/x"
         )
 
     def test_dns_mixed_public_and_private_blocked(self):
-        resolver = lambda host: ["93.184.216.34", "10.1.1.1"]
+        def resolver(host: str) -> list[str]:
+            return ["93.184.216.34", "10.1.1.1"]
+
         with pytest.raises(SSRFBlockedError):
-            validate_peer_url(
-                "http://safe.example.com/x", require_https=False, resolver=resolver
-            )
+            validate_peer_url("http://safe.example.com/x", require_https=False, resolver=resolver)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -100,7 +100,9 @@ class TestSSRFUrlValidation:
 class TestPromptInjection:
     def _msg(self, text):
         return Message(
-            message_id="m1", task_id="t1", role="user",
+            message_id="m1",
+            task_id="t1",
+            role="user",
             parts=[Part(kind="text", text=text)],
         )
 
@@ -125,7 +127,8 @@ class TestPromptInjection:
 
     def test_file_part_with_data_uri_rejected(self):
         msg = Message(
-            message_id="m1", role="user",
+            message_id="m1",
+            role="user",
             parts=[Part(kind="file", name="x.txt", uri="data:text/html;base64,PGh0bWw+")],
         )
         with pytest.raises(InvalidInputError):
@@ -133,7 +136,8 @@ class TestPromptInjection:
 
     def test_file_part_requires_http_uri(self):
         msg = Message(
-            message_id="m1", role="user",
+            message_id="m1",
+            role="user",
             parts=[Part(kind="file", name="x.txt", uri="file:///etc/passwd")],
         )
         with pytest.raises(InvalidInputError):
@@ -179,7 +183,9 @@ class TestOversizedInput:
             status="COMPLETED",
             history=[
                 Message(
-                    message_id="h1", task_id="t1", role="agent",
+                    message_id="h1",
+                    task_id="t1",
+                    role="agent",
                     parts=[Part(kind="text", text="结果如下 api_key=sk-abc")],
                 )
             ],
@@ -208,7 +214,9 @@ class TestClientSecurityDefaults:
         from agent.a2a.client import RemoteAgentConfig
 
         cfg = RemoteAgentConfig(
-            key="p", base_url="http://peer.test", require_https=False,
+            key="p",
+            base_url="http://peer.test",
+            require_https=False,
             auth_mode="bearer",
         )
         client = A2AClient(allowlist={})
@@ -219,6 +227,4 @@ class TestClientSecurityDefaults:
 
     def test_credentials_never_in_url_allowed(self):
         with pytest.raises(SSRFBlockedError):
-            validate_peer_url(
-                "http://user:password@peer.test/x", require_https=False
-            )
+            validate_peer_url("http://user:password@peer.test/x", require_https=False)

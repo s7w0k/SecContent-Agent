@@ -59,7 +59,7 @@ class NewsArticle:
 
     @property
     def url_hash(self) -> str:
-        return hashlib.md5(self.url.encode()).hexdigest()
+        return hashlib.md5(self.url.encode(), usedforsecurity=False).hexdigest()
 
     def to_dict(self) -> dict:
         return {

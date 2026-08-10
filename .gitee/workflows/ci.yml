@@ -37,7 +37,14 @@ jobs:
         run: pip install ruff
 
       - name: ruff check
-        run: ruff check services/ tests/
+        run: ruff check services/ tests/ --output-format=json -o ruff-report.json
+
+      - name: Upload ruff report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ruff-report
+          path: ruff-report.json
 
   lint-frontend:
     name: Lint Frontend (biome)
@@ -54,7 +61,16 @@ jobs:
         run: cd frontend && npm ci
 
       - name: biome lint
-        run: cd frontend && npx biome check src/ --max-diagnostics=50
+        run: |
+          cd frontend
+          npx biome check src/ --max-diagnostics=50 --reporter=json > biome-report.json
+
+      - name: Upload biome report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: biome-report
+          path: frontend/biome-report.json
 
   lint-docker:
     name: Lint Docker (hadolint)
@@ -119,6 +135,7 @@ jobs:
             --cov=services \
             --cov-report=term-missing \
             --cov-report=xml \
+            --junitxml=test-report.xml \
             -v \
             --tb=short \
             --timeout=60
@@ -143,6 +160,13 @@ jobs:
           name: coverage-report
           path: coverage.xml
 
+      - name: Upload JUnit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-report-junit
+          path: test-report.xml
+
   test-frontend:
     name: Test Frontend (vitest)
     needs: [lint-frontend]
@@ -159,7 +183,16 @@ jobs:
         run: cd frontend && npm ci
 
       - name: Run vitest
-        run: cd frontend && npx vitest run --reporter=verbose
+        run: |
+          cd frontend
+          npx vitest run --reporter=verbose --reporter=junit --outputFile=test-report.xml
+
+      - name: Upload JUnit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-test-report-junit
+          path: frontend/test-report.xml
 
   # ── 阶段三：Build（依赖 test 通过）────────────────────────
   build:
@@ -211,7 +244,14 @@ jobs:
           "
 
       - name: pip-audit dependency scan
-        run: pip-audit --fix 2>&1 || echo "Dependency vulnerabilities found (non-blocking in phase 1)"
+        run: pip-audit --format json -o pip-audit-report.json
+
+      - name: Upload pip-audit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json
 
       - name: Upload bandit report
         uses: actions/upload-artifact@v4

@@ -14,12 +14,9 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from datetime import UTC, datetime
 from types import SimpleNamespace
-
-import pytest
 
 from agent.a2a.models import AGENT_CARD_PATH, PROTOCOL_VERSION, Skill
 from agent.a2a.server import A2AServer
@@ -27,7 +24,6 @@ from agent.a2a.task_store import A2ATaskStore
 from agent.autonomous_service import AutonomousRunService
 from agent.policy_engine import ApprovalService, PolicyEngine
 from agent.runtime_events import RuntimeEventStore
-from agent.runtime_state import RuntimeStatus
 from agent.runtime_store import RuntimeStateStore
 
 FIXED_NOW = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
@@ -176,8 +172,10 @@ def _make_server(db=None, *, slow=False) -> A2AServer:
         task_store=A2ATaskStore(db),
         skills=[
             Skill(
-                id="pr_intel", name="PR 情报分析",
-                description="只读情报分析", tags=["read-only"],
+                id="pr_intel",
+                name="PR 情报分析",
+                description="只读情报分析",
+                tags=["read-only"],
             ),
         ],
         card_url=f"http://test{AGENT_CARD_PATH}",
@@ -186,10 +184,9 @@ def _make_server(db=None, *, slow=False) -> A2AServer:
 
 class TestA2AAPI:
     def _app(self, server, *, user="u1"):
+        from api.a2a import router as a2a_router
         from auth.deps import get_current_user
         from fastapi import FastAPI
-
-        from api.a2a import router as a2a_router
 
         app = FastAPI()
         app.state.a2a_server = server
@@ -256,7 +253,8 @@ class TestA2AAPI:
         app = self._app(_make_server())
         async with await self._client(app) as client:
             resp = await client.post(
-                "/a2a/message/send", json=self._msg("分析近 7 天 PR 情报"),
+                "/a2a/message/send",
+                json=self._msg("分析近 7 天 PR 情报"),
                 headers=self._headers(),
             )
             assert resp.status_code == 200, resp.text
@@ -280,8 +278,12 @@ class TestA2AAPI:
         app = self._app(_make_server())
         async with await self._client(app) as client:
             body = self._msg("分析情报")
-            first = (await client.post("/a2a/message/send", json=body, headers=self._headers())).json()
-            second = (await client.post("/a2a/message/send", json=body, headers=self._headers())).json()
+            first = (
+                await client.post("/a2a/message/send", json=body, headers=self._headers())
+            ).json()
+            second = (
+                await client.post("/a2a/message/send", json=body, headers=self._headers())
+            ).json()
             assert first["task"]["id"] == second["task"]["id"] == "t1"
             # 幂等：同一 task_id 复用同一内部 run
             assert first["task"]["internal_run_id"] == second["task"]["internal_run_id"]
@@ -319,7 +321,8 @@ class TestA2AAPI:
         app = self._app(_make_server())
         async with await self._client(app) as client:
             resp = await client.post(
-                "/a2a/message/send", json=self._msg("分析"),
+                "/a2a/message/send",
+                json=self._msg("分析"),
                 headers={"A2A-Version": "9.9"},
             )
             assert resp.status_code == 400
@@ -345,7 +348,9 @@ class TestA2AAPI:
     async def test_tasks_query_filter(self):
         app = self._app(_make_server())
         async with await self._client(app) as client:
-            await client.post("/a2a/message/send", json=self._msg("分析 A"), headers=self._headers())
+            await client.post(
+                "/a2a/message/send", json=self._msg("分析 A"), headers=self._headers()
+            )
             resp = await client.post(
                 "/a2a/tasks/query", json={"status": "SUBMITTED"}, headers=self._headers()
             )
@@ -382,7 +387,7 @@ class TestA2AAPI:
             assert resp.status_code == 200, await resp.aread()
             async for line in resp.aiter_lines():
                 if line.startswith("event: "):
-                    event_names.append(line[len("event: "):])
+                    event_names.append(line[len("event: ") :])
                 chunks.append(line)
         return "\n".join(chunks), event_names
 
@@ -407,24 +412,37 @@ class TestA2AAPI:
             full, _ = await self._read_sse(
                 client, "POST", "/a2a/tasks/t1/resubscribe", headers=self._headers()
             )
-            seqs = [int(l.split(":", 1)[1].strip()) for l in full.splitlines() if l.startswith("id: ")]
+            seqs = [
+                int(line.split(":", 1)[1].strip())
+                for line in full.splitlines()
+                if line.startswith("id: ")
+            ]
             assert seqs == sorted(seqs)
             assert seqs
             last = seqs[-1]
             # 从 last 续传：只应收到 last 之后的事件
             tail, _ = await self._read_sse(
-                client, "POST", "/a2a/tasks/t1/resubscribe",
+                client,
+                "POST",
+                "/a2a/tasks/t1/resubscribe",
                 headers=self._headers(**{"Last-Event-ID": str(last)}),
             )
-            tail_seqs = [int(l.split(":", 1)[1].strip()) for l in tail.splitlines() if l.startswith("id: ")]
+            tail_seqs = [
+                int(line.split(":", 1)[1].strip())
+                for line in tail.splitlines()
+                if line.startswith("id: ")
+            ]
             assert all(s > last for s in tail_seqs)
 
     async def test_message_stream_sse(self):
         app = self._app(_make_server())
         async with await self._client(app) as client:
             text, names = await self._read_sse(
-                client, "POST", "/a2a/message/stream",
-                json=self._msg("流式分析"), headers=self._headers(),
+                client,
+                "POST",
+                "/a2a/message/stream",
+                json=self._msg("流式分析"),
+                headers=self._headers(),
             )
             assert "task_status_update" in names
             assert "done" in names
@@ -434,9 +452,7 @@ class TestA2AAPI:
     async def test_resubscribe_unknown_task_404(self):
         app = self._app(_make_server())
         async with await self._client(app) as client:
-            resp = await client.post(
-                "/a2a/tasks/nope/resubscribe", headers=self._headers()
-            )
+            resp = await client.post("/a2a/tasks/nope/resubscribe", headers=self._headers())
             assert resp.status_code == 404
 
     # ── 服务未启用 ──────────────────────────────────────────

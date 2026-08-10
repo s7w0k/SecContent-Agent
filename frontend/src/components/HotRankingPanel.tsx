@@ -1,5 +1,17 @@
 import { FireOutlined, SyncOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Empty, List, Radio, Select, Space, Spin, Tag, Typography } from 'antd';
+import {
+  Alert,
+  Button,
+  Card,
+  Empty,
+  List,
+  Radio,
+  Select,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+} from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../api/client';
 import type { HotArticle, HotRankingQuery } from '../types';

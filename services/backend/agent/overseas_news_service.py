@@ -101,7 +101,7 @@ class OverseasNewsIngestionService:
                 invalid += 1
                 continue
 
-            url_hash = hashlib.md5(url.encode()).hexdigest()
+            url_hash = hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()
             returned_hashes.append(url_hash)
 
             now = datetime.now(UTC)

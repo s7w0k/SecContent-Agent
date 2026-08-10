@@ -3,19 +3,17 @@
 from __future__ import annotations
 
 import pytest
-
 from agent.plan_contracts import (
     ALLOWED_INPUT_KEYS,
     DEFAULT_MAX_RATIONALE_CHARS,
     FORBIDDEN_WORKERS,
+    PipelinePlan,
     PlanStep,
     PlanValidationResult,
     PlanValidator,
-    PipelinePlan,
     build_default_plan,
     input_snapshot_hash,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 # Helpers
@@ -357,7 +355,7 @@ class TestValidatorForbiddenWorkers:
         assert result.rejected and "forbidden" in result.reason
 
     def test_forbidden_worker_names_constant(self):
-        assert FORBIDDEN_WORKERS == {"publish", "delete", "external_send", "notify"}
+        assert {"publish", "delete", "external_send", "notify"} == FORBIDDEN_WORKERS
 
 
 class TestValidatorBudgets:

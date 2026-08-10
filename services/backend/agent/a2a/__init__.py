@@ -15,6 +15,7 @@ from agent.a2a.models import (
     AGENT_CARD_PATH,
     PROTOCOL_VERSION,
     SDK_VERSION,
+    TERMINAL_TASK_STATUSES,
     VERSION_HEADER,
     A2AError,
     AgentCard,
@@ -29,7 +30,6 @@ from agent.a2a.models import (
     TaskSendResult,
     TaskStatus,
     TaskStatusUpdateEvent,
-    TERMINAL_TASK_STATUSES,
 )
 from agent.a2a.server import A2AServer
 from agent.a2a.task_store import A2ATaskConflictError, A2ATaskStore
@@ -38,9 +38,10 @@ __all__ = [
     "AGENT_CARD_PATH",
     "PROTOCOL_VERSION",
     "SDK_VERSION",
+    "TERMINAL_TASK_STATUSES",
     "VERSION_HEADER",
-    "A2AError",
     "A2AClient",
+    "A2AError",
     "A2AServer",
     "A2ATaskConflictError",
     "A2ATaskStore",
@@ -57,6 +58,4 @@ __all__ = [
     "TaskSendResult",
     "TaskStatus",
     "TaskStatusUpdateEvent",
-    "TERMINAL_TASK_STATUSES",
 ]
-

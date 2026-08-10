@@ -23,14 +23,16 @@ import asyncio
 import logging
 import random
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 logger = logging.getLogger("backend.agent.retry")
 
 # ═══════════════════════════════════════════════════════════════
 # 异常分类（基于 Step 1 探针结论）
 # ═══════════════════════════════════════════════════════════════
+
 
 # 延迟导入 openai 异常，避免在未安装 openai 时崩溃
 def _get_retryable_exceptions() -> tuple[type[Exception], ...]:
@@ -42,6 +44,7 @@ def _get_retryable_exceptions() -> tuple[type[Exception], ...]:
             InternalServerError,
             RateLimitError,
         )
+
         return (APITimeoutError, APIConnectionError, RateLimitError, InternalServerError)
     except ImportError:
         return (asyncio.TimeoutError, ConnectionError)
@@ -56,6 +59,7 @@ def _get_non_retryable_exceptions() -> tuple[type[Exception], ...]:
             NotFoundError,
             PermissionDeniedError,
         )
+
         return (AuthenticationError, BadRequestError, NotFoundError, PermissionDeniedError)
     except ImportError:
         return ()
@@ -77,6 +81,7 @@ def is_retryable(exc: Exception) -> bool:
     # httpx 超时和连接错误也可重试
     try:
         import httpx
+
         if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError)):
             return True
     except ImportError:
@@ -86,9 +91,7 @@ def is_retryable(exc: Exception) -> bool:
 
 def is_non_retryable(exc: Exception) -> bool:
     """判断异常是否明确不可重试。"""
-    if isinstance(exc, NON_RETRYABLE_EXCEPTIONS):
-        return True
-    return False
+    return isinstance(exc, NON_RETRYABLE_EXCEPTIONS)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -123,13 +126,17 @@ class RetryState:
 
     attempts: list[dict[str, Any]] = field(default_factory=list)
 
-    def record_attempt(self, *, attempt: int, error_type: str, delay: float, decided_by: str) -> None:
-        self.attempts.append({
-            "attempt": attempt,
-            "error_type": error_type,
-            "delay": round(delay, 3),
-            "decided_by": decided_by,
-        })
+    def record_attempt(
+        self, *, attempt: int, error_type: str, delay: float, decided_by: str
+    ) -> None:
+        self.attempts.append(
+            {
+                "attempt": attempt,
+                "error_type": error_type,
+                "delay": round(delay, 3),
+                "decided_by": decided_by,
+            }
+        )
 
     @property
     def total_attempts(self) -> int:
@@ -185,7 +192,7 @@ async def with_retry(
                 )
                 if last_exc:
                     raise last_exc
-                raise asyncio.TimeoutError("retry deadline exceeded")
+                raise TimeoutError("retry deadline exceeded")
 
         try:
             return await coro_factory()
@@ -233,10 +240,7 @@ async def with_retry(
 
             # 计算退避延迟（full jitter）
             base = min(policy.base_delay * (policy.multiplier ** (attempt - 1)), policy.max_delay)
-            if policy.jitter > 0:
-                delay = random.uniform(0, base * policy.jitter)
-            else:
-                delay = base
+            delay = random.uniform(0, base * policy.jitter) if policy.jitter > 0 else base
 
             # 如果剩余时间不够等延迟，直接重试不等待
             if policy.deadline_at is not None:

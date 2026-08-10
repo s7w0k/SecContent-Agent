@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent.model_router import (
     ModelCapability,
     ModelRouter,
@@ -45,20 +44,18 @@ def _models() -> list[ModelCapability]:
 
 
 def _router(**kw) -> ModelRouter:
-    base = dict(
-        models=_models(),
-        default_model="deepseek-chat",
-        fallback_chain=("cheap-lite", "deepseek-reasoner"),
-    )
+    base = {
+        "models": _models(),
+        "default_model": "deepseek-chat",
+        "fallback_chain": ("cheap-lite", "deepseek-reasoner"),
+    }
     base.update(kw)
     return ModelRouter(**base)
 
 
 class TestRouting:
     def test_routes_to_default_when_all_filters_pass(self):
-        decision = _router().route(
-            RouteRequest(task_type=TaskType.PLAN, context_chars=5000)
-        )
+        decision = _router().route(RouteRequest(task_type=TaskType.PLAN, context_chars=5000))
         assert decision.model == "deepseek-chat"
         assert not decision.degraded
         assert decision.reason_code == "primary"
@@ -75,9 +72,7 @@ class TestRouting:
 
     def test_context_too_large_falls_back(self):
         # 上下文 20000 字符：deepseek-chat(12000)/cheap-lite(8000) 均不满足
-        decision = _router().route(
-            RouteRequest(task_type=TaskType.VALIDATE, context_chars=20000)
-        )
+        decision = _router().route(RouteRequest(task_type=TaskType.VALIDATE, context_chars=20000))
         assert decision.model == "deepseek-reasoner"
         assert decision.degraded
         assert decision.reason_code == "fallback_chain"
@@ -109,9 +104,7 @@ class TestRouting:
 
     def test_fallback_chain_order_respected(self):
         # 上下文 10000：cheap-lite(8000) 排除；默认 deepseek-chat 满足 → primary
-        decision = _router().route(
-            RouteRequest(task_type=TaskType.PLAN, context_chars=10000)
-        )
+        decision = _router().route(RouteRequest(task_type=TaskType.PLAN, context_chars=10000))
         assert decision.model == "deepseek-chat"
         assert not decision.degraded
 

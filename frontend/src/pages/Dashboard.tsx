@@ -160,7 +160,7 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
     if (refreshKey !== undefined && refreshKey > 0) {
       loadArticles();
     }
-  }, [refreshKey]);
+  }, [refreshKey, loadArticles]);
 
   // ── 自动刷新（15 秒轮询，后台全文抓取完成后 UI 自动更新）──
   useEffect(() => {
@@ -381,7 +381,9 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
                 {viewRunId ? (
                   <MultiAgentRunTree runId={viewRunId} />
                 ) : (
-                  <Tag style={{ padding: 8 }}>输入 run_id 后展示计划摘要、步骤状态、耗时、重试与脱敏错误</Tag>
+                  <Tag style={{ padding: 8 }}>
+                    输入 run_id 后展示计划摘要、步骤状态、耗时、重试与脱敏错误
+                  </Tag>
                 )}
               </Space>
             ),

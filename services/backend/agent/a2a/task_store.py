@@ -17,7 +17,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from agent.a2a.models import A2AError, Task, TaskStatus, TERMINAL_TASK_STATUSES
+from agent.a2a.models import TERMINAL_TASK_STATUSES, A2AError, Task, TaskStatus
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
 logger = logging.getLogger("backend.agent.a2a_task_store")
@@ -120,16 +120,22 @@ class A2ATaskStore:
             raise A2ATaskConflictError("task belongs to another user")
         if current is not None:
             current_status = TaskStatus(current["status"])
-            if current_status in TERMINAL_TASK_STATUSES and task.status not in TERMINAL_TASK_STATUSES:
+            if (
+                current_status in TERMINAL_TASK_STATUSES
+                and task.status not in TERMINAL_TASK_STATUSES
+            ):
                 return False  # 终态不可逆
-            if expected_version is not None and current.get("checkpoint_version", 0) != expected_version:
+            if (
+                expected_version is not None
+                and current.get("checkpoint_version", 0) != expected_version
+            ):
                 return False
             next_version = current.get("checkpoint_version", 0) + 1
         else:
             next_version = expected_version + 1 if expected_version is not None else 1
 
         doc = self._task_to_doc(task, user_id=user_id, version=next_version, stamp=stamp)
-        result = await self.col.replace_one({"id": task.id}, doc, upsert=current is None)
+        await self.col.replace_one({"id": task.id}, doc, upsert=current is None)
         return True
 
     # ── 读取（多租户：user_id 过滤） ────────────────────────
@@ -197,7 +203,10 @@ class A2ATaskStore:
             return False
         if current_status == new_status:
             return False  # 幂等：状态未变不重复写
-        if expected_version is not None and current.get("checkpoint_version", 0) != expected_version:
+        if (
+            expected_version is not None
+            and current.get("checkpoint_version", 0) != expected_version
+        ):
             return False
 
         stamp = now or _utc_now()
@@ -248,9 +257,5 @@ class A2ATaskStore:
 
     @staticmethod
     def _doc_to_task(doc: dict) -> Task:
-        data = {
-            k: v
-            for k, v in doc.items()
-            if k not in {"_id", "user_id", "checkpoint_version"}
-        }
+        data = {k: v for k, v in doc.items() if k not in {"_id", "user_id", "checkpoint_version"}}
         return Task(**data)

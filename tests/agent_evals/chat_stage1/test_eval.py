@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from tests.agent_evals.chat_stage1.deterministic_checks import (
     check_answer_content,
     check_convergence,

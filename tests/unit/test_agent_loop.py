@@ -5,8 +5,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-
 from agent.agent_contracts import (
     EventType,
     LoopBudget,
@@ -15,16 +13,17 @@ from agent.agent_contracts import (
 )
 from agent.agent_loop import AgentLoop
 from agent.llm_wrapper import LLMWrapper
+from langchain_core.messages import AIMessage
 
 
 def _make_ctx(**kw) -> RunContext:
-    d = dict(trace_id="t1", run_id="r1", user_id="u1")
+    d = {"trace_id": "t1", "run_id": "r1", "user_id": "u1"}
     d.update(kw)
     return RunContext(**d)
 
 
 def _make_budget(**kw) -> LoopBudget:
-    d = dict(max_rounds=5, deadline_seconds=30, tool_timeout_seconds=5, max_tool_calls=8)
+    d = {"max_rounds": 5, "deadline_seconds": 30, "tool_timeout_seconds": 5, "max_tool_calls": 8}
     d.update(kw)
     return LoopBudget(**d)
 
@@ -46,7 +45,9 @@ class TestDirectAnswer:
         response = AIMessage(content="这是回答。", tool_calls=[])
         wrapper, _ = _make_wrapper(response)
         loop = AgentLoop(
-            llm_wrapper=wrapper, tools=[], budget=_make_budget(),
+            llm_wrapper=wrapper,
+            tools=[],
+            budget=_make_budget(),
             run_context=_make_ctx(),
         )
 
@@ -63,7 +64,9 @@ class TestDirectAnswer:
         response = AIMessage(content="ok", tool_calls=[])
         wrapper, _ = _make_wrapper(response)
         loop = AgentLoop(
-            llm_wrapper=wrapper, tools=[], budget=_make_budget(),
+            llm_wrapper=wrapper,
+            tools=[],
+            budget=_make_budget(),
             run_context=_make_ctx(),
         )
 
@@ -81,7 +84,14 @@ class TestSingleToolCall:
         # 第一次调用：请求工具
         tool_response = AIMessage(
             content="",
-            tool_calls=[{"name": "search_knowledge", "id": "call_1", "args": {"product_id": "p1"}, "type": "tool_call"}],
+            tool_calls=[
+                {
+                    "name": "search_knowledge",
+                    "id": "call_1",
+                    "args": {"product_id": "p1"},
+                    "type": "tool_call",
+                }
+            ],
         )
         # 第二次调用：最终回答
         answer_response = AIMessage(content="基于知识库回答。", tool_calls=[])
@@ -95,7 +105,9 @@ class TestSingleToolCall:
         mock_tool.ainvoke = AsyncMock(return_value="产品知识内容")
 
         loop = AgentLoop(
-            llm_wrapper=wrapper, tools=[mock_tool], budget=_make_budget(),
+            llm_wrapper=wrapper,
+            tools=[mock_tool],
+            budget=_make_budget(),
             run_context=_make_ctx(allowed_product_ids=frozenset({"p1"})),
         )
 
@@ -115,20 +127,25 @@ class TestMaxRounds:
         # 每次都请求工具，直到 max_rounds
         tool_response = AIMessage(
             content="",
-            tool_calls=[{"name": "search_knowledge", "id": "call_1", "args": {}, "type": "tool_call"}],
+            tool_calls=[
+                {"name": "search_knowledge", "id": "call_1", "args": {}, "type": "tool_call"}
+            ],
         )
         final_response = AIMessage(content="降级回答。", tool_calls=[])
 
         wrapper, llm = _make_wrapper(tool_response)
         # 3 次工具调用 + 1 次 finalization
-        llm.ainvoke = AsyncMock(side_effect=[tool_response, tool_response, tool_response, final_response])
+        llm.ainvoke = AsyncMock(
+            side_effect=[tool_response, tool_response, tool_response, final_response]
+        )
 
         mock_tool = MagicMock()
         mock_tool.name = "search_knowledge"
         mock_tool.ainvoke = AsyncMock(return_value="结果")
 
         loop = AgentLoop(
-            llm_wrapper=wrapper, tools=[mock_tool],
+            llm_wrapper=wrapper,
+            tools=[mock_tool],
             budget=_make_budget(max_rounds=3),
             run_context=_make_ctx(),
         )
@@ -147,19 +164,30 @@ class TestRepeatedAction:
         # 同一工具同一参数调用 3 次（max_repeated=2）
         tool_response = AIMessage(
             content="",
-            tool_calls=[{"name": "search_knowledge", "id": f"call_{i}", "args": {"product_id": "p1"}, "type": "tool_call"} for i in range(1)],
+            tool_calls=[
+                {
+                    "name": "search_knowledge",
+                    "id": f"call_{i}",
+                    "args": {"product_id": "p1"},
+                    "type": "tool_call",
+                }
+                for i in range(1)
+            ],
         )
         answer_response = AIMessage(content="回答。", tool_calls=[])
 
         wrapper, llm = _make_wrapper(tool_response)
-        llm.ainvoke = AsyncMock(side_effect=[tool_response, tool_response, tool_response, answer_response])
+        llm.ainvoke = AsyncMock(
+            side_effect=[tool_response, tool_response, tool_response, answer_response]
+        )
 
         mock_tool = MagicMock()
         mock_tool.name = "search_knowledge"
         mock_tool.ainvoke = AsyncMock(return_value="结果")
 
         loop = AgentLoop(
-            llm_wrapper=wrapper, tools=[mock_tool],
+            llm_wrapper=wrapper,
+            tools=[mock_tool],
             budget=_make_budget(max_rounds=10),
             run_context=_make_ctx(allowed_product_ids=frozenset({"p1"})),
             max_repeated_actions=2,
@@ -179,7 +207,9 @@ class TestToolNotFound:
     async def test_unknown_tool_blocked(self):
         tool_response = AIMessage(
             content="",
-            tool_calls=[{"name": "nonexistent_tool", "id": "call_1", "args": {}, "type": "tool_call"}],
+            tool_calls=[
+                {"name": "nonexistent_tool", "id": "call_1", "args": {}, "type": "tool_call"}
+            ],
         )
         answer_response = AIMessage(content="回答。", tool_calls=[])
 
@@ -187,7 +217,8 @@ class TestToolNotFound:
         llm.ainvoke = AsyncMock(side_effect=[tool_response, answer_response])
 
         loop = AgentLoop(
-            llm_wrapper=wrapper, tools=[],
+            llm_wrapper=wrapper,
+            tools=[],
             budget=_make_budget(),
             run_context=_make_ctx(),
         )
@@ -208,7 +239,9 @@ class TestToolTimeout:
 
         tool_response = AIMessage(
             content="",
-            tool_calls=[{"name": "search_knowledge", "id": "call_1", "args": {}, "type": "tool_call"}],
+            tool_calls=[
+                {"name": "search_knowledge", "id": "call_1", "args": {}, "type": "tool_call"}
+            ],
         )
         answer_response = AIMessage(content="回答。", tool_calls=[])
 
@@ -225,7 +258,8 @@ class TestToolTimeout:
         mock_tool.ainvoke = slow_tool
 
         loop = AgentLoop(
-            llm_wrapper=wrapper, tools=[mock_tool],
+            llm_wrapper=wrapper,
+            tools=[mock_tool],
             budget=_make_budget(tool_timeout_seconds=1),
             run_context=_make_ctx(allowed_product_ids=frozenset({"p1"})),
         )
@@ -243,7 +277,9 @@ class TestBudgetExceeded:
     async def test_token_budget_exceeded(self):
         tool_response = AIMessage(
             content="",
-            tool_calls=[{"name": "search_knowledge", "id": "call_1", "args": {}, "type": "tool_call"}],
+            tool_calls=[
+                {"name": "search_knowledge", "id": "call_1", "args": {}, "type": "tool_call"}
+            ],
         )
         final_response = AIMessage(content="降级回答。", tool_calls=[])
 
@@ -255,7 +291,8 @@ class TestBudgetExceeded:
         mock_tool.ainvoke = AsyncMock(return_value="结果")
 
         loop = AgentLoop(
-            llm_wrapper=wrapper, tools=[mock_tool],
+            llm_wrapper=wrapper,
+            tools=[mock_tool],
             budget=_make_budget(max_input_tokens=1),  # 极小预算
             run_context=_make_ctx(allowed_product_ids=frozenset({"p1"})),
         )
@@ -287,7 +324,8 @@ class TestMessagePairing:
         mock_tool.ainvoke = AsyncMock(return_value="结果")
 
         loop = AgentLoop(
-            llm_wrapper=wrapper, tools=[mock_tool],
+            llm_wrapper=wrapper,
+            tools=[mock_tool],
             budget=_make_budget(),
             run_context=_make_ctx(allowed_product_ids=frozenset({"p1"})),
         )

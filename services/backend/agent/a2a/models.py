@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -51,7 +51,7 @@ class MethodNotImplementedError(A2AError):
 # ═══════════════════════════════════════════════════════════════
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     """A2A Task 生命周期状态。"""
 
     SUBMITTED = "SUBMITTED"

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import api from '../api/client';
+import type { FilterValues } from '../types';
 import Dashboard from './Dashboard';
 
 // Mock all child components and API
@@ -47,24 +48,15 @@ vi.mock('../components/TodayStatsRow', () => ({
     <div>TodayStatsRow Mock {stats?.today_count ?? 'loading'}</div>
   ),
 }));
-vi.mock('../components/CategoryBreakdown', () => ({
-  default: ({
-    distribution,
-    onCategoryClick,
-  }: {
-    distribution: Record<string, number>;
-    onCategoryClick?: (category: string) => void;
-  }) => (
-    <button type="button" onClick={() => onCategoryClick?.('MCP协议漏洞')}>
-      CategoryBreakdown Mock {distribution.MCP协议漏洞 ?? 'loading'}
-    </button>
-  ),
-}));
 vi.mock('../components/HotRankingPanel', () => ({
   default: () => <div>HotRankingPanel Mock</div>,
 }));
 vi.mock('../components/FilterBar', () => ({
-  default: () => <div>FilterBar Mock</div>,
+  default: ({ onChange }: { onChange?: (values: FilterValues) => void }) => (
+    <button type="button" onClick={() => onChange?.({ category: 'MCP协议漏洞' })}>
+      FilterBar Mock
+    </button>
+  ),
 }));
 vi.mock('../components/ArticleTable', () => ({
   default: () => <div>ArticleTable Mock</div>,
@@ -105,7 +97,6 @@ describe('Dashboard', () => {
     render(<Dashboard />);
     expect(screen.getByText('StatsCards Mock')).toBeDefined();
     expect(await screen.findByText('TodayStatsRow Mock 3')).toBeDefined();
-    expect(screen.getByText('CategoryBreakdown Mock 5')).toBeDefined();
     expect(screen.getByText('HotRankingPanel Mock')).toBeDefined();
     expect(screen.getByText('FilterBar Mock')).toBeDefined();
     expect(screen.getByText('ArticleTable Mock')).toBeDefined();
@@ -113,26 +104,17 @@ describe('Dashboard', () => {
     expect(screen.queryByText('API 抓取配置')).not.toBeInTheDocument();
   });
 
-  it('uses a responsive 16/8 desktop layout and full-width small-screen columns', async () => {
+  it('uses a full-width article table column', async () => {
     render(<Dashboard />);
     expect(await screen.findByText('TodayStatsRow Mock 3')).toBeDefined();
 
-    expect(screen.getByTestId('article-table-column')).toHaveClass(
-      'ant-col-xs-24',
-      'ant-col-sm-24',
-      'ant-col-lg-16',
-    );
-    expect(screen.getByTestId('hot-ranking-column')).toHaveClass(
-      'ant-col-xs-24',
-      'ant-col-sm-24',
-      'ant-col-lg-8',
-    );
+    expect(screen.getByTestId('article-table-column')).toHaveClass('ant-col-24');
   });
 
-  it('filters the article table when a category is clicked', async () => {
+  it('filters the article table when a category is selected', async () => {
     render(<Dashboard />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'CategoryBreakdown Mock 5' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'FilterBar Mock' }));
 
     await waitFor(() =>
       expect(api.getArticles).toHaveBeenCalledWith(

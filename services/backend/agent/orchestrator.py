@@ -15,10 +15,10 @@ import asyncio
 import logging
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from agent.plan_contracts import PipelinePlan, PlanStep
-from agent.worker_registry import WorkerAdapter, WorkerLease, WorkerRegistry, WorkerResult
+from agent.worker_registry import WorkerLease, WorkerRegistry, WorkerResult
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("backend.agent.orchestrator")
@@ -178,20 +178,32 @@ class Orchestrator:
                     )
                     results[step.step_id] = outcome
                     await self._record_outcome(plan, step, outcome)
-                    await self._emit("step_skipped", plan=plan, step=step, outcome=outcome, reason="dependency failed")
+                    await self._emit(
+                        "step_skipped",
+                        plan=plan,
+                        step=step,
+                        outcome=outcome,
+                        reason="dependency failed",
+                    )
                     continue
                 jobs.append(step)
                 await self._emit("step_scheduled", plan=plan, step=step, status="scheduled")
             if not jobs:
                 continue
             logger.info(
-                "[orchestrator] wave %d/%d: %s", wave_index + 1, len(waves), [s.step_id for s in jobs]
+                "[orchestrator] wave %d/%d: %s",
+                wave_index + 1,
+                len(waves),
+                [s.step_id for s in jobs],
             )
             raw = await asyncio.gather(
-                *(self._run_with_retry(plan, step, state, base_ctx, cancel_event, deadline_at) for step in jobs),
+                *(
+                    self._run_with_retry(plan, step, state, base_ctx, cancel_event, deadline_at)
+                    for step in jobs
+                ),
                 return_exceptions=True,
             )
-            for step, outcome in zip(jobs, raw):
+            for step, outcome in zip(jobs, raw, strict=False):
                 if isinstance(outcome, BaseException):
                     outcome = StepOutcome(
                         step_id=step.step_id,
@@ -203,14 +215,22 @@ class Orchestrator:
                     )
                 # optional/best_effort 失败按 policy 跳过（不阻断依赖）
                 if outcome.status in ("failed", "dead_lettered") and step.policy != "required":
-                    outcome = outcome.model_copy(update={"status": "skipped", "reason": "optional failure ignored"})
+                    outcome = outcome.model_copy(
+                        update={"status": "skipped", "reason": "optional failure ignored"}
+                    )
                 results[step.step_id] = outcome
                 await self._record_outcome(plan, step, outcome)
                 # 终态事件统一发射（canceled 无对应事件类型，不发）
                 if outcome.status in ("succeeded", "failed", "dead_lettered"):
                     await self._emit(outcome.status, plan=plan, step=step, outcome=outcome)
                 elif outcome.status == "skipped":
-                    await self._emit("step_skipped", plan=plan, step=step, outcome=outcome, reason="optional failure ignored")
+                    await self._emit(
+                        "step_skipped",
+                        plan=plan,
+                        step=step,
+                        outcome=outcome,
+                        reason="optional failure ignored",
+                    )
 
         if canceled or self._is_canceled(cancel_event, deadline_at):
             canceled = True
@@ -256,8 +276,11 @@ class Orchestrator:
         adapter = self.registry.get(step.worker)
         if adapter is None:
             return StepOutcome(
-                step_id=step.step_id, worker=step.worker, status="failed",
-                error_type="unregistered_worker", reason=f"worker not registered: {step.worker}",
+                step_id=step.step_id,
+                worker=step.worker,
+                status="failed",
+                error_type="unregistered_worker",
+                reason=f"worker not registered: {step.worker}",
             )
         spec = adapter.spec
         max_attempts = spec.max_attempts or self.default_max_attempts
@@ -267,13 +290,24 @@ class Orchestrator:
 
         while attempt < max_attempts:
             if cancel_event is not None and cancel_event.is_set():
-                return StepOutcome(step_id=step.step_id, worker=step.worker, status="canceled", attempt=attempt + 1)
+                return StepOutcome(
+                    step_id=step.step_id, worker=step.worker, status="canceled", attempt=attempt + 1
+                )
             if deadline_at is not None and time.monotonic() > deadline_at:
-                return StepOutcome(step_id=step.step_id, worker=step.worker, status="canceled", attempt=attempt + 1)
+                return StepOutcome(
+                    step_id=step.step_id, worker=step.worker, status="canceled", attempt=attempt + 1
+                )
 
             attempt += 1
             if attempt > 1:
-                await self._emit("retrying", plan=plan, step=step, status="retrying", attempt=attempt - 1, version=spec.version)
+                await self._emit(
+                    "retrying",
+                    plan=plan,
+                    step=step,
+                    status="retrying",
+                    attempt=attempt - 1,
+                    version=spec.version,
+                )
             claim = None
             if self.ledger is not None:
                 try:
@@ -285,7 +319,9 @@ class Orchestrator:
                     )
                 except Exception as exc:
                     # 其他恢复者已接管/步骤进入终态：不执行，避免重复业务写入
-                    logger.warning("[orchestrator] ledger claim rejected for %s: %s", step.step_id, exc)
+                    logger.warning(
+                        "[orchestrator] ledger claim rejected for %s: %s", step.step_id, exc
+                    )
                     return StepOutcome(
                         step_id=step.step_id,
                         worker=step.worker,
@@ -314,17 +350,26 @@ class Orchestrator:
                 attempt=attempt,
                 input_refs=step.input_refs,
             )
-            await self._emit("worker_started", plan=plan, step=step, status="running", attempt=attempt, version=spec.version)
+            await self._emit(
+                "worker_started",
+                plan=plan,
+                step=step,
+                status="running",
+                attempt=attempt,
+                version=spec.version,
+            )
             try:
-                async with self._global_sem:
-                    async with await self._user_sem(base_ctx.get("user_id", "")):
-                        async with await self._provider_sem(spec.concurrency_group):
-                            async with await self._worker_sem(step.worker):
-                                last_result = await asyncio.wait_for(
-                                    adapter.execute(state, step_ctx, lease),
-                                    timeout=spec.timeout_s,
-                                )
-            except (asyncio.TimeoutError, asyncio.CancelledError):
+                async with (
+                    self._global_sem,
+                    await self._user_sem(base_ctx.get("user_id", "")),
+                    await self._provider_sem(spec.concurrency_group),
+                    await self._worker_sem(step.worker),
+                ):
+                    last_result = await asyncio.wait_for(
+                        adapter.execute(state, step_ctx, lease),
+                        timeout=spec.timeout_s,
+                    )
+            except (TimeoutError, asyncio.CancelledError):
                 # wait_for 超时取消内层任务时，个别版本会以 CancelledError 冒泡，
                 # 语义等同超时，统一按可重试超时处理。
                 last_result = WorkerResult(
@@ -340,7 +385,9 @@ class Orchestrator:
                     attempt=attempt,
                 )
             except Exception as exc:
-                logger.warning("[orchestrator] step %s attempt %d crashed: %s", step.step_id, attempt, exc)
+                logger.warning(
+                    "[orchestrator] step %s attempt %d crashed: %s", step.step_id, attempt, exc
+                )
                 last_result = WorkerResult(
                     step_id=step.step_id,
                     worker=step.worker,
@@ -394,7 +441,9 @@ class Orchestrator:
                         result_hash=last_result.result_hash,
                     )
                 except Exception as exc:
-                    logger.warning("[orchestrator] ledger fail rejected for %s: %s", step.step_id, exc)
+                    logger.warning(
+                        "[orchestrator] ledger fail rejected for %s: %s", step.step_id, exc
+                    )
             if not last_result.retryable:
                 break
 
@@ -414,7 +463,9 @@ class Orchestrator:
                     ),
                 )
             except Exception as exc:
-                logger.warning("[orchestrator] ledger dead-letter failed for %s: %s", step.step_id, exc)
+                logger.warning(
+                    "[orchestrator] ledger dead-letter failed for %s: %s", step.step_id, exc
+                )
         return StepOutcome(
             step_id=step.step_id,
             worker=step.worker,
@@ -495,7 +546,9 @@ class Orchestrator:
             )
         except Exception:
             logger.warning(
-                "[orchestrator] emit %s failed (run=%s step=%s)", event_type, plan.run_id,
+                "[orchestrator] emit %s failed (run=%s step=%s)",
+                event_type,
+                plan.run_id,
                 step.step_id if step is not None else "",
             )
 
@@ -519,11 +572,9 @@ class Orchestrator:
 
     @staticmethod
     def _is_canceled(cancel_event: asyncio.Event | None, deadline_at: float | None) -> bool:
-        if cancel_event is not None and cancel_event.is_set():
-            return True
-        if deadline_at is not None and time.monotonic() > deadline_at:
-            return True
-        return False
+        return (cancel_event is not None and cancel_event.is_set()) or (
+            deadline_at is not None and time.monotonic() > deadline_at
+        )
 
     @staticmethod
     def _final_status(canceled: bool, results: dict[str, StepOutcome]) -> str:

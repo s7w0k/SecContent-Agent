@@ -12,26 +12,24 @@ import asyncio
 import json
 from datetime import UTC, datetime
 
-import pytest
-
 from agent.agent_runtime import AgentRuntime, PlannedAction
 from agent.goal_validator import GoalValidator
 from agent.model_router import ModelCapability, ModelRouter, SensitivityLevel
-from agent.runtime_state import BudgetUsage, RuntimeState, RuntimeStatus, RunBudget
+from agent.runtime_state import BudgetUsage, RunBudget, RuntimeState, RuntimeStatus
 
 FIXED_NOW = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
 
 
 def _state(**overrides) -> RuntimeState:
-    base = dict(
-        run_id="run-1",
-        user_id="u1",
-        goal="完成一个测试目标",
-        acceptance_criteria=["完成一个动作"],
-        budget=RunBudget(max_steps=10, max_consecutive_failures=2),
+    base = {
+        "run_id": "run-1",
+        "user_id": "u1",
+        "goal": "完成一个测试目标",
+        "acceptance_criteria": ["完成一个动作"],
+        "budget": RunBudget(max_steps=10, max_consecutive_failures=2),
         # started_at 对齐 FIXED_NOW，避免真实时间偏差导致运行时预算误判
-        usage=BudgetUsage(started_at=FIXED_NOW, last_action_at=FIXED_NOW),
-    )
+        "usage": BudgetUsage(started_at=FIXED_NOW, last_action_at=FIXED_NOW),
+    }
     base.update(overrides)
     return RuntimeState(**base)
 
@@ -62,13 +60,15 @@ async def _ok_no_evidence(state, action, meta):
 
 
 def _runtime(*, planner, executor, **kw) -> AgentRuntime:
-    base = dict(
-        planner=planner,
-        executor=executor,
-        goal_validator=GoalValidator(required_artifact_keys=(), high_risk_requires_confirm=False),
-        sleep=_no_sleep,
-        backoff_jitter=0.0,
-    )
+    base = {
+        "planner": planner,
+        "executor": executor,
+        "goal_validator": GoalValidator(
+            required_artifact_keys=(), high_risk_requires_confirm=False
+        ),
+        "sleep": _no_sleep,
+        "backoff_jitter": 0.0,
+    }
     base.update(kw)
     return AgentRuntime(**base)
 
@@ -218,8 +218,16 @@ class TestResilience:
 
         planner = _make_planner(
             [
-                PlannedAction(step_id="s1", tool_name="crawl_overseas_news", args={"days": 1, "idempotency_key": "ik-1"}),
-                PlannedAction(step_id="s2", tool_name="crawl_overseas_news", args={"days": 1, "idempotency_key": "ik-1"}),
+                PlannedAction(
+                    step_id="s1",
+                    tool_name="crawl_overseas_news",
+                    args={"days": 1, "idempotency_key": "ik-1"},
+                ),
+                PlannedAction(
+                    step_id="s2",
+                    tool_name="crawl_overseas_news",
+                    args={"days": 1, "idempotency_key": "ik-1"},
+                ),
             ]
         )
         runtime = _runtime(planner=planner, executor=_counting_executor)
@@ -235,7 +243,12 @@ class TestResilience:
         async def _flaky_executor(state, action, meta):
             calls["n"] += 1
             if calls["n"] == 1:
-                return {"ok": False, "error": "transient", "error_code": "timeout", "retryable": True}
+                return {
+                    "ok": False,
+                    "error": "transient",
+                    "error_code": "timeout",
+                    "retryable": True,
+                }
             return {"ok": True, "evidence": [{"acceptance_index": 0}], "duration_ms": 1}
 
         planner = _make_planner([PlannedAction(step_id="s1", tool_name="retrieve_articles")])
@@ -250,7 +263,12 @@ class TestResilience:
 
         async def _fail_hard(state, action, meta):
             calls["n"] += 1
-            return {"ok": False, "error": "permanent", "error_code": "bad_input", "retryable": False}
+            return {
+                "ok": False,
+                "error": "permanent",
+                "error_code": "bad_input",
+                "retryable": False,
+            }
 
         planner = _make_planner([PlannedAction(step_id="s1", tool_name="retrieve_articles")])
         runtime = _runtime(planner=planner, executor=_fail_hard, max_retries=3)
@@ -272,11 +290,15 @@ class TestResilience:
         planner = _make_planner(
             [
                 PlannedAction(
-                    step_id="s1", tool_name="crawl_overseas_news", args={"days": 1, "idempotency_key": "ik-1"}
+                    step_id="s1",
+                    tool_name="crawl_overseas_news",
+                    args={"days": 1, "idempotency_key": "ik-1"},
                 )
             ]
         )
-        runtime = _runtime(planner=planner, executor=_ok_no_evidence, checkpointer=_ckpt, ledger=_ledger)
+        runtime = _runtime(
+            planner=planner, executor=_ok_no_evidence, checkpointer=_ckpt, ledger=_ledger
+        )
         await runtime.run(_state(), now=FIXED_NOW)
         assert checkpoints  # 每轮至少写一次检查点
         assert ledgers == ["s1"]  # 有副作用的步骤写入账本
@@ -285,7 +307,11 @@ class TestResilience:
 class TestSecurity:
     async def test_sensitive_args_not_persisted(self):
         planner = _make_planner(
-            [PlannedAction(step_id="s1", tool_name="retrieve_articles", args={"api_key": "sk-secret-123"})]
+            [
+                PlannedAction(
+                    step_id="s1", tool_name="retrieve_articles", args={"api_key": "sk-secret-123"}
+                )
+            ]
         )
         runtime = _runtime(planner=planner, executor=_ok_no_evidence)
         res = await runtime.run(_state(), now=FIXED_NOW)
@@ -305,8 +331,14 @@ class TestSecurity:
     async def test_model_route_recorded_without_sensitive_content(self):
         router = ModelRouter(
             [
-                ModelCapability(name="deepseek-chat", max_sensitivity=SensitivityLevel.L1, max_context_chars=12000),
-                ModelCapability(name="cheap-lite", max_sensitivity=SensitivityLevel.L0, max_context_chars=8000),
+                ModelCapability(
+                    name="deepseek-chat",
+                    max_sensitivity=SensitivityLevel.L1,
+                    max_context_chars=12000,
+                ),
+                ModelCapability(
+                    name="cheap-lite", max_sensitivity=SensitivityLevel.L0, max_context_chars=8000
+                ),
             ],
             default_model="deepseek-chat",
             fallback_chain=("cheap-lite",),

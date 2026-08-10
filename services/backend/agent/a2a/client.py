@@ -30,27 +30,26 @@ import json
 import logging
 import socket
 import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import AsyncIterator, Awaitable, Callable, Literal
+from typing import Literal
 from urllib.parse import urljoin, urlparse
 
 import httpx
-
 from agent.a2a.mapper import validate_external_input, validate_external_task
 from agent.a2a.models import (
+    PROTOCOL_VERSION,
+    VERSION_HEADER,
     A2AError,
     AgentCard,
     InvalidInputError,
     Message,
-    Part,
-    PROTOCOL_VERSION,
     Skill,
     Task,
     TaskSendResult,
     TaskStatus,
     TaskStatusUpdateEvent,
-    VERSION_HEADER,
 )
 from agent.policy_engine import PolicyEngine
 from agent.runtime_state import BudgetUsage, RunBudget
@@ -120,7 +119,7 @@ class PolicyDeniedError(A2AError):
     """本地 PolicyEngine 拒绝（能力门禁 / 策略门禁）。"""
 
 
-class _RetryableRequest(A2AError):
+class _RetryableRequestError(A2AError):
     """内部标记：可重试的传输错误或限流/5xx。"""
 
     def __init__(self, reason: str, *, status: int = 0):
@@ -139,11 +138,8 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
         return True
     if ip.is_multicast or ip.is_reserved or ip.is_unspecified:
         return True
-    # AWS/Azure/GCP 云元数据地址
-    if isinstance(ip, ipaddress.IPv4Address) and str(ip) == "169.254.169.254":
-        return True
-    # IPv6 链路本地 fe80::/10 已被 is_link_local 覆盖
-    return False
+    # AWS/Azure/GCP 云元数据地址；IPv6 链路本地 fe80::/10 已被 is_link_local 覆盖
+    return isinstance(ip, ipaddress.IPv4Address) and str(ip) == "169.254.169.254"
 
 
 def _default_resolver(hostname: str) -> list[str]:
@@ -284,8 +280,16 @@ class A2ACallRecord:
     """本地 Step Ledger 条目（脱敏）：一次远端 Agent 调用的审计记录。"""
 
     __slots__ = (
-        "peer", "task_id", "message_id", "skill_id", "idempotency_key",
-        "status", "started_at", "finished_at", "artifact_count", "error",
+        "artifact_count",
+        "error",
+        "finished_at",
+        "idempotency_key",
+        "message_id",
+        "peer",
+        "skill_id",
+        "started_at",
+        "status",
+        "task_id",
     )
 
     def __init__(
@@ -520,8 +524,12 @@ class A2AClient:
             resolver=self.resolver,
         )
         resp = await self._request(
-            cfg, "GET", url,
-            cap=MAX_AGENT_CARD_BYTES, attach_auth=False, allow_redirects=True,
+            cfg,
+            "GET",
+            url,
+            cap=MAX_AGENT_CARD_BYTES,
+            attach_auth=False,
+            allow_redirects=True,
         )
         if resp.status_code == 404:
             await resp.aclose()
@@ -536,13 +544,12 @@ class A2AClient:
         except Exception as exc:
             raise ProtocolClientError("invalid agent card payload") from exc
         if card.protocol_version != PROTOCOL_VERSION:
-            raise ProtocolClientError(
-                f"unsupported protocol version: {card.protocol_version}"
-            )
+            raise ProtocolClientError(f"unsupported protocol version: {card.protocol_version}")
         self._cards[agent_key] = _CachedCard(card=card, fetched_at=now)
         logger.info(
             "A2A card discovered: peer=%s skills=%s",
-            agent_key, ",".join(s.id for s in card.skills),
+            agent_key,
+            ",".join(s.id for s in card.skills),
         )
         return card
 
@@ -567,14 +574,10 @@ class A2AClient:
             return "stream"
         return "task"
 
-    def _select_skill(
-        self, cfg: RemoteAgentConfig, card: AgentCard, skill_id: str
-    ) -> Skill:
+    def _select_skill(self, cfg: RemoteAgentConfig, card: AgentCard, skill_id: str) -> Skill:
         """能力门禁：skill 必须在允许列表启用集合 + Agent Card 真实声明内。"""
         if cfg.enabled_skills and skill_id not in cfg.enabled_skills:
-            raise CapabilityError(
-                f"skill not enabled for peer {cfg.key}: {skill_id}"
-            )
+            raise CapabilityError(f"skill not enabled for peer {cfg.key}: {skill_id}")
         skill = next((s for s in card.skills if s.id == skill_id), None)
         if skill is None:
             raise CapabilityError(f"agent card does not offer skill: {skill_id}")
@@ -603,15 +606,15 @@ class A2AClient:
 
         return _time.monotonic()
 
-    async def _gate(self, cfg: RemoteAgentConfig, skill_id: str, idempotency_key: str, principal: str) -> None:
+    async def _gate(
+        self, cfg: RemoteAgentConfig, skill_id: str, idempotency_key: str, principal: str
+    ) -> None:
         """PolicyEngine + 预算 + 熔断 + 限流 + 并发 全部门禁。"""
         usage = self._usage(cfg)
         budget = cfg.budget
         stamp = self._now_provider()
         if budget is not None and not usage.can_start_next_action(budget, now=stamp):
-            raise BudgetExceededError(
-                f"peer budget exhausted: {cfg.key} (steps={usage.steps})"
-            )
+            raise BudgetExceededError(f"peer budget exhausted: {cfg.key} (steps={usage.steps})")
         if budget is not None and budget.remote_agent_quota > 0:
             used = usage.remote_agent_calls.get(cfg.key, 0)
             if used >= budget.remote_agent_quota:
@@ -666,18 +669,23 @@ class A2AClient:
         for attempt in range(cfg.retry_max + 1):
             try:
                 return await self._request_once(
-                    cfg, method, url,
-                    json_body=json_body, headers=headers, cap=cap,
-                    attach_auth=attach_auth, allow_redirects=allow_redirects,
+                    cfg,
+                    method,
+                    url,
+                    json_body=json_body,
+                    headers=headers,
+                    cap=cap,
+                    attach_auth=attach_auth,
+                    allow_redirects=allow_redirects,
                 )
-            except _RetryableRequest as exc:
+            except _RetryableRequestError as exc:
                 last = exc
                 if attempt >= cfg.retry_max:
                     break
                 self._usage(cfg).record_retry(now=self._now_provider())
-                delay = 0.2 * (2 ** attempt) * (1 + (hash(url) % 5) / 10)
+                delay = 0.2 * (2**attempt) * (1 + (hash(url) % 5) / 10)
                 await self._sleep(delay)
-        if isinstance(last, _RetryableRequest) and last.status == 429:
+        if isinstance(last, _RetryableRequestError) and last.status == 429:
             raise RateLimitedError(
                 f"rate limited after {cfg.retry_max + 1} attempts: {cfg.key}"
             ) from last
@@ -702,11 +710,9 @@ class A2AClient:
             await self._attach_auth(cfg, headers, url)
 
         current = url
-        for hop in range(MAX_REDIRECTS + 1):
+        for _ in range(MAX_REDIRECTS + 1):
             # 每一跳都重新执行完整 SSRF 校验（含 DNS 解析）
-            validate_peer_url(
-                current, require_https=cfg.require_https, resolver=self.resolver
-            )
+            validate_peer_url(current, require_https=cfg.require_https, resolver=self.resolver)
             hop_headers = dict(headers)
             # 跨域重定向：一律剥掉 Authorization，不转发内部凭证
             if _origin(current) != _origin(url):
@@ -722,11 +728,11 @@ class A2AClient:
                     timeout=httpx.Timeout(cfg.timeout_seconds),
                 )
             except httpx.TimeoutException as exc:
-                raise _RetryableRequest(f"timeout: {cfg.key}", status=408) from exc
+                raise _RetryableRequestError(f"timeout: {cfg.key}", status=408) from exc
             except httpx.ConnectError as exc:
-                raise _RetryableRequest(f"connect error: {cfg.key}", status=0) from exc
+                raise _RetryableRequestError(f"connect error: {cfg.key}", status=0) from exc
             except (httpx.ReadError, httpx.RemoteProtocolError) as exc:
-                raise _RetryableRequest(f"stream interrupted: {cfg.key}", status=0) from exc
+                raise _RetryableRequestError(f"stream interrupted: {cfg.key}", status=0) from exc
             except httpx.RequestError as exc:
                 raise RemoteUnavailableError(f"request error: {exc}") from exc
 
@@ -739,7 +745,7 @@ class A2AClient:
                 continue
             if resp.status_code in _RETRYABLE_STATUS:
                 await resp.aclose()
-                raise _RetryableRequest(f"status {resp.status_code}", status=resp.status_code)
+                raise _RetryableRequestError(f"status {resp.status_code}", status=resp.status_code)
             return resp
         raise RemoteUnavailableError(f"too many redirects: {cfg.key}")
 
@@ -750,16 +756,12 @@ class A2AClient:
             async for chunk in resp.aiter_bytes():
                 data.extend(chunk)
                 if len(data) > cap:
-                    raise ProtocolClientError(
-                        f"response too large: > {cap} bytes"
-                    )
+                    raise ProtocolClientError(f"response too large: > {cap} bytes")
         finally:
             await resp.aclose()
         return bytes(data)
 
-    async def _attach_auth(
-        self, cfg: RemoteAgentConfig, headers: dict[str, str], url: str
-    ) -> None:
+    async def _attach_auth(self, cfg: RemoteAgentConfig, headers: dict[str, str], url: str) -> None:
         """Bearer/OIDC 注入：只绑定允许列表初始源；mTLS 由 http_client 证书承载。"""
         if cfg.auth_mode == "bearer" and self.token_provider is not None:
             token = await self.token_provider.token(
@@ -785,16 +787,17 @@ class A2AClient:
         cfg = self._ensure_peer(agent_key)
         validate_external_input(message)  # 出站内容同样净化（防注入远端）
 
-        skill_id = str(message.metadata.get("skill_id", "") or (cfg.enabled_skills[0] if cfg.enabled_skills else ""))
+        skill_id = str(
+            message.metadata.get("skill_id", "")
+            or (cfg.enabled_skills[0] if cfg.enabled_skills else "")
+        )
         if not skill_id:
             raise CapabilityError(f"no skill selected for peer {agent_key}")
 
         card = await self.discover(agent_key)
         self._select_skill(cfg, card, skill_id)  # 能力门禁：允许列表 ∩ 卡片声明
 
-        idempotency_key = str(
-            message.metadata.get("idempotency_key", "") or message.message_id
-        )
+        idempotency_key = str(message.metadata.get("idempotency_key", "") or message.message_id)
         # 幂等去重：已成功记账的同 (peer, idempotency_key) 调用直接复用，不重复副作用
         existing = await self.ledger.find(peer=agent_key, idempotency_key=idempotency_key)
         if existing is not None:
@@ -812,13 +815,27 @@ class A2AClient:
                 task = await self._dispatch(cfg, card, message, skill_id, selected)
         except A2AError as exc:
             # 仅远端侧失败计入熔断与预算连续失败；本地门禁拒绝不污染远端指标
-            if isinstance(exc, (RemoteUnavailableError, RateLimitedError, AuthError,
-                                ProtocolClientError, PeerNotFoundError, CapabilityError)):
+            if isinstance(
+                exc,
+                (
+                    RemoteUnavailableError,
+                    RateLimitedError,
+                    AuthError,
+                    ProtocolClientError,
+                    PeerNotFoundError,
+                    CapabilityError,
+                ),
+            ):
                 self._breaker(cfg).on_failure()
                 self._usage(cfg).record_failure(now=self._now_provider())
                 await self._record_call(
-                    cfg, message, skill_id, idempotency_key, "FAILED",
-                    started=started, error=str(exc),
+                    cfg,
+                    message,
+                    skill_id,
+                    idempotency_key,
+                    "FAILED",
+                    started=started,
+                    error=str(exc),
                 )
             raise
         self._breaker(cfg).on_success()
@@ -827,8 +844,13 @@ class A2AClient:
         usage.record_remote_agent_call(cfg.key, now=self._now_provider())
         usage.record_success(now=self._now_provider())
         await self._record_call(
-            cfg, message, skill_id, idempotency_key, task.status.value,
-            started=started, task=task,
+            cfg,
+            message,
+            skill_id,
+            idempotency_key,
+            task.status.value,
+            started=started,
+            task=task,
         )
         return task
 
@@ -845,9 +867,12 @@ class A2AClient:
         if mode == "stream":
             url = validate_peer_url(
                 base + "/a2a/message/stream",
-                require_https=cfg.require_https, resolver=self.resolver,
+                require_https=cfg.require_https,
+                resolver=self.resolver,
             )
-            resp = await self._request(cfg, "POST", url, json_body=message.model_dump(mode="json"), headers=headers)
+            resp = await self._request(
+                cfg, "POST", url, json_body=message.model_dump(mode="json"), headers=headers
+            )
             if resp.status_code != 200:
                 await resp.aclose()
                 raise self._http_error(cfg, resp)
@@ -859,7 +884,7 @@ class A2AClient:
                     if not line.startswith("data: "):
                         continue
                     try:
-                        payload = json.loads(line[len("data: "):])
+                        payload = json.loads(line[len("data: ") :])
                     except Exception:
                         continue
                     if payload.get("status") == "completed":  # done 帧
@@ -882,15 +907,19 @@ class A2AClient:
                 )
             now = self._now_provider()
             return Task(
-                id=task_id[: _MAX_TASK_ID_CHARS],
+                id=task_id[:_MAX_TASK_ID_CHARS],
                 status=last_status or TaskStatus.WORKING,
-                created_timestamp=now, last_updated_timestamp=now,
+                created_timestamp=now,
+                last_updated_timestamp=now,
             )
         url = validate_peer_url(
             base + "/a2a/message/send",
-            require_https=cfg.require_https, resolver=self.resolver,
+            require_https=cfg.require_https,
+            resolver=self.resolver,
         )
-        resp = await self._request(cfg, "POST", url, json_body=message.model_dump(mode="json"), headers=headers)
+        resp = await self._request(
+            cfg, "POST", url, json_body=message.model_dump(mode="json"), headers=headers
+        )
         if resp.status_code != 200:
             await resp.aclose()
             raise self._http_error(cfg, resp)
@@ -975,7 +1004,8 @@ class A2AClient:
         cfg = self._ensure_peer(agent_key)
         url = validate_peer_url(
             f"{cfg.base_url}/a2a/tasks/{task_id}",
-            require_https=cfg.require_https, resolver=self.resolver,
+            require_https=cfg.require_https,
+            resolver=self.resolver,
         )
         resp = await self._request(cfg, "GET", url, headers={VERSION_HEADER: PROTOCOL_VERSION})
         if resp.status_code == 404:
@@ -996,10 +1026,13 @@ class A2AClient:
         cfg = self._ensure_peer(agent_key)
         url = validate_peer_url(
             f"{cfg.base_url}/a2a/tasks/query",
-            require_https=cfg.require_https, resolver=self.resolver,
+            require_https=cfg.require_https,
+            resolver=self.resolver,
         )
         resp = await self._request(
-            cfg, "POST", url,
+            cfg,
+            "POST",
+            url,
             json_body={"status": status, "history_length": 0},
             headers={VERSION_HEADER: PROTOCOL_VERSION},
         )
@@ -1018,7 +1051,8 @@ class A2AClient:
         cfg = self._ensure_peer(agent_key)
         url = validate_peer_url(
             f"{cfg.base_url}/a2a/tasks/{task_id}/cancel",
-            require_https=cfg.require_https, resolver=self.resolver,
+            require_https=cfg.require_https,
+            resolver=self.resolver,
         )
         resp = await self._request(cfg, "POST", url, headers={VERSION_HEADER: PROTOCOL_VERSION})
         if resp.status_code == 404:
@@ -1049,7 +1083,8 @@ class A2AClient:
         cfg = self._ensure_peer(agent_key)
         url = validate_peer_url(
             f"{cfg.base_url}/a2a/tasks/{task_id}/resubscribe",
-            require_https=cfg.require_https, resolver=self.resolver,
+            require_https=cfg.require_https,
+            resolver=self.resolver,
         )
         headers = {VERSION_HEADER: PROTOCOL_VERSION}
         if last_event_id:
@@ -1057,7 +1092,9 @@ class A2AClient:
         await self._attach_auth(cfg, headers, url)
         try:
             async with self._http.stream(
-                "POST", url, headers=headers,
+                "POST",
+                url,
+                headers=headers,
                 timeout=httpx.Timeout(cfg.timeout_seconds),
             ) as resp:
                 if resp.status_code != 200:
@@ -1065,17 +1102,19 @@ class A2AClient:
                 event: dict[str, str] = {}
                 async for line in resp.aiter_lines():
                     if line.startswith("id: "):
-                        event["event_id"] = line[len("id: "):].strip()
+                        event["event_id"] = line[len("id: ") :].strip()
                     elif line.startswith("event: "):
-                        event["event"] = line[len("event: "):].strip()
+                        event["event"] = line[len("event: ") :].strip()
                     elif line.startswith("data: "):
-                        event["data"] = line[len("data: "):].strip()
+                        event["data"] = line[len("data: ") :].strip()
                         if event.get("event") == "task_status_update" and event.get("data"):
                             try:
                                 payload = json.loads(event["data"])
                                 yield TaskStatusUpdateEvent.model_validate(payload)
                             except Exception:
-                                logger.warning("[a2a_client] invalid SSE payload from peer=%s", cfg.key)
+                                logger.warning(
+                                    "[a2a_client] invalid SSE payload from peer=%s", cfg.key
+                                )
                         event = {}
                     elif line == "":
                         event = {}

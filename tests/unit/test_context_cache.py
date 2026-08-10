@@ -25,9 +25,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "backend"))
 
-from agent.context_cache import ContextCache, ContextCacheKey  # noqa: E402
-from config import Settings  # noqa: E402
-
+from agent.context_cache import ContextCache, ContextCacheKey
+from config import Settings
 
 # ═══════════════════════════════════════════════════════════════
 # Helpers
@@ -35,17 +34,17 @@ from config import Settings  # noqa: E402
 
 
 def _key(**kw) -> ContextCacheKey:
-    base = dict(
-        user_id="u-1",
-        purpose="score",
-        product_ids=("prod-1",),
-        query_hash="h",
-        model_id="deepseek-chat",
-        token_budget=0,
-        skill_snapshot_hash="s1",
-        knowledge_snapshot="k1",
-        memory_version="none",
-    )
+    base = {
+        "user_id": "u-1",
+        "purpose": "score",
+        "product_ids": ("prod-1",),
+        "query_hash": "h",
+        "model_id": "deepseek-chat",
+        "token_budget": 0,
+        "skill_snapshot_hash": "s1",
+        "knowledge_snapshot": "k1",
+        "memory_version": "none",
+    }
     base.update(kw)
     return ContextCacheKey(**base)
 
@@ -240,9 +239,7 @@ async def test_single_flight_builds_once():
         await asyncio.sleep(0.02)
         return {"content": "built", "n": build_count}
 
-    results = await asyncio.gather(
-        *(cache.get_or_build(key, builder) for _ in range(5))
-    )
+    results = await asyncio.gather(*(cache.get_or_build(key, builder) for _ in range(5)))
     statuses = {status for _, status in results}
     assert statuses == {"hit", "built"}
     assert build_count == 1

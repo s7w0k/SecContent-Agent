@@ -105,7 +105,14 @@ export default function WebSearchPage({ onNavigate }: WebSearchPageProps) {
       const saved = sessionStorage.getItem('web_search_session');
       if (!saved || cancelled) return;
       try {
-        const { searchId: sid, keyword: kw, category: cat, language: lang, timeRange: tr, safesearch: ss } = JSON.parse(saved);
+        const {
+          searchId: sid,
+          keyword: kw,
+          category: cat,
+          language: lang,
+          timeRange: tr,
+          safesearch: ss,
+        } = JSON.parse(saved);
         if (!sid) return;
         const resp = await api.webSearchApi.getSession(sid);
         if (cancelled) return;
@@ -164,14 +171,17 @@ export default function WebSearchPage({ onNavigate }: WebSearchPageProps) {
         setWarnings(resp.warnings || []);
         setSelectedIds(new Set());
         // 持久化到 sessionStorage，切换 tab 后可恢复
-        sessionStorage.setItem('web_search_session', JSON.stringify({
-          searchId: resp.search_id,
-          keyword: q,
-          category,
-          language,
-          timeRange,
-          safesearch,
-        }));
+        sessionStorage.setItem(
+          'web_search_session',
+          JSON.stringify({
+            searchId: resp.search_id,
+            keyword: q,
+            category,
+            language,
+            timeRange,
+            safesearch,
+          }),
+        );
       } catch (err) {
         const maybeError = err as HttpLikeError;
         const status = maybeError.response?.status;
@@ -252,7 +262,11 @@ export default function WebSearchPage({ onNavigate }: WebSearchPageProps) {
         setError(null);
         try {
           const idempotencyKey = crypto.randomUUID();
-          const result = await api.webSearchApi.importResults(searchId, [...selectedIds], idempotencyKey);
+          const result = await api.webSearchApi.importResults(
+            searchId,
+            [...selectedIds],
+            idempotencyKey,
+          );
           setImportResult(result);
           message.success(`成功导入 ${result.summary.imported} 条结果`);
           // 标记已导入的结果
@@ -270,7 +284,9 @@ export default function WebSearchPage({ onNavigate }: WebSearchPageProps) {
   }, [searchId, selectedIds]);
 
   const availableCount = results.filter((r) => !r.is_imported).length;
-  const allAvailableSelected = availableCount > 0 && results.filter((r) => !r.is_imported).every((r) => selectedIds.has(r.result_id));
+  const allAvailableSelected =
+    availableCount > 0 &&
+    results.filter((r) => !r.is_imported).every((r) => selectedIds.has(r.result_id));
 
   // ── 状态加载中 ──
   if (statusLoading) {
@@ -331,7 +347,11 @@ export default function WebSearchPage({ onNavigate }: WebSearchPageProps) {
             placeholder="输入搜索关键词（2-200 字符）"
             maxLength={200}
             enterButton={
-              <Button type="primary" disabled={!keyword.trim() || loading || !searchStatus.available} loading={loading}>
+              <Button
+                type="primary"
+                disabled={!keyword.trim() || loading || !searchStatus.available}
+                loading={loading}
+              >
                 搜索
               </Button>
             }
@@ -399,18 +419,32 @@ export default function WebSearchPage({ onNavigate }: WebSearchPageProps) {
           <Space direction="vertical" style={{ width: '100%' }} size="middle">
             <Space size="large" wrap>
               <Statistic title="请求" value={importResult.summary.requested} />
-              <Statistic title="导入成功" value={importResult.summary.imported} valueStyle={{ color: '#3f8600' }} />
+              <Statistic
+                title="导入成功"
+                value={importResult.summary.imported}
+                valueStyle={{ color: '#3f8600' }}
+              />
               <Statistic title="重复" value={importResult.summary.duplicate} />
-              <Statistic title="失败" value={importResult.summary.failed} valueStyle={{ color: '#cf1322' }} />
+              <Statistic
+                title="失败"
+                value={importResult.summary.failed}
+                valueStyle={{ color: '#cf1322' }}
+              />
               {importResult.summary.enrichment_queued > 0 && (
                 <Statistic title="富化排队" value={importResult.summary.enrichment_queued} />
               )}
             </Space>
             <Space direction="vertical" style={{ width: '100%' }} size="small">
               {importResult.items.map((item) => {
-                const tagInfo = STATUS_TAG_MAP[item.status] || { color: 'default', label: item.status };
+                const tagInfo = STATUS_TAG_MAP[item.status] || {
+                  color: 'default',
+                  label: item.status,
+                };
                 return (
-                  <div key={item.result_id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div
+                    key={item.result_id}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                  >
                     <Tag color={tagInfo.color}>{tagInfo.label}</Tag>
                     <Text style={{ fontSize: 13 }}>{item.message}</Text>
                   </div>
@@ -473,9 +507,7 @@ export default function WebSearchPage({ onNavigate }: WebSearchPageProps) {
         <Empty description="未找到相关结果，请尝试更换关键词" />
       )}
 
-      {!searchId && !importResult && !error && (
-        <Empty description="请输入关键词开始搜索" />
-      )}
+      {!searchId && !importResult && !error && <Empty description="请输入关键词开始搜索" />}
     </div>
   );
 }

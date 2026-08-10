@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import pytest
-
 from agent.goal_validator import (
     CheckStatus,
     GoalValidator,
@@ -22,9 +20,9 @@ from agent.runtime_state import (
     DecisionSummary,
     EvidenceRecord,
     PendingApproval,
+    RunBudget,
     RuntimeState,
     RuntimeStatus,
-    RunBudget,
 )
 
 
@@ -33,13 +31,13 @@ def _fixed_now() -> datetime:
 
 
 def _state(**overrides) -> RuntimeState:
-    base = dict(
-        run_id="run-1",
-        user_id="u1",
-        goal="完成一篇 PR 报道",
-        acceptance_criteria=["产出一篇中文 PR 报道", "引用至少 2 条证据"],
-        budget=RunBudget(max_steps=5, max_consecutive_failures=2),
-    )
+    base = {
+        "run_id": "run-1",
+        "user_id": "u1",
+        "goal": "完成一篇 PR 报道",
+        "acceptance_criteria": ["产出一篇中文 PR 报道", "引用至少 2 条证据"],
+        "budget": RunBudget(max_steps=5, max_consecutive_failures=2),
+    }
     base.update(overrides)
     return RuntimeState(**base)
 
@@ -47,8 +45,10 @@ def _state(**overrides) -> RuntimeState:
 def _evidence(state: RuntimeState, index: int, eid: str = "ev-1") -> RuntimeState:
     return state.model_copy(
         update={
-            "evidence": state.evidence
-            + [EvidenceRecord(evidence_id=eid, acceptance_index=index, kind="tool_result")]
+            "evidence": [
+                *state.evidence,
+                EvidenceRecord(evidence_id=eid, acceptance_index=index, kind="tool_result"),
+            ]
         }
     )
 
@@ -65,9 +65,7 @@ class TestGoalValidator:
             return "" if "中文" in str(artifacts.get("report")) else "report missing 中文"
 
         validator = GoalValidator(rule_checks=(_must_contain_keyword,))
-        result = validator.validate(
-            _state(), artifacts={"report": "English only"}
-        )
+        result = validator.validate(_state(), artifacts={"report": "English only"})
         assert result.status == "incomplete"
         assert not result.rules_ok
 
@@ -131,7 +129,11 @@ class TestGoalValidator:
         assert result.status == "needs_human_confirm"
         # 有人工确认 token → complete
         state2 = state.model_copy(
-            update={"approval_state": state.approval_state.model_copy(update={"approved_tokens": ["final-ok"]})}
+            update={
+                "approval_state": state.approval_state.model_copy(
+                    update={"approved_tokens": ["final-ok"]}
+                )
+            }
         )
         result2 = validator.validate(state2, artifacts={"report": "r"})
         assert result2.status == "complete"
@@ -139,16 +141,28 @@ class TestGoalValidator:
 
 class TestLoopDetector:
     @staticmethod
-    def _push(state: RuntimeState, step_id: str, *, tool: str = "t", args_hash: str = "h",
-              outcome: str = "success", reason: str = "") -> RuntimeState:
+    def _push(
+        state: RuntimeState,
+        step_id: str,
+        *,
+        tool: str = "t",
+        args_hash: str = "h",
+        outcome: str = "success",
+        reason: str = "",
+    ) -> RuntimeState:
         return state.model_copy(
             update={
-                "decision_summaries": state.decision_summaries
-                + [
+                "decision_summaries": [
+                    *state.decision_summaries,
                     DecisionSummary(
-                        step_id=step_id, phase="execute", action="run", tool_name=tool,
-                        args_hash=args_hash, outcome=outcome, reason=reason,
-                    )
+                        step_id=step_id,
+                        phase="execute",
+                        action="run",
+                        tool_name=tool,
+                        args_hash=args_hash,
+                        outcome=outcome,
+                        reason=reason,
+                    ),
                 ]
             }
         )
@@ -177,12 +191,23 @@ class TestLoopDetector:
         state = _state()
         # 有证据避免 no_new_evidence 分支先命中；不同参数指纹避免 similar_recent 分支命中
         state = state.model_copy(
-            update={"evidence": state.evidence + [EvidenceRecord(evidence_id="ev-1", acceptance_index=0, kind="tool_result")]}
+            update={
+                "evidence": [
+                    *state.evidence,
+                    EvidenceRecord(evidence_id="ev-1", acceptance_index=0, kind="tool_result"),
+                ]
+            }
         )
         detector = LoopDetector(repeated_error_limit=3)
-        state = self._push(state, "s1", tool="fetch", args_hash="h1", outcome="failed", reason="timeout")
-        state = self._push(state, "s2", tool="fetch", args_hash="h2", outcome="failed", reason="timeout")
-        state = self._push(state, "s3", tool="fetch", args_hash="h3", outcome="failed", reason="timeout")
+        state = self._push(
+            state, "s1", tool="fetch", args_hash="h1", outcome="failed", reason="timeout"
+        )
+        state = self._push(
+            state, "s2", tool="fetch", args_hash="h2", outcome="failed", reason="timeout"
+        )
+        state = self._push(
+            state, "s3", tool="fetch", args_hash="h3", outcome="failed", reason="timeout"
+        )
         signal = detector.detect_loop(state)
         assert signal.detected
         assert signal.kind == "repeated_error"
@@ -202,7 +227,12 @@ class TestLoopDetector:
         state = _state()
         state = self._push(state, "s1", args_hash="a")
         state = state.model_copy(
-            update={"evidence": state.evidence + [EvidenceRecord(evidence_id="ev-1", acceptance_index=0, kind="tool_result")]}
+            update={
+                "evidence": [
+                    *state.evidence,
+                    EvidenceRecord(evidence_id="ev-1", acceptance_index=0, kind="tool_result"),
+                ]
+            }
         )
         state = self._push(state, "s2", args_hash="b")
         signal = LoopDetector().detect_loop(state)
@@ -248,7 +278,9 @@ class TestTermination:
 
     def test_loop_detected_stops(self):
         state = _state()
-        decision = decide_termination(state, loop_signal=LoopSignal(detected=True, kind="identical_plan"))
+        decision = decide_termination(
+            state, loop_signal=LoopSignal(detected=True, kind="identical_plan")
+        )
         assert decision.stop
         assert decision.reason_code == "loop_detected"
 
@@ -269,8 +301,6 @@ class TestTermination:
     def test_continues_when_ok(self):
         state = _state()
         # started_at 对齐固定 now，避免真实时间与 _fixed_now 偏差导致误判预算超限
-        state = state.model_copy(
-            update={"usage": BudgetUsage(started_at=_fixed_now())}
-        )
+        state = state.model_copy(update={"usage": BudgetUsage(started_at=_fixed_now())})
         decision = decide_termination(state, now=_fixed_now())
         assert not decision.stop

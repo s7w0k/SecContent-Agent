@@ -7,16 +7,14 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, timedelta
+from datetime import UTC
 
 import pytest
-
 from agent.events import COLLECTION, EventEmitter, PipelineEvent
 from agent.orchestrator import Orchestrator
 from agent.plan_contracts import PipelinePlan, PlanStep
 from agent.planner import Planner, PlannerArticleInput, PlannerChoice
 from agent.worker_registry import WorkerAdapter, WorkerRegistry, WorkerResult, WorkerSpec
-
 
 # ═══════════════════════════════════════════════════════════════
 # Helpers

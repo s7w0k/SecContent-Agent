@@ -7,8 +7,8 @@
 
 import { EditOutlined } from '@ant-design/icons';
 import { Button, Empty } from 'antd';
-import ReactMarkdown from 'react-markdown';
 import { useCallback, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 
 export interface DraftBlock {
   index: number;
@@ -22,10 +22,7 @@ interface DraftBlockViewProps {
   onSelectBlock?: (block: DraftBlock | null) => void;
 }
 
-export default function DraftBlockView({
-  content,
-  onSelectBlock,
-}: DraftBlockViewProps) {
+export default function DraftBlockView({ content, onSelectBlock }: DraftBlockViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [selectionRect, setSelectionRect] = useState<{ top: number; left: number } | null>(null);

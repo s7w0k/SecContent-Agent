@@ -5,18 +5,14 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from agent.plan_contracts import PlanValidator, build_default_plan, input_snapshot_hash
 from agent.planner import (
     PLANNER_VERSION,
     Planner,
     PlannerArticleInput,
     PlannerChoice,
-    PlannerInput,
-    PlannerOutcome,
     build_plan_from_choice,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 # Helpers
@@ -25,13 +21,20 @@ from agent.planner import (
 
 def _articles() -> list[PlannerArticleInput]:
     return [
-        PlannerArticleInput(id="art-1", title="漏洞通告", summary="某产品远程代码执行", status="crawled"),
-        PlannerArticleInput(id="art-2", title="竞品动态", summary="友商发布新版本", status="crawled"),
+        PlannerArticleInput(
+            id="art-1", title="漏洞通告", summary="某产品远程代码执行", status="crawled"
+        ),
+        PlannerArticleInput(
+            id="art-2", title="竞品动态", summary="友商发布新版本", status="crawled"
+        ),
     ]
 
 
 def _products() -> list[dict]:
-    return [{"id": "agent-identity-security", "name": "智能体身份安全"}, {"id": "pr-agent", "name": "PR 情报"}]
+    return [
+        {"id": "agent-identity-security", "name": "智能体身份安全"},
+        {"id": "pr-agent", "name": "PR 情报"},
+    ]
 
 
 def _choice(**overrides) -> PlannerChoice:
@@ -51,7 +54,12 @@ def _choice(**overrides) -> PlannerChoice:
 class _FakeWrapper:
     """可编程 LLM 封装，直接返回/抛错/挂起。"""
 
-    def __init__(self, choice: PlannerChoice | None = None, error: Exception | None = None, hang: bool = False):
+    def __init__(
+        self,
+        choice: PlannerChoice | None = None,
+        error: Exception | None = None,
+        hang: bool = False,
+    ):
         self.choice = choice
         self.error = error
         self.hang = hang
@@ -139,16 +147,30 @@ class TestBuildPlanFromChoice:
     def test_fixed_skeleton(self):
         plan = self._plan(_choice())
         assert [s.worker for s in plan.steps] == [
-            "crawl", "enrich", "classify", "filter", "score",
-            "draft", "quality_check", "rewrite", "review",
+            "crawl",
+            "enrich",
+            "classify",
+            "filter",
+            "score",
+            "draft",
+            "quality_check",
+            "rewrite",
+            "review",
         ]
 
     def test_model_cannot_inject_workers_or_args(self):
         plan = self._plan(_choice())
         for step in plan.steps:
             assert step.worker in {
-                "crawl", "enrich", "classify", "filter", "score",
-                "draft", "quality_check", "rewrite", "review",
+                "crawl",
+                "enrich",
+                "classify",
+                "filter",
+                "score",
+                "draft",
+                "quality_check",
+                "rewrite",
+                "review",
             }
             assert "publish" not in step.input_refs
             assert "delete" not in step.input_refs
@@ -159,7 +181,9 @@ class TestBuildPlanFromChoice:
         assert {"quality_check", "review"} <= workers
 
     def test_choice_inputs_flow_into_refs(self):
-        plan = self._plan(_choice(breaking_article_ids=["art-1"], style_hints=["强调影响面"], score_threshold=90))
+        plan = self._plan(
+            _choice(breaking_article_ids=["art-1"], style_hints=["强调影响面"], score_threshold=90)
+        )
         draft = next(s for s in plan.steps if s.worker == "draft")
         assert draft.input_refs["breaking_article_ids"] == ["art-1"]
         assert draft.input_refs["style_hints"] == ["强调影响面"]
@@ -169,8 +193,14 @@ class TestBuildPlanFromChoice:
     def test_no_fulltext_skips_enrich(self):
         plan = self._plan(_choice(needs_fulltext=False))
         assert [s.worker for s in plan.steps] == [
-            "crawl", "classify", "filter", "score",
-            "draft", "quality_check", "rewrite", "review",
+            "crawl",
+            "classify",
+            "filter",
+            "score",
+            "draft",
+            "quality_check",
+            "rewrite",
+            "review",
         ]
 
     def test_plan_hash_stable_across_plan_ids(self):
@@ -191,13 +221,13 @@ class TestBuildPlanFromChoice:
 
 class TestPlannerPlan:
     def _base_kwargs(self):
-        return dict(
-            run_id="run-1",
-            user_id="u-1",
-            trace_id="t-1",
-            products=_products(),
-            articles=_articles(),
-        )
+        return {
+            "run_id": "run-1",
+            "user_id": "u-1",
+            "trace_id": "t-1",
+            "products": _products(),
+            "articles": _articles(),
+        }
 
     def test_disabled_falls_back(self):
         planner = _planner(enabled=False, wrapper=_FakeWrapper(_choice()))
@@ -225,7 +255,9 @@ class TestPlannerPlan:
         planner = _planner(wrapper=_FakeWrapper(_choice()))
         outcome = _run(planner.plan(**self._base_kwargs()))
         expected = input_snapshot_hash(
-            user_id="u-1", product_ids=["agent-identity-security", "pr-agent"], article_ids=["art-1", "art-2"]
+            user_id="u-1",
+            product_ids=["agent-identity-security", "pr-agent"],
+            article_ids=["art-1", "art-2"],
         )
         assert outcome.input_snapshot_hash == expected
         assert outcome.plan.input_snapshot_hash == expected
@@ -251,16 +283,21 @@ class TestPlannerPlan:
         assert outcome.source == "fallback"
         assert outcome.rejected is True
         assert "product not allowed" in outcome.reason
-        assert outcome.plan.rationale_summary == build_default_plan(
-            run_id="run-1",
-            input_snapshot_hash_value=outcome.input_snapshot_hash,
-            user_id="u-1",
-        ).rationale_summary
+        assert (
+            outcome.plan.rationale_summary
+            == build_default_plan(
+                run_id="run-1",
+                input_snapshot_hash_value=outcome.input_snapshot_hash,
+                user_id="u-1",
+            ).rationale_summary
+        )
 
     def test_run_id_authoritative(self):
         wrapper = _FakeWrapper(_choice())
         planner = _planner(db=_FakeDB(), wrapper=wrapper)
-        outcome = _run(planner.plan(run_id="run-9", user_id="u-1", products=_products(), articles=_articles()))
+        outcome = _run(
+            planner.plan(run_id="run-9", user_id="u-1", products=_products(), articles=_articles())
+        )
         assert outcome.plan.run_id == "run-9"
 
 
@@ -273,7 +310,9 @@ class TestPlannerPersist:
     def test_accepted_persisted(self):
         db = _FakeDB()
         planner = _planner(db=db, wrapper=_FakeWrapper(_choice()))
-        outcome = _run(planner.plan(run_id="run-1", user_id="u-1", products=_products(), articles=_articles()))
+        outcome = _run(
+            planner.plan(run_id="run-1", user_id="u-1", products=_products(), articles=_articles())
+        )
         docs = db["planner_plans"].docs
         assert len(docs) == 1
         doc = docs[0]
@@ -286,7 +325,9 @@ class TestPlannerPersist:
     def test_fallback_persisted(self):
         db = _FakeDB()
         planner = _planner(db=db, enabled=False)
-        outcome = _run(planner.plan(run_id="run-1", user_id="u-1", products=_products(), articles=_articles()))
+        outcome = _run(
+            planner.plan(run_id="run-1", user_id="u-1", products=_products(), articles=_articles())
+        )
         docs = db["planner_plans"].docs
         assert len(docs) == 1
         assert docs[0]["status"] == "fallback"
@@ -295,7 +336,9 @@ class TestPlannerPersist:
     def test_rejected_persisted_then_fallback(self):
         db = _FakeDB()
         planner = _planner(db=db, wrapper=_FakeWrapper(_choice(product_ids=["bad"])))
-        outcome = _run(planner.plan(run_id="run-1", user_id="u-1", products=_products(), articles=_articles()))
+        outcome = _run(
+            planner.plan(run_id="run-1", user_id="u-1", products=_products(), articles=_articles())
+        )
         docs = db["planner_plans"].docs
         assert [d["status"] for d in docs] == ["rejected", "fallback"]
         assert outcome.rejected is True

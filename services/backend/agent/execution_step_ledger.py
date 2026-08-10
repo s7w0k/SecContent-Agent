@@ -24,14 +24,14 @@ LangGraph 图状态恢复仍由 checkpointer.py/MongoDBSaver 承担（职责分�
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any, Awaitable, Callable, Literal
-
-from pydantic import BaseModel, Field
-from pymongo import ASCENDING, DESCENDING, IndexModel, ReturnDocument
+from typing import Any, Literal
 
 from agent.plan_contracts import PipelinePlan, WorkerName
 from agent.worker_registry import WorkerResult
+from pydantic import BaseModel, Field
+from pymongo import ASCENDING, IndexModel, ReturnDocument
 
 logger = logging.getLogger("backend.agent.execution_step_ledger")
 

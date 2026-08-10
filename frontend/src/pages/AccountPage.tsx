@@ -135,7 +135,7 @@ export default function AccountPage() {
       };
       poll();
     },
-    [stopPolling, loadStatus],
+    [loadStatus],
   );
 
   const handleCloseQR = useCallback(() => {
@@ -166,12 +166,13 @@ export default function AccountPage() {
       dataIndex: 'status',
       key: 'status',
       width: 100,
-      render: (status: any, record: any) => {
+      render: (status: WeWeAccount['status'], record: WeWeAccount) => {
         // WeWe status: 1=normal/active, 0=expired, 2=disabled
         const label =
-          record.status_label || (status === 1 ? '正常' : status === 0 ? '失效' : '禁用');
-        const isActive = status === 1 || status === 'active';
-        const color = isActive ? 'green' : status === 2 ? 'orange' : 'red';
+          record.status_label ||
+          (status === 'active' ? '正常' : status === 'expired' ? '失效' : '禁用');
+        const isActive = status === 'active';
+        const color = isActive ? 'green' : status === 'disabled' ? 'orange' : 'red';
         const icon = isActive ? <CheckCircleOutlined /> : <CloseCircleOutlined />;
         return (
           <Tag color={color} icon={icon}>
@@ -184,8 +185,8 @@ export default function AccountPage() {
       title: '操作',
       key: 'actions',
       width: 120,
-      render: (_: any, record: any) => {
-        const isActive = record.status === 1 || record.status_code === 1;
+      render: (_: WeWeAccount['status'], record: WeWeAccount) => {
+        const isActive = record.status_code === 1;
         return (
           <Space size="small">
             <Button
@@ -249,7 +250,7 @@ export default function AccountPage() {
             icon={<CloudDownloadOutlined />}
             onClick={async () => {
               try {
-                const res: any = await api.refreshArticles();
+                const res = await api.refreshArticles();
                 if (res.ok) {
                   message.success(res.message || '更新指令已发送');
                 } else {

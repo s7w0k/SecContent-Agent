@@ -22,7 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
 
 from agent.a2a.mapper import (
     map_runtime_to_task,
@@ -188,9 +188,7 @@ class A2AServer:
             return stored
         return map_state_to_task(state, task_id=task_id)
 
-    async def list_tasks(
-        self, *, principal: str, status: str = "", limit: int = 50
-    ) -> list[Task]:
+    async def list_tasks(self, *, principal: str, status: str = "", limit: int = 50) -> list[Task]:
         """Tasks/List / Query：按 principal 与可选状态过滤。"""
         return await self.task_store.list_tasks(
             user_id=principal, status=status, limit=min(limit, 200)
@@ -235,9 +233,7 @@ class A2AServer:
     ) -> AsyncIterator[RuntimeEvent]:
         """防呆循环：先补齐已有事件，再轮询新事件直到内部 run 终态。"""
         while True:
-            events = await self.run_service.events(
-                run_id, principal, last_sequence=last_seq
-            )
+            events = await self.run_service.events(run_id, principal, last_sequence=last_seq)
             for ev in events:
                 last_seq = ev.sequence
                 yield ev

@@ -11,9 +11,10 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from datetime import UTC, datetime
-from enum import Enum
-from typing import Any, Callable, Literal
+from enum import StrEnum
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -25,7 +26,7 @@ SCHEMA_VERSION = "1.0"
 # ═══════════════════════════════════════════════════════════════
 
 
-class RuntimeStatus(str, Enum):
+class RuntimeStatus(StrEnum):
     """自主运行状态。终态不可逆。"""
 
     PENDING = "pending"
@@ -167,17 +168,27 @@ class BudgetUsage(BaseModel):
         # 下一步骤 / 重试还会占用配额，提前一步预留
         if self.steps + 1 > budget.max_steps:
             return False
-        if self.tool_calls + 1 > budget.max_tool_calls:
-            return False
-        return True
+        return self.tool_calls + 1 <= budget.max_tool_calls
 
-    def record_step(self, *, tokens_in: int = 0, tokens_out: int = 0,
-                    cost: float = 0.0, now: datetime | None = None) -> BudgetUsage:
+    def record_step(
+        self,
+        *,
+        tokens_in: int = 0,
+        tokens_out: int = 0,
+        cost: float = 0.0,
+        now: datetime | None = None,
+    ) -> BudgetUsage:
         self.steps += 1
         return self.record_tokens(tokens_in=tokens_in, tokens_out=tokens_out, cost=cost, now=now)
 
-    def record_tokens(self, *, tokens_in: int = 0, tokens_out: int = 0,
-                      cost: float = 0.0, now: datetime | None = None) -> BudgetUsage:
+    def record_tokens(
+        self,
+        *,
+        tokens_in: int = 0,
+        tokens_out: int = 0,
+        cost: float = 0.0,
+        now: datetime | None = None,
+    ) -> BudgetUsage:
         self.input_tokens += max(0, tokens_in)
         self.output_tokens += max(0, tokens_out)
         self.cost_usd += max(0.0, cost)
@@ -365,8 +376,9 @@ class RuntimeState(BaseModel):
                 "checkpoint_version": self.checkpoint_version + 1,
             }
         )
-        audit = self._audit_event(current, next_status, reason=reason, actor=actor,
-                                  reason_code=reason_code, stamp=stamp)
+        audit = self._audit_event(
+            current, next_status, reason=reason, actor=actor, reason_code=reason_code, stamp=stamp
+        )
         return new_state, audit
 
     def _audit_event(
@@ -433,6 +445,4 @@ def apply_state_mutation(
             f"actual={base.checkpoint_version}"
         )
     mutated = mutation(base)
-    return mutated.model_copy(
-        update={"checkpoint_version": base.checkpoint_version + 1}
-    )
+    return mutated.model_copy(update={"checkpoint_version": base.checkpoint_version + 1})

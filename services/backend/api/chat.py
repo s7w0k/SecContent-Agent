@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 from agent.draft_chat import MAX_HISTORY_TURNS
@@ -93,7 +93,7 @@ def _get_draft_chat_agent(request: Request):
 
 def _build_run_context(request: Request, user_id: str, article_url_hash: str | None = None) -> Any:
     """构建 Agent 运行上下文（每请求独立）。"""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
     from uuid import uuid4
 
     from agent.agent_contracts import RunContext
@@ -111,7 +111,7 @@ def _build_run_context(request: Request, user_id: str, article_url_hash: str | N
     # 实际使用时由 API 层根据用户选择的产品填充
     allowed_product_ids = frozenset()
 
-    deadline_at = datetime.now(timezone.utc) + timedelta(seconds=settings.CHAT_AGENT_DEADLINE_SECONDS)
+    deadline_at = datetime.now(UTC) + timedelta(seconds=settings.CHAT_AGENT_DEADLINE_SECONDS)
 
     return RunContext(
         trace_id=trace_id,

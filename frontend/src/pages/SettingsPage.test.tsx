@@ -10,12 +10,20 @@ vi.mock('../components/PromptEditor', () => ({
   ),
 }));
 
+vi.mock('../components/prompts/PromptEditorV2', () => ({
+  default: ({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) => (
+    <button type="button" onClick={() => onDirtyChange?.(true)}>
+      模拟提示词编辑器
+    </button>
+  ),
+}));
+
 describe('SettingsPage', () => {
   it('renders the extensible settings navigation and prompt editor', () => {
     render(<SettingsPage />);
 
     expect(screen.getByRole('heading', { name: '配置' })).toBeInTheDocument();
-    expect(screen.getByText('初稿生成提示词')).toBeInTheDocument();
+    expect(screen.getByText('初稿生成提示词（旧版）')).toBeInTheDocument();
     expect(screen.getByText('模拟提示词编辑器')).toBeInTheDocument();
   });
 

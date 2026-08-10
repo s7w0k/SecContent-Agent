@@ -265,7 +265,7 @@ class ReportAgent:
         url_hash = article.get("url_hash", "")
         if not url_hash:
             url_hash = hashlib.md5(
-                article.get("url", "").encode()
+                article.get("url", "").encode(), usedforsecurity=False
             ).hexdigest()
 
         tz = timezone(timedelta(hours=8))
