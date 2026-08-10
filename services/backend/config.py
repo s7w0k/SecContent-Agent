@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -328,6 +328,94 @@ class Settings(BaseSettings):
     WORKER_MAX_ATTEMPTS: int = Field(
         default=3, ge=1, le=10, description="Worker 最大尝试次数"
     )
+
+    # ── 全自主 Agent（阶段四 4A，默认关闭）────────────────────────
+    AUTONOMOUS_AGENT_ENABLED: bool = Field(
+        default=False, description="自主模式总开关（默认关闭；开启后仍独立于标准/AgentLoop）"
+    )
+    AUTONOMOUS_AGENT_SHADOW_ENABLED: bool = Field(
+        default=False, description="影子运行：后台执行自主流程仅记录差异，不返回用户"
+    )
+    AUTONOMOUS_AGENT_ROLLOUT_PERCENT: int = Field(
+        default=0, ge=0, le=100, description="灰度百分比（0-100，按 user_id 确定性分流）"
+    )
+    AUTONOMOUS_MAX_STEPS: int = Field(
+        default=20, ge=1, le=100, description="自主运行最大步骤数"
+    )
+    AUTONOMOUS_MAX_RUNTIME_SECONDS: int = Field(
+        default=600, ge=30, le=86400, description="自主运行最大墙钟时间（秒）"
+    )
+    AUTONOMOUS_MAX_INPUT_TOKENS: int = Field(
+        default=24000, ge=1000, le=256000, description="自主运行输入 token 上限"
+    )
+    AUTONOMOUS_MAX_OUTPUT_TOKENS: int = Field(
+        default=4000, ge=100, le=64000, description="自主运行输出 token 上限"
+    )
+    AUTONOMOUS_MAX_TOTAL_TOKENS: int = Field(
+        default=0, ge=0, le=320000, description="输入+输出总 token 上限；0=由单项上限兜底"
+    )
+    AUTONOMOUS_MAX_TOOL_CALLS: int = Field(
+        default=40, ge=1, le=200, description="自主运行最大工具调用次数"
+    )
+    AUTONOMOUS_MAX_PARALLEL_TOOLS: int = Field(
+        default=3, ge=1, le=10, description="同轮最大并行工具数"
+    )
+    AUTONOMOUS_MAX_TOOL_CONCURRENCY: int = Field(
+        default=3, ge=1, le=20, description="自主工具最大并发数"
+    )
+    AUTONOMOUS_MAX_COST_USD: float = Field(
+        default=0.0, ge=0, description="单次自主运行成本上限（USD），0=不限制"
+    )
+    AUTONOMOUS_MAX_RETRIES: int = Field(
+        default=2, ge=0, le=10, description="单步最大重试次数（不含首次）"
+    )
+    AUTONOMOUS_MAX_CONSECUTIVE_FAILURES: int = Field(
+        default=3, ge=1, le=20, description="连续失败阈值，达到即终止"
+    )
+    AUTONOMOUS_LOOP_SIMILARITY_THRESHOLD: float = Field(
+        default=0.90, ge=0, le=1, description="最近 N 步计划/动作相似度阈值，超出判定为循环"
+    )
+    AUTONOMOUS_APPROVAL_TTL_SECONDS: int = Field(
+        default=1800, ge=60, le=86400, description="人工审批授权有效期（秒）"
+    )
+    AUTONOMOUS_EVENT_TTL_DAYS: int = Field(
+        default=30, ge=1, le=365, description="runtime_events 保留天数"
+    )
+    AUTONOMOUS_MODEL: str = Field(
+        default="deepseek-chat", description="自主模式默认模型名"
+    )
+    AUTONOMOUS_ROUTER_FALLBACK_MODEL: str = Field(
+        default="", description="模型路由回退链（逗号分隔）；空=不降级"
+    )
+    AUTONOMOUS_SSE_SCHEMA_VERSION: str = Field(
+        default="1.0", description="自主模式 SSE 事件 schema 版本"
+    )
+    AUTONOMOUS_CONTEXT_MAX_CHARS: int = Field(
+        default=12000, ge=1000, le=100000, description="自主运行上下文最大字符数（记忆/历史压缩）"
+    )
+
+    @model_validator(mode="after")
+    def autonomous_enabled_requires_bounded_budget(self) -> Settings:
+        """配置非法时阻止自主模式启动，而不是使用无上限默认值。"""
+        if not self.AUTONOMOUS_AGENT_ENABLED:
+            return self
+        required_positive = {
+            "AUTONOMOUS_MAX_STEPS": self.AUTONOMOUS_MAX_STEPS,
+            "AUTONOMOUS_MAX_RUNTIME_SECONDS": self.AUTONOMOUS_MAX_RUNTIME_SECONDS,
+            "AUTONOMOUS_MAX_INPUT_TOKENS": self.AUTONOMOUS_MAX_INPUT_TOKENS,
+            "AUTONOMOUS_MAX_OUTPUT_TOKENS": self.AUTONOMOUS_MAX_OUTPUT_TOKENS,
+            "AUTONOMOUS_MAX_TOOL_CALLS": self.AUTONOMOUS_MAX_TOOL_CALLS,
+            "AUTONOMOUS_MAX_RETRIES": self.AUTONOMOUS_MAX_RETRIES,
+            "AUTONOMOUS_MAX_CONSECUTIVE_FAILURES": self.AUTONOMOUS_MAX_CONSECUTIVE_FAILURES,
+        }
+        for name, value in required_positive.items():
+            if value <= 0:
+                raise ValueError(
+                    f"AUTONOMOUS_AGENT_ENABLED=true 时 {name} 必须 > 0，当前为 {value}；"
+                    "拒绝启动以避免无上限运行"
+                )
+        return self
+
 
     @field_validator("OVERSEAS_NEWS_SCHEDULE_TIMEZONE")
     @classmethod
