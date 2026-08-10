@@ -426,6 +426,31 @@ class Settings(BaseSettings):
     A2A_PRINCIPAL_PREFIX: str = Field(
         default="a2a", max_length=32, description="A2A service principal 用户前缀（不冒充最终用户）"
     )
+    # A2A Client（阶段四 4B-3/4B-4，默认关闭）
+    A2A_CLIENT_ENABLED: bool = Field(
+        default=False, description="A2A Client 总开关（默认关闭；外部 Agent 只能通过允许列表接入）"
+    )
+    A2A_CLIENT_CARD_TTL_SECONDS: int = Field(
+        default=300, ge=30, le=3600, description="Agent Card 缓存 TTL（秒）"
+    )
+    A2A_CLIENT_TIMEOUT_SECONDS: float = Field(
+        default=30.0, ge=1, le=300, description="远端调用超时（秒）"
+    )
+    A2A_CLIENT_RETRY_MAX: int = Field(
+        default=2, ge=0, le=5, description="远端调用有限重试次数（仅超时/限流/断流）"
+    )
+    A2A_CLIENT_MAX_CONCURRENCY: int = Field(
+        default=4, ge=1, le=32, description="每远端最大并发调用数"
+    )
+    A2A_CLIENT_RPS: float = Field(
+        default=5.0, ge=0.1, le=1000.0, description="每远端调用速率上限（次/秒）"
+    )
+    A2A_CLIENT_PEER_MAX_STEPS: int = Field(
+        default=20, ge=1, le=1000, description="每远端调用预算：最大步骤数"
+    )
+    A2A_CLIENT_PEER_QUOTA: int = Field(
+        default=5, ge=1, le=1000, description="每远端调用配额（remote_agent_quota）"
+    )
 
     @model_validator(mode="after")
     def autonomous_enabled_requires_bounded_budget(self) -> Settings:

@@ -278,9 +278,44 @@ async def lifespan(app: FastAPI):
             else:
                 app.state.a2a_server = None
                 _log("INFO", "A2A server disabled (A2A_ENABLED=false)")
+
+            # A2A Client（阶段四 4B-3/4B-4，默认关闭；外部 Agent 只能通过允许列表接入）
+            app.state.a2a_client = None
+            if settings.A2A_CLIENT_ENABLED:
+                from agent.a2a.client import A2AClient, RemoteAgentConfig
+                from agent.runtime_state import RunBudget
+
+                peers: dict[str, RemoteAgentConfig] = {}
+                for i, base_url in enumerate(settings.A2A_ALLOWED_PEERS, start=1):
+                    if not base_url or not base_url.strip():
+                        continue
+                    key = f"peer-{i}"
+                    peers[key] = RemoteAgentConfig(
+                        key=key,
+                        base_url=base_url.strip(),
+                        enabled_skills=[settings.A2A_SKILL_ID],
+                        require_https=False if base_url.strip().startswith("http://") else True,
+                        card_ttl_seconds=settings.A2A_CLIENT_CARD_TTL_SECONDS,
+                        max_concurrency=settings.A2A_CLIENT_MAX_CONCURRENCY,
+                        rps=settings.A2A_CLIENT_RPS,
+                        timeout_seconds=settings.A2A_CLIENT_TIMEOUT_SECONDS,
+                        retry_max=settings.A2A_CLIENT_RETRY_MAX,
+                        budget=RunBudget(
+                            max_steps=settings.A2A_CLIENT_PEER_MAX_STEPS,
+                            remote_agent_quota=settings.A2A_CLIENT_PEER_QUOTA,
+                        ),
+                    )
+                app.state.a2a_client = A2AClient(
+                    allowlist=peers,
+                    default_card_ttl=settings.A2A_CLIENT_CARD_TTL_SECONDS,
+                )
+                _log("INFO", "A2A client initialized (enabled, peers=%d)", len(peers))
+            else:
+                _log("INFO", "A2A client disabled (A2A_CLIENT_ENABLED=false)")
         else:
             app.state.autonomous_service = None
             app.state.a2a_server = None
+            app.state.a2a_client = None
             _log("INFO", "Autonomous agent service disabled (AUTONOMOUS_AGENT_ENABLED=false)")
     except Exception as e:
         _log("WARNING", f"Agent init skipped: {e}")
@@ -298,6 +333,9 @@ async def lifespan(app: FastAPI):
         arq_pool = getattr(app.state, "arq_pool", None)
         if arq_pool is not None:
             await arq_pool.aclose()
+        a2a_client = getattr(app.state, "a2a_client", None)
+        if a2a_client is not None:
+            await a2a_client.aclose()
         await app.state.mcp_crawl_client.aclose()
         searxng_client = getattr(app.state, "searxng_client", None)
         if searxng_client is not None:

@@ -4,11 +4,13 @@
   - models.py     协议数据模型 / Agent Card / Task 八态；
   - mapper.py     协议 ↔ 内部 RuntimeState 映射与不可信输入净化；
   - task_store.py A2A Task 持久化（版本乐观锁 + 幂等 + 多租户）；
-  - server.py     A2A Server 协议编排（复用自主运行服务执行内部运行）。
+  - server.py     A2A Server 协议编排（复用自主运行服务执行内部运行）；
+  - client.py     A2A Client 适配与安全（允许列表发现 / SSRF / 账本 / 预算 / 熔断）。
 """
 
 from __future__ import annotations
 
+from agent.a2a.client import A2AClient, RemoteAgentConfig
 from agent.a2a.models import (
     AGENT_CARD_PATH,
     PROTOCOL_VERSION,
@@ -38,6 +40,7 @@ __all__ = [
     "SDK_VERSION",
     "VERSION_HEADER",
     "A2AError",
+    "A2AClient",
     "A2AServer",
     "A2ATaskConflictError",
     "A2ATaskStore",
@@ -48,6 +51,7 @@ __all__ = [
     "MethodNotImplementedError",
     "Part",
     "ProtocolError",
+    "RemoteAgentConfig",
     "Skill",
     "Task",
     "TaskSendResult",

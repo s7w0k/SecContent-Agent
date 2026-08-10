@@ -243,6 +243,42 @@ def _encode_message_size(message: Message) -> int:
         return 0
 
 
+def validate_external_task(
+    task: Task,
+    *,
+    max_history_messages: int = DEFAULT_MAX_MESSAGES_PER_TASK,
+    max_artifact_bytes: int = DEFAULT_MAX_ARTIFACT_BYTES,
+    allow_file_uri: bool = False,
+) -> None:
+    """外部 Task（远端 Agent 响应）净化：历史消息 + 产物大小与恶意内容检查。
+
+    远端返回的 Task/Artifact 一律视为不可信输入（4B-1 / 4B-4）：
+      - history 消息逐条走 validate_external_input；
+      - artifacts 的每个 Part 按 kind 校验（凭证/恶意模式/URI），
+        单个 Artifact 大小与文本总量超限即拒绝。
+    """
+    if len(task.history) > max_history_messages:
+        raise InvalidInputError(
+            f"too many history messages: {len(task.history)} > {max_history_messages}"
+        )
+    for msg in task.history:
+        validate_external_input(msg, allow_file_uri=allow_file_uri)
+    for art in task.artifacts:
+        total_chars = 0
+        encoded = 0
+        for part in art.parts:
+            total_chars += _validate_part(part, allow_file_uri=allow_file_uri)
+            encoded += len(
+                part.model_dump_json(exclude_none=True).encode("utf-8")
+            )
+        if encoded > max_artifact_bytes:
+            raise InvalidInputError(
+                f"artifact too large: {encoded} bytes > {max_artifact_bytes} bytes"
+            )
+        if total_chars > MAX_TEXT_PART_CHARS:
+            raise InvalidInputError("artifact text content exceeds limit")
+
+
 def build_denied_task(task_id: str, reason: str) -> Task:
     """构造 REJECTED 终态 Task（不可信输入被拒绝时的可解释返回）。"""
     now = __import__("datetime").datetime.now(__import__("datetime").UTC)

@@ -131,6 +131,14 @@ DEFAULT_RULES: dict[str, PolicyRule] = {
         disallow_data_export=False,
         allowed_args=frozenset({"external_system", "payload", "idempotency_key"}),
     ),
+    # A2A 外部 Agent 调用（阶段四 4B-3/4B-4）：管理员允许列表之外的 peer 直接拒绝；
+    # 允许列表内也需预算/限流/熔断三重门禁；has_side_effect 强制幂等键防重试重复副作用
+    "a2a_send": PolicyRule(
+        tool_name="a2a_send",
+        risk_level=RiskLevel.L1,
+        has_side_effect=True,
+        allowed_args=frozenset({"peer", "skill_id", "idempotency_key"}),
+    ),
     "delete_article": PolicyRule(
         tool_name="delete_article",
         risk_level=RiskLevel.L3,
