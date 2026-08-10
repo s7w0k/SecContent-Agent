@@ -781,6 +781,22 @@ class MongoDB:
                     name="idx_ledger_repair_status_created",
                 ),
             ],
+            # ── MultiAgent 观测事件（Step 9）──────────────────
+            "pipeline_events": [
+                IndexModel(
+                    [("run_id", ASCENDING), ("created_at", ASCENDING)],
+                    name="idx_pipeline_events_run_created",
+                ),
+                IndexModel(
+                    [("event_type", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_pipeline_events_type_created",
+                ),
+                IndexModel(
+                    [("expires_at", ASCENDING)],
+                    expireAfterSeconds=0,
+                    name="ttl_pipeline_events_expires",
+                ),
+            ],
         }
 
         try:

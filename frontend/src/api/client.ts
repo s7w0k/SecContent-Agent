@@ -468,6 +468,64 @@ export const pipelineApi = {
     const { data } = await client.post('/pipeline/classify-v2/tasks');
     return data;
   },
+
+  /** 读取 MultiAgent run 的计划与步骤账本（前端树形视图） */
+  async getRunPlan(runId: string): Promise<{
+    ok: boolean;
+    data: {
+      run_id: string;
+      plan: Record<string, unknown> | null;
+      steps: Array<Record<string, unknown>>;
+    };
+  }> {
+    const { data } = await client.get(`/pipeline/runs/${runId}/plan`);
+    return data;
+  },
+
+  /** 读取 MultiAgent run 的步骤账本 */
+  async getRunSteps(runId: string): Promise<{
+    ok: boolean;
+    data: { run_id: string; steps: Array<Record<string, unknown>> };
+  }> {
+    const { data } = await client.get(`/pipeline/runs/${runId}/steps`);
+    return data;
+  },
+
+  /** 读取 MultiAgent run 的观测事件流（脱敏） */
+  async getRunEvents(
+    runId: string,
+    options: { eventType?: string; limit?: number } = {},
+  ): Promise<{
+    ok: boolean;
+    data: {
+      run_id: string;
+      events: Array<{
+        event_type: string;
+        run_id: string;
+        plan_id: string;
+        step_id: string;
+        worker: string;
+        version: string;
+        attempt: number;
+        sequence: number;
+        input_hash: string;
+        result_hash: string;
+        queue_ms: number;
+        duration_ms: number;
+        error_type: string | null;
+        status: string;
+        created_at: string;
+      }>;
+    };
+  }> {
+    const { data } = await client.get(`/pipeline/runs/${runId}/events`, {
+      params: {
+        event_type: options.eventType || undefined,
+        limit: options.limit || 500,
+      },
+    });
+    return data;
+  },
 };
 
 export const logsApi = {

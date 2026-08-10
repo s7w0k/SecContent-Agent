@@ -908,6 +908,34 @@ async def replay_step(
     return {"ok": True, "data": outcome.model_dump(mode="json")}
 
 
+@router.get("/runs/{run_id}/events", summary="读取 run 的观测事件流")
+async def get_run_events(
+    run_id: str,
+    request: Request,
+    event_type: str | None = Query(default=None, description="按事件类型过滤，如 succeeded"),
+    limit: int = Query(default=500, ge=1, le=2000, description="返回条数上限"),
+    user_id: str = Depends(get_current_user),
+):
+    """读取 pipeline_events 事件流（脱敏，无业务正文），供前端树形视图。"""
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    task = await db["pipeline_tasks"].find_one({"run_id": run_id})
+    if task is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if task.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Cannot access another user's run")
+
+    query: dict[str, Any] = {"run_id": run_id}
+    if event_type:
+        query["event_type"] = event_type
+    cursor = db["pipeline_events"].find(query).sort("created_at", 1).limit(limit)
+    docs = [doc async for doc in cursor] if not hasattr(cursor, "to_list") else await cursor.to_list(length=limit)
+    for doc in docs:
+        doc.pop("_id", None)
+    return {"ok": True, "data": {"run_id": run_id, "events": jsonable_encoder(docs)}}
+
+
 async def _execute_crawl_pipeline(
     app: Any,
     crawl_days: int,

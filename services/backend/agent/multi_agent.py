@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from agent.context_bridge import user_in_rollout
+from agent.events import EventEmitter
 from agent.execution_step_ledger import ExecutionStepLedger
 from agent.orchestrator import Orchestrator, StepOutcome
 from agent.plan_contracts import PlanValidator
@@ -191,6 +192,8 @@ class MultiAgentRuntime:
         self.registry = registry
         self.db = db
         self.manager = manager
+        # 观测事件发射器（Step 9）：planner/orchestrator 共用，fire-and-forget
+        self.emitter: EventEmitter | None = None
         self._shadow_registry: WorkerRegistry | None = None
         self._shadow_orchestrator: Orchestrator | None = None
 
@@ -216,6 +219,7 @@ class MultiAgentRuntime:
                 worker_concurrency=self.orchestrator.worker_concurrency,
                 lease_seconds=self.orchestrator.lease_seconds,
                 default_max_attempts=self.orchestrator.default_max_attempts,
+                emitter=self.emitter,
             )
         return self._shadow_orchestrator
 
@@ -367,6 +371,15 @@ class MultiAgentRuntime:
                 result_hash=result.result_hash,
             )
             final_status = "dead_lettered" if result.retryable else "failed"
+        await self._emit_replayed(
+            run_id=run_id,
+            plan_id=entry.plan_id,
+            step_id=step_id,
+            worker=entry.worker,
+            attempt=claim.attempt,
+            result=result,
+            status=final_status,
+        )
         return StepOutcome(
             step_id=step_id,
             worker=entry.worker,
@@ -379,6 +392,39 @@ class MultiAgentRuntime:
             result_hash=result.result_hash,
             duration_ms=result.duration_ms,
         )
+
+    async def _emit_replayed(
+        self,
+        *,
+        run_id: str,
+        plan_id: str,
+        step_id: str,
+        worker: str,
+        attempt: int,
+        result: Any,
+        status: str,
+    ) -> None:
+        """重放完成事件（Step 9）；无 emitter 或失败时静默跳过。"""
+        if self.emitter is None:
+            return
+        try:
+            await self.emitter.emit(
+                event_type="replayed",
+                run_id=run_id,
+                plan_id=plan_id,
+                step_id=step_id,
+                worker=worker,
+                attempt=attempt,
+                input_hash=result.input_hash,
+                result_hash=result.result_hash,
+                duration_ms=result.duration_ms,
+                error_type=result.error_type,
+                status=status,
+            )
+        except Exception:
+            logger.warning(
+                "[multi_agent] emit replayed failed (run=%s step=%s)", run_id, step_id
+            )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -399,6 +445,7 @@ def build_multi_agent_runtime(
         max_steps=settings.PLAN_MAX_STEPS,
         max_depth=settings.PLAN_MAX_DEPTH,
     )
+    emitter = EventEmitter(db)
     planner = Planner(
         llm_wrapper=llm_wrapper,
         db=db,
@@ -407,6 +454,7 @@ def build_multi_agent_runtime(
         timeout_seconds=settings.PLANNER_TIMEOUT_SECONDS,
         validator=validator,
         planner_version=PLANNER_VERSION,
+        emitter=emitter,
     )
     ledger = ExecutionStepLedger(db, lease_seconds=settings.WORKER_LEASE_SECONDS)
     orchestrator = Orchestrator(
@@ -417,8 +465,9 @@ def build_multi_agent_runtime(
         lease_seconds=settings.WORKER_LEASE_SECONDS,
         default_max_attempts=settings.WORKER_MAX_ATTEMPTS,
         ledger=ledger,
+        emitter=emitter,
     )
-    return MultiAgentRuntime(
+    runtime = MultiAgentRuntime(
         planner=planner,
         validator=validator,
         orchestrator=orchestrator,
@@ -427,3 +476,5 @@ def build_multi_agent_runtime(
         db=db,
         manager=manager,
     )
+    runtime.emitter = emitter
+    return runtime

@@ -113,6 +113,7 @@ class Orchestrator:
         lease_seconds: int = 120,
         default_max_attempts: int = 3,
         ledger: Any = None,
+        emitter: Any = None,
     ):
         self.registry = registry
         self.owner_id = owner_id
@@ -125,6 +126,8 @@ class Orchestrator:
         # 可选 Step Ledger：提供时步骤状态经 CAS 记账（begin/complete/fail），
         # 供恢复流程与人工重放使用；缺省时仅进程内执行。
         self.ledger = ledger
+        # 可选事件发射器（Step 9 观测）：fire-and-forget，失败不影响执行
+        self.emitter = emitter
 
         self._global_sem = asyncio.Semaphore(self.max_concurrency)
         self._user_sems: dict[str, asyncio.Semaphore] = {}
@@ -175,8 +178,10 @@ class Orchestrator:
                     )
                     results[step.step_id] = outcome
                     await self._record_outcome(plan, step, outcome)
+                    await self._emit("step_skipped", plan=plan, step=step, outcome=outcome, reason="dependency failed")
                     continue
                 jobs.append(step)
+                await self._emit("step_scheduled", plan=plan, step=step, status="scheduled")
             if not jobs:
                 continue
             logger.info(
@@ -201,6 +206,11 @@ class Orchestrator:
                     outcome = outcome.model_copy(update={"status": "skipped", "reason": "optional failure ignored"})
                 results[step.step_id] = outcome
                 await self._record_outcome(plan, step, outcome)
+                # 终态事件统一发射（canceled 无对应事件类型，不发）
+                if outcome.status in ("succeeded", "failed", "dead_lettered"):
+                    await self._emit(outcome.status, plan=plan, step=step, outcome=outcome)
+                elif outcome.status == "skipped":
+                    await self._emit("step_skipped", plan=plan, step=step, outcome=outcome, reason="optional failure ignored")
 
         if canceled or self._is_canceled(cancel_event, deadline_at):
             canceled = True
@@ -210,6 +220,7 @@ class Orchestrator:
                 except Exception:
                     logger.warning("[orchestrator] ledger cancel_run failed")
         status = self._final_status(canceled, results)
+        await self._emit("run_canceled" if canceled else "run_finished", plan=plan, status=status)
         duration_ms = int((time.perf_counter() - started) * 1000)
         unscheduled_status = "canceled" if canceled else "skipped"
         step_outcomes = [
@@ -261,6 +272,8 @@ class Orchestrator:
                 return StepOutcome(step_id=step.step_id, worker=step.worker, status="canceled", attempt=attempt + 1)
 
             attempt += 1
+            if attempt > 1:
+                await self._emit("retrying", plan=plan, step=step, status="retrying", attempt=attempt - 1, version=spec.version)
             claim = None
             if self.ledger is not None:
                 try:
@@ -301,6 +314,7 @@ class Orchestrator:
                 attempt=attempt,
                 input_refs=step.input_refs,
             )
+            await self._emit("worker_started", plan=plan, step=step, status="running", attempt=attempt, version=spec.version)
             try:
                 async with self._global_sem:
                     async with await self._user_sem(base_ctx.get("user_id", "")):
@@ -442,6 +456,47 @@ class Orchestrator:
         except Exception as exc:
             logger.warning(
                 "[orchestrator] ledger outcome recording failed for %s: %s", step.step_id, exc
+            )
+
+    def _worker_version(self, worker: str) -> str:
+        """从注册表取 Worker 版本（事件观测用），未注册时返回空串。"""
+        adapter = self.registry.get(worker)
+        return adapter.spec.version if adapter is not None else ""
+
+    async def _emit(
+        self,
+        event_type: str,
+        *,
+        plan: PipelinePlan,
+        step: PlanStep | None = None,
+        outcome: StepOutcome | None = None,
+        status: str = "",
+        attempt: int = 0,
+        version: str = "",
+        reason: str = "",
+    ) -> None:
+        """发射观测事件（Step 9）；无 emitter 或失败时静默跳过。"""
+        if self.emitter is None:
+            return
+        try:
+            await self.emitter.emit(
+                event_type=event_type,
+                run_id=plan.run_id,
+                plan_id=plan.plan_id,
+                step_id=step.step_id if step is not None else "",
+                worker=step.worker if step is not None else "",
+                version=version or self._worker_version(step.worker if step is not None else ""),
+                attempt=attempt if attempt else (outcome.attempt if outcome is not None else 0),
+                input_hash=outcome.input_hash if outcome is not None else "",
+                result_hash=outcome.result_hash if outcome is not None else "",
+                duration_ms=outcome.duration_ms if outcome is not None else 0,
+                error_type=outcome.error_type if outcome is not None else None,
+                status=status or (outcome.status if outcome is not None else ""),
+            )
+        except Exception:
+            logger.warning(
+                "[orchestrator] emit %s failed (run=%s step=%s)", event_type, plan.run_id,
+                step.step_id if step is not None else "",
             )
 
     def _deps_ok(

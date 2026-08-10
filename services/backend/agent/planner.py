@@ -216,6 +216,7 @@ class Planner:
         timeout_seconds: int = 10,
         validator: PlanValidator | None = None,
         planner_version: str = PLANNER_VERSION,
+        emitter: Any = None,
     ):
         self.llm_wrapper = llm_wrapper
         self.db = db
@@ -224,6 +225,36 @@ class Planner:
         self.timeout_seconds = max(1, timeout_seconds)
         self.validator = validator or PlanValidator()
         self.planner_version = planner_version
+        # 可选事件发射器（Step 9 观测）
+        self.emitter = emitter
+
+    async def _emit(
+        self,
+        event_type: str,
+        *,
+        run_id: str,
+        plan_id: str = "",
+        status: str = "",
+        error_type: str | None = None,
+        input_hash: str = "",
+        result_hash: str = "",
+    ) -> None:
+        """发射观测事件（Step 9）；失败仅记日志，不影响规划结果。"""
+        if self.emitter is None:
+            return
+        try:
+            await self.emitter.emit(
+                event_type=event_type,
+                run_id=run_id,
+                plan_id=plan_id,
+                version=self.planner_version,
+                input_hash=input_hash,
+                result_hash=result_hash,
+                error_type=error_type,
+                status=status,
+            )
+        except Exception:
+            logger.warning("[planner] emit %s failed (run=%s)", event_type, run_id)
 
     async def plan(
         self,
@@ -242,6 +273,12 @@ class Planner:
             user_id=user_id,
             product_ids=[p.get("id", "") for p in (products or []) if p.get("id")],
             article_ids=[a.id for a in (articles or [])],
+        )
+        await self._emit(
+            "plan_requested",
+            run_id=run_id,
+            status="requested",
+            input_hash=snapshot,
         )
         allowed_products = {p.get("id") for p in (products or []) if p.get("id")}
         allowed_article_ids = {a.id for a in (articles or [])}
@@ -323,6 +360,15 @@ class Planner:
                 status="rejected",
                 reason=result.reason,
             )
+            await self._emit(
+                "plan_rejected",
+                run_id=run_id,
+                plan_id=plan.plan_id,
+                status="rejected",
+                error_type="validation_rejected",
+                input_hash=snapshot,
+                result_hash=plan.plan_hash,
+            )
             return await self._fallback(
                 run_id=run_id,
                 snapshot=snapshot,
@@ -343,6 +389,14 @@ class Planner:
             trace_id=trace_id,
             status="accepted",
             reason="",
+        )
+        await self._emit(
+            "plan_created",
+            run_id=run_id,
+            plan_id=plan.plan_id,
+            status="accepted",
+            input_hash=snapshot,
+            result_hash=plan.plan_hash,
         )
         return PlannerOutcome(
             plan=plan,
@@ -413,6 +467,15 @@ class Planner:
             trace_id=trace_id,
             status="fallback",
             reason=rejected_reason or reason,
+        )
+        await self._emit(
+            "plan_fallback",
+            run_id=run_id,
+            plan_id=plan.plan_id,
+            status="fallback",
+            error_type=(rejected_reason or reason)[:100] or None,
+            input_hash=snapshot,
+            result_hash=plan.plan_hash,
         )
         return PlannerOutcome(
             plan=plan,

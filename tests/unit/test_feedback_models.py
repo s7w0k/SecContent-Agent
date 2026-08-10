@@ -350,6 +350,7 @@ class TestMongoDBIndexes:
             "execution_links",
             "execution_step_ledger",
             "ledger_repair_queue",
+            "pipeline_events",
             "user_profile_policies",
             "user_memory_events",
             "user_memory_items",
@@ -472,5 +473,5 @@ class TestMongoDBIndexes:
             second = await MongoDB.ensure_indexes()
 
         assert first == second
-        assert collection.create_indexes.await_count == 84
+        assert collection.create_indexes.await_count == 86
         assert collection.drop_index.await_count == 2

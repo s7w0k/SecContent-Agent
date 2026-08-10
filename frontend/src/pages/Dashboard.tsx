@@ -6,7 +6,20 @@
  */
 
 import { ImportOutlined, UploadOutlined } from '@ant-design/icons';
-import { Button, Checkbox, Col, Drawer, Modal, Row, Space, Tag, Typography, message } from 'antd';
+import {
+  Button,
+  Checkbox,
+  Col,
+  Collapse,
+  Drawer,
+  Input,
+  Modal,
+  Row,
+  Space,
+  Tag,
+  Typography,
+  message,
+} from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api, { userKnowledgeApi } from '../api/client';
 import ArticleTable from '../components/ArticleTable';
@@ -14,6 +27,7 @@ import ArticleUpload from '../components/ArticleUpload';
 import DraftViewer from '../components/DraftViewer';
 import FilterBar from '../components/FilterBar';
 import HotRankingPanel from '../components/HotRankingPanel';
+import MultiAgentRunTree from '../components/MultiAgentRunTree';
 import PipelineControl from '../components/PipelineControl';
 import PipelineTaskProgress from '../components/PipelineTaskProgress';
 import ReportViewer from '../components/ReportViewer';
@@ -62,6 +76,8 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
   const [viewingArticle, setViewingArticle] = useState<Article | null>(null);
   const [draftArticle, setDraftArticle] = useState<Article | null>(null);
   const [draftTask, setDraftTask] = useState<{ taskId: string; articleHash: string } | null>(null);
+  // MultiAgent 编排视图（Step 9）：用户输入 run_id 后展示树形视图
+  const [viewRunId, setViewRunId] = useState<string>('');
 
   // ── 页面重新挂载时恢复进行中的任务 ────────────────────────
   const { draftTask: restoredDraftTask } = useActiveTasks();
@@ -350,6 +366,33 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
 
       {/* 流水线控制 */}
       <PipelineControl onComplete={handlePipelineComplete} />
+
+      {/* MultiAgent 编排视图（Step 9）：输入 run_id 查看计划/步骤/事件树 */}
+      <Collapse
+        style={{ marginBottom: 16 }}
+        items={[
+          {
+            key: 'multi-agent-run',
+            label: 'MultiAgent 编排视图',
+            children: (
+              <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                <Input.Search
+                  allowClear
+                  placeholder="输入 run_id（如 run-xxxxxxxxxxxxxxxx）"
+                  enterButton="查看编排"
+                  onSearch={(value) => setViewRunId(value.trim())}
+                  style={{ maxWidth: 480 }}
+                />
+                {viewRunId ? (
+                  <MultiAgentRunTree runId={viewRunId} />
+                ) : (
+                  <Tag style={{ padding: 8 }}>输入 run_id 后展示计划摘要、步骤状态、耗时、重试与脱敏错误</Tag>
+                )}
+              </Space>
+            ),
+          },
+        ]}
+      />
 
       {draftTask && (
         <div style={{ marginBottom: 16 }}>
