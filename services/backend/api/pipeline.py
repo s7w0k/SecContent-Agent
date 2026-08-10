@@ -22,6 +22,8 @@ from uuid import uuid4
 import httpx
 from agent.checkpointer import create_checkpointer, supports_mongodb_checkpoints
 from agent.knowledge_slice import KnowledgeSliceResolver
+from agent.multi_agent import MultiAgentReplayError, decide_execution_mode
+from agent.plan_contracts import input_snapshot_hash
 from agent.pipeline_state import PipelineStateManager
 from agent.style_profiler import load_style_hints
 from api.activity import log_activity
@@ -34,6 +36,8 @@ from logging_config import get_audit_logger
 from models.feedback import PipelineTask
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
+
+logger = logging.getLogger("backend.api.pipeline")
 
 router = APIRouter(prefix="/api/pipeline", tags=["Pipeline"])
 llm_router = APIRouter(prefix="/api", tags=["LLM Observability"])
@@ -264,6 +268,7 @@ async def _create_pipeline_task(
     *,
     trace_id: str | None = None,
     username: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> dict:
     """创建一小时后自动清理的流水线任务文档。"""
     task = PipelineTask(
@@ -276,6 +281,14 @@ async def _create_pipeline_task(
     )
     document = task.model_dump(exclude={"id"}, mode="python")
     await db["pipeline_tasks"].insert_one(document)
+    if metadata:
+        # 双轨元数据（run_id/execution_mode/input_snapshot_hash）不属于
+        # PipelineTask 模型，直接附加到文档，避免改共享模型。
+        await db["pipeline_tasks"].update_one(
+            {"task_id": document["task_id"]},
+            {"$set": metadata},
+        )
+        document.update(metadata)
     return document
 
 
@@ -324,6 +337,9 @@ async def _enqueue_pipeline_task(
     trace_id: str = "",
     username: str = "",
     request_id: str = "",
+    run_id: str = "",
+    execution_mode: str = "",
+    input_snapshot_hash: str = "",
 ) -> None:
     """Submit a persisted task to ARQ and fail clearly when Redis is unavailable."""
     pool = getattr(app.state, "arq_pool", None)
@@ -351,6 +367,9 @@ async def _enqueue_pipeline_task(
             trace_id=trace_id,
             username=username,
             request_id=request_id,
+            run_id=run_id,
+            execution_mode=execution_mode,
+            input_snapshot_hash=input_snapshot_hash,
             _job_id=task_id,
         )
     except Exception as exc:
@@ -380,6 +399,9 @@ async def _execute_pipeline_task(
     trace_id: str | None = None,
     username: str | None = None,
     request_id: str = "",
+    run_id: str = "",
+    execution_mode: str = "",
+    input_snapshot_hash: str = "",
     raise_errors: bool = False,
 ) -> None:
     """后台执行流水线任务并持久化阶段进度、结果或错误。"""
@@ -436,14 +458,48 @@ async def _execute_pipeline_task(
             )
         elif task_type == "run-v2":
             manager = app.state.pipeline_v2
-            result = await manager.run_full(
-                crawl_days=crawl_days,
-                user_id=user_id,
-                trace_id=trace_id,
-                username=username,
-                request_id=request_id,
-                task_id=task_id,
-            )
+            if execution_mode in ("planned", "shadow"):
+                runtime = getattr(getattr(app, "state", None), "multi_agent", None)
+                if runtime is None:
+                    # runtime 未初始化时零副作用回退当前固定 DAG
+                    result = await manager.run_full(
+                        crawl_days=crawl_days,
+                        user_id=user_id,
+                        trace_id=trace_id,
+                        username=username,
+                        request_id=request_id,
+                        task_id=task_id,
+                        run_id=run_id,
+                        execution_mode="current",
+                        input_snapshot_hash=input_snapshot_hash,
+                    )
+                    result["plan_source"] = "fallback"
+                    result["plan_reason"] = "multi-agent runtime not initialized"
+                else:
+                    result = await manager.run_planned(
+                        crawl_days=crawl_days,
+                        user_id=user_id,
+                        trace_id=trace_id,
+                        username=username,
+                        request_id=request_id,
+                        task_id=task_id,
+                        run_id=run_id,
+                        input_snapshot_hash=input_snapshot_hash,
+                        runtime=runtime,
+                        shadow=execution_mode == "shadow",
+                    )
+            else:
+                result = await manager.run_full(
+                    crawl_days=crawl_days,
+                    user_id=user_id,
+                    trace_id=trace_id,
+                    username=username,
+                    request_id=request_id,
+                    task_id=task_id,
+                    run_id=run_id,
+                    execution_mode="current",
+                    input_snapshot_hash=input_snapshot_hash,
+                )
         elif task_type == "crawl":
             result = await _execute_crawl_pipeline(
                 app,
@@ -597,7 +653,11 @@ async def pipeline_run(
 async def pipeline_run_v2(
     body: PipelineRunRequest, request: Request, user_id: str = Depends(get_current_user)
 ):
-    """创建 V2 全流程后台任务并立即返回 task_id。"""
+    """创建 V2 全流程后台任务并立即返回 task_id。
+
+    双轨入口（Step 7）：生成 run_id、输入快照与执行模式；执行模式由
+    服务端配置决策，客户端不可提交 Worker / step args / owner。
+    """
     db = getattr(request.app.state, "db", None)
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
@@ -607,7 +667,29 @@ async def pipeline_run_v2(
 
     trace_id = generate_trace_id()
     username = _request_username(request, user_id)
-    task = await _create_pipeline_task(db, user_id, "run-v2", trace_id=trace_id, username=username)
+    run_id = f"run-{uuid4().hex[:16]}"
+    settings = get_settings()
+    execution_mode = decide_execution_mode(
+        enabled=settings.MULTI_AGENT_ENABLED,
+        shadow_enabled=settings.MULTI_AGENT_SHADOW_ENABLED,
+        rollout_percent=settings.MULTI_AGENT_ROLLOUT_PERCENT,
+        user_id=user_id,
+    )
+    snapshot = await _build_input_snapshot(db, user_id)
+    product_ids = await _enabled_product_ids(db, user_id)
+    task = await _create_pipeline_task(
+        db,
+        user_id,
+        "run-v2",
+        trace_id=trace_id,
+        username=username,
+        metadata={
+            "run_id": run_id,
+            "execution_mode": execution_mode,
+            "input_snapshot_hash": snapshot,
+            "product_ids": product_ids,
+        },
+    )
     await _enqueue_pipeline_task(
         request.app,
         task["task_id"],
@@ -617,20 +699,213 @@ async def pipeline_run_v2(
         trace_id=trace_id,
         username=username,
         request_id=_request_id(request),
+        run_id=run_id,
+        execution_mode=execution_mode,
+        input_snapshot_hash=snapshot,
     )
     get_audit_logger().log(
         user_id=user_id,
         action="pipeline_trigger",
-        detail={"task_type": "run-v2"},
+        detail={"task_type": "run-v2", "execution_mode": execution_mode},
     )
     return {
         "ok": True,
         "data": {
             "task_id": task["task_id"],
             "trace_id": trace_id,
+            "run_id": run_id,
+            "execution_mode": execution_mode,
+            "input_snapshot_hash": snapshot,
             "message": "任务已创建，请轮询状态",
         },
     }
+
+
+async def _enabled_product_ids(db: Any, user_id: str) -> list[str]:
+    """当前用户已启用的产品 id（重放时的权限范围校验依据）。"""
+    try:
+        cursor = db["user_products"].find({"user_id": user_id, "enabled": True})
+        docs = await cursor.to_list(length=200)
+        return sorted(str(d.get("product_id") or "") for d in docs)
+    except Exception:
+        logger.warning("[pipeline] load products failed")
+        return []
+
+
+async def _build_input_snapshot(db: Any, user_id: str) -> str:
+    """从当前数据组装输入快照指纹（产品集合 + 待处理文章集合）。
+
+    仅用于入口展示与 plan 关联；运行期间文章 pipeline_status 会变化，
+    重放校验不重算此值（见 replay_step 的产品范围校验）。
+    """
+    product_ids = await _enabled_product_ids(db, user_id)
+    article_ids: list[str] = []
+    try:
+        cursor = db["articles"].find(
+            {"pipeline_status": {"$in": ["pending", "crawled"]}},
+            {"url_hash": 1},
+        )
+        docs = await cursor.to_list(length=500)
+        article_ids = [str(d.get("url_hash") or "") for d in docs]
+    except Exception:
+        logger.warning("[pipeline] load articles for snapshot failed")
+    return input_snapshot_hash(user_id=user_id, product_ids=product_ids, article_ids=article_ids)
+
+
+def _get_multi_agent_runtime(request: Request):
+    """从 app.state 获取 MultiAgentRuntime，未初始化返回 None。"""
+    return getattr(getattr(request.app.state, "state", request.app.state), "multi_agent", None)
+
+
+@router.get("/runs/{run_id}/plan", summary="读取 MultiAgent 计划与步骤账本")
+async def get_run_plan(
+    run_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
+    """读取计划的 plan/steps（仅限本人 run，人工重放与前端树形视图共用）。"""
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    task = await db["pipeline_tasks"].find_one({"run_id": run_id})
+    if task is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if task.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Cannot access another user's run")
+
+    plan_doc = await db["planner_plans"].find_one({"run_id": run_id})
+    ledger_col = db["execution_step_ledger"]
+    cursor = ledger_col.find({"run_id": run_id})
+    steps = [doc async for doc in cursor] if not hasattr(cursor, "to_list") else await cursor.to_list(length=100)
+
+    return {
+        "ok": True,
+        "data": {
+            "run_id": run_id,
+            "plan": jsonable_encoder(plan_doc) if plan_doc else None,
+            "steps": jsonable_encoder(steps),
+        },
+    }
+
+
+@router.get("/runs/{run_id}/steps", summary="读取 run 的步骤账本")
+async def get_run_steps(
+    run_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
+    """读取 execution_step_ledger 步骤（含状态/attempt/hash/error，脱敏）。"""
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    task = await db["pipeline_tasks"].find_one({"run_id": run_id})
+    if task is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if task.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Cannot access another user's run")
+    ledger_col = db["execution_step_ledger"]
+    cursor = ledger_col.find({"run_id": run_id})
+    docs = [doc async for doc in cursor] if not hasattr(cursor, "to_list") else await cursor.to_list(length=100)
+    for doc in docs:
+        if doc.get("error_message"):
+            doc["error_message"] = str(doc["error_message"])[:500]
+    return {"ok": True, "data": {"run_id": run_id, "steps": jsonable_encoder(docs)}}
+
+
+@router.post("/runs/{run_id}/cancel", summary="幂等取消 MultiAgent run")
+async def cancel_run(
+    run_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
+    """幂等取消：标记 pending/running 步骤为 canceled，并取消后台任务。"""
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    task = await db["pipeline_tasks"].find_one({"run_id": run_id})
+    if task is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if task.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Cannot access another user's run")
+
+    canceled = 0
+    try:
+        cursor = db["execution_step_ledger"].find({"run_id": run_id})
+        docs = [doc async for doc in cursor] if not hasattr(cursor, "to_list") else await cursor.to_list(length=100)
+    except Exception:
+        docs = []
+    if docs:
+        res = await db["execution_step_ledger"].update_many(
+            {"run_id": run_id, "status": {"$in": ["pending", "running"]}},
+            {"$set": {"status": "canceled", "updated_at": datetime.now(UTC)}},
+        )
+        canceled = int(getattr(res, "modified_count", 0))
+
+    pool = getattr(request.app.state, "arq_pool", None)
+    if pool is not None:
+        try:
+            job = pool.job(task.get("task_id") or "")
+            await job.abort()
+        except Exception:
+            # 任务可能已结束；幂等取消，不因 abort 失败报错
+            pass
+    now = datetime.now(UTC)
+    await db["pipeline_tasks"].update_one(
+        {"task_id": task.get("task_id")},
+        {"$set": {"status": "cancelled", "error": "cancelled by user", "updated_at": now}},
+    )
+    return {"ok": True, "data": {"run_id": run_id, "canceled_steps": canceled}}
+
+
+@router.post("/runs/{run_id}/steps/{step_id}/replay", summary="人工重放失败/死信步骤")
+async def replay_step(
+    run_id: str,
+    step_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
+    """人工重放：仅接受 dead-letter/failed 步骤，校验权限与最新输入。
+
+    客户端不可提交 Worker / step args / owner user，全部由服务端确定。
+    """
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    task = await db["pipeline_tasks"].find_one({"run_id": run_id})
+    if task is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if task.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Cannot access another user's run")
+    runtime = _get_multi_agent_runtime(request)
+    if runtime is None:
+        raise HTTPException(status_code=503, detail="Multi-agent runtime not initialized")
+    entry = await runtime.ledger.get_step(run_id, step_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Step not found")
+    if entry.status not in ("failed", "dead_lettered"):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "NOT_REPLAYABLE", "message": f"仅 failed/dead_lettered 步骤可重放，当前 {entry.status}"},
+        )
+
+    async def verify_latest_input(ledger_entry) -> bool:
+        # 校验产品授权范围未变更（用户被移除产品/授权变化时拒绝重放）。
+        # 文章 pipeline_status 在运行期间会变化，不用于范围比对。
+        current = await _enabled_product_ids(db, user_id)
+        return current == (task or {}).get("product_ids", [])
+
+    try:
+        outcome = await runtime.replay_step(
+            run_id=run_id,
+            step_id=step_id,
+            owner_id=f"human-replay-{user_id[:16]}",
+            user_id=user_id,
+            trace_id=task.get("trace_id") or "",
+            verify_latest_input=verify_latest_input,
+        )
+    except MultiAgentReplayError as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code, "message": str(exc)}) from exc
+    return {"ok": True, "data": outcome.model_dump(mode="json")}
 
 
 async def _execute_crawl_pipeline(

@@ -30,6 +30,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     from agent.draft_generator import DraftGenerator
     from agent.draft_reviewer import DraftReviewer
     from agent.knowledge import KnowledgeLoader
+    from agent.multi_agent import build_multi_agent_runtime
     from agent.pipeline import PipelineManager
     from agent.pipeline_v2 import PipelineManagerV2
     from agent.reporter import ReportAgent
@@ -88,6 +89,14 @@ async def startup(ctx: dict[str, Any]) -> None:
         db=db,
         crawl_client=mcp_crawl_client,
     )
+    from agent.llm_wrapper import LLMWrapper
+
+    multi_agent = build_multi_agent_runtime(
+        db=db,
+        manager=pipeline_v2,
+        llm_wrapper=LLMWrapper(llm, db),
+        settings=settings,
+    )
     app = SimpleNamespace(
         state=SimpleNamespace(
             db=db,
@@ -100,6 +109,7 @@ async def startup(ctx: dict[str, Any]) -> None:
             pipeline_manager=pipeline_manager,
             mcp_crawl_client=mcp_crawl_client,
             template_repository=template_repository,
+            multi_agent=multi_agent,
         )
     )
     ctx.update(
@@ -110,6 +120,7 @@ async def startup(ctx: dict[str, Any]) -> None:
             "pipeline_v2": pipeline_v2,
             "mcp_crawl_client": mcp_crawl_client,
             "template_repository": template_repository,
+            "multi_agent": multi_agent,
         }
     )
     logger.info("ARQ worker runtime initialized")

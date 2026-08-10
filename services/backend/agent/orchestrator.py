@@ -111,6 +111,7 @@ class Orchestrator:
         worker_concurrency: int = 2,
         lease_seconds: int = 120,
         default_max_attempts: int = 3,
+        ledger: Any = None,
     ):
         self.registry = registry
         self.owner_id = owner_id
@@ -120,6 +121,9 @@ class Orchestrator:
         self.worker_concurrency = max(1, worker_concurrency)
         self.lease_seconds = max(1, lease_seconds)
         self.default_max_attempts = max(1, default_max_attempts)
+        # 可选 Step Ledger：提供时步骤状态经 CAS 记账（begin/complete/fail），
+        # 供恢复流程与人工重放使用；缺省时仅进程内执行。
+        self.ledger = ledger
 
         self._global_sem = asyncio.Semaphore(self.max_concurrency)
         self._user_sems: dict[str, asyncio.Semaphore] = {}
@@ -162,12 +166,14 @@ class Orchestrator:
             jobs: list[PlanStep] = []
             for step in wave:
                 if not self._deps_ok(plan, step, results):
-                    results[step.step_id] = StepOutcome(
+                    outcome = StepOutcome(
                         step_id=step.step_id,
                         worker=step.worker,
                         status="skipped",
                         reason="dependency failed",
                     )
+                    results[step.step_id] = outcome
+                    await self._record_outcome(plan, step, outcome)
                     continue
                 jobs.append(step)
             if not jobs:
@@ -193,9 +199,15 @@ class Orchestrator:
                 if outcome.status in ("failed", "dead_lettered") and step.policy != "required":
                     outcome = outcome.model_copy(update={"status": "skipped", "reason": "optional failure ignored"})
                 results[step.step_id] = outcome
+                await self._record_outcome(plan, step, outcome)
 
-        if not canceled and self._is_canceled(cancel_event, deadline_at):
+        if canceled or self._is_canceled(cancel_event, deadline_at):
             canceled = True
+            if self.ledger is not None:
+                try:
+                    await self.ledger.cancel_run(plan.run_id, reason="canceled by user/deadline")
+                except Exception:
+                    logger.warning("[orchestrator] ledger cancel_run failed")
         status = self._final_status(canceled, results)
         duration_ms = int((time.perf_counter() - started) * 1000)
         unscheduled_status = "canceled" if canceled else "skipped"
@@ -239,6 +251,7 @@ class Orchestrator:
         max_attempts = spec.max_attempts or self.default_max_attempts
         attempt = 0
         last_result: WorkerResult | None = None
+        last_claim: Any = None
 
         while attempt < max_attempts:
             if cancel_event is not None and cancel_event.is_set():
@@ -247,12 +260,38 @@ class Orchestrator:
                 return StepOutcome(step_id=step.step_id, worker=step.worker, status="canceled", attempt=attempt + 1)
 
             attempt += 1
+            claim = None
+            if self.ledger is not None:
+                try:
+                    claim = await self.ledger.begin_attempt(
+                        run_id=plan.run_id,
+                        step_id=step.step_id,
+                        owner_id=self.owner_id,
+                        attempt=attempt,
+                    )
+                except Exception as exc:
+                    # 其他恢复者已接管/步骤进入终态：不执行，避免重复业务写入
+                    logger.warning("[orchestrator] ledger claim rejected for %s: %s", step.step_id, exc)
+                    return StepOutcome(
+                        step_id=step.step_id,
+                        worker=step.worker,
+                        status="failed",
+                        attempt=attempt,
+                        error_type="lease_conflict",
+                        error_message=str(exc)[:2000],
+                        reason="lease_conflict",
+                    )
+            last_claim = claim
             lease = WorkerLease(
                 owner_id=self.owner_id,
                 run_id=plan.run_id,
                 step_id=step.step_id,
-                expires_at=_utc_now() + timedelta(seconds=self.lease_seconds),
-                fencing_token=attempt,
+                expires_at=(
+                    claim.lease_expires_at
+                    if claim is not None
+                    else _utc_now() + timedelta(seconds=self.lease_seconds)
+                ),
+                fencing_token=claim.fencing_token if claim is not None else attempt,
             )
             step_ctx = dict(
                 base_ctx,
@@ -301,6 +340,20 @@ class Orchestrator:
                 )
 
             if last_result.status == "succeeded":
+                if claim is not None:
+                    try:
+                        await self.ledger.complete(
+                            run_id=plan.run_id,
+                            step_id=step.step_id,
+                            owner_id=self.owner_id,
+                            fencing_token=claim.fencing_token,
+                            result=last_result,
+                        )
+                    except Exception as exc:
+                        # 业务写入已成功且幂等；fencing 被接管时仅记录冲突
+                        logger.warning(
+                            "[orchestrator] ledger complete rejected for %s: %s", step.step_id, exc
+                        )
                 return StepOutcome(
                     step_id=step.step_id,
                     worker=step.worker,
@@ -311,11 +364,39 @@ class Orchestrator:
                     result_hash=last_result.result_hash,
                     duration_ms=last_result.duration_ms,
                 )
+            # 失败：可重试则记 failed 供下一轮 begin_attempt；非重试直接终态
+            if claim is not None:
+                try:
+                    await self.ledger.fail(
+                        run_id=plan.run_id,
+                        step_id=step.step_id,
+                        owner_id=self.owner_id,
+                        fencing_token=claim.fencing_token,
+                        status="failed",
+                        error_type=last_result.error_type,
+                        error_message=last_result.error_message,
+                        retryable=last_result.retryable,
+                        result_hash=last_result.result_hash,
+                    )
+                except Exception as exc:
+                    logger.warning("[orchestrator] ledger fail rejected for %s: %s", step.step_id, exc)
             if not last_result.retryable:
                 break
 
         assert last_result is not None
         final_status = "dead_lettered" if last_result.retryable else "failed"
+        if final_status == "dead_lettered" and last_claim is not None:
+            try:
+                await self.ledger.mark_dead_lettered(
+                    run_id=plan.run_id,
+                    step_id=step.step_id,
+                    error_type=last_result.error_type,
+                    error_message=last_result.error_message,
+                    result_hash=last_result.result_hash,
+                    retryable=True,
+                )
+            except Exception as exc:
+                logger.warning("[orchestrator] ledger dead-letter failed for %s: %s", step.step_id, exc)
         return StepOutcome(
             step_id=step.step_id,
             worker=step.worker,
@@ -331,6 +412,33 @@ class Orchestrator:
             if final_status == "dead_lettered"
             else last_result.error_type or "failed",
         )
+
+    async def _record_outcome(
+        self,
+        plan: PipelinePlan,
+        step: PlanStep,
+        outcome: StepOutcome,
+    ) -> None:
+        """把 Orchestrator 内部决策同步到 Step Ledger（缺省 ledger 时为纯内存）。"""
+        if self.ledger is None:
+            return
+        try:
+            if outcome.status == "skipped":
+                # 依赖失败时 ledger 中仍是 pending；optional/best_effort 失败
+                # 转跳过时 ledger 中是 failed/dead_lettered —— force_skip 均覆盖。
+                updated = await self.ledger.force_skip(
+                    run_id=plan.run_id,
+                    step_id=step.step_id,
+                    reason=outcome.reason or "skipped",
+                )
+                if updated is None:
+                    # 已被并发恢复者置为终态（如 succeeded），不再覆盖
+                    logger.info("[orchestrator] ledger skip no-op for %s", step.step_id)
+            # succeeded/failed/dead_lettered 已在 _run_with_retry 记账，无需重复
+        except Exception as exc:
+            logger.warning(
+                "[orchestrator] ledger outcome recording failed for %s: %s", step.step_id, exc
+            )
 
     def _deps_ok(
         self,

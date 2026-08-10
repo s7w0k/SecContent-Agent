@@ -410,6 +410,78 @@ class ExecutionStepLedger:
             )
         return StepLedgerEntry.model_validate(doc)
 
+    async def force_skip(
+        self,
+        *,
+        run_id: str,
+        step_id: str,
+        reason: str = "",
+        now: datetime | None = None,
+    ) -> StepLedgerEntry | None:
+        """终态强制跳过：failed/dead_lettered → skipped（optional 策略继续）。
+
+        orchestrator 在 optional/best_effort 步骤失败被策略跳过时调用；
+        跳过发生在失败记账之后，因此必须允许从失败/死信终态迁移。
+        """
+        now = now or _utc_now()
+        doc = await self.col.find_one_and_update(
+            {
+                "run_id": run_id,
+                "step_id": step_id,
+                "status": {"$in": ["pending", "running", "failed", "dead_lettered"]},
+            },
+            {
+                "$set": {
+                    "status": "skipped",
+                    "error_type": reason or None,
+                    "finished_at": now,
+                    "updated_at": now,
+                }
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+        return StepLedgerEntry.model_validate(doc) if doc else None
+
+    async def mark_dead_lettered(
+        self,
+        *,
+        run_id: str,
+        step_id: str,
+        error_type: str | None = None,
+        error_message: str | None = None,
+        result_hash: str = "",
+        retryable: bool = True,
+        now: datetime | None = None,
+    ) -> StepLedgerEntry | None:
+        """死信升级：running/failed → dead_lettered（重试耗尽）。
+
+        orchestrator 中 retryable 失败在每轮尝试后记 failed（便于下一轮
+        begin_attempt 重新领取），耗尽后升级为 dead_lettered。
+        """
+        now = now or _utc_now()
+        doc = await self.col.find_one_and_update(
+            {
+                "run_id": run_id,
+                "step_id": step_id,
+                "status": {"$in": ["running", "failed"]},
+            },
+            {
+                "$set": {
+                    "status": "dead_lettered",
+                    "result_hash": result_hash,
+                    "error_type": error_type,
+                    "retryable": retryable,
+                    "error_message": error_message,
+                    "lease_owner": "",
+                    "lease_expires_at": None,
+                    "finished_at": now,
+                    "updated_at": now,
+                }
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+        return StepLedgerEntry.model_validate(doc) if doc else None
+
     async def cancel_run(self, run_id: str, *, reason: str = "") -> int:
         """幂等取消：把 pending/running 步骤置为 canceled。返回受影响数。"""
         now = _utc_now()

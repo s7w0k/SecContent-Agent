@@ -906,9 +906,210 @@ class PipelineManagerV2:
         username: str = "",
         task_id: str = "",
         request_id: str = "",
+        run_id: str = "",
+        execution_mode: str = "current",
+        input_snapshot_hash: str = "",
     ) -> dict:
         """执行全流程 V2 流水线，状态按 task_id 持久化。"""
-        return await self._run(crawl_days, user_id, trace_id, username, task_id, request_id)
+        return await self._run(
+            crawl_days,
+            user_id,
+            trace_id,
+            username,
+            task_id,
+            request_id,
+            run_id=run_id,
+            execution_mode=execution_mode,
+            input_snapshot_hash=input_snapshot_hash,
+        )
+
+    async def run_planned(
+        self,
+        *,
+        crawl_days: int = 1,
+        user_id: str = "",
+        trace_id: str = "",
+        username: str = "",
+        task_id: str = "",
+        request_id: str = "",
+        run_id: str = "",
+        input_snapshot_hash: str = "",
+        runtime: Any = None,
+        shadow: bool = False,
+    ) -> dict:
+        """MultiAgent 编排入口（Step 7 双轨）。
+
+        - runtime 缺失或 planner 失败/回退（source != "planner"）→ 走当前固定
+          LangGraph DAG（零副作用，与 run_full 行为一致）；
+        - planner 成功 → planner → orchestrator 按拓扑波次执行，步骤经
+          execution_step_ledger 记账；shadow=True 时业务写操作只记录差异。
+        """
+        from agent.multi_agent import MODE_CURRENT, MODE_PLANNED, MODE_SHADOW
+
+        pipeline_id = task_id or uuid4().hex[:8]
+        if runtime is None:
+            result = await self._run(
+                crawl_days,
+                user_id,
+                trace_id,
+                username,
+                task_id,
+                request_id,
+                run_id=run_id,
+                execution_mode=MODE_CURRENT,
+                input_snapshot_hash=input_snapshot_hash,
+            )
+            result["plan_source"] = "fallback"
+            result["plan_reason"] = "multi-agent runtime not initialized"
+            return result
+
+        state = create_state_v2(
+            crawl_days=crawl_days,
+            user_id=user_id,
+            trace_id=trace_id,
+            username=username,
+            request_id=request_id,
+        )
+        state["task_id"] = pipeline_id
+        state["run_id"] = run_id
+        state["input_snapshot_hash"] = input_snapshot_hash
+        state["agent_mode"] = "planned"
+        state["execution_mode"] = MODE_SHADOW if shadow else MODE_PLANNED
+        state["status"] = PipelineStatusV2.RUNNING.value
+        state["started_at"] = _now_iso()
+
+        if self._state_manager is not None:
+            task = await self._state_manager.get_task(pipeline_id, user_id)
+            if task is None:
+                await self._state_manager.create_task(
+                    pipeline_id,
+                    user_id,
+                    "run-v2",
+                    crawl_days=crawl_days,
+                    trace_id=trace_id,
+                    username=username,
+                )
+            await self._state_manager.update_status(
+                pipeline_id,
+                PipelineStatusV2.RUNNING.value,
+                progress={
+                    "phase": "planning",
+                    "current": 0,
+                    "total": 9,
+                    "message": "正在规划执行计划...",
+                },
+                state=dict(state),
+                task_metadata={
+                    "thread_id": f"thread-{pipeline_id}",
+                    "checkpoint_ns": "",
+                    "crawl_days": crawl_days,
+                    "trace_id": trace_id or None,
+                    "username": username or user_id,
+                    "run_id": run_id or None,
+                    "execution_mode": state["execution_mode"],
+                    "agent_mode": "planned",
+                },
+            )
+
+        try:
+            context = await runtime.build_planner_context(
+                user_id=user_id, trace_id=trace_id, state=state
+            )
+            outcome = await runtime.planner.plan(
+                run_id=run_id or f"run-{uuid4().hex[:16]}",
+                user_id=user_id,
+                trace_id=trace_id,
+                **context,
+            )
+            if outcome.plan is None or outcome.source != "planner":
+                # planner 禁用/超时/异常/违规 → 当前固定 DAG（零副作用回退）
+                logger.info(
+                    "[pipeline_v2] planner fallback (%s): %s", outcome.source, outcome.reason
+                )
+                result = await self._run(
+                    crawl_days,
+                    user_id,
+                    trace_id,
+                    username,
+                    task_id,
+                    request_id,
+                    run_id=run_id,
+                    execution_mode=MODE_CURRENT,
+                    input_snapshot_hash=input_snapshot_hash,
+                )
+                result["plan_source"] = outcome.source
+                result["plan_reason"] = outcome.reason
+                return result
+
+            plan = outcome.plan
+            if runtime.ledger is not None:
+                await runtime.ledger.init_run(plan)
+            orchestrator = runtime.orchestrator_for(shadow=shadow)
+            run_outcome = await orchestrator.run(
+                plan, state=state, user_id=user_id, trace_id=trace_id
+            )
+            final_status = {
+                "completed": PipelineStatusV2.COMPLETED.value,
+                "failed": PipelineStatusV2.FAILED.value,
+                "canceled": PipelineStatusV2.CANCELLED.value,
+            }.get(run_outcome.status, PipelineStatusV2.FAILED.value)
+            state["status"] = final_status
+            state["finished_at"] = _now_iso()
+            result = {
+                "pipeline_id": pipeline_id,
+                "task_id": pipeline_id,
+                "status": final_status,
+                "execution_mode": state["execution_mode"],
+                "plan_source": outcome.source,
+                "plan_id": plan.plan_id,
+                "run_id": plan.run_id,
+                "plan_hash": outcome.plan_hash,
+                "input_snapshot_hash": outcome.input_snapshot_hash,
+                "state": dict(state),
+                "steps": [s.model_dump(mode="json") for s in run_outcome.steps],
+            }
+        except asyncio.CancelledError:
+            state["status"] = PipelineStatusV2.CANCELLED.value
+            state["finished_at"] = _now_iso()
+            result = {
+                "pipeline_id": pipeline_id,
+                "task_id": pipeline_id,
+                "status": PipelineStatusV2.CANCELLED.value,
+                "execution_mode": state["execution_mode"],
+                "state": dict(state),
+            }
+        except Exception as exc:
+            # 编排阶段异常：标记失败，不回退当前 DAG（避免重复业务写入）
+            logger.error("[pipeline_v2] planned run fatal: %s", exc)
+            state["status"] = PipelineStatusV2.FAILED.value
+            state["errors"].append(f"planned: {exc}")
+            state["finished_at"] = _now_iso()
+            result = {
+                "pipeline_id": pipeline_id,
+                "task_id": pipeline_id,
+                "status": PipelineStatusV2.FAILED.value,
+                "execution_mode": state["execution_mode"],
+                "state": dict(state),
+            }
+
+        if self._state_manager is not None:
+            await self._state_manager.update_status(
+                pipeline_id,
+                result["status"],
+                progress={
+                    "phase": result["status"],
+                    "current": 9 if result["status"] == PipelineStatusV2.COMPLETED.value else 0,
+                    "total": 9,
+                    "message": "任务完成"
+                    if result["status"] == PipelineStatusV2.COMPLETED.value
+                    else "任务已结束",
+                },
+                last_node=state.get("current_phase", ""),
+                state=dict(state),
+                error="; ".join(state["errors"]) if state["errors"] else None,
+                result=result,
+            )
+        return result
 
     # ── 内部实现 ──────────────────────────────────────────────
 
@@ -1011,6 +1212,9 @@ class PipelineManagerV2:
         username: str = "",
         task_id: str = "",
         request_id: str = "",
+        run_id: str = "",
+        execution_mode: str = "current",
+        input_snapshot_hash: str = "",
     ) -> dict:
         pipeline_id = task_id or uuid4().hex[:8]
         state = create_state_v2(
@@ -1021,6 +1225,10 @@ class PipelineManagerV2:
             request_id=request_id,
         )
         state["task_id"] = pipeline_id
+        state["run_id"] = run_id
+        state["execution_mode"] = execution_mode
+        state["input_snapshot_hash"] = input_snapshot_hash
+        state["agent_mode"] = "current"
         state["status"] = PipelineStatusV2.RUNNING.value
         state["started_at"] = _now_iso()
 
@@ -1082,6 +1290,8 @@ class PipelineManagerV2:
         result = {
             "pipeline_id": pipeline_id,
             "status": status,
+            "execution_mode": final_state.get("execution_mode", execution_mode),
+            "run_id": final_state.get("run_id", ""),
             "state": dict(final_state),
         }
         if self._state_manager is not None:

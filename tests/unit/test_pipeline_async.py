@@ -426,6 +426,8 @@ async def test_run_v2_endpoint_enqueues_worker_job():
     )
     task_id = response["data"]["task_id"]
     assert tasks.documents[task_id]["status"] == "pending"
+    assert response["data"]["run_id"].startswith("run-")
+    assert response["data"]["execution_mode"] == "current"
     arq_pool.enqueue_job.assert_awaited_once_with(
         "execute_pipeline",
         task_id=task_id,
@@ -436,6 +438,9 @@ async def test_run_v2_endpoint_enqueues_worker_job():
         trace_id=response["data"]["trace_id"],
         username="user-a",
         request_id="",
+        run_id=response["data"]["run_id"],
+        execution_mode="current",
+        input_snapshot_hash=response["data"]["input_snapshot_hash"],
         _job_id=task_id,
     )
 

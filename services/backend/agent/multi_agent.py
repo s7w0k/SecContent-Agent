@@ -408,6 +408,7 @@ def build_multi_agent_runtime(
         validator=validator,
         planner_version=PLANNER_VERSION,
     )
+    ledger = ExecutionStepLedger(db, lease_seconds=settings.WORKER_LEASE_SECONDS)
     orchestrator = Orchestrator(
         registry,
         owner_id="multi-agent-worker",
@@ -415,8 +416,8 @@ def build_multi_agent_runtime(
         user_concurrency=settings.ORCHESTRATOR_USER_CONCURRENCY,
         lease_seconds=settings.WORKER_LEASE_SECONDS,
         default_max_attempts=settings.WORKER_MAX_ATTEMPTS,
+        ledger=ledger,
     )
-    ledger = ExecutionStepLedger(db, lease_seconds=settings.WORKER_LEASE_SECONDS)
     return MultiAgentRuntime(
         planner=planner,
         validator=validator,

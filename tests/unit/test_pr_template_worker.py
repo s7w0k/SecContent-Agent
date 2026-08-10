@@ -7,6 +7,15 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 
+class _FakeCollections(dict):
+    """为运行时装配提供任意 Mongo 集合（懒创建 MagicMock）。"""
+
+    def __getitem__(self, name: str) -> MagicMock:
+        if name not in dict.keys(self):
+            dict.__setitem__(self, name, MagicMock(name=f"collection:{name}"))
+        return dict.__getitem__(self, name)
+
+
 @pytest.mark.asyncio
 async def test_worker_startup_shares_template_repository_with_pipeline(
     monkeypatch: pytest.MonkeyPatch,
@@ -14,7 +23,7 @@ async def test_worker_startup_shares_template_repository_with_pipeline(
     import worker
     from db.mongo import MongoDB
 
-    database: dict = {}
+    database: dict = _FakeCollections()
     repository = MagicMock(name="template_repository")
     pipeline_v2 = MagicMock(name="pipeline_v2")
     pipeline_v2_factory = MagicMock(return_value=pipeline_v2)

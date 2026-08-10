@@ -107,6 +107,9 @@ async def test_pipeline_task_is_enqueued_with_durable_job_id():
         trace_id="trace-a",
         username="alice",
         request_id="request-a",
+        run_id="",
+        execution_mode="",
+        input_snapshot_hash="",
         _job_id="task-a",
     )
 
