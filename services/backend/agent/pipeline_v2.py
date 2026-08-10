@@ -132,10 +132,15 @@ async def crawl_node_v2(
 
 
 def _incomplete_article_query() -> dict[str, Any]:
-    """MongoDB query for crawled articles whose body is shorter than 200 chars."""
+    """MongoDB query for crawled articles whose body is shorter than 200 chars.
+
+    排除已标记 ``enrich_failed`` 的文章：前向恢复语义下不再反复补爬，
+    保留原摘要，等待人工重放或新内容源刷新。
+    """
     return {
         "pipeline_status": "crawled",
         "url": {"$nin": [None, ""]},
+        "enrich_failed": {"$ne": True},
         "$expr": {
             "$lt": [
                 {"$strLenCP": {"$ifNull": ["$content_md", ""]}},
@@ -176,6 +181,16 @@ async def enrich_node(
     if not articles:
         return state
 
+    async def mark_enrich_failed(url_hash: Any, reason: str = "enrich_failed") -> None:
+        """保留原摘要（不写 content_md），仅标记 enrich_failed，按 policy 继续。"""
+        try:
+            await db["articles"].update_one(
+                {"url_hash": url_hash},
+                {"$set": {"enrich_failed": True, "enrich_failed_reason": reason}},
+            )
+        except Exception:
+            logger.warning("[enrich] mark enrich_failed failed for %s", url_hash)
+
     try:
         context = RequestContext.create(
             request_id=state.get("request_id"),
@@ -187,6 +202,8 @@ async def enrich_node(
         for article in articles:
             content = content_by_url.get(article.get("url", ""), "")
             if len(content) < 200:
+                # 抓取失败或正文仍不足：保留原摘要，标记 enrich_failed，避免每次重试
+                await mark_enrich_failed(article.get("url_hash"))
                 continue
             await db["articles"].update_one(
                 {"_id": article["_id"]},
@@ -194,10 +211,14 @@ async def enrich_node(
             )
             enriched_count += 1
         state["enriched_count"] = enriched_count
+        state["enrich_failed_count"] = len(articles) - enriched_count
         logger.info("[enrich] Enriched %d/%d articles", enriched_count, len(articles))
     except Exception as exc:
         logger.warning("[enrich] Full-text enrichment failed: %s", exc)
         state["errors"].append(f"enrich: {exc}")
+        state["enrich_failed_count"] = len(articles)
+        for article in articles:
+            await mark_enrich_failed(article.get("url_hash"), reason="enrich_batch_failed")
     return state
 
 
@@ -770,12 +791,24 @@ async def review_node(state: dict, reviewer: Any, db: Any) -> dict:
     state["review_count"] = len(statuses)
     state["review_failed_count"] = sum(status == "failed" for status in statuses)
     state["review_reused_count"] = reused_count
+    # 前向恢复：任一草稿评审失败 → 文档级 review_status=pending_review，禁止发布；
+    # 草稿保留未发布状态，等待人工重放 review 后再发布。
+    pending_docs: set[str] = {
+        url_hash for (url_hash, _pos, _art, _draft), status in zip(jobs, statuses) if status == "failed"
+    }
+    for url_hash in pending_docs:
+        await db["user_drafts"].update_one(
+            {"user_id": state["user_id"], "article_url_hash": url_hash},
+            {"$set": {"review_status": "pending_review", "updated_at": datetime.now(UTC)}},
+        )
+    state["review_pending_count"] = len(pending_docs)
     duration_ms = int((time.perf_counter() - started) * 1000)
     logger.info(
-        "[review] Reviewed %d drafts, reused %d, failed %d",
+        "[review] Reviewed %d drafts, reused %d, failed %d, pending_review %d",
         state["review_count"],
         reused_count,
         state["review_failed_count"],
+        state["review_pending_count"],
     )
     await _log_stage(
         state,

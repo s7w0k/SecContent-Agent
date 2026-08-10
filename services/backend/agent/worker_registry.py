@@ -343,14 +343,14 @@ _DEFAULT_SPEC: dict[str, dict[str, Any]] = {
 
 _OUTPUT_KEYS: dict[str, tuple[str, ...]] = {
     "crawl": ("crawled_count", "needs_enrich", "incomplete_article_count"),
-    "enrich": ("enriched_count",),
+    "enrich": ("enriched_count", "enrich_failed_count"),
     "classify": ("classified_v2_count", "low_confidence_count"),
     "filter": ("pr_eligible_count",),
     "score": ("scored_v2_count", "score_anomaly", "score_threshold"),
     "draft": ("draft_count",),
     "quality_check": ("needs_rewrite",),
     "rewrite": ("rewritten_count",),
-    "review": ("review_count", "review_failed_count", "review_reused_count"),
+    "review": ("review_count", "review_failed_count", "review_reused_count", "review_pending_count"),
 }
 
 

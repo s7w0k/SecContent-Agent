@@ -325,6 +325,33 @@ class TestCASLease:
         assert entry.lease_owner == ""
         assert entry.finished_at is not None
 
+    async def test_mark_dead_lettered_persists_recovery_hint(self):
+        """Step 8：死信保存稳定错误码/attempt/result-hash 与恢复建议，不含全文。"""
+        db, _ = _db()
+        ledger = await _populate(db, _plan())
+        await ledger.begin_attempt(run_id="run-1", step_id="crawl", owner_id="o1", attempt=3)
+        entry = await ledger.mark_dead_lettered(
+            run_id="run-1",
+            step_id="crawl",
+            error_type="timeout",
+            error_message="exhausted after 3 attempts",
+            result_hash="sha256:r",
+            retryable=True,
+            recovery_hint="retry via POST /api/pipeline/runs/run-1/steps/crawl/replay",
+        )
+        assert entry is not None
+        assert entry.status == "dead_lettered"
+        assert entry.attempt == 3
+        assert entry.error_type == "timeout"
+        assert entry.result_hash == "sha256:r"
+        assert "replay" in entry.recovery_hint
+        assert "prompt" not in entry.model_dump()
+        # 再次死信升级是 no-op（终态不可重复升级）
+        again = await ledger.mark_dead_lettered(
+            run_id="run-1", step_id="crawl", error_type="timeout"
+        )
+        assert again is None
+
     async def test_skip(self):
         db, _ = _db()
         ledger = await _populate(db, _plan())

@@ -238,7 +238,7 @@ class TestFailureAndRetry:
         registry.register(_FakeAdapter("crawl", behavior=behavior, max_attempts=2, retry_safe=True))
         plan = _plan([_step("s1", "crawl")])
         outcome = asyncio.run(_run(plan, registry, user_id="u-1"))
-        assert outcome.status == "failed"
+        assert outcome.status == "partial"
         assert outcome.steps[0].status == "dead_lettered"
         assert outcome.steps[0].attempt == 2
 

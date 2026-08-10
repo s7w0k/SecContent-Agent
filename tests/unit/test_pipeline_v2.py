@@ -268,6 +268,119 @@ class TestClassifyV2Node:
         assert result["classified_v2_count"] == 1
 
 
+class TestEnrichNode:
+    @pytest.mark.asyncio
+    async def test_enrich_marks_failed_articles_and_preserves_original_summary(self):
+        """Step 8 前向恢复：抓取失败的文章标记 enrich_failed，原摘要保留。"""
+        from agent.pipeline_v2 import create_state_v2, enrich_node
+
+        articles = [
+            {
+                "_id": "a1",
+                "url_hash": "h1",
+                "url": "https://example.com/1",
+                "content_md": "短正文（不足 200 字，作为原始摘要保留）",
+            },
+            {
+                "_id": "a2",
+                "url_hash": "h2",
+                "url": "https://example.com/2",
+                "content_md": "同样短的摘要",
+            },
+        ]
+        articles_col = MagicMock()
+        cursor = MagicMock()
+        cursor.to_list = AsyncMock(return_value=articles)
+        articles_col.find = MagicMock(return_value=cursor)
+        articles_col.update_one = AsyncMock()
+        pipeline_logs = MagicMock()
+        pipeline_logs.insert_one = AsyncMock()
+        db = {"articles": articles_col, "pipeline_logs": pipeline_logs}
+
+        crawl_client = MagicMock()
+        # 只成功抓取到文章 1；文章 2 抓取失败
+        crawl_client.fetch_fulltext_batch = AsyncMock(
+            return_value={"https://example.com/1": "x" * 500}
+        )
+
+        result = await enrich_node(
+            create_state_v2(user_id="user-a"), {}, db, crawl_client
+        )
+
+        assert result["enriched_count"] == 1
+        assert result["enrich_failed_count"] == 1
+        # 文章 1：正文更新；文章 2：仅标记 enrich_failed，不覆盖原摘要
+        calls = articles_col.update_one.await_args_list
+        content_updates = [
+            call.args[1]["$set"].get("content_md")
+            for call in calls
+            if call.args[1]["$set"].get("content_md")
+        ]
+        assert len(content_updates) == 1
+        assert len(content_updates[0]) == 500
+        failed_marks = [
+            call.args[1]["$set"]
+            for call in calls
+            if call.args[1]["$set"].get("enrich_failed") is True
+        ]
+        assert len(failed_marks) == 1
+        assert failed_marks[0]["enrich_failed_reason"] == "enrich_failed"
+        # 文章 2 未被写入 content_md
+        assert all("content_md" not in mark for mark in failed_marks)
+
+    @pytest.mark.asyncio
+    async def test_enrich_batch_failure_marks_all_failed_and_continues(self):
+        """Step 8 前向恢复：批量抓取异常时全部标记 enrich_failed，按 policy 继续。"""
+        from agent.pipeline_v2 import create_state_v2, enrich_node
+
+        articles = [
+            {
+                "_id": "a1",
+                "url_hash": "h1",
+                "url": "https://example.com/1",
+                "content_md": "原摘要 1",
+            },
+            {
+                "_id": "a2",
+                "url_hash": "h2",
+                "url": "https://example.com/2",
+                "content_md": "原摘要 2",
+            },
+        ]
+        articles_col = MagicMock()
+        cursor = MagicMock()
+        cursor.to_list = AsyncMock(return_value=articles)
+        articles_col.find = MagicMock(return_value=cursor)
+        articles_col.update_one = AsyncMock()
+        pipeline_logs = MagicMock()
+        pipeline_logs.insert_one = AsyncMock()
+        db = {"articles": articles_col, "pipeline_logs": pipeline_logs}
+
+        crawl_client = MagicMock()
+        crawl_client.fetch_fulltext_batch = AsyncMock(side_effect=RuntimeError("crawl down"))
+
+        result = await enrich_node(
+            create_state_v2(user_id="user-a"), {}, db, crawl_client
+        )
+
+        assert result["enrich_failed_count"] == 2
+        assert any("enrich" in error for error in result["errors"])
+        marks = [
+            call.args[1]["$set"]
+            for call in articles_col.update_one.await_args_list
+            if call.args[1]["$set"].get("enrich_failed") is True
+        ]
+        assert len(marks) == 2
+        assert all(mark["enrich_failed_reason"] == "enrich_batch_failed" for mark in marks)
+
+    def test_incomplete_article_query_excludes_enrich_failed(self):
+        """已标记 enrich_failed 的文章不再进入补爬候选。"""
+        from agent.pipeline_v2 import _incomplete_article_query
+
+        query = _incomplete_article_query()
+        assert query["enrich_failed"] == {"$ne": True}
+
+
 class TestScoreV2Node:
     @pytest.mark.asyncio
     async def test_score_v2_no_db(self, mock_scorer, mock_knowledge):
@@ -451,9 +564,18 @@ class TestReviewNode:
 
         assert result["review_count"] == 1
         assert result["review_failed_count"] == 1
-        stored = user_drafts.update_one.await_args.args[1]["$set"]["drafts.0.review"]
+        assert result["review_pending_count"] == 1
+        stored = next(
+            call.args[1]["$set"]["drafts.0.review"]
+            for call in user_drafts.update_one.await_args_list
+            if "drafts.0.review" in call.args[1]["$set"]
+        )
         assert stored["status"] == "failed"
         assert stored["error"] == "Draft reviewer not initialized"
+        assert any(
+            call.args[1]["$set"].get("review_status") == "pending_review"
+            for call in user_drafts.update_one.await_args_list
+        )
 
     @pytest.mark.asyncio
     async def test_review_limits_concurrency_reuses_hash_and_persists_results(self):
@@ -574,8 +696,60 @@ class TestReviewNode:
                 if key.startswith("drafts.")
             )
             for call in user_drafts.update_one.await_args_list
+            if any(key.startswith("drafts.") for key in call.args[1]["$set"])
         ]
         assert sorted(stored_statuses) == ["completed", "failed"]
+
+    @pytest.mark.asyncio
+    async def test_review_failure_marks_document_pending_review(self):
+        """Step 8 前向恢复：任一草稿评审失败 → 文档 review_status=pending_review（禁止发布）。"""
+        from agent.draft_reviewer import compute_content_hash
+        from agent.pipeline_v2 import create_state_v2, review_node
+        from models.draft_review import DraftReview
+
+        drafts = [
+            {"title": "Bad", "content_md": "失败稿件"},
+            {"title": "Good", "content_md": "正常稿件"},
+        ]
+        user_drafts = MagicMock()
+        user_drafts.find.return_value.to_list = AsyncMock(
+            return_value=[{"article_url_hash": "hash-1", "drafts": drafts}]
+        )
+        user_drafts.update_one = AsyncMock()
+        articles = MagicMock()
+        articles.find_one = AsyncMock(return_value={"content_md": "原文"})
+        pipeline_logs = MagicMock()
+        pipeline_logs.insert_one = AsyncMock()
+        db = {
+            "user_drafts": user_drafts,
+            "articles": articles,
+            "pipeline_logs": pipeline_logs,
+        }
+
+        async def review(_article, draft):
+            if draft["title"] == "Bad":
+                raise RuntimeError("review unavailable")
+            return DraftReview(
+                status="completed",
+                content_hash=compute_content_hash(draft["content_md"]),
+                summary="未发现问题",
+                issues=[],
+                counts={"high": 0, "medium": 0, "low": 0},
+                fact_check_available=True,
+            )
+
+        reviewer = MagicMock()
+        reviewer.review = AsyncMock(side_effect=review)
+        result = await review_node(create_state_v2(user_id="user-a"), reviewer, db)
+
+        assert result["review_pending_count"] == 1
+        pending_sets = [
+            call.args[1]["$set"]
+            for call in user_drafts.update_one.await_args_list
+            if call.args[1]["$set"].get("review_status") == "pending_review"
+        ]
+        assert len(pending_sets) == 1
+        assert pending_sets[0]["review_status"] == "pending_review"
 
 
 # ═══════════════════════════════════════════════════════════════

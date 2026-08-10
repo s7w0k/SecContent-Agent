@@ -7,7 +7,8 @@ LangGraph 图状态恢复仍由 checkpointer.py/MongoDBSaver 承担（职责分�
     run_id, plan_id, step_id, worker, status, attempt,
     idempotency_key, input_hash, result_hash,
     lease_owner, lease_expires_at, fencing_token,
-    error_type, retryable, started_at, finished_at, expires_at
+    error_type, retryable, recovery_hint,
+    started_at, finished_at, expires_at
 
 设计约束：
   - (run_id, step_id) 唯一，idempotency_key 唯一；
@@ -70,6 +71,7 @@ class StepLedgerEntry(BaseModel):
     fencing_token: int = Field(default=0, ge=0)
     error_type: str | None = Field(default=None, max_length=100)
     retryable: bool = False
+    recovery_hint: str = Field(default="", max_length=200)
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=_utc_now)
@@ -451,12 +453,16 @@ class ExecutionStepLedger:
         error_message: str | None = None,
         result_hash: str = "",
         retryable: bool = True,
+        recovery_hint: str = "",
         now: datetime | None = None,
     ) -> StepLedgerEntry | None:
         """死信升级：running/failed → dead_lettered（重试耗尽）。
 
         orchestrator 中 retryable 失败在每轮尝试后记 failed（便于下一轮
         begin_attempt 重新领取），耗尽后升级为 dead_lettered。
+
+        Dead-letter 只保存稳定错误码/attempt/input-hash/result-hash 与
+        恢复建议，不保存完整 prompt 或工具全文。
         """
         now = now or _utc_now()
         doc = await self.col.find_one_and_update(
@@ -472,6 +478,7 @@ class ExecutionStepLedger:
                     "error_type": error_type,
                     "retryable": retryable,
                     "error_message": error_message,
+                    "recovery_hint": recovery_hint,
                     "lease_owner": "",
                     "lease_expires_at": None,
                     "finished_at": now,

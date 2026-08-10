@@ -54,7 +54,7 @@ class StepOutcome(BaseModel):
 class RunOutcome(BaseModel):
     run_id: str = Field(..., min_length=1, max_length=100)
     plan_id: str = Field(..., min_length=1, max_length=100)
-    status: str = Field(..., description="completed/failed/canceled")
+    status: str = Field(..., description="completed/failed/canceled/partial")
     waves: int = Field(default=0, ge=0)
     steps: list[StepOutcome] = Field(default_factory=list)
     duration_ms: int = Field(default=0, ge=0)
@@ -97,7 +97,8 @@ class Orchestrator:
 
     ``registry`` 提供 name→WorkerAdapter。所有状态迁移均在单进程内
     （CAS 的 Mongo 落地由 Step 6 ledger 承担），run 终态唯一：
-    completed / failed / canceled。
+    completed / failed / canceled / partial。
+    partial = 存在死信步骤（重试耗尽、可人工重放），run 仍保留已确认产物。
     """
 
     def __init__(
@@ -394,6 +395,9 @@ class Orchestrator:
                     error_message=last_result.error_message,
                     result_hash=last_result.result_hash,
                     retryable=True,
+                    recovery_hint=(
+                        "retry via POST /api/pipeline/runs/{run_id}/steps/{step_id}/replay"
+                    ),
                 )
             except Exception as exc:
                 logger.warning("[orchestrator] ledger dead-letter failed for %s: %s", step.step_id, exc)
@@ -470,8 +474,11 @@ class Orchestrator:
     def _final_status(canceled: bool, results: dict[str, StepOutcome]) -> str:
         if canceled:
             return "canceled"
-        if any(r.status in ("failed", "dead_lettered") for r in results.values()):
+        if any(r.status == "failed" for r in results.values()):
             return "failed"
+        # 死信（重试耗尽）步骤保留已确认产物，可单独重放 → partial 而非 failed
+        if any(r.status == "dead_lettered" for r in results.values()):
+            return "partial"
         return "completed"
 
     # ── 并发配额 ──────────────────────────────────────────────
