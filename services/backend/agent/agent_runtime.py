@@ -193,6 +193,15 @@ class AgentRuntime:
         if state.is_terminal:
             return self._result(state, rounds=0, phases=[], status=state.status,
                                 reason="already terminal", reason_code="terminal")
+        if state.status == RuntimeStatus.CANCEL_REQUESTED:
+            # 重启前已请求取消：不再启动任何新调用，立即转为 CANCELED
+            state, _ = state.transition_to(
+                RuntimeStatus.CANCELED, reason="cancel requested before run",
+                reason_code="user_canceled", now=stamp,
+            )
+            return self._result(state, rounds=0, phases=[],
+                                status=RuntimeStatus.CANCELED, reason="user canceled",
+                                reason_code="user_canceled")
         state, _ = state.transition_to(RuntimeStatus.RUNNING, reason="runtime start", now=stamp)
 
         rounds = 0
@@ -207,6 +216,12 @@ class AgentRuntime:
             if lease_lost:
                 last_decision = decide_termination(
                     state, lease_lost=True, now=stamp
+                )
+                break
+            if state.status == RuntimeStatus.CANCEL_REQUESTED:
+                # 持久化的取消请求：API 已置 cancel_requested，安全点立即停止
+                last_decision = decide_termination(
+                    state, user_canceled=True, now=stamp
                 )
                 break
             state, last_decision, round_phases = await self._one_round(

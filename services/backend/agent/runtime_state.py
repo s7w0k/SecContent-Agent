@@ -32,6 +32,7 @@ class RuntimeStatus(str, Enum):
     PLANNING = "planning"
     RUNNING = "running"
     WAITING_APPROVAL = "waiting_approval"
+    CANCEL_REQUESTED = "cancel_requested"  # API 已请求取消，Runtime 在安全点停止
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELED = "canceled"

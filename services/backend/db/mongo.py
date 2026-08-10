@@ -797,6 +797,53 @@ class MongoDB:
                     name="ttl_pipeline_events_expires",
                 ),
             ],
+            # ── 全自主 Agent（阶段四 4A）：运行/事件/审批 ────────
+            "runtime_runs": [
+                IndexModel(
+                    [("run_id", ASCENDING)],
+                    unique=True,
+                    name="uq_runtime_run_id",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_runtime_run_user_created",
+                ),
+                IndexModel(
+                    [("status", ASCENDING), ("updated_at", DESCENDING)],
+                    name="idx_runtime_run_status_updated",
+                ),
+            ],
+            "runtime_events": [
+                IndexModel(
+                    [("run_id", ASCENDING), ("sequence", ASCENDING)],
+                    unique=True,
+                    name="uq_runtime_event_run_seq",
+                ),
+                IndexModel(
+                    [("run_id", ASCENDING), ("created_at", ASCENDING)],
+                    name="idx_runtime_event_run_created",
+                ),
+                IndexModel(
+                    [("expires_at", ASCENDING)],
+                    expireAfterSeconds=0,
+                    name="ttl_runtime_events_expires",
+                ),
+            ],
+            "runtime_approvals": [
+                IndexModel(
+                    [("approval_id", ASCENDING)],
+                    unique=True,
+                    name="uq_runtime_approval_id",
+                ),
+                IndexModel(
+                    [("status", ASCENDING), ("expires_at", ASCENDING)],
+                    name="idx_runtime_approval_status_expires",
+                ),
+                IndexModel(
+                    [("run_id", ASCENDING), ("created_at", ASCENDING)],
+                    name="idx_runtime_approval_run_created",
+                ),
+            ],
         }
 
         try:

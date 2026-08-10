@@ -351,6 +351,9 @@ class TestMongoDBIndexes:
             "execution_step_ledger",
             "ledger_repair_queue",
             "pipeline_events",
+            "runtime_runs",
+            "runtime_events",
+            "runtime_approvals",
             "user_profile_policies",
             "user_memory_events",
             "user_memory_items",
@@ -389,6 +392,9 @@ class TestMongoDBIndexes:
         assert len(result["execution_links"]) == 4
         assert len(result["execution_step_ledger"]) == 6
         assert len(result["ledger_repair_queue"]) == 2
+        assert len(result["runtime_runs"]) == 3
+        assert len(result["runtime_events"]) == 3
+        assert len(result["runtime_approvals"]) == 3
 
         feedback_indexes = {
             index.document["name"]: index.document
@@ -473,5 +479,5 @@ class TestMongoDBIndexes:
             second = await MongoDB.ensure_indexes()
 
         assert first == second
-        assert collection.create_indexes.await_count == 86
+        assert collection.create_indexes.await_count == 92
         assert collection.drop_index.await_count == 2
