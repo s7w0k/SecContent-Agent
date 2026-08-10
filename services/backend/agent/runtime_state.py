@@ -273,6 +273,7 @@ class PendingApproval(BaseModel):
     params_summary: str = ""
     trigger_rule: str = ""
     status: Literal["pending", "approved", "rejected", "expired"] = "pending"
+    approver: str = ""
     expires_at: datetime | None = None
     one_time_token: str = ""
     decision_summary_id: str = ""
