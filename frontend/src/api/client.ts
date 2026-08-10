@@ -25,6 +25,7 @@ import type {
   ChatAskResponse,
   ChatAgentEvent,
   ChatMessage,
+  CreateAutonomousRunRequest,
   DevLogQuery,
   DevLogQueryResult,
   DevLogStats,
@@ -46,6 +47,7 @@ import type {
   HotArticle,
   HotRankingQuery,
   KnowledgeDocument,
+  KnowledgeDraft,
   KnowledgePreviewArticle,
   KnowledgePromptPreview,
   KnowledgeScorePreview,
@@ -83,6 +85,8 @@ import type {
   QRCodeResult,
   RegisterRequest,
   Report,
+  RuntimeEventEnvelope,
+  RuntimeSummary,
   SearchImportResponse,
   SearchStatusResponse,
   StatsData,
@@ -1487,6 +1491,94 @@ export const webSearchApi = {
   },
 };
 
+// ────────────────────────────────────────────────────────────
+// Autonomous API（自主模式，阶段四 4A）
+// ────────────────────────────────────────────────────────────
+export const autonomousApi = {
+  /** 创建并启动自主运行 */
+  async createRun(body: CreateAutonomousRunRequest): Promise<RuntimeSummary> {
+    const { data } = await client.post('/autonomous/runs', body);
+    return data;
+  },
+
+  /** 运行列表（当前用户） */
+  async listRuns(status?: string, limit = 50): Promise<RuntimeSummary[]> {
+    const { data } = await client.get('/autonomous/runs', {
+      params: { status: status || undefined, limit },
+    });
+    return data;
+  },
+
+  /** 运行详情（脱敏） */
+  async getRun(runId: string): Promise<RuntimeSummary> {
+    const { data } = await client.get(`/autonomous/runs/${runId}`);
+    return data;
+  },
+
+  /** 取消运行（安全点停止） */
+  async cancelRun(runId: string): Promise<{ run_id: string; status: string }> {
+    const { data } = await client.post(`/autonomous/runs/${runId}/cancel`);
+    return data;
+  },
+
+  /** 恢复运行（审批后） */
+  async resumeRun(runId: string): Promise<RuntimeSummary> {
+    const { data } = await client.post(`/autonomous/runs/${runId}/resume`);
+    return data;
+  },
+
+  /** 审批通过 */
+  async approveApproval(approvalId: string): Promise<{ approval_id: string; status: string; run_id: string }> {
+    const { data } = await client.post(`/autonomous/approvals/${approvalId}/approve`);
+    return data;
+  },
+
+  /** 审批拒绝 */
+  async rejectApproval(approvalId: string): Promise<{ approval_id: string; status: string; run_id: string }> {
+    const { data } = await client.post(`/autonomous/approvals/${approvalId}/reject`);
+    return data;
+  },
+
+  /**
+   * 运行事件流 SSE 地址（Last-Event-ID 断线续传由 EventSource 自动携带）
+   *
+   * 后端发送命名事件（event: {event_type}），必须按类型订阅；
+   * 返回 EventSource 实例；调用方负责在组件卸载时关闭。
+   * 事件载荷为 RuntimeEventEnvelope（脱敏）。
+   */
+  openEventSource(runId: string, onEvent: (event: RuntimeEventEnvelope) => void): EventSource {
+    const url = buildSSEUrl(`/autonomous/runs/${runId}/events`);
+    const source = new EventSource(url);
+    const KNOWN_EVENT_TYPES = [
+      'run_created',
+      'step_planned',
+      'policy_checked',
+      'tool_executed',
+      'step_failed',
+      'waiting_approval',
+      'approval_approved',
+      'approval_rejected',
+      'run_finished',
+      'state_transition',
+    ];
+    const handleEvent = (msg: MessageEvent<string>) => {
+      try {
+        onEvent(JSON.parse(msg.data) as RuntimeEventEnvelope);
+      } catch {
+        // 解析失败跳过
+      }
+    };
+    for (const type of KNOWN_EVENT_TYPES) {
+      source.addEventListener(type, handleEvent);
+    }
+    // 服务端结束信号：关闭事件流（终态详情由轮询刷新）
+    source.addEventListener('done', () => {
+      source.close();
+    });
+    return source;
+  },
+};
+
 // ═══════════════════════════════════════════════════════════
 // 统一导出
 // ═══════════════════════════════════════════════════════════
@@ -1512,6 +1604,7 @@ const api = {
   knowledge: knowledgeApi,
   knowledgeAdmin: knowledgeAdminApi,
   webSearchApi,
+  autonomousApi,
 };
 
 export default api;

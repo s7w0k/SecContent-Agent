@@ -1271,3 +1271,100 @@ export interface UserProductListItem {
   enabled: boolean;
   available_for: string[];
 }
+
+// ═══════════════════════════════════════════════════════════
+// 自主模式（阶段四 4A，受约束全自主 Agent）
+// ═══════════════════════════════════════════════════════════
+
+/** 自主运行状态（与后端 RuntimeStatus 对齐） */
+export type RuntimeStatus =
+  | 'pending'
+  | 'planning'
+  | 'running'
+  | 'waiting_approval'
+  | 'cancel_requested'
+  | 'completed'
+  | 'failed'
+  | 'canceled'
+  | 'budget_exceeded'
+  | 'stopped';
+
+export interface RuntimeBudgetUsage {
+  steps: number;
+  input_tokens: number;
+  output_tokens: number;
+  tool_calls: number;
+  retries: number;
+  cost_usd: number;
+  consecutive_failures: number;
+}
+
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired';
+
+export interface RuntimePendingApproval {
+  approval_id: string;
+  action: string;
+  risk_level: string;
+  params_summary: string;
+  status: ApprovalStatus;
+  expires_at: string | null;
+}
+
+/** 决策摘要（脱敏：不含参数原文、提示词与私有推理链） */
+export interface RuntimeDecisionSummary {
+  step_id: string;
+  phase: string;
+  action: string;
+  tool_name: string;
+  outcome: string;
+  reason: string;
+}
+
+export interface RuntimeEvidence {
+  evidence_id: string;
+  step_id: string;
+  acceptance_index: number | null;
+  kind: string;
+  hash: string;
+  note: string;
+}
+
+export interface RuntimeSummary {
+  run_id: string;
+  status: RuntimeStatus;
+  current_step: string;
+  goal: string;
+  completed_steps: string[];
+  failed_steps: string[];
+  pending_steps: string[];
+  evidence_count: number;
+  decision_count: number;
+  budget_usage: RuntimeBudgetUsage;
+  pending_approvals: RuntimePendingApproval[];
+  decision_summaries: RuntimeDecisionSummary[];
+  evidence: RuntimeEvidence[];
+  created_at: string;
+  updated_at: string;
+  checkpoint_version: number;
+}
+
+export interface CreateAutonomousRunRequest {
+  goal: string;
+  acceptance_criteria: string[];
+  thread_id?: string;
+  tool_chain?: string[];
+  max_steps?: number;
+}
+
+/** SSE 事件统一载荷（脱敏，供自主运行事件流） */
+export interface RuntimeEventEnvelope {
+  schema_version: string;
+  event_id: string;
+  sequence: number;
+  run_id: string;
+  event_type: string;
+  status: string;
+  timestamp: string;
+  payload: Record<string, unknown>;
+}
+

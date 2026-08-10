@@ -204,6 +204,57 @@ async def lifespan(app: FastAPI):
         )
         app.state.pipeline_manager = pipeline_manager
         _log("INFO", "Agent pipeline initialized (V1)")
+
+        # 全自主 Agent（阶段四 4A，默认关闭；关闭时 app.state.autonomous_service=None）
+        if settings.AUTONOMOUS_AGENT_ENABLED and app.state.db is not None:
+            from agent.autonomous_service import AutonomousRunService
+            from agent.model_router import ModelCapability, ModelRouter, SensitivityLevel
+            from agent.policy_engine import ApprovalService, PolicyEngine
+            from agent.runtime_events import RuntimeEventStore
+            from agent.runtime_store import RuntimeStateStore
+
+            fallback = [
+                m.strip() for m in settings.AUTONOMOUS_ROUTER_FALLBACK_MODEL.split(",") if m.strip()
+            ]
+            capabilities = [
+                ModelCapability(
+                    name=settings.AUTONOMOUS_MODEL,
+                    max_sensitivity=SensitivityLevel.L2,
+                    max_context_chars=settings.AUTONOMOUS_CONTEXT_MAX_CHARS,
+                    quality=4,
+                )
+            ]
+            for i, name in enumerate(fallback):
+                capabilities.append(
+                    ModelCapability(
+                        name=name,
+                        max_sensitivity=SensitivityLevel.L2,
+                        max_context_chars=settings.AUTONOMOUS_CONTEXT_MAX_CHARS,
+                        quality=4 - i - 1,
+                    )
+                )
+            model_router = ModelRouter(
+                capabilities,
+                default_model=settings.AUTONOMOUS_MODEL,
+                fallback_chain=tuple(fallback),
+            )
+            app.state.autonomous_service = AutonomousRunService(
+                store=RuntimeStateStore(app.state.db),
+                event_store=RuntimeEventStore(
+                    app.state.db, expires_days=settings.AUTONOMOUS_EVENT_TTL_DAYS
+                ),
+                policy=PolicyEngine(),
+                approval_service=ApprovalService(
+                    db=app.state.db, ttl_seconds=settings.AUTONOMOUS_APPROVAL_TTL_SECONDS
+                ),
+                model_router=model_router,
+                settings=settings,
+                db=app.state.db,
+            )
+            _log("INFO", "Autonomous agent service initialized (enabled)")
+        else:
+            app.state.autonomous_service = None
+            _log("INFO", "Autonomous agent service disabled (AUTONOMOUS_AGENT_ENABLED=false)")
     except Exception as e:
         _log("WARNING", f"Agent init skipped: {e}")
         app.state.pipeline_manager = None
@@ -337,6 +388,7 @@ async def log_requests(request: Request, call_next):
 from api.accounts import router as accounts_router
 from api.activity import router as activity_router
 from api.auth import router as auth_router
+from api.autonomous import router as autonomous_router
 from api.chat import router as chat_router
 from api.crawl_config import router as crawl_config_router
 from api.dashboard import router as dashboard_router
@@ -387,6 +439,7 @@ app.include_router(web_search_router)
 app.include_router(product_catalog_router)
 app.include_router(generation_preferences_router)
 app.include_router(user_knowledge_router)
+app.include_router(autonomous_router)
 
 
 # ── System endpoints ────────────────────────────────────

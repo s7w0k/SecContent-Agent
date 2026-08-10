@@ -235,6 +235,10 @@ class AgentRuntime:
                 break
 
         state = self._finalize(state, last_decision, rounds=rounds, max_rounds=max_rounds, now=stamp)
+        await self._emit(
+            "run_finished", state,
+            {"status": state.status.value, "reason_code": last_decision.reason_code, "rounds": rounds},
+        )
         return self._result(state, rounds=rounds, phases=phases,
                             status=state.status, reason=last_decision.reason,
                             reason_code=last_decision.reason_code)
@@ -291,6 +295,10 @@ class AgentRuntime:
             reason=action.note or "", now=stamp,
         )
         phases.append(PHASE_PLAN)
+        await self._emit(
+            "step_planned", state,
+            {"step_id": action.step_id, "tool_name": action.tool_name, "note": action.note[:100]},
+        )
 
         # ── POLICY_CHECK：执行前必经策略引擎 ───────────────────
         policy_decision = self.policy.evaluate(
@@ -311,7 +319,13 @@ class AgentRuntime:
             reason=policy_decision.reason_code, now=stamp,
         )
         phases.append(PHASE_POLICY)
+        await self._emit(
+            "policy_checked", state,
+            {"step_id": action.step_id, "tool_name": action.tool_name,
+             "action": policy_decision.action.value, "reason_code": policy_decision.reason_code},
+        )
 
+        approval_granted = False
         if not policy_decision.allowed:
             if policy_decision.action == PolicyAction.DENY:
                 # PolicyEngine 熔断：立即进入可解释终态
@@ -321,13 +335,54 @@ class AgentRuntime:
                     reason_code="policy_breaker",
                 )
                 return state, decision, phases
-            # REQUIRE_APPROVAL：登记待审批，暂停运行
-            state = await self._register_approval(state, action, policy_decision, stamp)
-            decision = TerminationDecision(
-                stop=True, status=RuntimeStatus.WAITING_APPROVAL,
-                reason="waiting human approval", reason_code="waiting_approval",
-            )
-            return state, decision, phases
+            # REQUIRE_APPROVAL：恢复运行后若同一工具已有审批通过，消费一次性授权并放行
+            if self.approval_service is not None:
+                approved = next(
+                    (a for a in state.approval_state.pending_approvals
+                     if a.status == "approved"
+                     and a.action == action.tool_name
+                     and (not a.params_hash or a.params_hash == policy_decision.params_hash)),
+                    None,
+                )
+                if approved is not None and self.approval_service.is_usable(approved, now=stamp):
+                    tokens = list(state.approval_state.approved_tokens)
+                    consumed = list(state.approval_state.consumed_tokens)
+                    if self.approval_service.consume_token(tokens, consumed, approved.one_time_token):
+                        state = state.model_copy(
+                            update={
+                                "approval_state": state.approval_state.model_copy(
+                                    update={
+                                        "approved_tokens": tokens,
+                                        "consumed_tokens": consumed,
+                                        "pending_approvals": [
+                                            a for a in state.approval_state.pending_approvals
+                                            if a.approval_id != approved.approval_id
+                                        ],
+                                    }
+                                )
+                            }
+                        )
+                        state = self._record_decision(
+                            state, step_id=action.step_id, phase=PHASE_POLICY,
+                            action=action.tool_name, tool_name=action.tool_name,
+                            args_hash=policy_decision.params_hash, result_hash=policy_decision.params_hash,
+                            outcome="approved", reason="approved_token_consumed", now=stamp,
+                        )
+                        approval_granted = True
+            if not approval_granted:
+                # 登记待审批，暂停运行
+                state = await self._register_approval(state, action, policy_decision, stamp)
+                decision = TerminationDecision(
+                    stop=True, status=RuntimeStatus.WAITING_APPROVAL,
+                    reason="waiting human approval", reason_code="waiting_approval",
+                )
+                await self._emit(
+                    "waiting_approval", state,
+                    {"step_id": action.step_id, "tool_name": action.tool_name,
+                     "approval_id": state.approval_state.pending_approvals[-1].approval_id
+                     if state.approval_state.pending_approvals else ""},
+                )
+                return state, decision, phases
 
         # ── EXECUTE：预算检查点 2（工具调用前）＋ 幂等预检查 ────
         if not state.usage.can_start_next_action(state.budget, now=stamp):
@@ -358,15 +413,27 @@ class AgentRuntime:
         # ── OBSERVE：结果规范化 → 证据 / 决策摘要 ─────────────
         state = self._observe(state, action, result, tool_record, stamp)
         phases.append(PHASE_OBSERVE)
+        success = self._is_success(result)
+        await self._emit(
+            "tool_executed", state,
+            {"step_id": action.step_id, "tool_name": action.tool_name, "ok": success,
+             "duration_ms": tool_record.duration_ms, "result_hash": tool_record.result_hash,
+             "error_code": tool_record.error_code},
+        )
 
         # 不可重试错误：直接进入可解释终态（FAILED），不再继续下一轮
-        if not self._is_success(result) and not bool(result.get("retryable", True)):
+        if not success and not bool(result.get("retryable", True)):
             reason = str(
                 result.get("error", "") or result.get("error_code", "") or "non-retryable error"
             )[:200]
             decision = TerminationDecision(
                 stop=True, status=RuntimeStatus.FAILED,
                 reason=f"non-retryable error: {reason}", reason_code="non_retryable_error",
+            )
+            await self._emit(
+                "step_failed", state,
+                {"step_id": action.step_id, "tool_name": action.tool_name,
+                 "error_code": tool_record.error_code, "retryable": False},
             )
             return state, decision, phases
 

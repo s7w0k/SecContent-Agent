@@ -38,6 +38,7 @@ describe('App', () => {
       username: 'alice',
       display_name: 'Alice',
       is_developer: false,
+      is_admin: false,
       created_at: '2026-07-11T00:00:00Z',
     },
     token: 'token',

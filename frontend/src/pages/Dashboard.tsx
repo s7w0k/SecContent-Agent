@@ -186,11 +186,6 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
     setPage(1);
   }, []);
 
-  const handleCategoryClick = useCallback((category: string) => {
-    setFilter((current) => ({ ...current, category }));
-    setPage(1);
-  }, []);
-
   const handleUploaded = useCallback(async () => {
     setFilter({});
     setPage(1);

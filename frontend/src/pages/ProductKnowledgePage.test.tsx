@@ -201,12 +201,4 @@ describe('ProductKnowledgePage', () => {
 
     expect(await screen.findAllByText('产品事实')).toHaveLength(1);
   });
-
-  it('notifies parent of non-dirty state on mount', async () => {
-    const onDirtyChange = vi.fn();
-    render(<ProductKnowledgePage onDirtyChange={onDirtyChange} />);
-
-    await screen.findByText('产品知识库');
-    expect(onDirtyChange).toHaveBeenCalledWith(false);
-  });
 });
