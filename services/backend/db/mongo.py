@@ -734,6 +734,53 @@ class MongoDB:
                     name="idx_user_score_total",
                 ),
             ],
+            # ── MultiAgent 编排（阶段三）：Step Ledger ──────────────
+            "execution_step_ledger": [
+                # (run_id, step_id) 唯一
+                IndexModel(
+                    [("run_id", ASCENDING), ("step_id", ASCENDING)],
+                    unique=True,
+                    name="uq_step_ledger_run_step",
+                ),
+                # idempotency_key 唯一（失败/跳过为空串，sparse 允许空串并存）
+                IndexModel(
+                    [("idempotency_key", ASCENDING)],
+                    unique=True,
+                    sparse=True,
+                    name="uq_step_ledger_idempotency",
+                ),
+                # 过期 running 接管查询
+                IndexModel(
+                    [("status", ASCENDING), ("lease_expires_at", ASCENDING)],
+                    name="idx_step_ledger_status_lease",
+                ),
+                # 按 plan 检索
+                IndexModel(
+                    [("plan_id", ASCENDING), ("created_at", ASCENDING)],
+                    name="idx_step_ledger_plan_created",
+                ),
+                # dead-letter 查询
+                IndexModel(
+                    [("status", ASCENDING), ("run_id", ASCENDING)],
+                    name="idx_step_ledger_deadletter",
+                ),
+                # TTL/归档
+                IndexModel(
+                    [("expires_at", ASCENDING)],
+                    expireAfterSeconds=0,
+                    name="ttl_step_ledger_expires",
+                ),
+            ],
+            "ledger_repair_queue": [
+                IndexModel(
+                    [("run_id", ASCENDING), ("step_id", ASCENDING)],
+                    name="idx_ledger_repair_run_step",
+                ),
+                IndexModel(
+                    [("status", ASCENDING), ("created_at", ASCENDING)],
+                    name="idx_ledger_repair_status_created",
+                ),
+            ],
         }
 
         try:

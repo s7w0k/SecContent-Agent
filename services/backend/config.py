@@ -293,6 +293,42 @@ class Settings(BaseSettings):
         default=False, description="离线上下文压缩开关（默认关闭）"
     )
 
+    # ── MultiAgent 编排（阶段三）────────────────────────────────
+    MULTI_AGENT_ENABLED: bool = Field(
+        default=False, description="MultiAgent 编排总开关（默认关闭，灰度时开启）"
+    )
+    MULTI_AGENT_SHADOW_ENABLED: bool = Field(
+        default=False,
+        description="影子模式：后台执行 planned 流水线仅记录差异，不回填业务产物",
+    )
+    MULTI_AGENT_ROLLOUT_PERCENT: int = Field(
+        default=0, ge=0, le=100, description="灰度百分比（0-100，按 user_id 确定性分流）"
+    )
+    PLANNER_MODEL: str = Field(
+        default="", description="Planner 小模型名；空=禁用 LLM 规划，直接默认 DAG"
+    )
+    PLANNER_TIMEOUT_SECONDS: int = Field(
+        default=10, ge=1, le=120, description="Planner LLM 单次调用超时（秒）"
+    )
+    PLAN_MAX_STEPS: int = Field(
+        default=50, ge=1, le=100, description="计划最大步骤数"
+    )
+    PLAN_MAX_DEPTH: int = Field(
+        default=10, ge=1, le=20, description="计划最大依赖深度"
+    )
+    ORCHESTRATOR_MAX_CONCURRENCY: int = Field(
+        default=5, ge=1, le=50, description="Orchestrator 全局最大并发 Worker"
+    )
+    ORCHESTRATOR_USER_CONCURRENCY: int = Field(
+        default=2, ge=1, le=10, description="单用户最大并发 Worker"
+    )
+    WORKER_LEASE_SECONDS: int = Field(
+        default=120, ge=10, le=3600, description="Worker 步骤租约 TTL（秒）"
+    )
+    WORKER_MAX_ATTEMPTS: int = Field(
+        default=3, ge=1, le=10, description="Worker 最大尝试次数"
+    )
+
     @field_validator("OVERSEAS_NEWS_SCHEDULE_TIMEZONE")
     @classmethod
     def validate_timezone(cls, v: str) -> str:
