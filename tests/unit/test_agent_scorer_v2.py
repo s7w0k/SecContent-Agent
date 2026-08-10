@@ -549,7 +549,7 @@ class TestProductKnowledgeInjection:
         db = {"user_products": user_products_col, "user_knowledge_entries": entries_col}
         scorer = ScoringAgentV2(llm=llm, knowledge=knowledge, db=db)
 
-        prompt = await scorer._build_system_prompt_for_product(
+        prompt, _context_meta = await scorer._build_system_prompt_for_product(
             "user-prod-1", "星海外部攻击面管理平台", user_id="u-1"
         )
 
@@ -570,8 +570,10 @@ class TestProductKnowledgeInjection:
         knowledge.as_scoring_prompt.return_value = "GLOBAL_KNOWLEDGE_PLACEHOLDER"
         scorer = ScoringAgentV2(llm=llm, knowledge=knowledge, db=None)
 
-        prompt = await scorer._build_system_prompt_for_product(
+        prompt, context_meta = await scorer._build_system_prompt_for_product(
             "user-prod-1", "星海外部攻击面管理平台", user_id="u-1"
         )
 
         assert "GLOBAL_KNOWLEDGE_PLACEHOLDER" in prompt
+        # off 模式（默认）不产生 telemetry
+        assert context_meta == {}

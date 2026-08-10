@@ -82,6 +82,7 @@ ignore = [
 "tests/unit/test_api.py" = ["RUF012"]
 "tests/unit/test_mcp_crawl.py" = ["B005"]
 "tests/unit/test_agent_pipeline.py" = ["N801"]
+"tests/agent_evals/context_stage2/evaluator.py" = ["T201"]  # CLI 评测报告输出
 
 [tool.ruff.lint.isort]
 known-first-party = ["services", "mcp_wewe", "mcp_crawl"]

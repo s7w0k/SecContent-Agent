@@ -21,6 +21,7 @@ from uuid import uuid4
 
 import httpx
 from agent.checkpointer import create_checkpointer, supports_mongodb_checkpoints
+from agent.knowledge_slice import KnowledgeSliceResolver
 from agent.pipeline_state import PipelineStateManager
 from agent.style_profiler import load_style_hints
 from api.activity import log_activity
@@ -1969,16 +1970,55 @@ async def _run_v2_single_workflow(
 
                     # 解析用户级知识切片
                     knowledge_slice_content: str | None = None
+                    draft_context_meta: dict = {}
                     try:
-                        from agent.knowledge_slice import KnowledgeSliceResolver
-                        settings = get_settings()
-                        if settings.USER_KNOWLEDGE_ENABLED:
-                            # 读取任务的 generation_options
-                            task_doc = await db["pipeline_tasks"].find_one({"task_id": task_id}) if task_id else None
-                            gen_opts = (task_doc or {}).get("generation_options", {})
-                            task_product_ids = gen_opts.get("selected_product_ids", [])
-                            task_mode = gen_opts.get("product_target_mode", "auto")
+                        from agent.context_bridge import ContextBridge
+                        from agent.context_cache import get_context_cache
 
+                        settings = get_settings()
+                        bridge = ContextBridge(
+                            db=db,
+                            settings=settings,
+                            cache=get_context_cache(settings.CONTEXT_CACHE_TTL_SECONDS)
+                            if settings.KNOWLEDGE_SKILLS_ENABLED
+                            else None,
+                        )
+                        mode = bridge.effective_mode(user_id)
+
+                        # 读取任务的 generation_options（新旧路径共用）
+                        task_doc = (
+                            await db["pipeline_tasks"].find_one({"task_id": task_id})
+                            if task_id
+                            else None
+                        )
+                        gen_opts = (task_doc or {}).get("generation_options", {})
+                        task_product_ids = gen_opts.get("selected_product_ids", [])
+                        task_mode = gen_opts.get("product_target_mode", "auto")
+
+                        if mode != "off" and task_mode != "none":
+                            # 新路径：ContextManager 构建 draft ContextPlan
+                            result = await bridge.build_plan(
+                                purpose="draft",
+                                user_id=user_id,
+                                products=task_product_ids if task_product_ids else None,
+                                model_id=settings.DEEPSEEK_MODEL,
+                            )
+                            if result is not None:
+                                draft_context_meta = result.telemetry
+                                draft_context_meta["mode"] = mode
+                                if mode == "active":
+                                    knowledge_slice_content = result.plan.rendered()
+                                else:
+                                    log.info(
+                                        "[run-v2-single] ContextBridge shadow draft: "
+                                        "plan_hash=%s tokens=%d/%d",
+                                        result.plan.plan_hash[:16],
+                                        result.plan.total_tokens,
+                                        result.plan.input_budget_tokens,
+                                    )
+
+                        # 旧路径：shadow / off / 未命中灰度时保持原行为
+                        if knowledge_slice_content is None and settings.USER_KNOWLEDGE_ENABLED:
                             if task_mode == "none":
                                 knowledge_slice_content = None
                             else:
@@ -1991,7 +2031,9 @@ async def _run_v2_single_workflow(
                                     include_shared=True,
                                     user_id=user_id,
                                 )
-                                knowledge_slice_content = slice_result.content if slice_result.content else None
+                                knowledge_slice_content = (
+                                    slice_result.content if slice_result.content else None
+                                )
                     except Exception as ks_err:
                         log.warning("[run-v2-single] knowledge slice failed: %s", ks_err)
 
@@ -2013,6 +2055,16 @@ async def _run_v2_single_workflow(
                         }
                     )
                     log.info("[run-v2-single] Drafts: %s generated", len(drafts["drafts"]))
+                    if draft_context_meta:
+                        log.info(
+                            "[run-v2-single] draft context meta: mode=%s plan_hash=%s "
+                            "skill_versions=%s knowledge_snapshot=%s source_ids=%s",
+                            draft_context_meta.get("mode"),
+                            draft_context_meta.get("context_plan_hash", "")[:16],
+                            draft_context_meta.get("skill_versions"),
+                            draft_context_meta.get("knowledge_snapshot", "")[:16],
+                            draft_context_meta.get("source_ids"),
+                        )
                     draft_duration = int((time.perf_counter() - draft_started) * 1000)
                     await log_pipeline(
                         db,

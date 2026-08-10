@@ -260,7 +260,7 @@ class ScoringAgentV2:
         task_id: str = "",
     ) -> dict:
         """对单个产品评分（一次 LLM 调用）。"""
-        system_prompt = await self._build_system_prompt_for_product(
+        system_prompt, context_meta = await self._build_system_prompt_for_product(
             product_id, product_name, user_id=user_id
         )
         user_prompt = self._build_user_prompt(article)
@@ -275,6 +275,7 @@ class ScoringAgentV2:
                     user_id=user_id,
                     trace_id=trace_id,
                     task_id=task_id,
+                    context_meta=context_meta or None,
                 )
                 data = structured.model_dump()
                 return {
@@ -515,7 +516,7 @@ class ScoringAgentV2:
         product_name: str,
         *,
         user_id: str = "",
-    ) -> str:
+    ) -> tuple[str, dict]:
         """按产品构建系统提示词。
 
         只注入当前待评产品的知识：
@@ -524,44 +525,102 @@ class ScoringAgentV2:
           - 共享参考文件（hot-event-playbook 等）作为兜底上下文
 
         知识切片解析失败时回退到全局评分知识。
+
+        返回 (system_prompt, context_telemetry)。telemetry 含
+        context_plan_hash/skill_versions/knowledge_snapshot/source_ids，
+        供 LLM 日志记录；off/shadow 模式下内容仍走旧路径。
         """
         knowledge_context = ""
+        telemetry: dict = {}
+        mode = "off"
         if self.db is not None:
             try:
-                from agent.knowledge_slice import KnowledgeSliceResolver
+                from agent.context_bridge import ContextBridge
+                from agent.context_cache import get_context_cache
 
                 try:
                     from config import get_settings
 
-                    base_dir = get_settings().KNOWLEDGE_BASE_DIR
+                    settings = get_settings()
+                    base_dir = settings.KNOWLEDGE_BASE_DIR
                 except Exception:
+                    settings = None
                     base_dir = "/app/docs"
 
-                resolver = KnowledgeSliceResolver(base_dir, db=self.db)
-                slice_result = await resolver.resolve(
-                    purpose="score",
-                    product_ids=[product_id],
-                    user_id=user_id or None,
+                bridge = ContextBridge(
+                    db=self.db,
+                    settings=settings,
+                    knowledge_base_dir=base_dir,
+                    cache=get_context_cache(settings.CONTEXT_CACHE_TTL_SECONDS)
+                    if settings is not None and settings.KNOWLEDGE_SKILLS_ENABLED
+                    else None,
                 )
-                knowledge_context = slice_result.content
+                mode = bridge.effective_mode(user_id)
+                if mode != "off":
+                    result = await bridge.build_plan(
+                        purpose="score",
+                        user_id=user_id,
+                        products=[product_id],
+                        model_id=(settings.DEEPSEEK_MODEL if settings else "deepseek-chat"),
+                    )
+                    if result is not None:
+                        telemetry = result.telemetry
+                        telemetry["mode"] = mode
+                        if mode == "active":
+                            knowledge_context = result.plan.rendered()
             except Exception as exc:
                 logger.warning(
-                    "Knowledge slice resolve failed for product %s: %s", product_id, exc
+                    "ContextManager build failed for product %s: %s", product_id, exc
                 )
 
         if not knowledge_context:
-            if hasattr(self.knowledge, "as_scoring_prompt"):
-                knowledge_context = self.knowledge.as_scoring_prompt()
-            elif hasattr(self.knowledge, "as_system_prompt"):
-                knowledge_context = self.knowledge.as_system_prompt()
-        if not knowledge_context:
-            knowledge_context = "（知识库未加载，使用通用安全知识）"
+            # 旧路径：切片解析 + 全局评分知识兜底
+            if self.db is not None:
+                try:
+                    from agent.knowledge_slice import KnowledgeSliceResolver
+
+                    try:
+                        from config import get_settings
+
+                        base_dir = get_settings().KNOWLEDGE_BASE_DIR
+                    except Exception:
+                        base_dir = "/app/docs"
+
+                    resolver = KnowledgeSliceResolver(base_dir, db=self.db)
+                    slice_result = await resolver.resolve(
+                        purpose="score",
+                        product_ids=[product_id],
+                        user_id=user_id or None,
+                    )
+                    knowledge_context = slice_result.content
+                except Exception as exc:
+                    logger.warning(
+                        "Knowledge slice resolve failed for product %s: %s", product_id, exc
+                    )
+
+            if not knowledge_context:
+                if hasattr(self.knowledge, "as_scoring_prompt"):
+                    knowledge_context = self.knowledge.as_scoring_prompt()
+                elif hasattr(self.knowledge, "as_system_prompt"):
+                    knowledge_context = self.knowledge.as_system_prompt()
+            if not knowledge_context:
+                knowledge_context = "（知识库未加载，使用通用安全知识）"
 
         product_list_text = f"- product_id: {product_id}, product_name: {product_name}"
-        return SYSTEM_PROMPT_TEMPLATE.format(
+        prompt = SYSTEM_PROMPT_TEMPLATE.format(
             knowledge_context=knowledge_context,
             product_list=product_list_text,
         )
+        if mode != "off" and telemetry:
+            telemetry["context_plan_hash"] = telemetry.get("context_plan_hash") or ""
+            logger.info(
+                "[scorer-v2] purpose=score product=%s mode=%s plan_hash=%s tokens=%d",
+                product_id,
+                mode,
+                telemetry.get("context_plan_hash", "")[:16],
+                telemetry.get("total_tokens", 0),
+            )
+        return prompt, telemetry
 
     @staticmethod
     def _build_user_prompt(article: dict) -> str:

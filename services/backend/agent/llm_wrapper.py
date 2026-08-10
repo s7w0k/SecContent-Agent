@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, TypeVar
 from uuid import uuid4
 
-from agent.agent_contracts import BudgetUsage, RunContext
+from agent.agent_contracts import RunContext
 from agent.retry import RetryPolicy, RetryState, with_retry
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -53,8 +53,13 @@ class LLMWrapper:
         user_id: str = "",
         trace_id: str = "",
         task_id: str = "",
+        context_meta: dict | None = None,
     ) -> T:
-        """Prefer native structured output and transparently record fallback."""
+        """Prefer native structured output and transparently record fallback.
+
+        context_meta: 阶段二上下文 telemetry（context_plan_hash/skill_versions/
+            knowledge_snapshot/source_ids），随 LLM 调用日志持久化，不含知识全文。
+        """
         started = time.perf_counter()
         degraded = False
         degrade_reason = ""
@@ -95,6 +100,7 @@ class LLMWrapper:
                     retry_count=retry_count,
                     structured_output=False,
                     schema_name=output_schema.__name__,
+                    context_meta=context_meta,
                 )
                 raise
 
@@ -113,6 +119,7 @@ class LLMWrapper:
             retry_count=retry_count,
             structured_output=structured_output,
             schema_name=output_schema.__name__,
+            context_meta=context_meta,
         )
         return result
 
@@ -142,7 +149,7 @@ class LLMWrapper:
         Raises:
             最后一个异常（如果所有重试都失败）
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         started = time.perf_counter()
         retry_state = RetryState()
@@ -150,7 +157,7 @@ class LLMWrapper:
         # 默认重试策略：2 次重试，共享 run_context 的 deadline
         deadline_at = None
         if run_context.deadline_at is not None:
-            remaining = (run_context.deadline_at - datetime.now(timezone.utc)).total_seconds()
+            remaining = (run_context.deadline_at - datetime.now(UTC)).total_seconds()
             deadline_at = time.monotonic() + max(0, remaining)
 
         policy = retry_policy or RetryPolicy(
@@ -251,7 +258,7 @@ class LLMWrapper:
             "run_id": run_context.run_id,
             "loop_round": loop_round,
             "tool_names": tool_names or [],
-            "retry": [a for a in retry_state.attempts],
+            "retry": list(retry_state.attempts),
             "degraded": bool(error),
             "degrade_reason": error[:200] if error else "",
             "duration_ms": duration_ms,

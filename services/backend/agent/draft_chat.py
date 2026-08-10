@@ -44,9 +44,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import AsyncIterator
-from datetime import datetime, timedelta, timezone
 from typing import Any
-from uuid import uuid4
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -441,6 +439,42 @@ class DraftChatAgent:
             context_parts.append(self._build_draft_context(draft, revision))
         if history:
             context_parts.append(self._build_history_context(history))
+
+        # 阶段二：chat 用途 ContextPlan（任务锚点方式注入，off/shadow 不改变旧行为）
+        if self.db is not None:
+            try:
+                from agent.context_bridge import ContextBridge
+                from agent.context_cache import get_context_cache
+
+                bridge = ContextBridge(
+                    db=self.db,
+                    settings=settings,
+                    cache=get_context_cache(settings.CONTEXT_CACHE_TTL_SECONDS)
+                    if settings.KNOWLEDGE_SKILLS_ENABLED
+                    else None,
+                )
+                mode = bridge.effective_mode(getattr(run_context, "user_id", ""))
+                if mode != "off":
+                    plan_result = await bridge.build_plan(
+                        purpose="chat",
+                        user_id=getattr(run_context, "user_id", ""),
+                        query=message,
+                        model_id=settings.DEEPSEEK_MODEL,
+                    )
+                    if plan_result is not None:
+                        if mode == "active":
+                            context_parts.append(plan_result.plan.rendered())
+                        logger.info(
+                            "[draft-chat] context purpose=chat mode=%s plan_hash=%s "
+                            "tokens=%d/%d source_ids=%s",
+                            mode,
+                            plan_result.plan.plan_hash[:16],
+                            plan_result.plan.total_tokens,
+                            plan_result.plan.input_budget_tokens,
+                            plan_result.telemetry.get("source_ids"),
+                        )
+            except Exception as exc:
+                logger.warning("[draft-chat] ContextManager build failed: %s", exc)
         initial_context = "\n\n".join(context_parts)
 
         # 创建工具

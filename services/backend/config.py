@@ -272,6 +272,27 @@ class Settings(BaseSettings):
         default="1.0", description="SSE 事件 schema 版本"
     )
 
+    # ── 知识 Skills 与上下文工程（阶段二）──────────────────────
+    KNOWLEDGE_SKILLS_ENABLED: bool = Field(
+        default=False, description="知识 Skills/ContextManager 总开关（默认关闭）"
+    )
+    KNOWLEDGE_SKILLS_SHADOW_ENABLED: bool = Field(
+        default=False,
+        description="影子模式：后台构建 ContextPlan 仅记录差异，LLM 仍用旧上下文",
+    )
+    KNOWLEDGE_SKILLS_ROLLOUT_PERCENT: int = Field(
+        default=0, ge=0, le=100, description="灰度百分比（0-100，按 user_id 确定性分流）"
+    )
+    CONTEXT_MAX_INPUT_TOKENS: int = Field(
+        default=0, ge=0, description="输入 token 上限；0=按模型窗口动态推导"
+    )
+    CONTEXT_CACHE_TTL_SECONDS: int = Field(
+        default=300, ge=1, le=86400, description="上下文缓存 TTL（秒，兜底）"
+    )
+    CONTEXT_OFFLINE_COMPRESSION_ENABLED: bool = Field(
+        default=False, description="离线上下文压缩开关（默认关闭）"
+    )
+
     @field_validator("OVERSEAS_NEWS_SCHEDULE_TIMEZONE")
     @classmethod
     def validate_timezone(cls, v: str) -> str:

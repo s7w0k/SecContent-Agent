@@ -559,3 +559,212 @@ async def test_merger_filters_by_product_ids():
 
     assert "产品A的内容" in result.content
     assert "产品B的内容" not in result.content
+
+
+# ═══════════════════════════════════════════════════════════════
+# 阶段二 Step 3：purpose/doc_type 分层与缺失语义
+# ═══════════════════════════════════════════════════════════════
+
+
+def _entry(entry_id: str, doc_type: str, title: str, content: str, sort_order: int = 100):
+    return {
+        "entry_id": entry_id, "user_id": "u-1",
+        "product_id": "up-prod-1", "product_scope": "user",
+        "doc_type": doc_type, "title": title,
+        "content": content, "enabled": True,
+        "sort_order": sort_order, "content_hash": "sha256:abc",
+        "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
+    }
+
+
+@pytest.mark.asyncio
+async def test_score_purpose_required_doc_types_only():
+    """score 下只注入 overview/market-brief；sales-brief/custom 不注入。"""
+    from agent.knowledge_slice import KnowledgeSliceResolver
+
+    entries = [
+        _entry("e-custom", "custom", "自定义", "自定义内容", sort_order=1),
+        _entry("e-sales", "sales-brief", "售前", "售前内容", sort_order=2),
+        _entry("e-overview", "overview", "概述", "概述内容", sort_order=3),
+        _entry("e-market", "market-brief", "市场", "市场内容", sort_order=4),
+    ]
+    user_products = [
+        {"product_id": "up-prod-1", "user_id": "u-1", "name": "测试产品", "enabled": True}
+    ]
+    db = SliceMockDb({
+        "user_products": user_products,
+        "user_knowledge_entries": entries,
+    })
+
+    resolver = KnowledgeSliceResolver(db=db)
+    result = await resolver.resolve(
+        purpose="score", product_ids=["up-prod-1"], user_id="u-1"
+    )
+
+    assert "概述内容" in result.content
+    assert "市场内容" in result.content
+    assert "自定义内容" not in result.content
+    assert "售前内容" not in result.content
+
+
+@pytest.mark.asyncio
+async def test_draft_purpose_includes_optional():
+    """draft 下 required + optional 全部注入。"""
+    from agent.knowledge_slice import KnowledgeSliceResolver
+
+    entries = [
+        _entry("e-sales", "sales-brief", "售前", "售前内容"),
+        _entry("e-custom", "custom", "自定义", "自定义内容"),
+    ]
+    user_products = [
+        {"product_id": "up-prod-1", "user_id": "u-1", "name": "测试产品", "enabled": True}
+    ]
+    db = SliceMockDb({
+        "user_products": user_products,
+        "user_knowledge_entries": entries,
+    })
+
+    resolver = KnowledgeSliceResolver(db=db)
+    result = await resolver.resolve(
+        purpose="draft", product_ids=["up-prod-1"], user_id="u-1"
+    )
+
+    assert "售前内容" in result.content
+    assert "自定义内容" in result.content
+    # draft required（overview/market-brief）缺失时记录缺失
+    assert any("missing:overview" in m for m in result.knowledge_missing)
+    assert any("missing:market-brief" in m for m in result.knowledge_missing)
+
+
+@pytest.mark.asyncio
+async def test_required_missing_recorded_not_inferred():
+    """required 缺失记录 knowledge_missing，不推断产品能力。"""
+    from agent.knowledge_slice import KnowledgeSliceResolver
+
+    entries = [_entry("e-market", "market-brief", "市场", "市场内容")]
+    user_products = [
+        {"product_id": "up-prod-1", "user_id": "u-1", "name": "测试产品", "enabled": True}
+    ]
+    db = SliceMockDb({
+        "user_products": user_products,
+        "user_knowledge_entries": entries,
+    })
+
+    resolver = KnowledgeSliceResolver(db=db)
+    result = await resolver.resolve(
+        purpose="score", product_ids=["up-prod-1"], user_id="u-1"
+    )
+
+    assert "市场内容" in result.content
+    assert any("missing:overview" in m for m in result.knowledge_missing)
+    # overview 缺失不注入任何「推断能力」文本
+
+
+@pytest.mark.asyncio
+async def test_invalid_doc_type_mapped_to_custom():
+    """非法/缺失 doc_type 读取时映射 custom（不写回）。"""
+    from agent.knowledge_slice import KnowledgeSliceResolver
+
+    invalid = _entry("e-invalid", "totally-bogus", "非法", "非法类型内容")
+    invalid.pop("doc_type")  # 缺失 doc_type
+    missing = _entry("e-missing", "unknown", "未知", "未知内容")
+    entries = [invalid, missing]
+    user_products = [
+        {"product_id": "up-prod-1", "user_id": "u-1", "name": "测试产品", "enabled": True}
+    ]
+    db = SliceMockDb({
+        "user_products": user_products,
+        "user_knowledge_entries": entries,
+    })
+
+    resolver = KnowledgeSliceResolver(db=db)
+    result = await resolver.resolve(
+        purpose="draft", product_ids=["up-prod-1"], user_id="u-1"
+    )
+
+    assert "非法类型内容" in result.content
+    assert "未知内容" in result.content
+    assert "用户级·custom" in result.content
+
+
+@pytest.mark.asyncio
+async def test_stable_order_required_before_optional():
+    """稳定排序：required 优先于 optional，即便 sort_order 更靠后。"""
+    from agent.knowledge_slice import KnowledgeSliceResolver
+
+    entries = [
+        _entry("e-overview", "overview", "概述", "概述内容", sort_order=999),
+        _entry("e-custom", "custom", "自定义", "自定义内容", sort_order=1),
+    ]
+    user_products = [
+        {"product_id": "up-prod-1", "user_id": "u-1", "name": "测试产品", "enabled": True}
+    ]
+    db = SliceMockDb({
+        "user_products": user_products,
+        "user_knowledge_entries": entries,
+    })
+
+    resolver = KnowledgeSliceResolver(db=db)
+    result = await resolver.resolve(
+        purpose="draft", product_ids=["up-prod-1"], user_id="u-1"
+    )
+
+    idx_overview = result.content.index("概述内容")
+    idx_custom = result.content.index("自定义内容")
+    assert idx_overview < idx_custom
+
+
+@pytest.mark.asyncio
+async def test_budget_checked_before_append():
+    """预算在追加前计算，不产生先超额再截断的内容。"""
+    from agent.knowledge_slice import KnowledgeSliceResolver
+
+    entries = [
+        _entry("e-overview", "overview", "概述", "概述内容" * 100),
+        _entry("e-market", "market-brief", "市场", "市场内容" * 100),
+        _entry("e-sales", "sales-brief", "售前", "售前内容" * 100),
+    ]
+    user_products = [
+        {"product_id": "up-prod-1", "user_id": "u-1", "name": "测试产品", "enabled": True}
+    ]
+    db = SliceMockDb({
+        "user_products": user_products,
+        "user_knowledge_entries": entries,
+    })
+
+    resolver = KnowledgeSliceResolver(db=db, max_chars=800)
+    result = await resolver.resolve(
+        purpose="draft", product_ids=["up-prod-1"], user_id="u-1", max_chars=800
+    )
+
+    # 内容总字符不超过预算 + 分隔符余量（追加前计算）
+    assert result.char_count <= 800 + 200
+    assert result.truncated
+
+
+@pytest.mark.asyncio
+async def test_user_scope_isolation():
+    """用户知识严格按 user_id 隔离：不注入其他用户的条目。"""
+    from agent.knowledge_slice import KnowledgeSliceResolver
+
+    other = _entry("e-other", "overview", "其他用户概述", "其他用户内容")
+    other["user_id"] = "u-2"
+    entries = [
+        _entry("e-overview", "overview", "概述", "本用户内容"),
+        other,
+    ]
+    user_products = [
+        {"product_id": "up-prod-1", "user_id": "u-1", "name": "测试产品", "enabled": True}
+    ]
+    db = SliceMockDb({
+        "user_products": user_products,
+        "user_knowledge_entries": entries,
+    })
+
+    resolver = KnowledgeSliceResolver(db=db)
+    result = await resolver.resolve(
+        purpose="draft", product_ids=["up-prod-1"], user_id="u-1"
+    )
+
+    assert "本用户内容" in result.content
+    assert "其他用户内容" not in result.content
