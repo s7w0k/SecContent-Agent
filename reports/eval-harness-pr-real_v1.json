@@ -1,0 +1,492 @@
+{
+  "level": "pr",
+  "llm_backend": "mock",
+  "passed": true,
+  "report": {
+    "schema_version": "2.0",
+    "runner": "eval_harness_v2",
+    "generated_at": "2026-08-11T02:16:17.680883+00:00",
+    "dataset_version": "real_v1",
+    "n_cases": 11,
+    "legacy": {
+      "total": 11,
+      "success_rate": 0.8182,
+      "success_count": 9,
+      "tokens": {
+        "mean": 11.0,
+        "p50": 12.0,
+        "p95": 16.0,
+        "ci95_lo": 8.0,
+        "ci95_hi": 13.5455,
+        "n": 11
+      },
+      "cost_usd": {
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "ci95_lo": 0.0,
+        "ci95_hi": 0.0,
+        "n": 11
+      },
+      "latency_ms": {
+        "mean": 0.0263,
+        "p50": 0.02,
+        "p95": 0.0685,
+        "ci95_lo": 0.0158,
+        "ci95_hi": 0.0414,
+        "n": 11
+      },
+      "usage_estimated_ratio": 0.1818,
+      "error_rate": 0.1818,
+      "errors_by_type": {
+        "RuntimeError": 2
+      },
+      "avg_deterministic_pass_rate": 0.9798
+    },
+    "candidate": {
+      "total": 11,
+      "success_rate": 0.8182,
+      "success_count": 9,
+      "tokens": {
+        "mean": 43.9091,
+        "p50": 33.0,
+        "p95": 73.0,
+        "ci95_lo": 30.8159,
+        "ci95_hi": 57.8182,
+        "n": 11
+      },
+      "cost_usd": {
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "ci95_lo": 0.0,
+        "ci95_hi": 0.0,
+        "n": 11
+      },
+      "latency_ms": {
+        "mean": 0.4439,
+        "p50": 0.2589,
+        "p95": 1.5197,
+        "ci95_lo": 0.1886,
+        "ci95_hi": 0.8325,
+        "n": 11
+      },
+      "usage_estimated_ratio": 0.0,
+      "error_rate": 0.1818,
+      "errors_by_type": {
+        "LLM failed on round 0: RuntimeError": 1,
+        "budget_exhausted_no_finalization": 1
+      },
+      "avg_deterministic_pass_rate": 1.0
+    },
+    "paired": {
+      "token_reduction_pct": -299.17,
+      "token_delta_ci95": [
+        -595.16,
+        -171.26
+      ],
+      "cost_reduction_pct": -176.65,
+      "success_rate_delta": 0.0,
+      "quality_pass_rate_delta": 0.0202,
+      "latency_p95_reduction_pct": -2118.47,
+      "quality_regressed_cases": []
+    },
+    "by_category": {
+      "a2a": {
+        "n": 1,
+        "token_reduction_pct": -163.64,
+        "cost_reduction_pct": -89.01
+      },
+      "article": {
+        "n": 1,
+        "token_reduction_pct": -384.62,
+        "cost_reduction_pct": -261.12
+      },
+      "budget_limits": {
+        "n": 1,
+        "token_reduction_pct": -1350.0,
+        "cost_reduction_pct": -1811.11
+      },
+      "finalization": {
+        "n": 1,
+        "token_reduction_pct": 100.0,
+        "cost_reduction_pct": 100.0
+      },
+      "insufficient_evidence": {
+        "n": 1,
+        "token_reduction_pct": -357.14,
+        "cost_reduction_pct": -170.24
+      },
+      "multi_tool": {
+        "n": 1,
+        "token_reduction_pct": -343.75,
+        "cost_reduction_pct": -218.06
+      },
+      "multi_turn": {
+        "n": 1,
+        "token_reduction_pct": -581.82,
+        "cost_reduction_pct": -373.22
+      },
+      "no_tool": {
+        "n": 1,
+        "token_reduction_pct": -154.55,
+        "cost_reduction_pct": -84.07
+      },
+      "permissions": {
+        "n": 1,
+        "token_reduction_pct": -106.25,
+        "cost_reduction_pct": -60.08
+      },
+      "product_knowledge": {
+        "n": 1,
+        "token_reduction_pct": -400.0,
+        "cost_reduction_pct": -226.18
+      },
+      "security": {
+        "n": 1,
+        "token_reduction_pct": -121.43,
+        "cost_reduction_pct": -64.65
+      }
+    },
+    "results": [
+      {
+        "case_id": "R001",
+        "category": "no_tool",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 5.46e-06,
+          "latency_ms": 0.09219999992637895,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 28.0,
+          "cost_usd": 1.005e-05,
+          "latency_ms": 0.1731000002109795,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -154.55,
+        "cost_delta_pct": -84.07,
+        "latency_delta_pct": -87.74,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R004",
+        "category": "product_knowledge",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 5.73e-06,
+          "latency_ms": 0.020899999981338624,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 60.0,
+          "cost_usd": 1.869e-05,
+          "latency_ms": 0.37639999982275185,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -400.0,
+        "cost_delta_pct": -226.18,
+        "latency_delta_pct": -1700.96,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R007",
+        "category": "article",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 13.0,
+          "cost_usd": 5.17e-06,
+          "latency_ms": 0.020000000404252205,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 63.0,
+          "cost_usd": 1.867e-05,
+          "latency_ms": 0.3583000002436165,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -384.62,
+        "cost_delta_pct": -261.12,
+        "latency_delta_pct": -1691.5,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R010",
+        "category": "multi_turn",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.04479999961404246,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 75.0,
+          "cost_usd": 2.191e-05,
+          "latency_ms": 0.2589000000625674,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -581.82,
+        "cost_delta_pct": -373.22,
+        "latency_delta_pct": -477.9,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R013",
+        "category": "multi_tool",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 16.0,
+          "cost_usd": 6.81e-06,
+          "latency_ms": 0.015099999927770114,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 71.0,
+          "cost_usd": 2.166e-05,
+          "latency_ms": 0.266999999894324,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -343.75,
+        "cost_delta_pct": -218.06,
+        "latency_delta_pct": -1668.21,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R016",
+        "category": "insufficient_evidence",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.93e-06,
+          "latency_ms": 0.014799999917158857,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 64.0,
+          "cost_usd": 2.143e-05,
+          "latency_ms": 0.19010000005437178,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -357.14,
+        "cost_delta_pct": -170.24,
+        "latency_delta_pct": -1184.46,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R019",
+        "category": "budget_limits",
+        "repetitions": 0,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 2.0,
+          "cost_usd": 5.4e-07,
+          "latency_ms": 0.01250000013897079,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 2.149299999928189,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -1350.0,
+        "cost_delta_pct": -1811.11,
+        "latency_delta_pct": -17094.4,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R022",
+        "category": "permissions",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 16.0,
+          "cost_usd": 7.64e-06,
+          "latency_ms": 0.021099999685247894,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 33.0,
+          "cost_usd": 1.223e-05,
+          "latency_ms": 0.07100000038917642,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -106.25,
+        "cost_delta_pct": -60.08,
+        "latency_delta_pct": -236.49,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R025",
+        "category": "security",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.1e-06,
+          "latency_ms": 0.013100000160193304,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 31.0,
+          "cost_usd": 1.169e-05,
+          "latency_ms": 0.059699999837903306,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -121.43,
+        "cost_delta_pct": -64.65,
+        "latency_delta_pct": -355.73,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R028",
+        "category": "finalization",
+        "repetitions": 0,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 1.0,
+          "cost_usd": 2.7e-07,
+          "latency_ms": 0.008800000159681076,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 0.0,
+          "cost_usd": 0.0,
+          "latency_ms": 0.8900000002540764,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": 100.0,
+        "cost_delta_pct": 100.0,
+        "latency_delta_pct": -10013.64,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R031",
+        "category": "a2a",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 5.46e-06,
+          "latency_ms": 0.026400000024295878,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 0.08870000010574586,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -163.64,
+        "cost_delta_pct": -89.01,
+        "latency_delta_pct": -235.98,
+        "quality_regressed": false
+      }
+    ],
+    "judge_calibration": {
+      "calibrated": false,
+      "agreement_rate": 0.0,
+      "compared_dimension_pairs": 0,
+      "judge_model": "",
+      "rubric_version": "v1",
+      "disagreement_cases": [
+        "R028"
+      ],
+      "position_bias_summary": {
+        "legacy_mean_bias": 0.0,
+        "candidate_mean_bias": 0.0
+      }
+    }
+  },
+  "gates": {
+    "pr_no_mock_injection": {
+      "pass": true,
+      "hard": true,
+      "value": "eval_harness_v2",
+      "reason": "报告来源 'eval_harness_v2'（期望 eval_harness_v2）"
+    },
+    "pr_contract_passed": {
+      "pass": true,
+      "hard": true,
+      "value": [],
+      "reason": "全部通过"
+    },
+    "pr_tool_compliance": {
+      "pass": true,
+      "hard": true,
+      "value": 1.0,
+      "reason": "工具合规率 100.00%（要求 100%）"
+    },
+    "pr_no_unclassified_errors": {
+      "pass": true,
+      "hard": false,
+      "value": {},
+      "reason": ""
+    }
+  },
+  "violation": ""
+}
