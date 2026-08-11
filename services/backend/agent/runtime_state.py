@@ -336,6 +336,10 @@ class RuntimeState(BaseModel):
 
     approval_state: ApprovalState = Field(default_factory=ApprovalState)
 
+    # 最近一次迁移的原因（终态原因 / 停止原因），供追溯页直接读取
+    reason: str = ""
+    reason_code: str = ""
+
     checkpoint_version: int = 1
     fencing_token: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -373,6 +377,8 @@ class RuntimeState(BaseModel):
             update={
                 "status": next_status,
                 "updated_at": stamp,
+                "reason": reason[:200],
+                "reason_code": reason_code,
                 "checkpoint_version": self.checkpoint_version + 1,
             }
         )

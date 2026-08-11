@@ -394,6 +394,26 @@ class Settings(BaseSettings):
         default=12000, ge=1000, le=100000, description="自主运行上下文最大字符数（记忆/历史压缩）"
     )
 
+    # ── 阶段3 可控追溯与错误恢复（Durable Runtime / Outbox）────────────
+    AUTONOMOUS_LEASE_SECONDS: int = Field(
+        default=120,
+        ge=10,
+        le=3600,
+        description="Autonomous run 租约 TTL（秒；worker 心跳续期，reaper 据此回收）",
+    )
+    AUTONOMOUS_HEARTBEAT_SECONDS: int = Field(
+        default=30, ge=5, le=600, description="run 心跳间隔（秒，须远小于租约 TTL）"
+    )
+    RUN_REAPER_INTERVAL_SECONDS: int = Field(
+        default=60, ge=10, le=3600, description="stale running 扫描间隔（秒，不允许永久 running）"
+    )
+    OUTBOX_MAX_ATTEMPTS: int = Field(
+        default=5, ge=1, le=20, description="outbox 投递最大尝试次数（超过进入独立 dead-letter）"
+    )
+    OUTBOX_BATCH_SIZE: int = Field(
+        default=100, ge=1, le=1000, description="outbox 单批对账投递条数"
+    )
+
     # ── A2A 互操作（阶段四 4B，默认关闭）────────────────────────
     A2A_ENABLED: bool = Field(
         default=False, description="A2A 1.0 协议服务总开关（默认关闭；开启需先启用自主模式）"
