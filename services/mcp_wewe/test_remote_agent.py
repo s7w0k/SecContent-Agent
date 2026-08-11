@@ -6,6 +6,7 @@ LangChain Agent —— 通过 HTTP 桥接测试远程 MCP 服务。
 """
 import asyncio
 import contextlib
+import os
 import sys
 
 if sys.platform == "win32":
@@ -87,7 +88,7 @@ async def main():
     # 2. 创建 Agent (DeepSeek)
     llm = ChatOpenAI(
         model="deepseek-chat",
-        api_key="sk-REDACTED",
+        api_key=os.getenv("DEEPSEEK_API_KEY", "sk-test-placeholder"),
         base_url="https://api.deepseek.com/v1",
         temperature=0.3,
     )

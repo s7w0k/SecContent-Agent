@@ -35,7 +35,7 @@ from langchain_openai import ChatOpenAI
 # ===============================================================
 llm = ChatOpenAI(
     model="deepseek-chat",
-    api_key="sk-REDACTED",
+    api_key=os.getenv("DEEPSEEK_API_KEY", "sk-test-placeholder"),
     base_url="https://api.deepseek.com/v1",
     temperature=0.3,
 )

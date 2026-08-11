@@ -23,11 +23,8 @@ def get_rss_url() -> str:
     return os.getenv("WEWE_RSS_FEED_URL", f"{base}/feeds/all.rss")
 
 
-# DeepSeek 配置（可被环境变量覆盖）
-DEEPSEEK_API_KEY = os.getenv(
-    "DEEPSEEK_API_KEY",
-    "sk-REDACTED",
-)
+# DeepSeek 配置（密钥仅从环境变量读取，不落代码库）
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.getenv(
     "DEEPSEEK_BASE_URL",
     "https://api.deepseek.com/v1",
