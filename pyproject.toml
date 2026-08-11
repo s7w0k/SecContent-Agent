@@ -88,7 +88,10 @@ ignore = [
 "scripts/collect_legacy_baseline.py" = ["T201"]  # CLI 脚本输出
 "scripts/run_eval_harness.py" = ["T201"]  # CLI 评测报告输出
 "scripts/run_replay.py" = ["T201"]  # CLI 重放报告输出
+"scripts/run_fault_drill.py" = ["T201"]  # CLI 故障演练输出
+"scripts/run_capacity_model.py" = ["T201"]  # CLI 容量报告输出
 "services/backend/agent/evals/gates.py" = ["N818"]  # GateViolation 为阶段2 对外契约名
+"services/backend/agent/harness/fault_harness.py" = ["N818"]  # FaultInjected 为阶段4 对外契约名
 
 [tool.ruff.lint.isort]
 known-first-party = ["services", "mcp_wewe", "mcp_crawl"]

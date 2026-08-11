@@ -472,6 +472,26 @@ class Settings(BaseSettings):
         default=5, ge=1, le=1000, description="每远端调用配额（remote_agent_quota）"
     )
 
+    # ── 阶段4 Harness/灰度/生产上线 ─────────────────────────────
+    FAULT_HARNESS_ENABLED: bool = Field(
+        default=False, description="故障注入 Harness 总开关（默认关闭，仅演练时开启）"
+    )
+    CAPACITY_SAFETY_FACTOR: float = Field(
+        default=0.8, gt=0, le=1, description="容量模型安全系数（产出容量=理论值×系数）"
+    )
+    ROLLOUT_MIN_SAMPLE_SIZE: int = Field(
+        default=200, ge=1, le=1_000_000, description="灰度档位推进的最小成功样本量"
+    )
+    ROLLOUT_OBSERVATION_WINDOW_SECONDS: int = Field(
+        default=86_400, ge=60, le=2_592_000, description="灰度档位观察窗口（秒，不以自然日替代样本量）"
+    )
+    ROLLOUT_LATENCY_P95_SLO_SECONDS: float = Field(
+        default=5.0, gt=0, le=300, description="端到端 p95 时延 SLO 阈值（秒）"
+    )
+    ROLLOUT_USD_PER_SUCCESS_BUDGET_DELTA_PCT: float = Field(
+        default=10.0, gt=0, le=500, description="USD/success 超预算告警百分比阈值"
+    )
+
     @model_validator(mode="after")
     def autonomous_enabled_requires_bounded_budget(self) -> Settings:
         """配置非法时阻止自主模式启动，而不是使用无上限默认值。"""
