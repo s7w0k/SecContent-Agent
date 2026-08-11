@@ -354,6 +354,10 @@ class TestMongoDBIndexes:
             "runtime_runs",
             "runtime_events",
             "runtime_approvals",
+            "runtime_manifests",
+            "runtime_leases",
+            "event_outbox",
+            "event_outbox_dead_letter",
             "user_profile_policies",
             "user_memory_events",
             "user_memory_items",
@@ -395,6 +399,10 @@ class TestMongoDBIndexes:
         assert len(result["runtime_runs"]) == 3
         assert len(result["runtime_events"]) == 3
         assert len(result["runtime_approvals"]) == 3
+        assert len(result["runtime_manifests"]) == 3
+        assert len(result["runtime_leases"]) == 2
+        assert len(result["event_outbox"]) == 3
+        assert len(result["event_outbox_dead_letter"]) == 1
 
         feedback_indexes = {
             index.document["name"]: index.document
@@ -479,5 +487,5 @@ class TestMongoDBIndexes:
             second = await MongoDB.ensure_indexes()
 
         assert first == second
-        assert collection.create_indexes.await_count == 92
+        assert collection.create_indexes.await_count == 100
         assert collection.drop_index.await_count == 2

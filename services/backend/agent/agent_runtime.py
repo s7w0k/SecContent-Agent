@@ -74,6 +74,11 @@ _MAX_DECISION_SUMMARIES = 200
 _MAX_TOOL_RESULTS = 200
 
 
+def _impact_scope_for(tool_name: str, risk_level: str) -> str:
+    """审批影响范围（脱敏）：涉及的工具与风险等级，不含参数原文。"""
+    return f"工具 {tool_name}（风险 {risk_level}）将执行外部副作用，需人工确认后放行"
+
+
 class PlannedAction(BaseModel):
     """服务端可执行的结构化计划动作（模型只能影响字段值，不能绕过校验）。"""
 
@@ -620,6 +625,9 @@ class AgentRuntime:
                 risk_level=policy_decision.risk_level,
                 trigger_rule=policy_decision.reason_code,
                 decision_summary_id="",
+                impact_scope=_impact_scope_for(
+                    action.tool_name, policy_decision.risk_level.value
+                ),
                 now=stamp,
             )
         else:
@@ -627,6 +635,9 @@ class AgentRuntime:
                 approval_id="ap-" + uuid.uuid4().hex[:12],
                 action=action.tool_name,
                 risk_level=policy_decision.risk_level.value,
+                impact_scope=_impact_scope_for(
+                    action.tool_name, policy_decision.risk_level.value
+                ),
                 params_hash=policy_decision.params_hash,
                 params_summary=policy_decision.params_summary,
                 trigger_rule=policy_decision.reason_code,

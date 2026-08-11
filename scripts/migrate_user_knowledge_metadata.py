@@ -103,7 +103,7 @@ async def main() -> None:
     coll = MongoDB.get_collection("user_knowledge_entries")
 
     stats = await _collect_stats(coll)
-    print(f"=== user_knowledge_entries 统计 ===")
+    print("=== user_knowledge_entries 统计 ===")
     print(f"total: {stats['total']}")
     print(f"doc_type 分布: {dict(stats['doc_type'])}")
     print(f"enabled 分布: {dict(stats['enabled'])}")

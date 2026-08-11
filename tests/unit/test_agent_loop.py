@@ -336,3 +336,127 @@ class TestMessagePairing:
         # （通过事件间接验证：2 个 TOOL_FINISHED）
         finished = [e for e in result.events if e.type == EventType.TOOL_FINISHED]
         assert len(finished) == 2
+
+
+class TestRetryBudget:
+    """重试预算接入 AgentLoop：LLM 失败自动重试，record_retry 计入预算。"""
+
+    @pytest.mark.asyncio
+    async def test_retry_then_success_records_retry(self, monkeypatch):
+        from agent import retry as retry_mod
+        from agent.budget_manager import BudgetPlan
+
+        async def _instant_sleep(_: float) -> None:
+            return None
+
+        monkeypatch.setattr(retry_mod.asyncio, "sleep", _instant_sleep)
+
+        ok = AIMessage(content="最终回答。", tool_calls=[])
+        llm = MagicMock()
+        llm.model_name = "deepseek-chat"
+        llm.bind_tools = MagicMock(return_value=llm)
+        llm.ainvoke = AsyncMock(side_effect=[TimeoutError("transient"), ok])
+        wrapper = LLMWrapper(llm=llm, db=None)
+        loop = AgentLoop(
+            llm_wrapper=wrapper,
+            tools=[],
+            budget=_make_budget(),
+            run_context=_make_ctx(),
+            budget_plan=BudgetPlan(max_retries=1),  # max_attempts = max_retries + 1 = 2
+        )
+
+        result = await loop.run(system_prompt="sys", user_message="hi")
+
+        assert result.status == LoopStatus.COMPLETED
+        assert result.answer == "最终回答。"
+        assert llm.ainvoke.await_count == 2  # 1 次失败 + 1 次成功
+        assert loop.budget_manager.usage.retries == 1
+        assert loop.budget_manager.usage.retry_tokens == 0  # record_retry(tokens_used=0)
+
+    @pytest.mark.asyncio
+    async def test_retry_budget_exhausted_degrades(self, monkeypatch):
+        from agent import retry as retry_mod
+        from agent.budget_manager import BudgetPlan
+
+        async def _instant_sleep(_: float) -> None:
+            return None
+
+        monkeypatch.setattr(retry_mod.asyncio, "sleep", _instant_sleep)
+
+        llm = MagicMock()
+        llm.model_name = "deepseek-chat"
+        llm.bind_tools = MagicMock(return_value=llm)
+        llm.ainvoke = AsyncMock(side_effect=TimeoutError("still down"))
+        wrapper = LLMWrapper(llm=llm, db=None)
+        loop = AgentLoop(
+            llm_wrapper=wrapper,
+            tools=[],
+            budget=_make_budget(),
+            run_context=_make_ctx(),
+            budget_plan=BudgetPlan(max_retries=0),  # 无重试预算：仅 1 次尝试
+        )
+
+        result = await loop.run(system_prompt="sys", user_message="hi")
+
+        # 主轮失败 → 降级 finalize；finalization 失败 → 返回降级回答，不崩溃
+        assert result.degraded
+        assert result.status == LoopStatus.BUDGET_EXCEEDED
+        assert loop.budget_manager.usage.retries == 0  # 失败路径不重复计重试
+
+
+class TestMetricsProducer:
+    """AgentLoop 喂生产指标：MetricCollector 原语 + 告警规则输入键。"""
+
+    @pytest.mark.asyncio
+    async def test_run_feeds_metrics(self):
+        from agent.harness.observability import MetricCollector, production_alert_metrics
+
+        response = AIMessage(content="回答。", tool_calls=[])
+        wrapper, _ = _make_wrapper(response)
+        collector = MetricCollector()
+        loop = AgentLoop(
+            llm_wrapper=wrapper,
+            tools=[],
+            budget=_make_budget(),
+            run_context=_make_ctx(),
+            metrics=collector,
+        )
+
+        result = await loop.run(system_prompt="sys", user_message="hi")
+
+        assert result.status == LoopStatus.COMPLETED
+        assert collector.counter("run_finished_total") == 1
+        assert collector.counter("run_completed_total") == 1
+        assert collector.histogram("run_duration_seconds").count == 1
+        assert collector.counter("llm_tokens_total") > 0
+
+        # 告警规则输入键全部有生产者
+        view = production_alert_metrics(collector)
+        assert set(view) == {
+            "unsafe_action_count",
+            "duplicate_side_effect_count",
+            "error_rate_delta_pp",
+            "latency_p95_seconds",
+            "usd_per_success_budget_delta_pct",
+            "budget_exhaustion_rate",
+            "quality_spot_below_gate",
+            "stuck_running_seconds",
+        }
+
+    def test_alert_metrics_rate_aggregation(self):
+        from agent.harness.observability import MetricCollector, production_alert_metrics
+
+        collector = MetricCollector()
+        collector.inc("run_finished_total", amount=10)
+        collector.inc("run_completed_total", amount=8)
+        collector.inc("budget_exhausted", amount=2)
+        collector.inc("error_events_total", amount=5)
+        collector.inc("cost_usd_micro_total", amount=3_000_000)
+        collector.inc("unsafe_action_count", amount=1)
+
+        view = production_alert_metrics(collector, usd_budget_per_success=0.5)
+        assert view["budget_exhaustion_rate"] == pytest.approx(0.2)
+        assert view["error_rate_delta_pp"] == pytest.approx(50.0)
+        assert view["unsafe_action_count"] == 1
+        # 每成功成本 = $3 / 8 = $0.375 vs 预算 $0.5 → delta = -25%
+        assert view["usd_per_success_budget_delta_pct"] == pytest.approx(-25.0)

@@ -27,8 +27,6 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-import time
-import traceback
 from typing import Any
 
 # ── 工作目录断言 ──────────────────────────────────────────────
@@ -83,7 +81,7 @@ def retrieve_memory(category: str = "") -> str:
     Args:
         category: 可选，按分类过滤
     """
-    return f"[记忆] 用户偏好: 简洁风格，关注技术细节。"
+    return "[记忆] 用户偏好: 简洁风格，关注技术细节。"
 
 
 ALL_TOOLS = [search_knowledge, get_article, retrieve_memory]
@@ -367,7 +365,7 @@ async def test_7_invalid_schema() -> dict:
             SystemMessage(content="你是一个助手。"),
             HumanMessage(content="请使用 bad_tool。"),
         ]
-        response = await bound.ainvoke(messages)
+        await bound.ainvoke(messages)
         _print_result("未异常（可能 provider 容错）", "N/A")
         result["exception_type"] = "none"
     except Exception as e:
@@ -383,7 +381,7 @@ async def test_7_invalid_schema() -> dict:
 # ── 主流程 ────────────────────────────────────────────────────
 
 async def main() -> None:
-    print(f"\nProvider 工具调用能力探针")
+    print("\nProvider 工具调用能力探针")
     print(f"  Model: {MODEL}")
     print(f"  Base URL: {BASE_URL}")
     print(f"  API Key: {'***' + API_KEY[-4:] if API_KEY else '(空)'}")

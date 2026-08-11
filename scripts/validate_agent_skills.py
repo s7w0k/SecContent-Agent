@@ -191,7 +191,7 @@ def _detect_cycles(skill_dir: Path) -> list[str]:
 
     # DFS 找环
     WHITE, GRAY, BLACK = 0, 1, 2
-    color: dict[str, int] = {k: WHITE for k in graph}
+    color: dict[str, int] = dict.fromkeys(graph, WHITE)
     stack: list[str] = []
 
     def visit(node: str) -> None:
@@ -201,7 +201,7 @@ def _detect_cycles(skill_dir: Path) -> list[str]:
             if nxt not in color:
                 continue
             if color[nxt] == GRAY:
-                cycle = stack[stack.index(nxt):] + [nxt]
+                cycle = [*stack[stack.index(nxt):], nxt]
                 errors.append(f"{skill_dir.name}: 循环引用被拒绝: {' → '.join(cycle)}")
             elif color[nxt] == WHITE:
                 visit(nxt)

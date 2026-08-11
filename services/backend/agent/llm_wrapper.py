@@ -126,6 +126,8 @@ class LLMWrapper:
         run_context: RunContext,
         loop_round: int = 0,
         retry_policy: RetryPolicy | None = None,
+        max_attempts: int | None = None,
+        retry_state_out: RetryState | None = None,
     ) -> AIMessage:
         """执行一次 Agent Loop 决策轮 LLM 调用（非流式 ainvoke）。
 
@@ -137,6 +139,10 @@ class LLMWrapper:
             run_context: 运行上下文（身份/追踪/预算）
             loop_round: 当前轮次（0-based，日志用）
             retry_policy: 重试策略（None 时用默认）
+            max_attempts: 最大尝试次数上限（含首次），来自预算 max_retries+1；
+                retry_policy 提供时忽略
+            retry_state_out: 可选引用传递的重试状态，调用方用于读取实际重试次数
+                （接入 BudgetManager.record_retry，使重试预算生效）
 
         Returns:
             AIMessage：含 content 和 tool_calls
@@ -147,7 +153,8 @@ class LLMWrapper:
         from datetime import datetime
 
         started = time.perf_counter()
-        retry_state = RetryState()
+        # 直接复用调用方对象：重试计数（含失败路径）实时写入 retry_state_out
+        retry_state = retry_state_out if retry_state_out is not None else RetryState()
 
         # 默认重试策略：2 次重试，共享 run_context 的 deadline
         deadline_at = None
@@ -156,7 +163,7 @@ class LLMWrapper:
             deadline_at = time.monotonic() + max(0, remaining)
 
         policy = retry_policy or RetryPolicy(
-            max_attempts=3,
+            max_attempts=max(1, int(max_attempts or 3)),
             base_delay=1.0,
             multiplier=2.0,
             max_delay=8.0,

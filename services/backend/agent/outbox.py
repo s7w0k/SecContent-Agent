@@ -55,6 +55,7 @@ class OutboxEntry(BaseModel):
     run_id: str = ""
     aggregate_type: str = "run_state"  # run_state / runtime_event / agent_event
     event_type: str = ""
+    event_status: str = ""  # 事件语义状态（投递到事件存储时保留）
     payload: dict[str, Any] = Field(default_factory=dict)
     payload_hash: str = ""
     dedup_key: str = ""  # 幂等键（run_id + 业务唯一标识）
@@ -113,6 +114,7 @@ class OutboxStore:
         payload: dict[str, Any] | None = None,
         dedup_key: str = "",
         aggregate_type: str = "run_state",
+        status: str = "",
         compensation: str = "",
         now: datetime | None = None,
     ) -> OutboxEntry | None:
@@ -133,6 +135,7 @@ class OutboxStore:
             run_id=run_id,
             aggregate_type=aggregate_type,
             event_type=event_type,
+            event_status=status,
             payload=payload,
             payload_hash=_stable_hash(payload),
             dedup_key=dedup_key,
@@ -255,6 +258,7 @@ class EventOutbox:
         run_id: str,
         event_type: str,
         payload: dict[str, Any] | None = None,
+        status: str = "",
         now: datetime | None = None,
     ) -> OutboxEntry | None:
         return await self.store.enqueue(
@@ -263,6 +267,7 @@ class EventOutbox:
             payload=payload,
             dedup_key=f"{run_id}:{event_type}:{_stable_hash(payload or {})[:16]}",
             aggregate_type="runtime_event",
+            status=status,
             now=now,
         )
 

@@ -844,6 +844,56 @@ class MongoDB:
                     name="idx_runtime_approval_run_created",
                 ),
             ],
+            # ── 阶段三 可控追溯：清单/租约/Outbox（与各模块 index_specs 保持一致）──
+            "runtime_manifests": [
+                IndexModel(
+                    [("run_id", ASCENDING)],
+                    unique=True,
+                    name="uq_manifest_run_id",
+                ),
+                IndexModel(
+                    [("user_id", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_manifest_user_created",
+                ),
+                IndexModel(
+                    [("code_revision", ASCENDING)],
+                    name="idx_manifest_code_revision",
+                ),
+            ],
+            "runtime_leases": [
+                IndexModel(
+                    [("run_id", ASCENDING)],
+                    unique=True,
+                    name="uq_lease_run_id",
+                ),
+                IndexModel(
+                    [("owner_id", ASCENDING)],
+                    name="idx_lease_owner",
+                ),
+            ],
+            "event_outbox": [
+                IndexModel(
+                    [("dedup_key", ASCENDING)],
+                    unique=True,
+                    sparse=True,
+                    name="uq_outbox_dedup",
+                ),
+                IndexModel(
+                    [("status", ASCENDING), ("created_at", ASCENDING)],
+                    name="idx_outbox_status_created",
+                ),
+                IndexModel(
+                    [("run_id", ASCENDING)],
+                    name="idx_outbox_run_id",
+                ),
+            ],
+            "event_outbox_dead_letter": [
+                IndexModel(
+                    [("entry_id", ASCENDING)],
+                    unique=True,
+                    name="uq_outbox_dead_entry",
+                ),
+            ],
         }
 
         try:

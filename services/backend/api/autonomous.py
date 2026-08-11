@@ -91,6 +91,7 @@ def _summarize(state) -> RunSummary:
                 "approval_id": a.approval_id,
                 "action": a.action,
                 "risk_level": a.risk_level,
+                "impact_scope": a.impact_scope[:200],
                 "params_summary": a.params_summary[:300],
                 "status": a.status,
                 "expires_at": a.expires_at.isoformat() if a.expires_at else None,
@@ -185,6 +186,34 @@ async def get_run(
     if state is None:
         raise HTTPException(status_code=404, detail="run not found")
     return _summarize(state)
+
+
+@router.get("/runs/{run_id}/trace", summary="统一追溯报告（阶段3 7 问）")
+async def run_trace(
+    run_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+) -> dict[str, Any]:
+    service = _get_service(request)
+    report = await service.get_trace(run_id, user_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    data = report.model_dump(mode="json")
+    data["answers"] = report.answers
+    return data
+
+
+@router.get("/runs/{run_id}/recovery-suggestion", summary="恢复建议（错误恢复决策对外接口）")
+async def recovery_suggestion(
+    run_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+) -> dict[str, Any]:
+    service = _get_service(request)
+    suggestion = await service.get_recovery_suggestion(run_id, user_id)
+    if suggestion is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    return suggestion
 
 
 @router.post("/runs/{run_id}/cancel", summary="取消运行")

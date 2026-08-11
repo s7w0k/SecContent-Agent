@@ -51,6 +51,7 @@ from agent.budget_manager import (
 from agent.context_optimizer import ContextCompressor, ToolResultCache
 from agent.llm_wrapper import LLMWrapper
 from agent.loop_detector import LoopDetector
+from agent.retry import RetryState
 from agent.tool_executor import ToolExecutionResult, ToolExecutor
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
 
@@ -147,12 +148,14 @@ class AgentLoop:
         tool_result_cache: ToolResultCache | None = None,
         model_router: Any | None = None,
         budget_plan: BudgetPlan | None = None,
+        metrics: Any | None = None,
     ):
         self.llm_wrapper = llm_wrapper
         self.tools_by_name: dict[str, Any] = {t.name: t for t in tools}
         self.budget = budget
         self.run_context = run_context
         self.max_repeated_actions = max_repeated_actions
+        self.metrics = metrics  # MetricCollector（可选）：run 结束喂生产指标
 
         # 缺省策略：按 budget 的工具超时生成，保持旧行为
         self.tool_policies = tool_policies or {
@@ -224,7 +227,7 @@ class AgentLoop:
             LoopResult
         """
         try:
-            return await self._run_inner(
+            result = await self._run_inner(
                 system_prompt=system_prompt,
                 user_message=user_message,
                 initial_context=initial_context,
@@ -234,6 +237,39 @@ class AgentLoop:
             )
         finally:
             await self._flush_events()
+        self._record_run_metrics(result)
+        return result
+
+    def _record_run_metrics(self, result: LoopResult) -> None:
+        """run 结束喂生产指标（脱敏数值，供告警规则消费）。
+
+        原语计数 → production_alert_metrics 聚合为告警规则输入键。
+        """
+        if self.metrics is None:
+            return
+        usage = self.budget_manager.usage
+        self.metrics.inc("run_finished_total")
+        if result.status == LoopStatus.COMPLETED:
+            self.metrics.inc("run_completed_total")
+        elif result.status == LoopStatus.BUDGET_EXCEEDED:
+            self.metrics.inc("run_budget_exhausted_total")
+            self.metrics.inc("budget_exhausted")
+        elif result.status == LoopStatus.CANCELLED:
+            self.metrics.inc("run_cancelled_total")
+        else:
+            self.metrics.inc("run_degraded_total")
+        if usage.total_tokens:
+            self.metrics.inc("llm_tokens_total", amount=usage.total_tokens)
+        if usage.cost_usd > 0:
+            self.metrics.inc("cost_usd_micro_total", amount=int(usage.cost_usd * 1_000_000))
+        if usage.tool_calls:
+            self.metrics.inc("tool_calls_total", amount=usage.tool_calls)
+        if usage.retries:
+            self.metrics.inc("retries_total", amount=usage.retries)
+        error_events = sum(1 for e in self._events if e.type == EventType.DEGRADE)
+        if error_events:
+            self.metrics.inc("error_events_total", amount=error_events)
+        self.metrics.observe("run_duration_seconds", value=usage.elapsed_seconds())
 
     async def _run_inner(
         self,
@@ -306,14 +342,22 @@ class AgentLoop:
                 finalize_reason = "no_budget_for_round"
                 break
 
-            # LLM 决策轮调用
+            # LLM 决策轮调用（重试次数受 max_retries 预算约束）
+            retry_state = RetryState()
             try:
                 response = await self.llm_wrapper.invoke_agent_step(
                     bound_llm=bound_llm,
                     messages=messages,
                     run_context=self.run_context,
                     loop_round=round_no,
+                    max_attempts=max(1, self.budget_plan.max_retries + 1),
+                    retry_state_out=retry_state,
                 )
+                # RetryState.attempts 只记录失败尝试（成功路径立即返回不记录），
+                # 因此 total_attempts 即实际重试次数
+                retries_used = retry_state.total_attempts
+                if retries_used:
+                    self.budget_manager.record_retry(tokens_used=0)
             except asyncio.CancelledError:
                 self.budget_manager.release(reservation)
                 cancelled = True
@@ -427,6 +471,8 @@ class AgentLoop:
                             "请更换策略或直接回答"
                         ),
                     )
+                    if self.metrics is not None:
+                        self.metrics.inc("duplicate_side_effect_count")
                     continue
                 tool_calls_filtered.append(tc)
                 rsv = await self.budget_manager.reserve(
@@ -587,12 +633,18 @@ class AgentLoop:
 
         try:
             final_llm = self.llm_wrapper.llm.bind_tools([], tool_choice="none")
+            final_retry_state = RetryState()
             response = await self.llm_wrapper.invoke_agent_step(
                 bound_llm=final_llm,
                 messages=messages,
                 run_context=self.run_context,
                 loop_round=round_no,
+                max_attempts=max(1, self.budget_plan.max_retries + 1),
+                retry_state_out=final_retry_state,
             )
+            final_retries = final_retry_state.total_attempts
+            if final_retries:
+                self.budget_manager.record_retry(tokens_used=0)
             answer = response.content if isinstance(response.content, str) else str(response.content)
             answer = answer.strip()
             in_t, out_t, cached_t, estimated = self.llm_wrapper._resolve_usage(messages, response)

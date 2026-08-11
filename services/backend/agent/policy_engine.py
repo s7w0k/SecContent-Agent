@@ -424,6 +424,7 @@ class ApprovalService:
         risk_level: RiskLevel | str,
         trigger_rule: str,
         decision_summary_id: str = "",
+        impact_scope: str = "",
         now: datetime | None = None,
     ) -> PendingApproval:
         stamp = now or datetime.now(UTC)
@@ -431,6 +432,7 @@ class ApprovalService:
             approval_id=secrets.token_hex(8),
             action=action,
             risk_level=RiskLevel(risk_level).value,
+            impact_scope=impact_scope,
             params_hash=params_hash,
             params_summary=params_summary,
             trigger_rule=trigger_rule,

@@ -283,3 +283,51 @@ class AlertEvaluator:
         """返回当前最严重的告警动作（无触发返回 None）。"""
         firing = self.evaluate(metrics)
         return firing[0].action if firing else None
+
+
+# ═══════════════════════════════════════════════════════════════
+# 生产指标字段统一：MetricCollector 原语 → 告警规则输入键
+# ═══════════════════════════════════════════════════════════════
+
+
+def production_alert_metrics(
+    collector: MetricCollector,
+    *,
+    usd_budget_per_success: float = 0.0,
+) -> dict[str, float]:
+    """从生产 MetricCollector 聚合出告警规则输入键（统一字段）。
+
+    生产链路（AgentLoop / AutonomousRunService）喂原语计数，本函数负责
+    聚合出 default_alert_rules 引用的派生指标：
+
+    - error_rate_delta_pp：当前窗口错误率（基线为 0，阶段0 基线冻结后校准）；
+    - usd_per_success_budget_delta_pct：每次成功成本相对预算的偏差百分比；
+    - budget_exhaustion_rate：预算耗尽 run 占比；
+    - latency_p95_seconds：run 时长 p95；
+    - stuck_running_seconds：当前卡住运行的秒数（gauge，由 reaper 维护）。
+
+    cost_usd_micro_total 以微美元累计（counter 为整数，避免浮点截断）。
+    """
+    total = float(collector.counter("run_finished_total"))
+    succeeded = float(collector.counter("run_completed_total"))
+    exhausted = float(collector.counter("budget_exhausted"))
+    errors = float(collector.counter("error_events_total"))
+    cost_usd = collector.counter("cost_usd_micro_total") / 1_000_000.0
+
+    error_rate = errors / total if total else 0.0
+    budget_rate = exhausted / total if total else 0.0
+    usd_delta_pct = 0.0
+    if usd_budget_per_success > 0 and succeeded:
+        per_success = cost_usd / succeeded
+        usd_delta_pct = (per_success - usd_budget_per_success) / usd_budget_per_success * 100.0
+
+    return {
+        "unsafe_action_count": float(collector.counter("unsafe_action_count")),
+        "duplicate_side_effect_count": float(collector.counter("duplicate_side_effect_count")),
+        "error_rate_delta_pp": round(error_rate * 100.0, 4),
+        "latency_p95_seconds": collector.histogram("run_duration_seconds").p95,
+        "usd_per_success_budget_delta_pct": round(usd_delta_pct, 4),
+        "budget_exhaustion_rate": round(budget_rate, 6),
+        "quality_spot_below_gate": float(collector.counter("quality_spot_below_gate")),
+        "stuck_running_seconds": collector.gauge("stuck_running_seconds"),
+    }

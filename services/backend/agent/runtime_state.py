@@ -281,6 +281,7 @@ class PendingApproval(BaseModel):
     approval_id: str
     action: str = ""
     risk_level: str = "L2"  # L0/L1/L2/L3
+    impact_scope: str = ""  # 审批影响范围（脱敏：涉及哪些副作用/产物，不含参数原文）
     params_hash: str = ""
     params_summary: str = ""
     trigger_rule: str = ""

@@ -395,6 +395,13 @@ class Settings(BaseSettings):
     )
 
     # ── 阶段3 可控追溯与错误恢复（Durable Runtime / Outbox）────────────
+    CODE_REVISION: str = Field(
+        default="",
+        description="部署注入的 Git commit 或镜像 digest；空则 RunManifest 回退 dev-local",
+    )
+    TOOL_REGISTRY_VERSION: str = Field(
+        default="1.0", description="工具契约注册表版本（RunManifest 启动前冻结）"
+    )
     AUTONOMOUS_LEASE_SECONDS: int = Field(
         default=120,
         ge=10,

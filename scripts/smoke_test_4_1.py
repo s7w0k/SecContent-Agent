@@ -6,8 +6,8 @@
     python scripts/smoke_test_4_1.py
 """
 
-import sys
 import os
+import sys
 
 # 添加 backend 到 Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "services", "backend"))
@@ -77,7 +77,7 @@ def test_json_parsing():
     # 非法输入抛异常
     try:
         ClassifierV2._parse_response("No JSON here")
-        assert False, "Should have raised"
+        raise AssertionError("Should have raised")
     except ValueError:
         pass
     print("  [PASS] JSON 解析: 3 种格式 + 异常处理正确")
