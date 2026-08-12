@@ -30,6 +30,8 @@ from agent.evals.mock_llm import (
 from agent.llm_wrapper import LLMWrapper
 from agent.pricing_catalog import compute_cost
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.tools import StructuredTool
+from pydantic import BaseModel, ConfigDict
 
 logger = logging.getLogger("backend.agent.evals.runner")
 
@@ -41,6 +43,12 @@ CANDIDATE_SYSTEM_PROMPT = (
 )
 
 LEGACY_SYSTEM_PROMPT = "你是智能体安全行业的 PR 情报分析助手，请简洁回答。"
+
+
+class _AnyToolArgs(BaseModel):
+    """评测 fixture 工具无固定参数 schema：接受任意参数（真实模型后端 bind_tools 用）。"""
+
+    model_config = ConfigDict(extra="allow")
 
 
 class FixtureTool:
@@ -93,6 +101,23 @@ class FixtureTool:
             data=self.data,
             source_ids=list(self.source_ids),
             char_count=len(self.data),
+        )
+
+    def to_langchain(self) -> StructuredTool:
+        """包装为 langchain 工具（真实模型后端 ChatOpenAI.bind_tools 需要标准工具）。
+
+        仅用于 real 后端；mock 后端继续使用自定义 MockToolLLM，不经过此路径。
+        包装后保留 TypedToolResult 语义（source_ids/ok/data），ToolExecutor 可无感消费。
+        """
+
+        async def _invoke(**kwargs: Any) -> TypedToolResult:
+            return await self.ainvoke(kwargs or None)
+
+        return StructuredTool(
+            name=self.name,
+            description=f"确定性评测数据工具 {self.name}（数据来自固定 fixture）",
+            args_schema=_AnyToolArgs,
+            coroutine=_invoke,
         )
 
 
@@ -262,6 +287,9 @@ class EvalRunner:
         llm = self._agent_llm(case)
         wrapper = LLMWrapper(llm=llm, db=self.db)
         tools = _build_fixture_tools(case)
+        if self.llm_backend == "real":
+            # 真实模型后端：ChatOpenAI.bind_tools 需要标准 langchain 工具
+            tools = [t.to_langchain() for t in tools]
         budget = self._budget_from_case(case)
         # 无 finalization 预留用例：预算耗尽时返回结构化 budget_exhausted，不调模型
         budget_plan: Any = None

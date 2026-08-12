@@ -32,6 +32,13 @@ PROMPT_VERSIONS = {
 }
 
 
+class UnsupportedToolCallError(RuntimeError):
+    """真实模型返回了绑定工具列表之外的函数名（幻觉/近似名）。
+
+    由 AgentLoop 捕获并引导模型重规划，而非直接终止运行。
+    """
+
+
 class LLMWrapper:
     """Run schema-validated calls and persist their operational metadata."""
 
@@ -180,7 +187,7 @@ class LLMWrapper:
                 retry_state=retry_state,
                 trace_id=run_context.trace_id,
             )
-        except Exception:
+        except Exception as exc:
             # 日志仍写入（含 retry 信息），然后重新抛出
             await self._log_agent_call(
                 run_context=run_context,
@@ -191,6 +198,10 @@ class LLMWrapper:
                 retry_state=retry_state,
                 error="LLM call failed",
             )
+            if isinstance(exc, ValueError) and "Unsupported function" in str(exc):
+                # 真实模型返回绑定工具列表之外的函数名（幻觉/近似名）：
+                # 转成结构化异常，由 AgentLoop 引导重规划而非终止运行
+                raise UnsupportedToolCallError(str(exc)) from exc
             raise
 
         # 提取 tool names 用于日志

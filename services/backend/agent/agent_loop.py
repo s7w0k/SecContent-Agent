@@ -49,7 +49,7 @@ from agent.budget_manager import (
     ReservationKind,
 )
 from agent.context_optimizer import ContextCompressor, ToolResultCache
-from agent.llm_wrapper import LLMWrapper
+from agent.llm_wrapper import LLMWrapper, UnsupportedToolCallError
 from agent.loop_detector import LoopDetector
 from agent.retry import RetryState
 from agent.tool_executor import ToolExecutionResult, ToolExecutor
@@ -301,6 +301,7 @@ class AgentLoop:
         finalize_needed = False
         finalize_reason = ""
         validate_fail_count = 0
+        unsupported_tool_replans = 0
         loop_stopped = False
 
         while True:
@@ -362,6 +363,45 @@ class AgentLoop:
                 self.budget_manager.release(reservation)
                 cancelled = True
                 break
+            except UnsupportedToolCallError as exc:
+                # 模型返回绑定工具列表之外的函数名（幻觉/近似名）：
+                # 提示重规划（最多 2 次），避免整个运行崩溃
+                self._enter_phase(LoopPhase.OBSERVE)
+                logger.warning(
+                    "[%s] unsupported tool call on round %d: %s",
+                    self.run_context.trace_id,
+                    round_no,
+                    exc,
+                )
+                self.budget_manager.settle_llm(
+                    reservation,
+                    input_tokens=0,
+                    output_tokens=0,
+                    usage_estimated=True,
+                    reason_code="unsupported_tool",
+                    attribution="primary",
+                )
+                self._emit(
+                    EventType.DEGRADE,
+                    phase="observe",
+                    round_no=round_no,
+                    error_code="unsupported_tool_call",
+                )
+                unsupported_tool_replans += 1
+                if unsupported_tool_replans >= 2:
+                    finalize_needed = True
+                    finalize_reason = "unsupported_tool_call"
+                    break
+                messages.append(
+                    HumanMessage(
+                        content=(
+                            "[工具提示] 你尝试调用了不可用的工具。"
+                            "请仅使用系统提供的工具名重新规划本次回答。"
+                        )
+                    )
+                )
+                self.detector.reset()
+                continue
             except Exception as exc:
                 # OBSERVE：失败调用也要结算（记录浪费 token），随后降级 finalize
                 self._enter_phase(LoopPhase.OBSERVE)

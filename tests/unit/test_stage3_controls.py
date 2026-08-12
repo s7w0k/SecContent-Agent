@@ -72,7 +72,8 @@ from agent.runtime_state import (
 )
 from agent.trace import TRACE_QUESTIONS, build_trace
 
-FIXED_NOW = datetime(2026, 8, 11, 10, 0, 0, tzinfo=UTC)
+# 相对当前时间（避免硬编码日期过期导致 lease/trace 时间断言漂移）
+FIXED_NOW = datetime.now(UTC)
 
 
 # ═══════════════════════════════════════════════════════════════
