@@ -314,6 +314,13 @@ export default function AgentWorkspace({ onLegacyFallback }: AgentWorkspaceProps
                     {typeof run.result.message === 'string' && (
                       <Text>{String(run.result.message)}</Text>
                     )}
+                    {candidates.length === 0 && typeof run.result.message !== 'string' && (
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description="未检索到结果，请更换关键词重试"
+                        style={{ marginTop: 16 }}
+                      />
+                    )}
                     {candidates.length > 0 && (
                       <>
                         <div style={{ marginTop: 12 }}><Text strong>检索到的候选</Text></div>
