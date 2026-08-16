@@ -377,7 +377,13 @@ class ConversationalAgentService:
             return {"message": "没有指定其他运行，当前取消指令已记录。"}, "completed"
         if intent == TaskIntent.ASK_STATUS:
             return {"message": "任务状态已返回。", "task_id": run.task_id}, "completed"
-        if intent in {TaskIntent.SEARCH_AND_RANK, TaskIntent.SEARCH_AND_DRAFT, TaskIntent.CURATE_NEWS} and self.tool_executor is not None:
+        # 生成初稿在还没有指定文章时，先检索候选供用户选择；已指定文章则直接进入后续规划。
+        needs_candidates = intent in {
+            TaskIntent.SEARCH_AND_RANK,
+            TaskIntent.SEARCH_AND_DRAFT,
+            TaskIntent.CURATE_NEWS,
+        } or (intent == TaskIntent.GENERATE_DRAFT and not envelope.selected_article_ids.value)
+        if needs_candidates and self.tool_executor is not None:
             query = str(envelope.news_query.value or envelope.goal.value or "")
             await self._event(
                 run,

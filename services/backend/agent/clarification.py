@@ -72,7 +72,7 @@ class ClarificationPolicy:
             needed.append(("goal", "task objective is missing"))
         if intent in {TaskIntent.SEARCH_AND_RANK, TaskIntent.SEARCH_AND_DRAFT, TaskIntent.CURATE_NEWS} and not self._available(envelope.news_query):
             needed.append(("news_query", "a search query is required"))
-        if intent in {TaskIntent.GENERATE_DRAFT, TaskIntent.REVISE, TaskIntent.REVISE_DRAFT, TaskIntent.SAVE, TaskIntent.SAVE_DRAFT, TaskIntent.EXPORT_DRAFT} and not self._available(envelope.selected_article_ids):
+        if intent in {TaskIntent.REVISE, TaskIntent.REVISE_DRAFT, TaskIntent.SAVE, TaskIntent.SAVE_DRAFT, TaskIntent.EXPORT_DRAFT} and not self._available(envelope.selected_article_ids):
             needed.append(("selected_article_ids", "the target article is ambiguous"))
         if candidate_count is not None and candidate_count > 1 and not self._available(envelope.selected_article_ids):
             needed.append(("selected_article_ids", "multiple similar candidates remain"))

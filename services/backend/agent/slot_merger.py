@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent.contracts.task import SlotSource, SlotState, SlotStatus, TaskEnvelope, merge_slot
+from agent.contracts.task import SlotSource, SlotState, SlotStatus, TaskAssumption, TaskEnvelope, merge_slot
 from agent.task_understanding import TaskEnvelopePatch
 from pydantic import BaseModel, Field
 
@@ -71,7 +71,15 @@ class SlotMerger:
             if merged.status == SlotStatus.CONFLICTED:
                 conflicted.append(name)
         if parsed.assumptions:
-            updates["assumptions"] = [*envelope.assumptions, *parsed.assumptions][-30:]
+            merged = [*envelope.assumptions, *parsed.assumptions][-30:]
+            seen: set[str] = set()
+            unique: list[TaskAssumption] = []
+            for item in merged:
+                if item.text in seen:
+                    continue
+                seen.add(item.text)
+                unique.append(item)
+            updates["assumptions"] = unique
         candidate = envelope.model_copy(update=updates)
         invalidated: set[str] = set()
         for name in changed:

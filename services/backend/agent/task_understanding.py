@@ -184,8 +184,17 @@ class TaskUnderstandingService:
             ]
             explicit.add("constraints")
 
-        if values.get("intent") in (TaskIntent.SEARCH_AND_RANK, TaskIntent.SEARCH_AND_DRAFT):
-            query = re.sub(r"^(请|帮我|麻烦)?\s*(搜索|检索|找|查)(一下)?", "", text).strip(" ，,。")
+        if values.get("intent") in (
+            TaskIntent.SEARCH_AND_RANK,
+            TaskIntent.SEARCH_AND_DRAFT,
+            TaskIntent.GENERATE_DRAFT,
+        ):
+            query = re.sub(
+                r"^(请|帮我|麻烦|麻烦你)?\s*(搜索|检索|找|查|写|生成|起草|撰写|创作)(一下)?\s*(一篇|一个|一份|一)?\s*",
+                "",
+                text,
+            )
+            query = re.sub(r"[，,。！!]?\s*(你决定|你来定|随便|都可以)\s*$", "", query)
             values["news_query"] = (query or text)[:1000]
             explicit.add("news_query")
         if any(marker in text for marker in ("你决定", "你来定", "随便", "都可以")):

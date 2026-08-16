@@ -77,7 +77,7 @@ async def test_agent_api_cancel_and_approve_are_scoped_and_idempotent():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/agent/turns",
-            json={"content": "写稿", "turn_id": "turn-wait"},
+            json={"content": "帮我修改这篇稿", "turn_id": "turn-wait"},
         )
         run_id = response.json()["run"]["run_id"]
         canceled = await client.post(f"/api/agent/runs/{run_id}/cancel")

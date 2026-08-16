@@ -107,12 +107,15 @@ class SearXNGClient:
         self,
         q: str,
         categories: list[str] | None = None,
-        language: str = "all",
+        language: str | None = None,
         time_range: str | None = None,
         safesearch: int = 1,
         pageno: int = 1,
     ) -> dict[str, Any]:
         """Execute a SearXNG search and return the raw JSON response.
+
+        Note: ``language=None`` omits the ``language`` param on purpose —
+        SearXNG returns empty results for some engines when ``language=all``.
 
         Returns:
             Dict with keys: results, unresponsive_engines, number_of_results, etc.
@@ -124,10 +127,11 @@ class SearXNGClient:
         params: dict[str, Any] = {
             "q": q,
             "format": "json",
-            "language": language,
             "safesearch": safesearch,
             "pageno": pageno,
         }
+        if language and language != "all":
+            params["language"] = language
         if categories:
             params["categories"] = ",".join(categories)
         if time_range:

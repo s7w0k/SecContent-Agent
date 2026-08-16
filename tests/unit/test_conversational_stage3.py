@@ -110,15 +110,15 @@ def test_clarification_is_prioritized_bounded_and_not_repeated():
         thread_id="th",
         user_id="u",
         tenant_id="tenant",
-        goal="写稿",
-        intent=TaskIntent.GENERATE_DRAFT,
+        goal="改稿",
+        intent=TaskIntent.REVISE,
     )
     policy = ClarificationPolicy()
     first = policy.decide(envelope)
     assert 1 <= len(first.questions) <= 3
     assert first.questions[0].slot == "selected_article_ids"
     second = policy.decide(envelope, asked_slots={"selected_article_ids"})
-    assert not second.should_ask
+    assert "selected_article_ids" not in [q.slot for q in second.questions]
     assert not second.can_proceed
     assert second.skipped_previously_asked == ["selected_article_ids"]
 
@@ -183,7 +183,7 @@ async def test_turn_is_persisted_once_and_duplicate_turn_does_not_execute_again(
 async def test_unanswered_clarification_stays_blocked_without_repeating_question():
     service = ConversationalAgentService()
     first = await service.submit_turn(
-        AgentTurnInput(content="请写稿", turn_id="turn-1", thread_id="thread-blocked"),
+        AgentTurnInput(content="帮我修改这篇稿", turn_id="turn-1", thread_id="thread-blocked"),
         user_id="u",
         tenant_id="tenant",
     )
@@ -247,3 +247,43 @@ async def test_candidate_reply_confirms_selected_article_slot():
     )
     assert second.task.selected_article_ids.value == ["a-2"]
     assert second.task.selected_article_ids.status.value == "confirmed"
+
+
+@pytest.mark.asyncio
+async def test_generate_draft_without_article_searches_candidates_first():
+    registry = build_business_tool_registry()
+    candidates = [
+        {"article_id": "a-1", "title": "AI 安全新规", "score": 0.9},
+        {"article_id": "a-2", "title": "AI 安全产品更新", "score": 0.88},
+    ]
+    executor = BusinessToolExecutor(
+        registry,
+        {
+            "fake": FakeBusinessToolAdapter(
+                {"search_news": {"query": "写一篇PR", "items": candidates, "total": 2, "replay_ref": "r"}}
+            )
+        },
+    )
+    service = ConversationalAgentService(tool_executor=executor)
+    first = await service.submit_turn(
+        AgentTurnInput(content="帮我生成一篇PR稿，你决定", turn_id="turn-1", thread_id="thread-g"),
+        user_id="u",
+        tenant_id="tenant",
+    )
+    assert first.run.intent == "generate_draft"
+    assert first.run.status == "waiting_user"
+    assert len(first.run.result["items"]) == 2
+    assert first.task.news_query.value == "PR稿"
+    # 同一 thread 再次带“你决定”提交，假设不重复累积。
+    second = await service.submit_turn(
+        AgentTurnInput(
+            content="帮我写一篇PR稿，你决定",
+            turn_id="turn-2",
+            task_id=first.task.task_id,
+            thread_id="thread-g",
+        ),
+        user_id="u",
+        tenant_id="tenant",
+    )
+    assert len(second.run.assumptions) == 1
+    assert second.run.assumptions[0].startswith("用户授权系统")
