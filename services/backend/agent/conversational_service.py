@@ -9,7 +9,7 @@ from typing import Any, Literal
 from agent.business_tools import BusinessToolAdapterKind, BusinessToolExecutor, ToolRequestContext
 from agent.candidate_selection import CandidateSelector
 from agent.clarification import ClarificationPolicy
-from agent.contracts.task import ConversationTurn, TaskEnvelope, TaskIntent
+from agent.contracts.task import ConversationTurn, SlotStatus, TaskEnvelope, TaskIntent
 from agent.run_manifest import ExecutionMode, RunManifest, build_run_manifest
 from agent.slot_merger import SlotMerger
 from agent.task_state_store import (
@@ -20,12 +20,16 @@ from agent.task_state_store import (
     TaskStateStoreProtocol,
     TaskStatus,
 )
-from agent.task_understanding import TaskUnderstandingService
+from agent.task_understanding import TaskEnvelopePatch, TaskUnderstandingService
+from agent.task_understanding import _NEWS_CATEGORIES as NEWS_CATEGORIES
 from pydantic import BaseModel, ConfigDict, Field
 
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+DEFAULT_CATEGORY = "AI技术重大进展"
 
 
 class AgentTurnInput(BaseModel):
@@ -233,6 +237,9 @@ class ConversationalAgentService:
             merge = self.slot_merger.merge(
                 state.envelope, understanding.patch, turn_id=body.turn_id
             )
+            # 用户授权默认值时，为 generate_draft 填充默认类别与产品（需在状态保存前）。
+            if understanding.patch.assumptions:
+                merge = self._apply_generate_defaults(merge, turn_id=body.turn_id)
 
             # A reply may be selecting from candidates produced by the previous turn.
             candidates = self._candidates.get(task_id, [])
@@ -308,11 +315,13 @@ class ConversationalAgentService:
             )
 
             allow_defaults = bool(understanding.patch.assumptions)
+            slot_options = self._clarify_options()
             decision = self.clarification.decide(
                 merge.envelope,
                 asked_slots=self._asked_slots.get(task_id, set()),
                 answered_slots=set(merge.changed_slots),
                 allow_defaults=allow_defaults,
+                slot_options=slot_options,
             )
             if not decision.can_proceed:
                 questions = [question.model_dump(mode="json") for question in decision.questions]
@@ -377,13 +386,12 @@ class ConversationalAgentService:
             return {"message": "没有指定其他运行，当前取消指令已记录。"}, "completed"
         if intent == TaskIntent.ASK_STATUS:
             return {"message": "任务状态已返回。", "task_id": run.task_id}, "completed"
-        # 生成初稿在还没有指定文章时，先检索候选供用户选择；已指定文章则直接进入后续规划。
-        needs_candidates = intent in {
-            TaskIntent.SEARCH_AND_RANK,
-            TaskIntent.SEARCH_AND_DRAFT,
-            TaskIntent.CURATE_NEWS,
-        } or (intent == TaskIntent.GENERATE_DRAFT and not envelope.selected_article_ids.value)
-        if needs_candidates and self.tool_executor is not None:
+        if intent == TaskIntent.GENERATE_DRAFT:
+            return await self._execute_generate_draft(run, envelope)
+        if (
+            intent in {TaskIntent.SEARCH_AND_RANK, TaskIntent.SEARCH_AND_DRAFT, TaskIntent.CURATE_NEWS}
+            and self.tool_executor is not None
+        ):
             query = str(envelope.news_query.value or envelope.goal.value or "")
             await self._event(
                 run,
@@ -423,6 +431,135 @@ class ConversationalAgentService:
             "intent": intent.value,
             "task_fingerprint": envelope.fingerprint(),
         }, "completed"
+
+    async def _execute_generate_draft(
+        self, run: AgentRunRecord, envelope: TaskEnvelope
+    ) -> tuple[dict[str, Any], Literal["completed", "waiting_user"]]:
+        """生成初稿：未选定文章时先本地库匹配 top5 候选；支持继续匹配与触发爬虫补充。"""
+        if envelope.selected_article_ids.value:
+            return {
+                "message": "已选定新闻，进入稿件生成规划（当前为演示占位）。",
+                "article_id": envelope.selected_article_ids.value,
+            }, "completed"
+        if self.tool_executor is None:
+            return {"message": "任务已完成结构化理解并进入后续规划队列。"}, "completed"
+
+        category = str(envelope.category.value or DEFAULT_CATEGORY)
+        products = list(envelope.product_ids.value or [])
+        product_keyword = " ".join(self._product_names(products))
+        crawl = bool(envelope.crawl_approved.value)
+        more = bool(envelope.search_more.value)
+
+        context = ToolRequestContext(
+            user_id=run.user_id,
+            tenant_id=run.tenant_id,
+            scopes=self.TOOL_SCOPES,
+            run_id=run.run_id,
+            turn_id=run.turn_id,
+        )
+        if crawl:
+            await self._event(
+                run,
+                "tool_started",
+                "running",
+                {"tool": "crawl_news", "args": {"category": category, "query": product_keyword or category}},
+            )
+            crawl_result = await self.tool_executor.invoke(
+                "crawl_news",
+                {
+                    "query": product_keyword or category,
+                    "max_results": 50,
+                    "idempotency_key": f"agent-crawl-{run.task_id[:24]}",
+                },
+                context=context,
+                adapter=self.tool_adapter,
+            )
+            await self._event(
+                run,
+                "tool_finished",
+                "running",
+                {"tool": "crawl_news", "added": crawl_result.added},
+            )
+
+        limit = 20 if more else 5
+        await self._event(
+            run,
+            "tool_started",
+            "running",
+            {"tool": "list_articles", "args": {"category": category, "query": product_keyword, "limit": limit}},
+        )
+        value = await self.tool_executor.invoke(
+            "list_articles",
+            {"category": category, "query": product_keyword, "limit": limit},
+            context=context,
+            adapter=self.tool_adapter,
+        )
+        payload = value.model_dump(mode="json")
+        self._candidates[run.task_id] = payload.get("items", [])
+        selection = self.candidate_selector.select(payload.get("items", []))
+        payload["selection"] = selection.model_dump(mode="json")
+        payload["candidate_source"] = "crawl" if crawl else ("more" if more else "local")
+        payload["category"] = category
+        payload["product_ids"] = products
+        await self._event(
+            run,
+            "tool_finished",
+            "running",
+            {"tool": "list_articles", "items": len(payload.get("items", []))},
+        )
+        if not payload.get("items"):
+            payload["message"] = (
+                "本地库暂无匹配的新闻，可选择「由用户补充」触发爬虫爬取最新新闻，或调整类别与产品。"
+            )
+        return payload, "waiting_user"
+
+    def _clarify_options(self) -> dict[str, dict[str, Any]]:
+        products = self.understanding.catalog.list_products(published_only=True)
+        return {
+            "category": {
+                "options": list(NEWS_CATEGORIES),
+                "default": DEFAULT_CATEGORY,
+            },
+            "product_ids": {
+                "options": [product.name for product in products],
+                "default": products[0].name if products else "",
+                "multi": True,
+            },
+        }
+
+    def _apply_generate_defaults(
+        self, merge: Any, *, turn_id: str
+    ) -> Any:
+        """用户授权默认值时，为 generate_draft 填充默认类别与产品，避免继续追问。"""
+        envelope = merge.envelope
+        if envelope.intent.value != TaskIntent.GENERATE_DRAFT.value:
+            return merge
+        patch: dict[str, Any] = {}
+        if not self._slot_available(envelope.category):
+            patch["category"] = DEFAULT_CATEGORY
+        products = self.understanding.catalog.list_products(published_only=True)
+        if not self._slot_available(envelope.product_ids) and products:
+            patch["product_ids"] = [products[0].product_id]
+        if not patch:
+            return merge
+        patch["explicit_slots"] = frozenset({"category", "product_ids"})
+        return self.slot_merger.merge(
+            envelope, TaskEnvelopePatch(**patch), turn_id=turn_id
+        )
+
+    @staticmethod
+    def _slot_available(slot: Any) -> bool:
+        return (
+            slot.status in {SlotStatus.INFERRED, SlotStatus.CONFIRMED}
+            and slot.value not in (None, "", [])
+        )
+
+    def _product_names(self, product_ids: list[str]) -> list[str]:
+        products = {
+            product.product_id: product
+            for product in self.understanding.catalog.list_products(published_only=True)
+        }
+        return [products[pid].name for pid in product_ids if pid in products]
 
     async def get_run(self, run_id: str, *, user_id: str, tenant_id: str) -> AgentRunRecord | None:
         run = self._runs.get(run_id)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from agent.contracts.task import SlotStatus, TaskAssumption, TaskEnvelope, TaskIntent
 from pydantic import BaseModel, Field
+from typing import Any
 
 
 class ClarificationQuestion(BaseModel):
@@ -11,6 +12,9 @@ class ClarificationQuestion(BaseModel):
     question: str
     reason: str
     priority: int = Field(ge=1, le=100)
+    options: list[str] = Field(default_factory=list, max_length=12)
+    default: str = ""
+    multi: bool = False
 
 
 class ClarificationDecision(BaseModel):
@@ -33,7 +37,8 @@ _QUESTION_TEXT = {
     "goal": "你希望这次任务最终产出什么？",
     "news_query": "要检索哪条新闻或什么主题？",
     "selected_article_ids": "候选新闻不唯一，请选择要处理的新闻。",
-    "product_ids": "这篇内容要关联哪个产品？",
+    "category": "这篇 PR 稿主要针对哪个新闻类别？",
+    "product_ids": "这篇内容要关联哪个或哪些产品？",
     "constraints": "请说明要修改的内容，以及必须保留的部分。",
     "save_policy": "是否确认保存为新的业务版本？",
     "requested_outputs": "需要导出为 Markdown、Word 还是 PDF？",
@@ -41,6 +46,7 @@ _QUESTION_TEXT = {
 
 _PRIORITY = {
     "selected_article_ids": 100,
+    "category": 95,
     "product_ids": 90,
     "constraints": 85,
     "save_policy": 80,
@@ -62,6 +68,7 @@ class ClarificationPolicy:
         max_questions: int = 3,
         candidate_count: int | None = None,
         allow_defaults: bool = False,
+        slot_options: dict[str, dict[str, Any]] | None = None,
     ) -> ClarificationDecision:
         asked = set(asked_slots or ())
         answered = set(answered_slots or ())
@@ -74,6 +81,11 @@ class ClarificationPolicy:
             needed.append(("news_query", "a search query is required"))
         if intent in {TaskIntent.REVISE, TaskIntent.REVISE_DRAFT, TaskIntent.SAVE, TaskIntent.SAVE_DRAFT, TaskIntent.EXPORT_DRAFT} and not self._available(envelope.selected_article_ids):
             needed.append(("selected_article_ids", "the target article is ambiguous"))
+        if intent == TaskIntent.GENERATE_DRAFT and not self._available(envelope.selected_article_ids):
+            if not self._available(envelope.category):
+                needed.append(("category", "a target news category is required"))
+            if not self._available(envelope.product_ids):
+                needed.append(("product_ids", "at least one target product is required"))
         if candidate_count is not None and candidate_count > 1 and not self._available(envelope.selected_article_ids):
             needed.append(("selected_article_ids", "multiple similar candidates remain"))
         if intent in {TaskIntent.REVISE, TaskIntent.REVISE_DRAFT} and not self._available(envelope.constraints):
@@ -92,7 +104,7 @@ class ClarificationPolicy:
                 needed.append((name, "new evidence conflicts with a confirmed value"))
 
         if allow_defaults:
-            defaultable = {"product_ids", "requested_outputs"}
+            defaultable = {"category", "product_ids", "requested_outputs"}
             needed = [(slot, reason) for slot, reason in needed if slot not in defaultable]
 
         unique: dict[str, str] = {}
@@ -100,12 +112,16 @@ class ClarificationPolicy:
             if slot not in answered:
                 unique.setdefault(slot, reason)
         skipped = sorted(slot for slot in unique if slot in asked)
+        options = slot_options or {}
         candidates = [
             ClarificationQuestion(
                 slot=slot,
                 question=_QUESTION_TEXT.get(slot, f"请确认 {slot}。"),
                 reason=reason,
                 priority=_PRIORITY.get(slot, 50) + (20 if "conflicts" in reason else 0),
+                options=list(options.get(slot, {}).get("options", [])),
+                default=str(options.get(slot, {}).get("default", "") or ""),
+                multi=bool(options.get(slot, {}).get("multi", False)),
             )
             for slot, reason in unique.items()
             if slot not in asked

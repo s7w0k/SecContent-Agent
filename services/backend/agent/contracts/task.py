@@ -266,6 +266,7 @@ class TaskEnvelope(BaseModel):
         "save_confirmed",
         "crawl_approved",
         "auto_select",
+        "search_more",
     )
     PROTECTED_FIELDS: ClassVar[frozenset[str]] = frozenset(
         {"task_id", "thread_id", "user_id", "tenant_id", "schema_version"}
@@ -298,6 +299,7 @@ class TaskEnvelope(BaseModel):
     save_confirmed: SlotState = Field(default_factory=SlotState.unknown)
     crawl_approved: SlotState = Field(default_factory=SlotState.unknown)
     auto_select: SlotState = Field(default_factory=SlotState.unknown)
+    search_more: SlotState = Field(default_factory=SlotState.unknown)
 
     missing_slots: list[str] = Field(default_factory=list, max_length=30)
     ambiguous_slots: list[str] = Field(default_factory=list, max_length=30)

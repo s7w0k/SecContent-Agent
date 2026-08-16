@@ -12,6 +12,7 @@ import {
   Descriptions,
   Empty,
   Input,
+  Radio,
   Space,
   Spin,
   Tag,
@@ -127,6 +128,8 @@ export default function AgentWorkspace({ onLegacyFallback }: AgentWorkspaceProps
   const [input, setInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
+  const [showSupplement, setShowSupplement] = useState(false);
   const sourceRef = useRef<EventSource | null>(null);
 
   const refreshHistory = useCallback(async () => {
@@ -151,6 +154,11 @@ export default function AgentWorkspace({ onLegacyFallback }: AgentWorkspaceProps
     setRun(current);
     return current;
   }, []);
+
+  useEffect(() => {
+    setSelectedOptions({});
+    setShowSupplement(false);
+  }, [run?.run_id]);
 
   useEffect(() => {
     refreshHistory();
@@ -335,23 +343,73 @@ export default function AgentWorkspace({ onLegacyFallback }: AgentWorkspaceProps
                       icon={<PauseCircleOutlined />}
                       message={questions[0]?.question || '需要你的选择'}
                     />
-                    {questions.map((question, index) => (
-                      <div key={`${question.slot}-${index}`} style={{ marginTop: 6 }}>
-                        <Text type="secondary">{question.slot}</Text>
-                        {question.reason && <div><Text type="secondary" style={{ fontSize: 12 }}>{question.reason}</Text></div>}
-                      </div>
-                    ))}
+                    {questions.map((question, index) => {
+                      if (question.options && question.options.length > 0) {
+                        return (
+                          <div key={`${question.slot}-${index}`} style={{ marginTop: 10 }}>
+                            <Text strong>{question.question}</Text>
+                            <div style={{ marginTop: 6 }}>
+                              <Radio.Group
+                                value={selectedOptions[question.slot] ?? question.default}
+                                onChange={(event) => setSelectedOptions((prev) => ({
+                                  ...prev,
+                                  [question.slot]: String(event.target.value),
+                                }))}
+                                buttonStyle="solid"
+                              >
+                                {question.options.map((option) => (
+                                  <Radio.Button key={option} value={option}>{option}</Radio.Button>
+                                ))}
+                              </Radio.Group>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div key={`${question.slot}-${index}`} style={{ marginTop: 6 }}>
+                          <Text type="secondary">{question.slot}</Text>
+                          {question.reason && <div><Text type="secondary" style={{ fontSize: 12 }}>{question.reason}</Text></div>}
+                        </div>
+                      );
+                    })}
+                    {questions.some((question) => question.options && question.options.length > 0) && (
+                      <Button
+                        type="primary"
+                        style={{ marginTop: 12 }}
+                        loading={submitting}
+                        onClick={() => {
+                          const answer = questions
+                            .filter((question) => question.options && question.options.length > 0)
+                            .map((question) => selectedOptions[question.slot] ?? question.default ?? '')
+                            .filter(Boolean)
+                            .join('，');
+                          if (answer) submitTurn(answer);
+                        }}
+                      >确认选择</Button>
+                    )}
                     {candidates.length > 0 && (
-                      <AgentCandidateCards
-                        candidates={candidates}
-                        onSelect={(candidate) => submitTurn(candidate.title)}
-                      />
+                      <div style={{ marginTop: 14 }}>
+                        <div style={{ marginBottom: 8 }}><Text strong>候选新闻（选择其一，或由用户补充）</Text></div>
+                        <AgentCandidateCards
+                          candidates={candidates}
+                          onSelect={(candidate) => submitTurn(candidate.title)}
+                        />
+                        <Button type="dashed" style={{ marginTop: 12 }} onClick={() => setShowSupplement((value) => !value)}>
+                          由用户补充
+                        </Button>
+                        {showSupplement && (
+                          <Space style={{ marginTop: 8 }} wrap>
+                            <Button onClick={() => submitTurn('继续匹配更多新闻')}>继续匹配库内其他文章</Button>
+                            <Button onClick={() => submitTurn('爬取最新新闻')}>触发爬虫爬取最新</Button>
+                          </Space>
+                        )}
+                      </div>
                     )}
                     {candidates.length === 0 && (
-                      <Button
-                        onClick={() => submitTurn(input || '由你决定')}
-                        loading={submitting}
-                      >由你决定</Button>
+                      <Space style={{ marginTop: 10 }} wrap>
+                        <Button onClick={() => submitTurn(input || '由你决定')} loading={submitting}>由你决定</Button>
+                        <Button type="dashed" onClick={() => submitTurn('爬取最新新闻')}>触发爬虫爬取最新</Button>
+                      </Space>
                     )}
                   </section>
                 )}

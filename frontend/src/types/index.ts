@@ -1405,7 +1405,15 @@ export interface AgentRun {
   intent: string;
   changed_slots: string[];
   invalidated_steps: string[];
-  questions: Array<{ slot: string; question: string; reason?: string; priority?: number }>;
+  questions: Array<{
+    slot: string;
+    question: string;
+    reason?: string;
+    priority?: number;
+    options?: string[];
+    default?: string;
+    multi?: boolean;
+  }>;
   assumptions: string[];
   result: Record<string, unknown>;
   error: string;

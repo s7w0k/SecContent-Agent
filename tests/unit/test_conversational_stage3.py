@@ -250,34 +250,38 @@ async def test_candidate_reply_confirms_selected_article_slot():
 
 
 @pytest.mark.asyncio
-async def test_generate_draft_without_article_searches_candidates_first():
+async def test_generate_draft_clarifies_then_matches_local_candidates():
     registry = build_business_tool_registry()
     candidates = [
-        {"article_id": "a-1", "title": "AI 安全新规", "score": 0.9},
-        {"article_id": "a-2", "title": "AI 安全产品更新", "score": 0.88},
+        {"article_id": "a-1", "title": "AI 安全新规", "source": "src", "score": 0.9},
+        {"article_id": "a-2", "title": "AI 安全产品更新", "source": "src", "score": 0.88},
     ]
     executor = BusinessToolExecutor(
         registry,
         {
             "fake": FakeBusinessToolAdapter(
-                {"search_news": {"query": "写一篇PR", "items": candidates, "total": 2, "replay_ref": "r"}}
+                {"list_articles": {"items": candidates, "total": 2, "replay_ref": "r"}}
             )
         },
     )
     service = ConversationalAgentService(tool_executor=executor)
+    # turn1：信息不足 → 澄清类别与产品（带默认选项）
     first = await service.submit_turn(
-        AgentTurnInput(content="帮我生成一篇PR稿，你决定", turn_id="turn-1", thread_id="thread-g"),
+        AgentTurnInput(content="帮我生成一篇PR稿", turn_id="turn-1", thread_id="thread-g"),
         user_id="u",
         tenant_id="tenant",
     )
     assert first.run.intent == "generate_draft"
     assert first.run.status == "waiting_user"
-    assert len(first.run.result["items"]) == 2
-    assert first.task.news_query.value == "PR稿"
-    # 同一 thread 再次带“你决定”提交，假设不重复累积。
+    slots = {question["slot"] for question in first.run.questions}
+    assert {"category", "product_ids"}.issubset(slots)
+    category_q = next(q for q in first.run.questions if q["slot"] == "category")
+    assert "AI技术重大进展" in category_q["options"]
+    assert category_q["default"] == "AI技术重大进展"
+    # turn2：选择类别+产品 → 本地库匹配 top5 候选
     second = await service.submit_turn(
         AgentTurnInput(
-            content="帮我写一篇PR稿，你决定",
+            content="AI技术重大进展，智能体安全",
             turn_id="turn-2",
             task_id=first.task.task_id,
             thread_id="thread-g",
@@ -285,5 +289,122 @@ async def test_generate_draft_without_article_searches_candidates_first():
         user_id="u",
         tenant_id="tenant",
     )
+    assert second.run.status == "waiting_user"
+    assert len(second.run.result["items"]) == 2
+    assert second.run.result["candidate_source"] == "local"
+    # turn3：选择候选 → 进入写稿
+    third = await service.submit_turn(
+        AgentTurnInput(content="第一个", turn_id="turn-3", task_id=first.task.task_id, thread_id="thread-g"),
+        user_id="u",
+        tenant_id="tenant",
+    )
+    assert third.run.status == "completed"
+    assert third.task.selected_article_ids.value == ["a-1"]
+
+
+@pytest.mark.asyncio
+async def test_generate_draft_defaults_when_user_delegates_and_dedupes_assumptions():
+    registry = build_business_tool_registry()
+    candidates = [{"article_id": "a-1", "title": "默认候选", "source": "src", "score": 0.9}]
+    executor = BusinessToolExecutor(
+        registry,
+        {
+            "fake": FakeBusinessToolAdapter(
+                {"list_articles": {"items": candidates, "total": 1, "replay_ref": "r"}}
+            )
+        },
+    )
+    service = ConversationalAgentService(tool_executor=executor)
+    first = await service.submit_turn(
+        AgentTurnInput(content="帮我生成一篇PR稿，你决定", turn_id="turn-1", thread_id="thread-g2"),
+        user_id="u",
+        tenant_id="tenant",
+    )
+    assert first.run.status == "waiting_user"
+    assert len(first.run.result["items"]) == 1
+    assert first.run.result["category"] == "AI技术重大进展"
+    # 同一 thread 再次带“你决定”提交，假设不重复累积。
+    second = await service.submit_turn(
+        AgentTurnInput(
+            content="帮我写一篇PR稿，你决定",
+            turn_id="turn-2",
+            task_id=first.task.task_id,
+            thread_id="thread-g2",
+        ),
+        user_id="u",
+        tenant_id="tenant",
+    )
     assert len(second.run.assumptions) == 1
     assert second.run.assumptions[0].startswith("用户授权系统")
+
+
+class _LimitAwareFakeAdapter:
+    """模拟 list_articles 按 limit 截断 + crawl_news 返回结果的测试适配器。"""
+
+    kind = "fake"
+
+    def __init__(self, items: list[dict]):
+        self.items = items
+
+    async def invoke(self, contract, args, context):
+        if contract.name == "list_articles":
+            limit = args.get("limit", 5)
+            return {"items": self.items[:limit], "total": len(self.items), "replay_ref": "r"}
+        if contract.name == "crawl_news":
+            return {
+                "task_ref": "crawl-1",
+                "status": "completed",
+                "added": 3,
+                "updated": 0,
+                "skipped": 0,
+                "failed": 0,
+                "articles": [],
+                "errors": [],
+            }
+        raise KeyError(contract.name)
+
+
+@pytest.mark.asyncio
+async def test_generate_draft_refinement_more_and_crawl():
+    registry = build_business_tool_registry()
+    items = [{"article_id": f"a-{i}", "title": f"新闻 {i}", "source": "src"} for i in range(20)]
+    executor = BusinessToolExecutor(registry, {"fake": _LimitAwareFakeAdapter(items)})
+    service = ConversationalAgentService(tool_executor=executor)
+    # turn1：默认值 → 本地库 top5
+    first = await service.submit_turn(
+        AgentTurnInput(content="帮我生成一篇PR稿，你决定", turn_id="t1", thread_id="thread-ref"),
+        user_id="u",
+        tenant_id="tenant",
+    )
+    assert first.run.status == "waiting_user"
+    assert len(first.run.result["items"]) == 5
+    assert first.run.result["candidate_source"] == "local"
+    # turn2：继续匹配库内其他文章 → 更多候选
+    more = await service.submit_turn(
+        AgentTurnInput(
+            content="继续匹配更多新闻",
+            turn_id="t2",
+            task_id=first.task.task_id,
+            thread_id="thread-ref",
+        ),
+        user_id="u",
+        tenant_id="tenant",
+    )
+    assert more.run.status == "waiting_user"
+    assert len(more.run.result["items"]) == 20
+    assert more.run.result["candidate_source"] == "more"
+    # turn3：触发爬虫爬取最新 → crawl 后重新匹配
+    crawled = await service.submit_turn(
+        AgentTurnInput(
+            content="爬取最新新闻",
+            turn_id="t3",
+            task_id=first.task.task_id,
+            thread_id="thread-ref",
+        ),
+        user_id="u",
+        tenant_id="tenant",
+    )
+    assert crawled.run.status == "waiting_user"
+    assert crawled.run.result["candidate_source"] == "crawl"
+    events = await service.events(crawled.run.run_id, user_id="u", tenant_id="tenant")
+    assert any(event.event_type == "tool_started" and event.payload.get("tool") == "crawl_news" for event in events)

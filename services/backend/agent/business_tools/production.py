@@ -141,33 +141,12 @@ class ProductionBusinessToolService:
         }
 
     async def _search_news(self, args, context):
+        """候选新闻检索只查本地文章库；SearXNG 仅用于 LLM 生成时的知识补充。"""
         local = await self._list_articles({**args, "source": "", "category": ""}, context)
         candidates = list(local["items"])
-        if self.search_client is not None and len(candidates) < args["limit"]:
-            response = await self.search_client.search(args["query"], categories=["news"])
-            seen = {item["source_ref"] for item in candidates}
-            for item in response.get("results", []):
-                url = str(item.get("url") or "")
-                if not url or url in seen:
-                    continue
-                seen.add(url)
-                candidates.append(
-                    {
-                        "article_id": "web-" + hashlib.sha256(url.encode()).hexdigest()[:24],
-                        "source_ref": url,
-                        "title": str(item.get("title") or "")[:500],
-                        "source": str(item.get("engine") or "web")[:160],
-                        "summary": str(item.get("content") or "")[:2000],
-                        "content_available": False,
-                        "untrusted_content": True,
-                    }
-                )
-                if len(candidates) >= args["limit"]:
-                    break
-        candidates = candidates[: args["limit"]]
         return {
             "query": args["query"],
-            "items": candidates,
+            "items": candidates[: args["limit"]],
             "total": len(candidates),
             "replay_ref": _hash_text("|".join(item["article_id"] for item in candidates)),
         }
@@ -179,19 +158,50 @@ class ProductionBusinessToolService:
         if args.get("published_from"):
             days = max(1, min(30, (_now() - args["published_from"]).days + 1))
         response = await self.crawl_client.crawl_news(days)
-        articles = response.get("articles") or response.get("data") or []
+        container = response.get("data") if isinstance(response.get("data"), dict) else response
+        articles = container.get("articles") or container.get("items") or []
+        if isinstance(articles, dict):
+            articles = list(articles.values())
+        saved = 0
         refs = []
         for item in articles[: args["max_results"]]:
-            article_id = str(item.get("url_hash") or item.get("article_id") or "")
-            if article_id:
-                refs.append({"article_id": article_id, "source_ref": str(item.get("url") or "")})
+            if not isinstance(item, dict):
+                continue
+            url_hash = str(item.get("url_hash") or "")
+            if not url_hash:
+                continue
+            await self.db["articles"].update_one(
+                {"url_hash": url_hash},
+                {
+                    "$set": {
+                        "url_hash": url_hash,
+                        "title": str(item.get("title") or "")[:500],
+                        "url": str(item.get("url") or "")[:2000],
+                        "source": str(item.get("source") or "")[:160],
+                        "source_name": str(item.get("source") or "")[:160],
+                        "source_type": str(item.get("source_type") or "overseas_news")[:40],
+                        "summary_cn": str(item.get("summary") or "")[:500],
+                        "content_md": str(item.get("content_md") or "")[:50_000],
+                        "published_at": item.get("published_at") or None,
+                        "added_at": _now(),
+                        "updated_at": _now(),
+                    }
+                },
+                upsert=True,
+            )
+            saved += 1
+            refs.append({"article_id": url_hash, "source_ref": str(item.get("url") or "")})
+        added_raw = container.get("saved", saved)
+        updated_raw = container.get("updated", 0)
+        skipped_raw = container.get("skipped", 0)
+        failed_raw = container.get("failed", 0)
         return {
             "task_ref": "crawl-" + hashlib.sha256(args["idempotency_key"].encode()).hexdigest()[:20],
             "status": "completed",
-            "added": int(response.get("saved", response.get("added", len(refs)))),
-            "updated": int(response.get("updated", 0)),
-            "skipped": int(response.get("skipped", 0)),
-            "failed": int(response.get("failed", 0)),
+            "added": int(added_raw) if added_raw is not None else len(refs),
+            "updated": int(updated_raw) if updated_raw is not None else 0,
+            "skipped": int(skipped_raw) if skipped_raw is not None else 0,
+            "failed": int(failed_raw) if failed_raw is not None else 0,
             "articles": refs,
             "errors": list(response.get("errors") or []),
         }

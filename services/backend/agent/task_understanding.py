@@ -40,6 +40,7 @@ class TaskEnvelopePatch(BaseModel):
     save_confirmed: bool | None = None
     crawl_approved: bool | None = None
     auto_select: bool | None = None
+    search_more: bool | None = None
     explicit_slots: frozenset[str] = Field(default_factory=frozenset)
     confidence: float = Field(default=1.0, ge=0, le=1)
     assumptions: list[TaskAssumption] = Field(default_factory=list, max_length=20)
@@ -86,6 +87,21 @@ def _has_draft_intent(text: str, lowered: str) -> bool:
     has_verb = any(verb in text for verb in _WRITE_VERBS)
     has_noun = any(noun in lowered for noun in _DRAFT_NOUNS)
     return has_verb and has_noun
+
+
+# 新闻类别（与 classifier_v2.CategoryV2 六分类保持一致）
+_NEWS_CATEGORIES = (
+    "爆点事件",
+    "法律法规/监管动态",
+    "AI技术重大进展",
+    "国内外竞品信息",
+    "运营商/行业事件",
+    "学术/会展/高校",
+)
+
+# “由用户补充”指令：触发爬虫 或 继续匹配库内其他文章
+_CRAWL_MARKERS = ("爬取", "爬虫", "抓取", "爬最新", "搜索新文章")
+_MORE_MARKERS = ("继续匹配", "换一批", "更多候选", "更多新闻", "其他文章", "再找一些", "再来一批")
 
 _ARTICLE_ID = re.compile(
     r"(?:article[_ -]?id|文章(?:编号|ID)?|url[_ -]?hash)\s*[:：=#]?\s*([A-Za-z0-9][A-Za-z0-9_.:-]{5,159})",
@@ -137,30 +153,46 @@ class TaskUnderstandingService:
                 text,
             )
         )
+        crawl_requested = any(marker in lowered for marker in _CRAWL_MARKERS)
+        more_requested = any(marker in lowered for marker in _MORE_MARKERS)
+        is_refinement = crawl_requested or more_requested
         values: dict[str, Any] = {}
         explicit: set[str] = set()
-        if not selection_only:
+        if not selection_only and not is_refinement:
             values["goal"] = text[:4000]
             explicit.add("goal")
-        has_search = any(marker in lowered for marker in ("搜索", "检索", "找新闻", "search"))
-        has_draft = _has_draft_intent(text, lowered)
-        is_revise = any(marker in lowered for marker in _REVISE_MARKERS)
-        if has_search and has_draft:
-            values["intent"] = TaskIntent.SEARCH_AND_DRAFT
-            explicit.add("intent")
-        elif has_draft and not is_revise:
-            values["intent"] = TaskIntent.GENERATE_DRAFT
-            explicit.add("intent")
-        else:
-            for intent, markers in _INTENT_RULES:
-                if any(marker.lower() in lowered for marker in markers):
-                    values["intent"] = intent
-                    explicit.add("intent")
-                    break
+        if crawl_requested:
+            values["crawl_approved"] = True
+            explicit.add("crawl_approved")
+        if more_requested:
+            values["search_more"] = True
+            explicit.add("search_more")
+        if not is_refinement:
+            has_search = any(marker in lowered for marker in ("搜索", "检索", "找新闻", "search"))
+            has_draft = _has_draft_intent(text, lowered)
+            is_revise = any(marker in lowered for marker in _REVISE_MARKERS)
+            if has_search and has_draft:
+                values["intent"] = TaskIntent.SEARCH_AND_DRAFT
+                explicit.add("intent")
+            elif has_draft and not is_revise:
+                values["intent"] = TaskIntent.GENERATE_DRAFT
+                explicit.add("intent")
+            else:
+                for intent, markers in _INTENT_RULES:
+                    if any(marker.lower() in lowered for marker in markers):
+                        values["intent"] = intent
+                        explicit.add("intent")
+                        break
         article_ids = list(dict.fromkeys(_ARTICLE_ID.findall(text)))
         if article_ids:
             values["selected_article_ids"] = article_ids
             explicit.add("selected_article_ids")
+
+        for category in _NEWS_CATEGORIES:
+            if category in text:
+                values["category"] = category
+                explicit.add("category")
+                break
 
         product_ids: list[str] = []
         for product in self.catalog.list_products(published_only=True):
