@@ -1284,6 +1284,9 @@ export type RuntimeStatus =
   | 'pending'
   | 'planning'
   | 'running'
+  | 'waiting_user'
+  | 'retrying'
+  | 'degraded'
   | 'waiting_approval'
   | 'cancel_requested'
   | 'completed'
@@ -1344,6 +1347,16 @@ export interface RuntimeSummary {
   decision_count: number;
   budget_usage: RuntimeBudgetUsage;
   pending_approvals: RuntimePendingApproval[];
+  pending_questions: string[];
+  result: {
+    candidates?: AgentCandidate[];
+    article?: Record<string, unknown>;
+    classification?: Record<string, unknown>;
+    products?: { candidates?: Array<Record<string, unknown>>; outcome?: string };
+    score?: Record<string, unknown>;
+    artifact?: Record<string, unknown>;
+    review?: Record<string, unknown>;
+  };
   decision_summaries: RuntimeDecisionSummary[];
   evidence: RuntimeEvidence[];
   created_at: string;
@@ -1357,6 +1370,7 @@ export interface CreateAutonomousRunRequest {
   thread_id?: string;
   tool_chain?: string[];
   max_steps?: number;
+  initial_slots?: Record<string, unknown>;
 }
 
 /** SSE 事件统一载荷（脱敏，供自主运行事件流） */
@@ -1369,4 +1383,51 @@ export interface RuntimeEventEnvelope {
   status: string;
   timestamp: string;
   payload: Record<string, unknown>;
+}
+
+// ── Conversational Agent（阶段3） ────────────────────────────
+export interface AgentCandidate {
+  article_id: string;
+  source_ref?: string;
+  title: string;
+  source?: string;
+  published_at?: string | null;
+  summary?: string;
+  content_available?: boolean;
+  score?: number | null;
+}
+
+export interface AgentRun {
+  run_id: string;
+  task_id: string;
+  thread_id: string;
+  status: string;
+  intent: string;
+  changed_slots: string[];
+  invalidated_steps: string[];
+  questions: Array<{ slot: string; question: string; reason?: string; priority?: number }>;
+  assumptions: string[];
+  result: Record<string, unknown>;
+  error: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentTurnResponse {
+  duplicate: boolean;
+  task: Record<string, unknown>;
+  run: AgentRun;
+}
+
+export interface AgentEventEnvelope {
+  schema_version: string;
+  event_id: string;
+  sequence: number;
+  run_id: string;
+  task_id: string;
+  turn_id: string;
+  event_type: string;
+  status: string;
+  payload: Record<string, unknown>;
+  timestamp: string;
 }

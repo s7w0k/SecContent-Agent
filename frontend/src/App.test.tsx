@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { MainLayout } from './App';
+import { isAgentWorkspaceEnabled, MainLayout } from './App';
 import { AuthContext, type AuthContextValue } from './auth/AuthContext';
 
 interface MockMenuConfig {
@@ -48,6 +48,9 @@ vi.mock('antd', async (importOriginal) => {
 // Mock Dashboard page to avoid heavy sub-component loading
 vi.mock('./pages/Dashboard', () => ({
   default: () => <div>Dashboard Page</div>,
+}));
+vi.mock('./pages/AgentWorkspace', () => ({
+  default: () => <div>Agent Workspace Page</div>,
 }));
 vi.mock('./pages/DevLogsPage', () => ({
   default: () => <div>Developer Logs Page</div>,
@@ -109,8 +112,9 @@ describe('App', () => {
     expect(screen.getByText('🛡 PR Agent')).toBeDefined();
   });
 
-  it('shows dashboard tab by default', () => {
+  it('shows Agent as the primary navigation entry', () => {
     renderApp();
+    expect(screen.getByText('Agent 工作台')).toBeDefined();
     expect(screen.getByText('仪表盘')).toBeDefined();
     expect(screen.getByText('关于')).toBeDefined();
     expect(screen.getByText('配置')).toBeDefined();
@@ -129,9 +133,15 @@ describe('App', () => {
     expect(screen.getByText('模拟未保存提示词')).toBeInTheDocument();
   });
 
-  it('shows dashboard content by default', () => {
+  it('shows Agent workspace content by default', () => {
     renderApp();
-    expect(screen.getByText('Dashboard Page')).toBeDefined();
+    expect(screen.getByText('Agent Workspace Page')).toBeDefined();
+  });
+
+  it('disables the Agent workspace only when the flag is explicitly false', () => {
+    expect(isAgentWorkspaceEnabled(undefined)).toBe(true);
+    expect(isAgentWorkspaceEnabled('true')).toBe(true);
+    expect(isAgentWorkspaceEnabled('false')).toBe(false);
   });
 
   it('hides developer logs from normal users', () => {

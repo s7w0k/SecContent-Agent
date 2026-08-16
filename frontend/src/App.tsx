@@ -8,6 +8,7 @@ import {
   SearchOutlined,
   SettingOutlined,
   SnippetsOutlined,
+  RobotOutlined,
   UserOutlined,
   WechatOutlined,
 } from '@ant-design/icons';
@@ -21,6 +22,7 @@ import ProtectedRoute from './auth/ProtectedRoute';
 import { useAuth } from './auth/useAuth';
 import UserMenu from './components/UserMenu';
 import AccountPage from './pages/AccountPage';
+import AgentWorkspace from './pages/AgentWorkspace';
 import ChatPage from './pages/ChatPage';
 import Dashboard from './pages/Dashboard';
 import DevLogsPage from './pages/DevLogsPage';
@@ -35,7 +37,13 @@ import WebSearchPage from './pages/WebSearchPage';
 const { Header, Content } = Layout;
 const { Text } = Typography;
 
+export const isAgentWorkspaceEnabled = (value?: string) => value !== 'false';
+const agentWorkspaceEnabled = isAgentWorkspaceEnabled(import.meta.env.VITE_AGENT_WORKSPACE_ENABLED);
+
 const baseMenuItems = [
+  ...(agentWorkspaceEnabled
+    ? [{ key: 'agent', icon: <RobotOutlined />, label: 'Agent 工作台' }]
+    : []),
   { key: 'dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
   { key: 'search', icon: <SearchOutlined />, label: '信息搜索' },
   { key: 'chat', icon: <EditOutlined />, label: '对话改稿' },
@@ -56,7 +64,7 @@ const baseMenuItems = [
 ];
 
 export function MainLayout() {
-  const [tab, setTab] = useState('dashboard');
+  const [tab, setTab] = useState(agentWorkspaceEnabled ? 'agent' : 'dashboard');
   const [templateDirty, setTemplateDirty] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [dashboardEntry, setDashboardEntry] = useState<{ sourceType?: string; refreshKey: number }>(
@@ -118,6 +126,9 @@ export function MainLayout() {
         <UserMenu />
       </Header>
       <Content>
+        {tab === 'agent' && agentWorkspaceEnabled && (
+          <AgentWorkspace onLegacyFallback={() => setTab('dashboard')} />
+        )}
         {tab === 'dashboard' && (
           <Dashboard
             initialSourceType={dashboardEntry.sourceType}

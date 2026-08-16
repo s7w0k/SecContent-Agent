@@ -17,6 +17,9 @@ import type {
   ActivityLogResponse,
   ActivityQuery,
   ActivityStats,
+  AgentEventEnvelope,
+  AgentRun,
+  AgentTurnResponse,
   ApplyRevisionResponse,
   Article,
   ArticleQuery,
@@ -405,6 +408,7 @@ export const pipelineApi = {
       selected_product_ids?: string[];
       product_relevance_enabled?: boolean;
       force_generate?: boolean;
+      draft_variants?: 1 | 2 | 4;
     },
   ): Promise<PipelineTaskResponse> {
     const body: Record<string, unknown> = {};
@@ -1532,6 +1536,21 @@ export const autonomousApi = {
     return data;
   },
 
+  /** 回答结构化追问并从 checkpoint 继续 */
+  async respond(
+    runId: string,
+    slotValues: Record<string, unknown> = {},
+    turnId?: string,
+    message?: string,
+  ): Promise<RuntimeSummary> {
+    const { data } = await client.post(`/autonomous/runs/${runId}/respond`, {
+      slot_values: slotValues,
+      turn_id: turnId || undefined,
+      message: message || undefined,
+    });
+    return data;
+  },
+
   /** 审批通过 */
   async approveApproval(
     approvalId: string,
@@ -1569,6 +1588,7 @@ export const autonomousApi = {
       'approval_rejected',
       'run_finished',
       'state_transition',
+      'user_response_applied',
     ];
     const handleEvent = (msg: MessageEvent<string>) => {
       try {
@@ -1584,6 +1604,66 @@ export const autonomousApi = {
     source.addEventListener('done', () => {
       source.close();
     });
+    return source;
+  },
+};
+
+// ────────────────────────────────────────────────────────────
+// Conversational Agent API（阶段3；旧 Chat API 保持不变）
+// ────────────────────────────────────────────────────────────
+export const agentApi = {
+  async submitTurn(body: {
+    content: string;
+    turn_id?: string;
+    task_id?: string;
+    thread_id?: string;
+  }): Promise<AgentTurnResponse> {
+    const { data } = await client.post('/agent/turns', body);
+    return data;
+  },
+
+  async listRuns(limit = 30): Promise<AgentRun[]> {
+    const { data } = await client.get('/agent/runs', { params: { limit } });
+    return data;
+  },
+
+  async getRun(runId: string): Promise<AgentRun> {
+    const { data } = await client.get(`/agent/runs/${runId}`);
+    return data;
+  },
+
+  async cancelRun(runId: string): Promise<AgentRun> {
+    const { data } = await client.post(`/agent/runs/${runId}/cancel`);
+    return data;
+  },
+
+  async approveRun(runId: string): Promise<AgentRun> {
+    const { data } = await client.post(`/agent/runs/${runId}/approve`);
+    return data;
+  },
+
+  openEventSource(runId: string, onEvent: (event: AgentEventEnvelope) => void): EventSource {
+    const source = new EventSource(buildSSEUrl(`/agent/runs/${runId}/events`));
+    const eventTypes = [
+      'turn.persisted',
+      'understanding.completed',
+      'clarification.required',
+      'candidate.selected',
+      'candidate.selection_required',
+      'run.completed',
+      'run.failed',
+      'run.canceled',
+      'run.approved',
+    ];
+    const handle = (message: MessageEvent<string>) => {
+      try {
+        onEvent(JSON.parse(message.data) as AgentEventEnvelope);
+      } catch {
+        // Ignore malformed event data and keep the resumable stream alive.
+      }
+    };
+    for (const eventType of eventTypes) source.addEventListener(eventType, handle);
+    source.addEventListener('done', () => source.close());
     return source;
   },
 };
@@ -1614,6 +1694,7 @@ const api = {
   knowledgeAdmin: knowledgeAdminApi,
   webSearchApi,
   autonomousApi,
+  agentApi,
 };
 
 export default api;

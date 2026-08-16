@@ -188,12 +188,77 @@ async def lifespan(app: FastAPI):
         from agent.scorer_v2 import ScoringAgentV2
 
         scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge_loader, db=app.state.db)
-        draft_gen = DraftGenerator(llm=llm, knowledge=knowledge_loader._cache)
+        draft_gen = DraftGenerator(
+            llm=llm,
+            knowledge=knowledge_loader._cache,
+            max_output_tokens=settings.DRAFT_MAX_OUTPUT_TOKENS,
+        )
         draft_reviewer = DraftReviewer(llm=llm)
         app.state.scorer_v2 = scorer_v2
         app.state.draft_gen = draft_gen
         app.state.draft_reviewer = draft_reviewer
         _log("INFO", "V2 agents initialized; pipeline execution delegated to ARQ Worker")
+
+        # Stage 2/3: versioned business tools and the persistent conversational entry point.
+        from agent.business_tools import (
+            BusinessToolAdapterKind,
+            BusinessToolExecutor,
+            FakeBusinessToolAdapter,
+            ProductionBusinessToolAdapter,
+            ReadOnlyProductionBusinessToolAdapter,
+            RecordedBusinessToolAdapter,
+            SandboxBusinessToolAdapter,
+            build_business_tool_registry,
+        )
+        from agent.business_tools.production import ProductionBusinessToolService
+        from agent.conversational_service import ConversationalAgentService
+        from agent.run_manifest import RunManifestStore
+        from agent.runtime_events import RuntimeEventStore
+        from agent.task_state_store import InMemoryTaskStateStore, TaskStateStore
+
+        business_registry = build_business_tool_registry()
+        production_tools = ProductionBusinessToolService(
+            db=app.state.db,
+            classifier=classifier_v2,
+            scorer=scorer_v2,
+            draft_generator=draft_gen,
+            draft_reviewer=draft_reviewer,
+            crawl_client=app.state.mcp_crawl_client,
+            search_client=getattr(app.state, "searxng_client", None),
+        )
+        business_executor = BusinessToolExecutor(
+            business_registry,
+            adapters={
+                BusinessToolAdapterKind.FAKE: FakeBusinessToolAdapter(),
+                BusinessToolAdapterKind.RECORDED: RecordedBusinessToolAdapter(),
+                BusinessToolAdapterKind.SANDBOX: SandboxBusinessToolAdapter(business_registry),
+                BusinessToolAdapterKind.PRODUCTION: ProductionBusinessToolAdapter(production_tools),
+                BusinessToolAdapterKind.PRODUCTION_READONLY: ReadOnlyProductionBusinessToolAdapter(
+                    production_tools
+                ),
+            },
+        )
+        app.state.business_tool_registry = business_registry
+        app.state.business_tool_executor = business_executor
+        app.state.conversational_agent_service = ConversationalAgentService(
+            task_store=(
+                TaskStateStore(app.state.db)
+                if app.state.db is not None
+                else InMemoryTaskStateStore()
+            ),
+            tool_executor=business_executor,
+            tool_adapter=(
+                BusinessToolAdapterKind.PRODUCTION
+                if app.state.db is not None
+                else BusinessToolAdapterKind.FAKE
+            ),
+            event_store=(RuntimeEventStore(app.state.db) if app.state.db is not None else None),
+            manifest_store=(RunManifestStore(app.state.db) if app.state.db is not None else None),
+        )
+        _log(
+            "INFO",
+            f"Business tools initialized: {len(business_registry.names())} contracts",
+        )
 
         pipeline_manager = PipelineManager(
             tools=tools,
@@ -213,6 +278,13 @@ async def lifespan(app: FastAPI):
             from agent.policy_engine import ApprovalService, PolicyEngine
             from agent.runtime_events import RuntimeEventStore
             from agent.runtime_store import RuntimeStateStore
+            from agent.skill_registry import SkillRegistry
+
+            production_skill_registry = SkillRegistry(
+                f"{settings.KNOWLEDGE_BASE_DIR}/skills",
+                known_tools=set(app.state.business_tool_registry.names()),
+            )
+            production_skill_registry.load()
 
             fallback = [
                 m.strip() for m in settings.AUTONOMOUS_ROUTER_FALLBACK_MODEL.split(",") if m.strip()
@@ -251,6 +323,14 @@ async def lifespan(app: FastAPI):
                 model_router=model_router,
                 settings=settings,
                 db=app.state.db,
+                business_executor=app.state.business_tool_executor,
+                business_registry=app.state.business_tool_registry,
+                business_tool_adapter=(
+                    BusinessToolAdapterKind.PRODUCTION_READONLY
+                    if settings.AUTONOMOUS_AGENT_SHADOW_ENABLED
+                    else BusinessToolAdapterKind.PRODUCTION
+                ),
+                skill_registry=production_skill_registry,
             )
             _log("INFO", "Autonomous agent service initialized (enabled)")
 
@@ -454,6 +534,7 @@ async def log_requests(request: Request, call_next):
 from api.a2a import router as a2a_router
 from api.accounts import router as accounts_router
 from api.activity import router as activity_router
+from api.agent import router as agent_router
 from api.auth import router as auth_router
 from api.autonomous import router as autonomous_router
 from api.chat import router as chat_router
@@ -487,6 +568,7 @@ app.include_router(reports_router)
 app.include_router(chat_router)
 app.include_router(feedback_router)
 app.include_router(activity_router)
+app.include_router(agent_router)
 app.include_router(profile_router)
 app.include_router(pr_templates_router)
 app.include_router(auth_router)

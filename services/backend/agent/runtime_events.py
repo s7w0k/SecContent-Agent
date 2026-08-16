@@ -16,7 +16,8 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from agent.contracts.events import EventEnvelope, sanitize_event_payload
+from pydantic import Field
 from pymongo import ASCENDING, IndexModel
 
 logger = logging.getLogger("backend.agent.runtime_events")
@@ -32,26 +33,18 @@ def _utc_now() -> datetime:
 def _event_id(run_id: str, sequence: int, event_type: str) -> str:
     raw = json.dumps(
         {"run_id": run_id, "sequence": sequence, "event_type": event_type},
-        sort_keys=True, separators=(",", ":"),
+        sort_keys=True,
+        separators=(",", ":"),
     )
     return "ev-" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
-class RuntimeEvent(BaseModel):
+class RuntimeEvent(EventEnvelope):
     """单条自主运行事件（脱敏，供 SSE/审计）。"""
 
-    model_config = ConfigDict(extra="ignore")
-
-    schema_version: str = SCHEMA_VERSION
-    event_id: str
-    sequence: int = Field(ge=1)
-    run_id: str = Field(..., min_length=1, max_length=100)
-    event_type: str = Field(..., min_length=1, max_length=64)
-    status: str = Field(default="", max_length=32)
-    timestamp: datetime = Field(default_factory=_utc_now)
-    payload: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=_utc_now)
     expires_at: datetime = Field(default_factory=lambda: _utc_now() + timedelta(days=30))
+    deduplication_key: str = Field(default="", max_length=160)
 
 
 class RuntimeEventStore:
@@ -78,6 +71,12 @@ class RuntimeEventStore:
                     [("run_id", ASCENDING), ("created_at", ASCENDING)],
                     name="idx_runtime_event_run_created",
                 ),
+                IndexModel(
+                    [("run_id", ASCENDING), ("deduplication_key", ASCENDING)],
+                    unique=True,
+                    partialFilterExpression={"deduplication_key": {"$gt": ""}},
+                    name="uq_runtime_event_dedup",
+                ),
                 # TTL 归档
                 IndexModel(
                     [("expires_at", ASCENDING)],
@@ -97,10 +96,19 @@ class RuntimeEventStore:
         event_type: str,
         status: str = "",
         payload: dict[str, Any] | None = None,
+        turn_id: str = "",
+        trace_id: str = "",
+        deduplication_key: str = "",
         now: datetime | None = None,
     ) -> RuntimeEvent | None:
         """追加一条事件；sequence = 当前 run 最大序号 + 1（唯一索引防并发冲突）。"""
         stamp = now or _utc_now()
+        if deduplication_key:
+            existing = await self.col.find_one(
+                {"run_id": run_id, "deduplication_key": deduplication_key}
+            )
+            if existing is not None:
+                return RuntimeEvent.model_validate(existing)
         for _attempt in range(3):
             last = await self._last_sequence(run_id)
             sequence = last + 1
@@ -108,24 +116,31 @@ class RuntimeEventStore:
                 event_id=_event_id(run_id, sequence, event_type),
                 sequence=sequence,
                 run_id=run_id,
+                turn_id=turn_id,
+                trace_id=trace_id,
                 event_type=event_type,
                 status=status,
                 timestamp=stamp,
-                payload=payload or {},
+                payload=sanitize_event_payload(payload or {}),
                 created_at=stamp,
                 expires_at=stamp + timedelta(days=self.expires_days),
+                deduplication_key=deduplication_key,
             )
             try:
                 await self.col.insert_one(event.model_dump(mode="json"))
                 return event
             except Exception as exc:  # DuplicateKeyError → 重取序号
                 if _attempt >= 2:
-                    logger.warning("[runtime_events] append conflict for %s seq=%d: %s", run_id, sequence, exc)
+                    logger.warning(
+                        "[runtime_events] append conflict for %s seq=%d: %s", run_id, sequence, exc
+                    )
                     return None
                 logger.debug("[runtime_events] sequence conflict, retrying run=%s", run_id)
         return None
 
-    async def read_after_sequence(self, run_id: str, last_sequence: int = 0, *, limit: int = 500) -> list[RuntimeEvent]:
+    async def read_after_sequence(
+        self, run_id: str, last_sequence: int = 0, *, limit: int = 500
+    ) -> list[RuntimeEvent]:
         """断线续传：返回 sequence > last_sequence 的事件（升序）。"""
         try:
             cursor = (
@@ -151,9 +166,7 @@ class RuntimeEventStore:
 
     async def _last_sequence(self, run_id: str) -> int:
         try:
-            doc = await self.col.find_one(
-                {"run_id": run_id}, sort=[("sequence", -1)]
-            )
+            doc = await self.col.find_one({"run_id": run_id}, sort=[("sequence", -1)])
             return int((doc or {}).get("sequence", 0))
         except Exception:
             return 0

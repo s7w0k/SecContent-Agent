@@ -27,6 +27,7 @@ from typing import Any
 from agent.runtime_state import RunBudget
 from pydantic import BaseModel, ConfigDict, Field
 from pymongo import ASCENDING, DESCENDING, IndexModel
+from pymongo.errors import DuplicateKeyError
 
 logger = logging.getLogger("backend.agent.run_manifest")
 
@@ -73,9 +74,18 @@ class RunManifest(BaseModel):
 
     prompt_refs: list[dict[str, str]] = Field(default_factory=list)  # [{key, version, hash}]
     skill_snapshot_hash: str = ""
+    skill_versions: dict[str, str] = Field(default_factory=dict)
     knowledge_snapshot_hash: str = ""
     context_plan_hash: str = ""
     tool_registry_version: str = ""
+    task_schema_version: str = ""
+    task_snapshot_hash: str = ""
+    slot_snapshot_hash: str = ""
+    plan_version: int = Field(default=0, ge=0)
+    planner_version: str = ""
+    runtime_adapter: str = ""
+    tool_adapter: str = ""
+    input_refs: list[str] = Field(default_factory=list)
 
     feature_flags: dict[str, Any] = Field(default_factory=dict)  # 实际生效的开关与灰度桶
     budget: RunBudget = Field(default_factory=RunBudget)
@@ -99,9 +109,18 @@ def build_run_manifest(
     pricing_version: str = "",
     prompt_refs: list[dict[str, str]] | None = None,
     skill_snapshot_hash: str = "",
+    skill_versions: dict[str, str] | None = None,
     knowledge_snapshot_hash: str = "",
     context_plan_hash: str = "",
     tool_registry_version: str = "",
+    task_schema_version: str = "",
+    task_snapshot_hash: str = "",
+    slot_snapshot_hash: str = "",
+    plan_version: int = 0,
+    planner_version: str = "",
+    runtime_adapter: str = "",
+    tool_adapter: str = "",
+    input_refs: list[str] | None = None,
     feature_flags: dict[str, Any] | None = None,
     budget: RunBudget | None = None,
     acceptance_criteria: list[str] | None = None,
@@ -122,9 +141,18 @@ def build_run_manifest(
         pricing_version=pricing_version,
         prompt_refs=list(prompt_refs or []),
         skill_snapshot_hash=skill_snapshot_hash,
+        skill_versions=dict(skill_versions or {}),
         knowledge_snapshot_hash=knowledge_snapshot_hash,
         context_plan_hash=context_plan_hash,
         tool_registry_version=tool_registry_version,
+        task_schema_version=task_schema_version,
+        task_snapshot_hash=task_snapshot_hash,
+        slot_snapshot_hash=slot_snapshot_hash,
+        plan_version=plan_version,
+        planner_version=planner_version,
+        runtime_adapter=runtime_adapter,
+        tool_adapter=tool_adapter,
+        input_refs=list(input_refs or []),
         feature_flags=dict(feature_flags or {}),
         budget=budget or RunBudget(),
         acceptance_criteria=list(acceptance_criteria or []),
@@ -188,9 +216,28 @@ class RunManifestStore:
         return await self.col.create_indexes(self.index_specs()[self.collection_name])
 
     async def save(self, manifest: RunManifest) -> None:
-        """保存清单（upsert；清单不可变，重复保存幂等）。"""
+        """Insert an immutable manifest; identical retries are idempotent."""
         doc = manifest.model_dump(mode="json")
-        await self.col.replace_one({"run_id": manifest.run_id}, doc, upsert=True)
+        fingerprint = manifest_fingerprint(manifest)
+        doc["_manifest_fingerprint"] = fingerprint
+        existing = await self.col.find_one({"run_id": manifest.run_id})
+        if existing is not None:
+            stored = RunManifest.model_validate(existing)
+            if manifest_fingerprint(stored) != fingerprint:
+                raise ManifestError(f"manifest already frozen for run_id={manifest.run_id}")
+            return
+        try:
+            await self.col.replace_one(
+                {"run_id": manifest.run_id, "_manifest_fingerprint": fingerprint},
+                doc,
+                upsert=True,
+            )
+        except DuplicateKeyError as exc:
+            existing = await self.col.find_one({"run_id": manifest.run_id})
+            if existing is None or manifest_fingerprint(
+                RunManifest.model_validate(existing)
+            ) != fingerprint:
+                raise ManifestError(f"manifest already frozen for run_id={manifest.run_id}") from exc
 
     async def load(self, run_id: str) -> RunManifest | None:
         doc = await self.col.find_one({"run_id": run_id})
