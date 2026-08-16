@@ -74,6 +74,19 @@ _INTENT_RULES: tuple[tuple[TaskIntent, tuple[str, ...]], ...] = (
     (TaskIntent.GENERATE_DRAFT, ("写稿", "生成稿", "起草", "撰写", "draft")),
 )
 
+# 写作类动词 + 稿件类宾语：组合判断可覆盖“帮我生成一篇PR稿”等断裂表达。
+_WRITE_VERBS = ("写", "生成", "起草", "撰写", "产出", "出稿", "创作")
+_DRAFT_NOUNS = ("稿", "文章", "报道", "文案", "推文", "简报", "新闻稿", "pr")
+_REVISE_MARKERS = ("修改", "改稿", "重写", "润色", "revise")
+
+
+def _has_draft_intent(text: str, lowered: str) -> bool:
+    if any(marker in lowered for marker in ("写稿", "生成稿", "起草", "撰写", "draft")):
+        return True
+    has_verb = any(verb in text for verb in _WRITE_VERBS)
+    has_noun = any(noun in lowered for noun in _DRAFT_NOUNS)
+    return has_verb and has_noun
+
 _ARTICLE_ID = re.compile(
     r"(?:article[_ -]?id|文章(?:编号|ID)?|url[_ -]?hash)\s*[:：=#]?\s*([A-Za-z0-9][A-Za-z0-9_.:-]{5,159})",
     re.IGNORECASE,
@@ -130,9 +143,13 @@ class TaskUnderstandingService:
             values["goal"] = text[:4000]
             explicit.add("goal")
         has_search = any(marker in lowered for marker in ("搜索", "检索", "找新闻", "search"))
-        has_draft = any(marker in lowered for marker in ("写稿", "生成稿", "起草", "撰写", "draft"))
+        has_draft = _has_draft_intent(text, lowered)
+        is_revise = any(marker in lowered for marker in _REVISE_MARKERS)
         if has_search and has_draft:
             values["intent"] = TaskIntent.SEARCH_AND_DRAFT
+            explicit.add("intent")
+        elif has_draft and not is_revise:
+            values["intent"] = TaskIntent.GENERATE_DRAFT
             explicit.add("intent")
         else:
             for intent, markers in _INTENT_RULES:

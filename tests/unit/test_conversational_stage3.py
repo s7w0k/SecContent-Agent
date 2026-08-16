@@ -29,6 +29,24 @@ async def test_deterministic_understanding_extracts_intent_product_length_and_da
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("帮我生成一篇PR稿", TaskIntent.GENERATE_DRAFT),
+        ("帮我写一篇PR稿", TaskIntent.GENERATE_DRAFT),
+        ("写一篇关于AI安全的报道", TaskIntent.GENERATE_DRAFT),
+        ("帮我重写这篇稿", TaskIntent.REVISE),
+        ("保存这篇稿", TaskIntent.SAVE),
+        ("搜索AI新闻并写一篇PR", TaskIntent.SEARCH_AND_DRAFT),
+        ("搜索智能体安全新闻", TaskIntent.SEARCH_AND_RANK),
+    ],
+)
+async def test_deterministic_understanding_draft_intent_variants(text, expected):
+    result = await TaskUnderstandingService().understand(text)
+    assert result.patch.intent == expected, f"{text!r} -> {result.patch.intent}"
+
+
+@pytest.mark.asyncio
 async def test_model_cannot_emit_identity_or_authorization_fields():
     async def invalid_model(_text):
         return {"intent": "save", "user_id": "attacker", "approval": "approved"}
