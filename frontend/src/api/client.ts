@@ -1650,6 +1650,8 @@ export const agentApi = {
       'clarification.required',
       'candidate.selected',
       'candidate.selection_required',
+      'tool_started',
+      'tool_finished',
       'run.completed',
       'run.failed',
       'run.canceled',

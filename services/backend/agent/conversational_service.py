@@ -379,6 +379,12 @@ class ConversationalAgentService:
             return {"message": "任务状态已返回。", "task_id": run.task_id}, "completed"
         if intent in {TaskIntent.SEARCH_AND_RANK, TaskIntent.SEARCH_AND_DRAFT, TaskIntent.CURATE_NEWS} and self.tool_executor is not None:
             query = str(envelope.news_query.value or envelope.goal.value or "")
+            await self._event(
+                run,
+                "tool_started",
+                "running",
+                {"tool": "search_news", "args": {"query": query, "limit": 10}},
+            )
             value = await self.tool_executor.invoke(
                 "search_news",
                 {"query": query, "limit": 10},
@@ -395,6 +401,12 @@ class ConversationalAgentService:
             self._candidates[run.task_id] = payload.get("items", [])
             selection = self.candidate_selector.select(payload.get("items", []))
             payload["selection"] = selection.model_dump(mode="json")
+            await self._event(
+                run,
+                "tool_finished",
+                "running",
+                {"tool": "search_news", "items": len(payload.get("items", []))},
+            )
             if not payload.get("items"):
                 payload["message"] = "未检索到匹配的新闻，请更换关键词后重试。"
             if selection.outcome == "needs_selection":

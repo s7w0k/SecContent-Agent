@@ -15,13 +15,14 @@ import {
   Space,
   Spin,
   Tag,
+  Timeline,
   Typography,
   message,
 } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { agentApi } from '../api/client';
 import AgentCandidateCards from '../components/AgentCandidateCards';
-import type { AgentCandidate, AgentRun } from '../types';
+import type { AgentCandidate, AgentEventEnvelope, AgentRun } from '../types';
 import styles from './AgentWorkspace.module.css';
 
 const { Text, Title } = Typography;
@@ -40,6 +41,44 @@ const INTENT_NAMES: Record<string, string> = {
   cancel: '取消任务',
   unknown: '未识别意图',
 };
+
+/** 执行过程事件 → 展示文案与颜色 */
+const EVENT_META: Record<string, { label: string; color: string }> = {
+  'turn.persisted': { label: '任务已受理', color: 'gray' },
+  'understanding.completed': { label: '理解任务意图与需求', color: 'blue' },
+  'clarification.required': { label: '需要补充信息', color: 'orange' },
+  'clarification.waiting': { label: '等待补充信息', color: 'orange' },
+  'candidate.selected': { label: '匹配到候选新闻', color: 'blue' },
+  'candidate.selection_required': { label: '生成候选，等待选择', color: 'gold' },
+  tool_started: { label: '执行工具搜索新闻', color: 'blue' },
+  tool_finished: { label: '工具执行完成', color: 'green' },
+  'run.completed': { label: '任务完成', color: 'green' },
+  'run.failed': { label: '任务失败', color: 'red' },
+  'run.canceled': { label: '任务已取消', color: 'gray' },
+  'run.approved': { label: '审批已通过，继续执行', color: 'green' },
+};
+
+function eventLabel(event: AgentEventEnvelope) {
+  const meta = EVENT_META[event.event_type];
+  if (meta) return meta.label;
+  if (event.event_type === 'tool_started') {
+    const tool = String(event.payload?.tool || '');
+    return tool ? `执行工具：${tool}` : '执行工具';
+  }
+  return event.event_type;
+}
+
+function eventDetail(event: AgentEventEnvelope) {
+  if (event.event_type === 'tool_finished') {
+    const count = event.payload?.items;
+    if (typeof count === 'number') return `检索到 ${count} 条候选`;
+  }
+  if (event.event_type === 'candidate.selected') {
+    const articleId = String(event.payload?.article_id || '');
+    return articleId ? `已匹配：${articleId}` : undefined;
+  }
+  return undefined;
+}
 
 function statusTag(status: AgentRun['status']) {
   const colors: Record<string, string> = {
@@ -84,6 +123,7 @@ interface AgentWorkspaceProps {
 export default function AgentWorkspace({ onLegacyFallback }: AgentWorkspaceProps) {
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [run, setRun] = useState<AgentRun | null>(null);
+  const [events, setEvents] = useState<AgentEventEnvelope[]>([]);
   const [input, setInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
@@ -118,8 +158,12 @@ export default function AgentWorkspace({ onLegacyFallback }: AgentWorkspaceProps
 
   useEffect(() => {
     sourceRef.current?.close();
-    if (!run || TERMINAL.has(run.status) || run.status === 'waiting_user') return;
-    const source = agentApi.openEventSource(run.run_id, () => {
+    setEvents([]);
+    if (!run || TERMINAL.has(run.status)) return;
+    const source = agentApi.openEventSource(run.run_id, (event) => {
+      setEvents((prev) =>
+        prev.some((item) => item.event_id === event.event_id) ? prev : [...prev, event],
+      );
       refreshRun(run.run_id).catch(() => undefined);
     });
     sourceRef.current = source;
@@ -258,6 +302,31 @@ export default function AgentWorkspace({ onLegacyFallback }: AgentWorkspaceProps
                   </Descriptions>
                 </section>
 
+                {events.length > 0 && (
+                  <section className={styles.progressBand} aria-label="执行过程">
+                    <Title level={5}>执行过程</Title>
+                    <Timeline
+                      items={events.map((event) => {
+                        const meta = EVENT_META[event.event_type];
+                        const detail = eventDetail(event);
+                        return {
+                          color: meta?.color || 'gray',
+                          children: (
+                            <div>
+                              <Text>{eventLabel(event)}</Text>
+                              {detail && (
+                                <div>
+                                  <Text type="secondary" style={{ fontSize: 12 }}>{detail}</Text>
+                                </div>
+                              )}
+                            </div>
+                          ),
+                        };
+                      })}
+                    />
+                  </section>
+                )}
+
                 {run.status === 'waiting_user' && (
                   <section className={styles.questionBand}>
                     <Alert
@@ -346,6 +415,16 @@ export default function AgentWorkspace({ onLegacyFallback }: AgentWorkspaceProps
                   <Alert type="error" showIcon message="任务未完成" description={run.error || run.status} />
                 )}
               </>
+            )}
+
+            {submitting && (
+              <section className={styles.progressBand} aria-label="处理中">
+                <Title level={5}>处理中</Title>
+                <div className={styles.stepRow}>
+                  <Spin size="small" />
+                  <Text>正在理解任务并执行…</Text>
+                </div>
+              </section>
             )}
           </div>
         </div>
