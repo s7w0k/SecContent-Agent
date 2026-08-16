@@ -396,7 +396,7 @@ class ConversationalAgentService:
             selection = self.candidate_selector.select(payload.get("items", []))
             payload["selection"] = selection.model_dump(mode="json")
             if not payload.get("items"):
-                payload["message"] = "未检索到匹配的新闻。本地文章库为空且外部搜索无结果，请稍后重试或更换关键词。"
+                payload["message"] = "未检索到匹配的新闻，请更换关键词后重试。"
             if selection.outcome == "needs_selection":
                 return payload, "waiting_user"
             return payload, "completed"
