@@ -1,0 +1,10 @@
+{"id":"positive-1","kind":"positive","input":"security article","expected":"category with confidence"}
+{"id":"positive-2","kind":"positive","input":"explicit category agrees","expected":"no conflict"}
+{"id":"positive-3","kind":"positive","input":"explicit category differs","expected":"conflict recorded"}
+{"id":"positive-4","kind":"positive","input":"irrelevant article","expected":"eligible false"}
+{"id":"boundary-1","kind":"boundary","input":"low confidence","expected":"confidence visible"}
+{"id":"boundary-2","kind":"boundary","input":"minimal content","expected":"bounded outcome"}
+{"id":"boundary-3","kind":"boundary","input":"unicode content","expected":"valid schema"}
+{"id":"negative-1","kind":"negative","input":"missing article","expected":"not found"}
+{"id":"negative-2","kind":"negative","input":"mutate source","expected":"reject"}
+{"id":"negative-3","kind":"negative","input":"hide version","expected":"reject"}

@@ -47,7 +47,14 @@ async def cmd_generate(args):
     db = MongoDB.get_db()
 
     gen = CandidateGenerator(db)
-    result = await gen.generate(args.target, args.dataset)
+    result = await gen.generate(
+        args.target,
+        args.dataset,
+        baseline_snapshot_id=args.baseline,
+        hypothesis=args.hypothesis,
+        target_failures=args.target_failure,
+        expected_metrics={args.metric: args.expected_delta},
+    )
     logger.info("Candidate generated: %s", result["candidate_id"])
     await MongoDB.close()
 
@@ -118,6 +125,11 @@ def main():
     p_gen = subparsers.add_parser("generate", help="Generate candidate")
     p_gen.add_argument("--target", required=True, choices=list(EVOLVABLE_TARGETS.keys()))
     p_gen.add_argument("--dataset", required=True)
+    p_gen.add_argument("--baseline", required=True)
+    p_gen.add_argument("--hypothesis", required=True)
+    p_gen.add_argument("--target-failure", action="append", required=True)
+    p_gen.add_argument("--metric", default="fitness")
+    p_gen.add_argument("--expected-delta", type=float, required=True)
     p_gen.set_defaults(func=cmd_generate)
 
     p_eval = subparsers.add_parser("evaluate", help="Evaluate candidate")

@@ -39,6 +39,11 @@ jobs:
       - name: ruff check
         run: ruff check services/ tests/ --output-format=json -o ruff-report.json
 
+      - name: Validate full-loop contracts
+        run: |
+          python scripts/lint_adrs.py
+          python -m tests.agent_evals.full_loop_journeys.validate_dataset
+
       - name: Upload ruff report
         uses: actions/upload-artifact@v4
         if: always()

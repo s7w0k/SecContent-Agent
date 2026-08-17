@@ -157,6 +157,10 @@ class ReportAgent:
         art = article if isinstance(article, dict) else article.model_dump()
         scores = scores or {}
 
+        # 阶段3 S3-3：经 ContextBridge 构建草稿上下文（active 命中时替代全局知识）
+        context_plan_content, _context_telemetry = await self._build_context_plan(art)
+        knowledge_context = context_plan_content or self.knowledge.as_system_prompt()
+
         # 截断过长内容
         content = (art.get("content_md", "") or "")[:MAX_CONTENT_LENGTH]
 
@@ -165,7 +169,7 @@ class ReportAgent:
         for attempt in range(MAX_RETRIES + 1):
             try:
                 response = await self.llm.ainvoke([
-                    SystemMessage(content=self._build_system_prompt(style_hints)),
+                    SystemMessage(content=self._build_system_prompt(style_hints, knowledge_context)),
                     HumanMessage(content=user_prompt),
                 ])
                 raw_text = response.content if hasattr(response, "content") else str(response)
@@ -196,14 +200,78 @@ class ReportAgent:
 
     # ── Prompt 构建 ──────────────────────────────────────────
 
-    def _build_system_prompt(self, style_hints: str | None = None) -> str:
-        knowledge_context = self.knowledge.as_system_prompt()
+    def _build_system_prompt(
+        self,
+        style_hints: str | None = None,
+        knowledge_context: str | None = None,
+    ) -> str:
+        if knowledge_context is None:
+            knowledge_context = self.knowledge.as_system_prompt()
         if not knowledge_context:
             knowledge_context = "（知识库未加载，使用通用产品背景）"
         return SYSTEM_PROMPT_TEMPLATE.format(
             knowledge_context=knowledge_context,
             style_hints=style_hints.strip() if style_hints and style_hints.strip() else "",
         )
+
+    async def _build_context_plan(self, article: dict) -> tuple[str, dict]:
+        """阶段3 S3-3：优先经 ContextBridge 构建草稿上下文（off/shadow 仍走全局）。
+
+        返回 (knowledge_context, telemetry)。产品来源取文章冻结的 resolved_products /
+        best_product_id；无产品时不做跨产品回退。
+        """
+        if self.db is None:
+            return "", {}
+        try:
+            from agent.context_bridge import ContextBridge
+            from agent.context_cache import get_context_cache
+            from agent.context_queries import build_draft_query
+            from config import get_settings
+
+            settings = get_settings()
+            bridge = ContextBridge(
+                db=self.db,
+                settings=settings,
+                cache=get_context_cache(settings.CONTEXT_CACHE_TTL_SECONDS)
+                if settings.KNOWLEDGE_SKILLS_ENABLED
+                else None,
+            )
+            routing_meta = article.get("routing_meta") or {}
+            products = list(routing_meta.get("resolved_products") or [])
+            if not products:
+                best = article.get("best_product_id") or ""
+                if best:
+                    products = [best]
+            if not products:
+                return "", {}
+            mode = bridge.effective_mode(article.get("user_id") or "")
+            if mode == "off":
+                return "", {}
+            result = await bridge.build_plan(
+                purpose="draft",
+                user_id=article.get("user_id") or "",
+                products=products,
+                query=build_draft_query(article),
+                model_id=settings.DEEPSEEK_MODEL,
+                task_id=str(article.get("task_id") or ""),
+                trace_id=str(article.get("trace_id") or ""),
+            )
+            if result is None:
+                return "", {}
+            telemetry = result.telemetry
+            telemetry["mode"] = mode
+            if mode == "active":
+                return result.plan.rendered(), telemetry
+            logger.info(
+                "[reporter] context purpose=draft mode=%s products=%s plan_hash=%s",
+                mode,
+                products,
+                result.plan.plan_hash[:16],
+            )
+            return "", telemetry
+        except Exception as exc:
+            logger.warning("[reporter] ContextBridge build failed: %s", exc)
+            return "", {}
 
     @staticmethod
     def _build_user_prompt(

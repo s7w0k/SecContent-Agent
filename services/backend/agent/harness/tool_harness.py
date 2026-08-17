@@ -73,6 +73,15 @@ class ToolContract:
     retryable: bool = False  # 仅当幂等或只读时可重试
     max_result_bytes: int = DEFAULT_MAX_RESULT_BYTES
     registry_version: str = "1.0"
+    # BusinessToolContract 兼容字段。保留旧字段默认值，旧工具无需迁移。
+    args_model: Any = None
+    result_model: Any = None
+    risk_level: str = "low"
+    required_scopes: tuple[str, ...] = ()
+    tenant_boundary: str = "tenant"
+    cache_policy: dict[str, Any] | None = None
+    evidence_fields: tuple[str, ...] = ()
+    compensating_action: str = ""
 
     def __post_init__(self) -> None:
         if self.retryable and not self.idempotency_required and self.side_effect_level != SideEffectLevel.L1:
@@ -119,15 +128,38 @@ class ToolRegistry:
             "version": self.version,
             "tools": {
                 n: {
+                    "description": c.description,
+                    "registry_version": c.registry_version,
+                    "args_schema": _schema_fingerprint(c.args_schema, c.args_model),
+                    "result_schema": _schema_fingerprint(c.result_model),
                     "side_effect_level": c.side_effect_level.value,
+                    "risk_level": c.risk_level,
                     "idempotency_required": c.idempotency_required,
                     "retryable": c.retryable,
+                    "timeout_seconds": c.timeout_seconds,
+                    "required_scopes": list(c.required_scopes),
+                    "tenant_boundary": c.tenant_boundary,
                 }
                 for n, c in sorted(self._contracts.items())
             },
         }
         digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
         return {"registry_version": self.version, "fingerprint": f"sha256:{digest}"}
+
+
+def _schema_fingerprint(schema: Any, model: Any = None) -> str:
+    """Return a stable schema representation without importing Pydantic eagerly."""
+    candidate = model or schema
+    if candidate is None:
+        return ""
+    if hasattr(candidate, "model_json_schema"):
+        try:
+            candidate = candidate.model_json_schema()
+        except Exception:
+            candidate = str(candidate)
+    return hashlib.sha256(
+        json.dumps(candidate, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")
+    ).hexdigest()
 
 
 # ═══════════════════════════════════════════════════════════════

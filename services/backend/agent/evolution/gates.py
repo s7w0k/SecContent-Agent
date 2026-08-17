@@ -44,6 +44,12 @@ class GateChecker:
         baseline = baseline_metrics or {}
         candidate = candidate_metrics or {}
 
+        if not candidate_metrics:
+            document = await self.db["personalization_candidates"].find_one(
+                {"candidate_id": candidate_id}
+            )
+            candidate = (document or {}).get("metrics", {})
+
         # 1. 事实安全
         base_high = baseline.get("high_issue_rate", 0.0)
         cand_high = candidate.get("holdout_metrics", {}).get("high_issue_rate", 0.0)
@@ -53,16 +59,18 @@ class GateChecker:
         results["propaganda_safety"] = cand_high <= base_high + 0.01
 
         # 3. 格式成功率
-        results["format_success"] = True  # 需要实际格式检查数据
+        results["format_success"] = candidate.get("format_success_delta", -1.0) >= 0
 
         # 4. Prompt 注入
-        results["prompt_injection"] = True  # 需要专门测试
+        results["prompt_injection"] = candidate.get("prompt_injection_failures", 1) == 0
 
         # 5. 多租户
-        results["multi_tenant"] = True  # 需要专门测试
+        results["multi_tenant"] = candidate.get("multi_tenant_failures", 1) == 0
 
         # 6. Token 预算
-        results["token_budget"] = True  # 需要 Token 使用数据
+        results["token_budget"] = candidate.get("token_cost_delta_ratio", 1.0) <= candidate.get(
+            "max_token_cost_delta_ratio", 0.10
+        )
 
         # 7. 留出集提升
         holdout_fitness = candidate.get("holdout_fitness", 0.0)
@@ -94,6 +102,7 @@ class GateChecker:
             await self.db["personalization_candidates"].update_one(
                 {"candidate_id": candidate_id},
                 {"$set": {
+                    "status": "ready_for_review",
                     "gate_results": results,
                     "updated_at": __import__("datetime").datetime.now(__import__("datetime").UTC),
                 }},

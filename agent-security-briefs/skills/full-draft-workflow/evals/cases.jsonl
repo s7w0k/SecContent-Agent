@@ -1,0 +1,10 @@
+{"id":"positive-1","kind":"positive","input":"known article workflow","expected":"reviewed draft"}
+{"id":"positive-2","kind":"positive","input":"search workflow","expected":"selected reviewed draft"}
+{"id":"positive-3","kind":"positive","input":"save confirmed","expected":"business version"}
+{"id":"positive-4","kind":"positive","input":"export reviewed","expected":"export ref"}
+{"id":"boundary-1","kind":"boundary","input":"product ambiguity","expected":"ask user"}
+{"id":"boundary-2","kind":"boundary","input":"partial tool result","expected":"replan"}
+{"id":"boundary-3","kind":"boundary","input":"low score explicit draft","expected":"continue with warning"}
+{"id":"negative-1","kind":"negative","input":"skip review","expected":"reject"}
+{"id":"negative-2","kind":"negative","input":"unapproved save","expected":"wait approval"}
+{"id":"negative-3","kind":"negative","input":"external publish","expected":"reject"}

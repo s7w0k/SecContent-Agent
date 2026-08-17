@@ -46,6 +46,32 @@ _PURPOSE_SKILL_SOURCE = {
     "chat": (),
 }
 
+# 阶段3 S3-4：明确的知识上下文 fallback 原因（禁止跨产品静默回退）
+FALLBACK_INDEX_UNAVAILABLE = "index_unavailable"
+FALLBACK_CONTEXT_BUILD_FAILED = "context_build_failed"
+FALLBACK_LEGACY_TASK_MISSING_SNAPSHOT = "legacy_task_missing_snapshot"
+FALLBACK_REQUIRED_KNOWLEDGE_MISSING = "required_knowledge_missing"
+FALLBACK_PRODUCT_UNRESOLVED = "product_unresolved"
+
+# 禁止回退到全局产品知识的模式/场景（阶段3 S3-4）
+_FALLBACK_FORBIDDEN_PRODUCT_REASONS = frozenset(
+    {
+        FALLBACK_PRODUCT_UNRESOLVED,
+        FALLBACK_REQUIRED_KNOWLEDGE_MISSING,
+    }
+)
+
+
+def allow_global_product_fallback(reason: str | None) -> bool:
+    """判断 given fallback 原因是否允许回退到全局产品知识。
+
+    mode=none、selected 产品知识缺失、auto 产品未解析、用户知识越权或未发布时，
+    禁止回退全局产品知识（返回 False）。
+    """
+    if not reason:
+        return True
+    return reason not in _FALLBACK_FORBIDDEN_PRODUCT_REASONS
+
 
 def context_mode(settings: Any) -> Mode:
     """根据配置开关返回全局模式。"""
@@ -122,6 +148,9 @@ class ContextBridge:
         model_id: str = "deepseek-chat",
         system_tokens: int = 0,
         max_input_tokens: int | None = None,
+        task_id: str = "",
+        trace_id: str = "",
+        index_version: str = "",
     ):
         """收集来源并构建 ContextPlan；无任何来源或构建失败时返回 None。
 
@@ -161,6 +190,9 @@ class ContextBridge:
                 max_input_tokens=effective_max,
                 knowledge_snapshot=knowledge_snapshot,
                 memory_version=memory_version,
+                task_id=task_id,
+                trace_id=trace_id,
+                index_version=index_version,
             )
 
         if self._cache is not None:
@@ -168,14 +200,14 @@ class ContextBridge:
             self._cache.record(key.key_hash, status, self.effective_mode(user_id))
             if plan is None:
                 return None
-            telemetry = self._telemetry(plan, purpose=purpose)
+            telemetry = self._telemetry(plan, purpose=purpose, task_id=task_id, trace_id=trace_id)
             telemetry["cache"] = status
             return _PlanResult(plan=plan, telemetry=telemetry)
 
         plan = await _builder()
         if plan is None:
             return None
-        telemetry = self._telemetry(plan, purpose=purpose)
+        telemetry = self._telemetry(plan, purpose=purpose, task_id=task_id, trace_id=trace_id)
         telemetry["cache"] = "off"
         return _PlanResult(plan=plan, telemetry=telemetry)
 
@@ -191,6 +223,9 @@ class ContextBridge:
         max_input_tokens: int,
         knowledge_snapshot: str,
         memory_version: str,
+        task_id: str = "",
+        trace_id: str = "",
+        index_version: str = "",
     ):
         """实际构建（昂贵部分：收集来源 + token 预算分配）。"""
         sources = await self._collect_sources(
@@ -211,6 +246,9 @@ class ContextBridge:
             query=query,
             model_id=model_id,
             max_input_tokens=max_input_tokens,
+            task_id=task_id,
+            trace_id=trace_id,
+            index_version=index_version,
             metadata={"system_tokens": system_tokens},
         )
         snapshot = {
@@ -231,6 +269,9 @@ class ContextBridge:
         model_id: str = "deepseek-chat",
         system_tokens: int = 0,
         max_input_tokens: int | None = None,
+        task_id: str = "",
+        trace_id: str = "",
+        index_version: str = "",
     ) -> tuple[str | None, dict[str, Any]]:
         """按模式解析注入文本。
 
@@ -251,6 +292,9 @@ class ContextBridge:
             model_id=model_id,
             system_tokens=system_tokens,
             max_input_tokens=max_input_tokens,
+            task_id=task_id,
+            trace_id=trace_id,
+            index_version=index_version,
         )
         if result is None:
             return None, {"mode": mode, "error": "no_sources"}
@@ -305,36 +349,125 @@ class ContextBridge:
 
         # 2. required_product：产品知识切片（全局 + 用户级，purpose 分层）
         try:
-            resolver = KnowledgeSliceResolver(
+            # 阶段七 10.1/10.3：确定知识检索模式（off/shadow/active + 灰度分流）
+            from agent.knowledge_shadow import (
+                RetrievalShadowTracker,
+                effective_retrieval_mode,
+                evaluate_stop_conditions,
+                record_retrieval_shadow,
+            )
+
+            retr_mode = effective_retrieval_mode(self._settings, user_id or "")
+            # 旧链路：始终走阶段三切片解析（无检索注入）
+            legacy_resolver = KnowledgeSliceResolver(
                 self._knowledge_base_dir,
                 db=self._db,
             )
-            slice_result = await resolver.resolve(
-                purpose=purpose,  # type: ignore[arg-type]
-                product_ids=list(products) if products else None,
-                include_shared=True,
-                user_id=user_id or None,
+            # 新链路：仅当非 off 且带 query 时启用自适应检索
+            new_retrieval = retr_mode in ("shadow", "active") and bool(
+                (query or "").strip()
             )
-            if slice_result.content:
-                pid_key = ",".join(slice_result.product_ids or products or [])
+            new_resolver = None
+            if new_retrieval:
+                from agent.document_retriever import DocumentRetriever
+
+                new_resolver = KnowledgeSliceResolver(
+                    self._knowledge_base_dir,
+                    db=self._db,
+                    retriever=DocumentRetriever(
+                        index_path=getattr(
+                            self._settings, "KNOWLEDGE_INDEX_PATH", None
+                        ),
+                        settings=self._settings,
+                    ),
+                    max_optional_docs=int(
+                        getattr(self._settings, "KNOWLEDGE_MAX_OPTIONAL_DOCS", 6)
+                    ),
+                )
+
+            expected_index_version = getattr(
+                self._settings, "KNOWLEDGE_INDEX_VERSION", ""
+            )
+
+            async def _resolve(resolver, with_query: bool):
+                return await resolver.resolve(
+                    purpose=purpose,  # type: ignore[arg-type]
+                    product_ids=list(products) if products else None,
+                    include_shared=True,
+                    user_id=user_id or None,
+                    query=query if with_query else "",
+                    index_version=expected_index_version,
+                )
+
+            legacy_slice = await _resolve(legacy_resolver, with_query=False)
+            new_slice = None
+            if new_resolver is not None:
+                # shadow：新链路并行构建但注入旧上下文；active：注入新链路
+                tracker = RetrievalShadowTracker(
+                    purpose=purpose,
+                    user_id=user_id,
+                    query=query,
+                    product_ids=list(products or []),
+                    index_version=expected_index_version,
+                )
+                try:
+                    new_slice = await _resolve(new_resolver, with_query=True)
+                except Exception as new_exc:  # 新链路异常不影响旧链路
+                    logger.warning(
+                        "ContextBridge new retrieval chain failed purpose=%s: %s",
+                        purpose,
+                        new_exc,
+                    )
+                    diff = tracker.finish(
+                        old_char_count=legacy_slice.char_count,
+                        new_char_count=legacy_slice.char_count,
+                        old_source_docs=legacy_slice.source_document_ids,
+                        required_missing_old=legacy_slice.knowledge_missing,
+                        error=str(new_exc),
+                    )
+                    record_retrieval_shadow(diff)
+                    new_slice = None
+                else:
+                    diff = tracker.finish(
+                        old_char_count=legacy_slice.char_count,
+                        new_char_count=new_slice.char_count,
+                        old_source_docs=legacy_slice.source_document_ids,
+                        new_source_docs=new_slice.source_document_ids,
+                        required_missing_old=legacy_slice.knowledge_missing,
+                        required_missing_new=new_slice.knowledge_missing,
+                        new_index_version=new_slice.index_version,
+                    )
+                    record_retrieval_shadow(diff)
+                    stop = evaluate_stop_conditions(diff)
+                    if stop:
+                        logger.warning(
+                            "ContextBridge retrieval stop-condition hit purpose=%s: %s",
+                            purpose,
+                            "; ".join(stop),
+                        )
+
+            # 注入：active 用新链路，shadow/off 用旧链路
+            injected_slice = new_slice if retr_mode == "active" and new_slice else legacy_slice
+            if injected_slice.content:
+                pid_key = ",".join(injected_slice.product_ids or products or [])
                 sources.append(
                     ContextSource(
                         source=f"required_product:{pid_key or 'all'}",
-                        content=slice_result.content,
+                        content=injected_slice.content,
                         section_type="required_product",
                         product=pid_key,
                         doc_type="purpose_layered",
-                        source_hash=slice_result.content_hash,
+                        source_hash=injected_slice.content_hash,
                         trust="published",
                         published=True,
                         required=True,
                     )
                 )
-            if slice_result.knowledge_missing:
+            if injected_slice.knowledge_missing:
                 logger.info(
                     "ContextBridge knowledge_missing purpose=%s: %s",
                     purpose,
-                    slice_result.knowledge_missing,
+                    injected_slice.knowledge_missing,
                 )
         except Exception as exc:
             logger.warning("ContextBridge slice resolve failed purpose=%s: %s", purpose, exc)
@@ -465,22 +598,37 @@ class ContextBridge:
             "\n".join(sorted(parts)).encode("utf-8")
         ).hexdigest()
 
-    def _telemetry(self, plan, *, purpose: str) -> dict[str, Any]:
-        """生成 LLM 日志 telemetry（不含知识全文）。"""
+    def _telemetry(
+        self,
+        plan,
+        *,
+        purpose: str,
+        task_id: str = "",
+        trace_id: str = "",
+    ) -> dict[str, Any]:
+        """生成 LLM 日志 telemetry（不含知识全文）。
+
+        阶段3 S3-5：统一记录产品、来源、预算、drop 与 fallback，便于 trace 还原每次来源。
+        """
         snapshot = plan.snapshot or {}
         return {
             "context_plan_hash": plan.plan_hash,
             "purpose": purpose,
+            "task_id": task_id,
+            "trace_id": trace_id,
             "skill_versions": snapshot.get("skill_versions", "none"),
             "knowledge_snapshot": snapshot.get("knowledge_snapshot", "none"),
             "memory_version": snapshot.get("memory_version", "none"),
             "source_ids": [s.source_id for s in plan.sections],
+            "products": list(plan.request.products),
+            "source": [s.source_id for s in plan.sections],
             "budget_tokens": plan.budget_tokens,
             "total_tokens": plan.total_tokens,
             "dropped": [
                 {"source": d.source, "reason": d.reason, "tokens": d.tokens}
                 for d in plan.dropped
             ],
+            "fallback": None,
             "conflicts": [
                 {"source": c.source, "suppressed_by": c.suppressed_by}
                 for c in plan.conflicts

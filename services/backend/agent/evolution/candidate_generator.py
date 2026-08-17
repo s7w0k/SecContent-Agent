@@ -42,6 +42,11 @@ class CandidateGenerator:
         target_type: str,
         source_dataset_id: str,
         content: dict | None = None,
+        *,
+        baseline_snapshot_id: str,
+        hypothesis: str,
+        target_failures: list[str],
+        expected_metrics: dict[str, float],
     ) -> dict:
         """生成一个候选策略。
 
@@ -55,6 +60,10 @@ class CandidateGenerator:
         """
         if target_type not in EVOLVABLE_TARGETS:
             raise ValueError(f"Unsupported target type: {target_type}")
+        if not source_dataset_id or not baseline_snapshot_id:
+            raise ValueError("candidate requires dataset and baseline snapshot")
+        if len(hypothesis.strip()) < 12 or not target_failures or not expected_metrics:
+            raise ValueError("candidate requires an improvement hypothesis, failures and metrics")
 
         base_version = BASE_VERSIONS.get(target_type, "v1")
         candidate_id = f"pcand-{uuid4().hex[:8]}"
@@ -67,6 +76,11 @@ class CandidateGenerator:
             "candidate_version": candidate_version,
             "content": content or {},
             "source_dataset_id": source_dataset_id,
+            "baseline_snapshot_id": baseline_snapshot_id,
+            "hypothesis": hypothesis.strip(),
+            "target_failures": list(target_failures),
+            "expected_metrics": dict(expected_metrics),
+            "registry": "draft",
             "status": "draft",
             "metrics": {},
             "created_by": "offline-evaluator",

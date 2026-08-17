@@ -20,7 +20,8 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from agent.contracts.events import CORE_EVENT_TYPES, EventEnvelope, sanitize_event_payload
+from pydantic import Field
 from pymongo import ASCENDING, DESCENDING, IndexModel
 
 logger = logging.getLogger("backend.agent.agent_event_store")
@@ -44,7 +45,7 @@ Phase = Literal[
 ]
 
 # 阶段1 要求补齐的事件类型
-EVENT_TYPES = frozenset(
+EVENT_TYPES = CORE_EVENT_TYPES | frozenset(
     {
         "loop_started",
         "loop_ended",
@@ -78,27 +79,19 @@ def _utc_now() -> datetime:
 def _event_id(run_id: str, sequence: int, event_type: str) -> str:
     raw = json.dumps(
         {"run_id": run_id, "sequence": sequence, "event_type": event_type},
-        sort_keys=True, separators=(",", ":"),
+        sort_keys=True,
+        separators=(",", ":"),
     )
     return "ev-" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
-class AgentEventEnvelope(BaseModel):
+class AgentEventEnvelope(EventEnvelope):
     """统一 Agent Loop 事件信封（脱敏，可落库）。"""
 
-    model_config = ConfigDict(extra="ignore")
-
-    schema_version: str = SCHEMA_VERSION
-    event_id: str
-    run_id: str = Field(..., min_length=1, max_length=100)
-    trace_id: str = Field(default="", max_length=100)
     parent_event_id: str = Field(default="", max_length=64)
-    sequence: int = Field(ge=1)
     phase: Phase = "execute"
-    event_type: str = Field(..., min_length=1, max_length=64)
     step_id: str = Field(default="", max_length=64)
     attempt: int = Field(default=1, ge=0)
-    status: str = Field(default="", max_length=32)
     model_id: str = Field(default="", max_length=100)
     tool_name: str = Field(default="", max_length=100)
     input_hash: str = Field(default="", max_length=100)
@@ -108,7 +101,6 @@ class AgentEventEnvelope(BaseModel):
     cost_usd: float = Field(default=0.0)
     duration_ms: int = Field(default=0, ge=0)
     reason_code: str = Field(default="", max_length=100)
-    timestamp: datetime = Field(default_factory=_utc_now)
     created_at: datetime = Field(default_factory=_utc_now)
     expires_at: datetime = Field(default_factory=lambda: _utc_now() + timedelta(days=30))
 
@@ -163,6 +155,7 @@ class AgentEventStore:
         run_id: str,
         event_type: str,
         trace_id: str = "",
+        turn_id: str = "",
         parent_event_id: str = "",
         phase: Phase = "execute",
         step_id: str = "",
@@ -191,6 +184,7 @@ class AgentEventStore:
                 event_id=_event_id(run_id, seq, event_type),
                 run_id=run_id,
                 trace_id=trace_id,
+                turn_id=turn_id,
                 parent_event_id=parent_event_id,
                 sequence=seq,
                 phase=phase,
@@ -207,12 +201,12 @@ class AgentEventStore:
                 cost_usd=round(float(cost_usd), 8),
                 duration_ms=max(0, int(duration_ms)),
                 reason_code=reason_code,
+                payload=sanitize_event_payload(payload),
                 timestamp=now,
                 created_at=now,
                 expires_at=now + timedelta(days=self.expires_days),
             )
             doc = envelope.model_dump(mode="json")
-            doc["payload"] = payload
             await self.col.insert_one(doc)
             return envelope
         except Exception:

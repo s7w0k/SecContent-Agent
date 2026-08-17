@@ -455,11 +455,15 @@ class DraftChatAgent:
                 )
                 mode = bridge.effective_mode(getattr(run_context, "user_id", ""))
                 if mode != "off":
+                    from agent.context_queries import build_chat_query
+
                     plan_result = await bridge.build_plan(
                         purpose="chat",
                         user_id=getattr(run_context, "user_id", ""),
-                        query=message,
+                        query=build_chat_query(message, article, draft),
                         model_id=settings.DEEPSEEK_MODEL,
+                        task_id=getattr(run_context, "task_id", "") or "",
+                        trace_id=getattr(run_context, "trace_id", "") or "",
                     )
                     if plan_result is not None:
                         if mode == "active":

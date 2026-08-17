@@ -1,0 +1,10 @@
+{"id":"positive-1","kind":"positive","input":"single clear product","expected":"matched"}
+{"id":"positive-2","kind":"positive","input":"explicit authorized product","expected":"user selected"}
+{"id":"positive-3","kind":"positive","input":"no related product","expected":"no related outcome"}
+{"id":"positive-4","kind":"positive","input":"two ranked products","expected":"evidence per product"}
+{"id":"boundary-1","kind":"boundary","input":"close confidence","expected":"ambiguous"}
+{"id":"boundary-2","kind":"boundary","input":"knowledge missing","expected":"knowledge missing"}
+{"id":"boundary-3","kind":"boundary","input":"catalog update","expected":"catalog hash frozen"}
+{"id":"negative-1","kind":"negative","input":"unknown product","expected":"reject"}
+{"id":"negative-2","kind":"negative","input":"unpublished product","expected":"reject"}
+{"id":"negative-3","kind":"negative","input":"cross tenant product","expected":"reject"}

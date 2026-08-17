@@ -732,6 +732,44 @@ async def _enabled_product_ids(db: Any, user_id: str) -> list[str]:
         return []
 
 
+async def _build_products_for_scoring(
+    db: Any,
+    user_id: str,
+    product_ids: list[str],
+) -> list[dict]:
+    """按冻结产品 ID 构建评分候选（含全局 + 用户级产品）。
+
+    仅返回目录/用户知识中实际存在的产品，供评分阶段逐产品构建知识上下文。
+    """
+    if not product_ids:
+        return []
+    from agent.product_catalog import _PRODUCTS
+
+    global_products = {
+        p.product_id: p.name
+        for p in _PRODUCTS
+        if p.product_id in product_ids
+    }
+    user_map: dict[str, str] = {}
+    try:
+        docs = await db["user_products"].find(
+            {
+                "user_id": user_id,
+                "product_id": {"$in": product_ids},
+                "enabled": True,
+            }
+        ).to_list(length=100)
+        user_map = {str(d.get("product_id") or ""): str(d.get("name") or "") for d in docs}
+    except Exception:
+        logger.warning("[pipeline] load user products for scoring failed")
+    all_products = {**global_products, **user_map}
+    return [
+        {"product_id": pid, "product_name": all_products[pid]}
+        for pid in product_ids
+        if all_products.get(pid)
+    ]
+
+
 async def _build_input_snapshot(db: Any, user_id: str) -> str:
     """从当前数据组装输入快照指纹（产品集合 + 待处理文章集合）。
 
@@ -1933,6 +1971,7 @@ async def run_v2_single(
     selected_product_ids: list[str] | None = None
     product_relevance_enabled: bool | None = None
     force_generate: bool = False
+    draft_variants = get_settings().SINGLE_ARTICLE_DRAFT_VARIANTS
     try:
         body = await request.json()
         if isinstance(body, dict):
@@ -1941,6 +1980,21 @@ async def run_v2_single(
             selected_product_ids = body.get("selected_product_ids")
             product_relevance_enabled = body.get("product_relevance_enabled")
             force_generate = body.get("force_generate", False)
+            if "draft_variants" in body:
+                raw_variants = body["draft_variants"]
+                if isinstance(raw_variants, bool) or not isinstance(raw_variants, int):
+                    raise HTTPException(
+                        status_code=422,
+                        detail="draft_variants must be an integer between 1 and 4",
+                    )
+                if not 1 <= raw_variants <= 4:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="draft_variants must be between 1 and 4",
+                    )
+                draft_variants = raw_variants
+    except HTTPException:
+        raise
     except Exception:
         pass
 
@@ -1959,13 +2013,13 @@ async def run_v2_single(
     task_update: dict = {}
     if reference_template and reference_template.strip():
         task_update["reference_template"] = reference_template.strip()[:15000]
-    if product_target_mode or selected_product_ids or product_relevance_enabled is not None:
-        task_update["generation_options"] = {
-            "product_target_mode": product_target_mode,
-            "selected_product_ids": selected_product_ids or [],
-            "product_relevance_enabled": product_relevance_enabled,
-            "force_generate": force_generate,
-        }
+    task_update["generation_options"] = {
+        "product_target_mode": product_target_mode,
+        "selected_product_ids": selected_product_ids or [],
+        "product_relevance_enabled": product_relevance_enabled,
+        "force_generate": force_generate,
+        "draft_variants": draft_variants,
+    }
     if task_update:
         await db["pipeline_tasks"].update_one(
             {"task_id": task["task_id"]},
@@ -2100,6 +2154,42 @@ async def _run_v2_single_workflow(
     )
 
     if is_pr_eligible:
+        # 阶段2 S2-1/S2-3：冻结产品路由（selected/auto/none 统一解析）
+        from agent.product_routing import ProductRoutingService
+        from models.generation_config import ProductTargetMode
+
+        task_doc_for_routing = (
+            await db["pipeline_tasks"].find_one({"task_id": task_id})
+            if task_id
+            else None
+        )
+        gen_opts = (task_doc_for_routing or {}).get("generation_options", {})
+        raw_mode = gen_opts.get("product_target_mode") or "auto"
+        try:
+            routing_mode = ProductTargetMode(raw_mode)
+        except Exception:
+            routing_mode = ProductTargetMode.AUTO
+        selected_ids = list(gen_opts.get("selected_product_ids") or [])
+        user_products_for_routing = None
+        if get_settings().USER_KNOWLEDGE_ENABLED:
+            try:
+                from agent.knowledge_merger import KnowledgeMerger
+
+                user_products_for_routing = (
+                    await KnowledgeMerger(db).get_user_products_for_matching(user_id)
+                )
+            except Exception as exc:
+                log.warning("[run-v2-single] load user products failed: %s", exc)
+        routing_snapshot = await ProductRoutingService().resolve(
+            dict(article),
+            routing_mode,
+            selected_ids,
+            user_id,
+            user_products=user_products_for_routing,
+        )
+        frozen_product_ids = list(routing_snapshot.product_ids)
+        frozen_mode = routing_mode.value
+
         score_started = time.perf_counter()
         await update_progress("score", 1, "正在评估文章...")
         await log_pipeline(
@@ -2128,11 +2218,16 @@ async def _run_v2_single_workflow(
                 }
                 score_skipped = True
             else:
+                # 阶段2 S2-2：评分使用冻结的产品候选（逐产品构建评分知识上下文）
+                products_for_scoring = await _build_products_for_scoring(
+                    db, user_id, frozen_product_ids
+                )
                 scores = await scorer.score_single(
                     dict(article),
                     user_id=user_id,
                     trace_id=trace_id,
                     task_id=task_id,
+                    products=products_for_scoring or None,
                 )
                 score_skipped = False
                 await db["articles"].update_one(
@@ -2143,6 +2238,8 @@ async def _run_v2_single_workflow(
                             "event_impact": scores["event_impact"],
                             "pr_total_score": scores["pr_total_score"],
                             "score_reason": scores.get("score_reason", ""),
+                            "product_scores": scores.get("product_scores", []),
+                            "best_product_id": scores.get("best_product_id", ""),
                         }
                     },
                 )
@@ -2198,6 +2295,18 @@ async def _run_v2_single_workflow(
                 if draft_gen:
                     from api.user_prompts import DRAFT_SYSTEM_PROMPT_KEY, get_effective_prompt
 
+                    task_doc = (
+                        await db["pipeline_tasks"].find_one({"task_id": task_id})
+                        if task_id
+                        else None
+                    )
+                    gen_opts = (task_doc or {}).get("generation_options", {})
+                    draft_variants = int(
+                        gen_opts.get(
+                            "draft_variants",
+                            get_settings().SINGLE_ARTICLE_DRAFT_VARIANTS,
+                        )
+                    )
                     style_hints = await load_style_hints(db, user_id)
                     system_prompt_template = None
                     try:
@@ -2288,23 +2397,22 @@ async def _run_v2_single_workflow(
                         )
                         mode = bridge.effective_mode(user_id)
 
-                        # 读取任务的 generation_options（新旧路径共用）
-                        task_doc = (
-                            await db["pipeline_tasks"].find_one({"task_id": task_id})
-                            if task_id
-                            else None
-                        )
-                        gen_opts = (task_doc or {}).get("generation_options", {})
-                        task_product_ids = gen_opts.get("selected_product_ids", [])
-                        task_mode = gen_opts.get("product_target_mode", "auto")
+                        # 阶段2 S2-3：草稿使用冻结的路由产品（selected > auto > best_product）
+                        task_product_ids = list(frozen_product_ids)
+                        task_mode = frozen_mode
 
                         if mode != "off" and task_mode != "none":
                             # 新路径：ContextManager 构建 draft ContextPlan
+                            from agent.context_queries import build_draft_query
+
                             result = await bridge.build_plan(
                                 purpose="draft",
                                 user_id=user_id,
                                 products=task_product_ids if task_product_ids else None,
+                                query=build_draft_query(dict(article)),
                                 model_id=settings.DEEPSEEK_MODEL,
+                                task_id=task_id,
+                                trace_id=trace_id,
                             )
                             if result is not None:
                                 draft_context_meta = result.telemetry
@@ -2349,12 +2457,15 @@ async def _run_v2_single_workflow(
                         reference_template=reference_template,
                         memory_pack=memory_pack,
                         knowledge_slice=knowledge_slice_content,
+                        max_drafts=draft_variants,
                     )
+                    generation_metrics = drafts.get("metrics", {})
                     result["steps"].append(
                         {
                             "phase": "draft",
                             "draft_count": len(drafts["drafts"]),
                             "templates": list({draft["template"] for draft in drafts["drafts"]}),
+                            "metrics": generation_metrics,
                         }
                     )
                     log.info("[run-v2-single] Drafts: %s generated", len(drafts["drafts"]))
@@ -2382,8 +2493,10 @@ async def _run_v2_single_workflow(
                         detail={
                             "article_url_hash": url_hash,
                             "draft_count": len(drafts["drafts"]),
+                            "draft_variants": draft_variants,
                             "templates": list({draft["template"] for draft in drafts["drafts"]}),
                             "style_hints_used": bool(style_hints),
+                            "generation_metrics": generation_metrics,
                         },
                     )
 
@@ -2441,10 +2554,32 @@ async def _run_v2_single_workflow(
                             draft["review"] = review.model_dump(mode="json")
 
                         now = datetime.now(UTC)
+                        # 阶段2 S2-5：草稿保存产品与知识路由元数据
+                        routing_meta = {
+                            "resolved_products": [
+                                rp.model_dump() for rp in routing_snapshot.resolved_products
+                            ],
+                            "routing_version": routing_snapshot.routing_version,
+                            "knowledge_index_version": (
+                                draft_context_meta.get("knowledge_snapshot", "")
+                                if draft_context_meta
+                                else ""
+                            ),
+                            "knowledge_source_ids": (
+                                draft_context_meta.get("source_ids", [])
+                                if draft_context_meta
+                                else []
+                            ),
+                            "knowledge_fallback": None,
+                        }
                         await db["user_drafts"].update_one(
                             {"user_id": user_id, "article_url_hash": url_hash},
                             {
-                                "$set": {"drafts": drafts["drafts"], "updated_at": now},
+                                "$set": {
+                                    "drafts": drafts["drafts"],
+                                    "routing_meta": routing_meta,
+                                    "updated_at": now,
+                                },
                                 "$setOnInsert": {"created_at": now},
                             },
                             upsert=True,

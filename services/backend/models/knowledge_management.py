@@ -165,6 +165,7 @@ class KnowledgePublicationInDB(BaseModel):
     validation: KnowledgeValidationResult = Field(default_factory=KnowledgeValidationResult)
     knowledge_hash_before: str = Field(default="", description="发布前知识库联合哈希")
     knowledge_hash_after: str = Field(default="", description="发布后知识库联合哈希")
+    index_version: str = Field(default="", description="发布后知识索引版本")
     rollback_of: str | None = Field(default=None, description="回滚目标发布 ID")
     published_by: str = Field(description="发布者 user_id")
     published_at: datetime | None = Field(default=None, description="发布完成时间")
@@ -187,6 +188,7 @@ class KnowledgePublicationResponse(BaseModel):
     validation: KnowledgeValidationResult
     knowledge_hash_before: str = ""
     knowledge_hash_after: str = ""
+    index_version: str = ""
     rollback_of: str | None = None
     published_by: str
     published_at: datetime | None

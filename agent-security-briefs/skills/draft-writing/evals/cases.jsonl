@@ -1,0 +1,10 @@
+{"id":"positive-1","kind":"positive","input":"known article draft","expected":"immutable artifact"}
+{"id":"positive-2","kind":"positive","input":"default template","expected":"complete structure"}
+{"id":"positive-3","kind":"positive","input":"explicit angle","expected":"angle followed"}
+{"id":"positive-4","kind":"positive","input":"multiple products","expected":"supported claims"}
+{"id":"boundary-1","kind":"boundary","input":"minimum length","expected":"nonempty draft"}
+{"id":"boundary-2","kind":"boundary","input":"knowledge missing","expected":"assumption visible"}
+{"id":"boundary-3","kind":"boundary","input":"duplicate request","expected":"same artifact"}
+{"id":"negative-1","kind":"negative","input":"invent customer","expected":"reject claim"}
+{"id":"negative-2","kind":"negative","input":"overwrite version","expected":"reject"}
+{"id":"negative-3","kind":"negative","input":"publish now","expected":"reject"}

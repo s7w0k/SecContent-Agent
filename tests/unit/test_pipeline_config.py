@@ -84,6 +84,81 @@ class TestPipelineConfigFreezer:
 
         assert snapshot.force_generate is True
 
+    @pytest.mark.asyncio
+    async def test_freeze_selected_routes_and_records_version(self):
+        """阶段2 S2-1：selected 模式冻结路由、写入 routing_version，不触发 fallback。"""
+        mock_db = AsyncMock()
+        mock_db["user_generation_preferences"].find_one = AsyncMock(return_value=None)
+        mock_db["user_prompts"].find_one = AsyncMock(return_value=None)
+        mock_db["user_prompt_versions"].find_one = AsyncMock(return_value=None)
+
+        resolver = MagicMock()
+        resolver._db = mock_db
+        resolver.freeze_many = AsyncMock(return_value=[])
+
+        freezer = PipelineConfigFreezer(resolver)
+        snapshot = await freezer.freeze(
+            user_id="u-1",
+            options=GenerationOptions(
+                product_target_mode=ProductTargetMode.SELECTED,
+                selected_product_ids=["ai-bom"],
+            ),
+        )
+
+        assert snapshot.product_target_mode == ProductTargetMode.SELECTED
+        assert [p["product_id"] for p in snapshot.resolved_products] == ["ai-bom"]
+        assert snapshot.routing is not None
+        assert snapshot.routing.mode == "selected"
+        assert snapshot.routing_version
+        assert snapshot.knowledge_fallback is None
+
+    @pytest.mark.asyncio
+    async def test_freeze_auto_with_article_routes_and_records_version(self):
+        """阶段2 S2-1：auto 模式有文章时立即解析并冻结路由。"""
+        mock_db = AsyncMock()
+        mock_db["user_generation_preferences"].find_one = AsyncMock(return_value=None)
+        mock_db["user_prompts"].find_one = AsyncMock(return_value=None)
+        mock_db["user_prompt_versions"].find_one = AsyncMock(return_value=None)
+
+        resolver = MagicMock()
+        resolver._db = mock_db
+        resolver.freeze_many = AsyncMock(return_value=[])
+
+        freezer = PipelineConfigFreezer(resolver)
+        snapshot = await freezer.freeze(
+            user_id="u-1",
+            options=GenerationOptions(product_target_mode=ProductTargetMode.AUTO),
+            article={"title": "AI-BOM 资产盘点", "summary_cn": "AI 资产台账登记与风险跟踪"},
+        )
+
+        assert snapshot.routing is not None
+        assert snapshot.routing.mode == "auto"
+        assert next(p["product_id"] for p in snapshot.resolved_products) == "ai-bom"
+        assert snapshot.routing_version
+        assert snapshot.knowledge_fallback is None
+
+    @pytest.mark.asyncio
+    async def test_freeze_auto_no_match_sets_fallback(self):
+        """阶段2 S2-1：auto 无命中时冻结空列表并记录 product_unresolved fallback。"""
+        mock_db = AsyncMock()
+        mock_db["user_generation_preferences"].find_one = AsyncMock(return_value=None)
+        mock_db["user_prompts"].find_one = AsyncMock(return_value=None)
+        mock_db["user_prompt_versions"].find_one = AsyncMock(return_value=None)
+
+        resolver = MagicMock()
+        resolver._db = mock_db
+        resolver.freeze_many = AsyncMock(return_value=[])
+
+        freezer = PipelineConfigFreezer(resolver)
+        snapshot = await freezer.freeze(
+            user_id="u-1",
+            options=GenerationOptions(product_target_mode=ProductTargetMode.AUTO),
+            article={},
+        )
+
+        assert snapshot.resolved_products == []
+        assert snapshot.knowledge_fallback == "product_unresolved"
+
 
 class TestDraftGeneratorKnowledgeSlice:
     """DraftGenerator 知识切片接入测试。"""

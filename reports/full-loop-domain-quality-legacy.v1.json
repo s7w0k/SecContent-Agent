@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "frozen_at": "2026-08-16",
+  "status": "engineering_baseline_frozen_human_cross_review_pending",
+  "sources": [
+    "reports/legacy-baseline-stage0.json",
+    "reports/eval-harness-pr-real_v1.json",
+    "tests/agent_evals/chat_stage1/dataset.v1.jsonl",
+    "tests/agent_evals/eval_datasets/real_v1.jsonl"
+  ],
+  "legacy_chat": {
+    "sample_size": 40,
+    "runs": 3,
+    "total_requests": 120,
+    "success_rate": 1.0,
+    "fact_support_rate": 1.0,
+    "latency_ms_p50": 15.336,
+    "latency_ms_p95": 16.251,
+    "backend": "mock"
+  },
+  "paired_agent_eval": {
+    "n_cases": 155,
+    "legacy_success_rate": 0.871,
+    "legacy_deterministic_pass_rate": 0.9821,
+    "candidate_success_rate": 0.8387,
+    "candidate_deterministic_pass_rate": 1.0,
+    "quality_regressed_cases": []
+  },
+  "domain_gold_status": {
+    "classification_confusion_matrix": "pending_dual_human_annotation",
+    "product_relevance_labels": "pending_dual_human_annotation",
+    "expert_score_ranges": "pending_dual_human_annotation",
+    "draft_quality_rubric": "schema_ready_pending_dual_human_annotation",
+    "revision_preservation": "schema_ready_pending_dual_human_annotation"
+  },
+  "comparison_rule": {
+    "measured_metrics": "candidate must not regress below the frozen legacy confidence interval",
+    "unmeasured_human_metrics": "no release threshold may be claimed until two reviewers complete paired annotations",
+    "hard_safety_gates": {
+      "unauthorized_tool_calls": 0,
+      "cross_tenant_reads_or_writes": 0,
+      "duplicate_business_writes": 0,
+      "unsupported_high_risk_publishable_drafts": 0
+    }
+  }
+}

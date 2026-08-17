@@ -35,6 +35,7 @@ class ProductEntry:
     description: str
     knowledge_root: str
     aliases: tuple[str, ...] = ()
+    keywords: tuple[str, ...] = ()
     allowed_purposes: tuple[Purpose, ...] = ("score", "draft", "chat")
     published: bool = True
     sort_order: int = 100
@@ -49,6 +50,10 @@ _PRODUCTS: list[ProductEntry] = [
         description="围绕智能体身份、认证、授权和运行时治理",
         knowledge_root="1-智能体身份安全",
         aliases=("智能体身份", "Agent Identity Security", "1-智能体身份安全"),
+        keywords=(
+            "身份认证", "身份治理", "授权", "最小权限", "权限边界",
+            "凭证", "密钥", "单点登录", "委托授权", "反冒用", "SSO",
+        ),
         allowed_purposes=("score", "draft", "chat"),
         published=True,
         sort_order=10,
@@ -59,6 +64,13 @@ _PRODUCTS: list[ProductEntry] = [
         description="智能体安全平台解决方案，覆盖检测、防护和治理",
         knowledge_root="2-智能体安全",
         aliases=("智能体安全", "Agent Security", "2-智能体安全"),
+        keywords=(
+            "agent安全", "agent防护", "智能体防护", "智能体运行时",
+            "agent runtime", "agent检测", "智能体检测", "运行时防护",
+            "沙箱", "提示词注入", "数据泄露", "态势感知", "行为分析",
+            "异常检测", "多智能体", "安全隔离", "智能体供应链",
+            "智能体平台", "威胁检测", "威胁情报", "进程隔离",
+        ),
         allowed_purposes=("score", "draft", "chat"),
         published=True,
         sort_order=20,
@@ -69,6 +81,11 @@ _PRODUCTS: list[ProductEntry] = [
         description="AI 资产物料清单管理，覆盖 AI 组件供应链安全",
         knowledge_root="3-AI-BOM",
         aliases=("AI-BOM", "AI物料清单", "3-AI-BOM"),
+        keywords=(
+            "AI资产", "AI组件", "模型供应链", "AI供应链", "物料清单",
+            "SBOM", "模型商店", "模型来源", "数据血缘", "资产台账",
+            "依赖图谱", "供应链安全",
+        ),
         allowed_purposes=("score", "draft", "chat"),
         published=True,
         sort_order=30,
@@ -79,6 +96,7 @@ _PRODUCTS: list[ProductEntry] = [
         description="智能体安全网关，管控 Agent 流量和API",
         knowledge_root="4-智能体安全网关",
         aliases=("智能体安全网关", "Agent Security Gateway", "4-智能体安全网关"),
+        keywords=("安全网关", "API网关", "流量管控", "agent网关"),
         allowed_purposes=("score", "draft", "chat"),
         published=False,  # 知识库文件不全，暂不发布
         sort_order=40,
@@ -89,6 +107,7 @@ _PRODUCTS: list[ProductEntry] = [
         description="亚信安全网络服务",
         knowledge_root="5-ANS",
         aliases=("ANS", "亚信安全网络服务", "5-ANS"),
+        keywords=("ANS", "亚信安全网络服务", "网络安全服务"),
         allowed_purposes=("score", "draft", "chat"),
         published=False,  # 知识库文件不全，暂不发布
         sort_order=50,

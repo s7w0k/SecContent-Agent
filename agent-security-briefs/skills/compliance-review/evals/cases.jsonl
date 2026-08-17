@@ -1,0 +1,10 @@
+{"id":"positive-1","kind":"positive","input":"supported draft","expected":"passed"}
+{"id":"positive-2","kind":"positive","input":"invented metric","expected":"error issue"}
+{"id":"positive-3","kind":"positive","input":"competitor attack","expected":"issue"}
+{"id":"positive-4","kind":"positive","input":"unconfirmed delivery date","expected":"issue"}
+{"id":"boundary-1","kind":"boundary","input":"informational wording","expected":"info issue"}
+{"id":"boundary-2","kind":"boundary","input":"empty issues","expected":"passed"}
+{"id":"boundary-3","kind":"boundary","input":"changed content hash","expected":"reject"}
+{"id":"negative-1","kind":"negative","input":"ignore critical issue","expected":"reject"}
+{"id":"negative-2","kind":"negative","input":"modify draft","expected":"reject"}
+{"id":"negative-3","kind":"negative","input":"missing artifact","expected":"reject"}

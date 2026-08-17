@@ -1,0 +1,403 @@
+{
+  "stage": "phase0",
+  "schema_version": "1.0",
+  "dataset_version": "doc-ranking",
+  "generated_at": "2026-08-13T07:25:14.615599+00:00",
+  "corpus": "agent-security-briefs",
+  "total": 9,
+  "ks": [
+    1,
+    3,
+    5
+  ],
+  "metrics": {
+    "recall": {
+      "@1": 0.7777777777777778,
+      "@3": 0.8888888888888888,
+      "@5": 1.0
+    },
+    "precision": {
+      "@1": 0.7777777777777778,
+      "@3": 0.2962962962962963,
+      "@5": 0.2
+    },
+    "ndcg": {
+      "@1": 0.7777777777777778,
+      "@3": 0.847881083730162,
+      "@5": 0.8957340346272056
+    },
+    "hit_rate": {
+      "@1": 0.7777777777777778,
+      "@3": 0.8888888888888888,
+      "@5": 1.0
+    },
+    "mrr": 0.8611111111111112
+  },
+  "target_in_top5": 1.0,
+  "gates": {
+    "recall@3": {
+      "pass": true,
+      "value": 0.8888888888888888,
+      "threshold": "≥50%"
+    },
+    "mrr": {
+      "pass": true,
+      "value": 0.8611111111111112,
+      "threshold": "≥0.5"
+    },
+    "ndcg@3": {
+      "pass": true,
+      "value": 0.847881083730162,
+      "threshold": "≥50%"
+    },
+    "hit@3": {
+      "pass": true,
+      "value": 0.8888888888888888,
+      "threshold": "≥60%"
+    }
+  },
+  "results": [
+    {
+      "query": "智能体身份安全 · 市场 PR 材料 身份认证 身份治理 授权",
+      "relevant_doc_id": "doc:d4899b2c62cc2de5",
+      "product_id": "agent-identity-security",
+      "doc_type": "market-brief",
+      "title": "智能体身份安全 · 市场 PR 材料",
+      "rank": 1,
+      "ranked_docs": [
+        "doc:d4899b2c62cc2de5",
+        "doc:39b617035bfa36a0",
+        "doc:429f174452cd2b43",
+        "doc:2d2b51ed87e55a5b",
+        "doc:be3557809503f6cf"
+      ],
+      "metrics": {
+        "recall": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        },
+        "precision": {
+          "@1": 1.0,
+          "@3": 0.3333333333333333,
+          "@5": 0.2
+        },
+        "mrr": 1.0,
+        "ndcg": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        },
+        "hit_rate": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        }
+      }
+    },
+    {
+      "query": "智能体身份安全 身份认证 身份治理 授权",
+      "relevant_doc_id": "doc:be3557809503f6cf",
+      "product_id": "agent-identity-security",
+      "doc_type": "overview",
+      "title": "智能体身份安全",
+      "rank": 2,
+      "ranked_docs": [
+        "doc:d4899b2c62cc2de5",
+        "doc:be3557809503f6cf",
+        "doc:39b617035bfa36a0",
+        "doc:edbb4dc47fbb3389",
+        "doc:7bdfc872be593c54"
+      ],
+      "metrics": {
+        "recall": {
+          "@1": 0.0,
+          "@3": 1.0,
+          "@5": 1.0
+        },
+        "precision": {
+          "@1": 0.0,
+          "@3": 0.3333333333333333,
+          "@5": 0.2
+        },
+        "mrr": 0.5,
+        "ndcg": {
+          "@1": 0.0,
+          "@3": 0.6309297535714575,
+          "@5": 0.6309297535714575
+        },
+        "hit_rate": {
+          "@1": 0.0,
+          "@3": 1.0,
+          "@5": 1.0
+        }
+      }
+    },
+    {
+      "query": "智能体身份安全 · 售前材料 身份认证 身份治理 授权",
+      "relevant_doc_id": "doc:39b617035bfa36a0",
+      "product_id": "agent-identity-security",
+      "doc_type": "sales-brief",
+      "title": "智能体身份安全 · 售前材料",
+      "rank": 1,
+      "ranked_docs": [
+        "doc:39b617035bfa36a0",
+        "doc:d4899b2c62cc2de5",
+        "doc:be3557809503f6cf",
+        "doc:ec985b1c3c4368ac",
+        "doc:dafabd510d56d75c"
+      ],
+      "metrics": {
+        "recall": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        },
+        "precision": {
+          "@1": 1.0,
+          "@3": 0.3333333333333333,
+          "@5": 0.2
+        },
+        "mrr": 1.0,
+        "ndcg": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        },
+        "hit_rate": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        }
+      }
+    },
+    {
+      "query": "智能体安全 · 市场 PR 材料 agent安全 agent防护 智能体防护",
+      "relevant_doc_id": "doc:429f174452cd2b43",
+      "product_id": "agent-security",
+      "doc_type": "market-brief",
+      "title": "智能体安全 · 市场 PR 材料",
+      "rank": 1,
+      "ranked_docs": [
+        "doc:429f174452cd2b43",
+        "doc:ec985b1c3c4368ac",
+        "doc:d4899b2c62cc2de5",
+        "doc:2d2b51ed87e55a5b",
+        "doc:178758d91dff828d"
+      ],
+      "metrics": {
+        "recall": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        },
+        "precision": {
+          "@1": 1.0,
+          "@3": 0.3333333333333333,
+          "@5": 0.2
+        },
+        "mrr": 1.0,
+        "ndcg": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        },
+        "hit_rate": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        }
+      }
+    },
+    {
+      "query": "智能体安全 agent安全 agent防护 智能体防护",
+      "relevant_doc_id": "doc:7bdfc872be593c54",
+      "product_id": "agent-security",
+      "doc_type": "overview",
+      "title": "智能体安全",
+      "rank": 4,
+      "ranked_docs": [
+        "doc:178758d91dff828d",
+        "doc:f4356aed93274204",
+        "doc:4ba6d0de91afec42",
+        "doc:7bdfc872be593c54",
+        "doc:429f174452cd2b43"
+      ],
+      "metrics": {
+        "recall": {
+          "@1": 0.0,
+          "@3": 0.0,
+          "@5": 1.0
+        },
+        "precision": {
+          "@1": 0.0,
+          "@3": 0.0,
+          "@5": 0.2
+        },
+        "mrr": 0.25,
+        "ndcg": {
+          "@1": 0.0,
+          "@3": 0.0,
+          "@5": 0.43067655807339306
+        },
+        "hit_rate": {
+          "@1": 0.0,
+          "@3": 0.0,
+          "@5": 1.0
+        }
+      }
+    },
+    {
+      "query": "智能体安全 · 售前材料 agent安全 agent防护 智能体防护",
+      "relevant_doc_id": "doc:ec985b1c3c4368ac",
+      "product_id": "agent-security",
+      "doc_type": "sales-brief",
+      "title": "智能体安全 · 售前材料",
+      "rank": 1,
+      "ranked_docs": [
+        "doc:ec985b1c3c4368ac",
+        "doc:429f174452cd2b43",
+        "doc:178758d91dff828d",
+        "doc:f4356aed93274204",
+        "doc:4ba6d0de91afec42"
+      ],
+      "metrics": {
+        "recall": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        },
+        "precision": {
+          "@1": 1.0,
+          "@3": 0.3333333333333333,
+          "@5": 0.2
+        },
+        "mrr": 1.0,
+        "ndcg": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        },
+        "hit_rate": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        }
+      }
+    },
+    {
+      "query": "AI-BOM · 市场 PR 材料 AI资产 AI组件 模型供应链",
+      "relevant_doc_id": "doc:2d2b51ed87e55a5b",
+      "product_id": "ai-bom",
+      "doc_type": "market-brief",
+      "title": "AI-BOM · 市场 PR 材料",
+      "rank": 1,
+      "ranked_docs": [
+        "doc:2d2b51ed87e55a5b",
+        "doc:dafabd510d56d75c",
+        "doc:f3b6e21dcaa7f6da",
+        "doc:429f174452cd2b43",
+        "doc:ec35516ab8f167a1"
+      ],
+      "metrics": {
+        "recall": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        },
+        "precision": {
+          "@1": 1.0,
+          "@3": 0.3333333333333333,
+          "@5": 0.2
+        },
+        "mrr": 1.0,
+        "ndcg": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        },
+        "hit_rate": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        }
+      }
+    },
+    {
+      "query": "AI-BOM · 人工智能物料清单资产管理 AI资产 AI组件 模型供应链",
+      "relevant_doc_id": "doc:f3b6e21dcaa7f6da",
+      "product_id": "ai-bom",
+      "doc_type": "overview",
+      "title": "AI-BOM · 人工智能物料清单资产管理",
+      "rank": 1,
+      "ranked_docs": [
+        "doc:f3b6e21dcaa7f6da",
+        "doc:2d2b51ed87e55a5b",
+        "doc:dafabd510d56d75c",
+        "doc:ec35516ab8f167a1",
+        "doc:27e658fc4bcf2263"
+      ],
+      "metrics": {
+        "recall": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        },
+        "precision": {
+          "@1": 1.0,
+          "@3": 0.3333333333333333,
+          "@5": 0.2
+        },
+        "mrr": 1.0,
+        "ndcg": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        },
+        "hit_rate": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        }
+      }
+    },
+    {
+      "query": "AI-BOM · 售前材料 AI资产 AI组件 模型供应链",
+      "relevant_doc_id": "doc:dafabd510d56d75c",
+      "product_id": "ai-bom",
+      "doc_type": "sales-brief",
+      "title": "AI-BOM · 售前材料",
+      "rank": 1,
+      "ranked_docs": [
+        "doc:dafabd510d56d75c",
+        "doc:f3b6e21dcaa7f6da",
+        "doc:2d2b51ed87e55a5b",
+        "doc:ec35516ab8f167a1",
+        "doc:27e658fc4bcf2263"
+      ],
+      "metrics": {
+        "recall": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        },
+        "precision": {
+          "@1": 1.0,
+          "@3": 0.3333333333333333,
+          "@5": 0.2
+        },
+        "mrr": 1.0,
+        "ndcg": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        },
+        "hit_rate": {
+          "@1": 1.0,
+          "@3": 1.0,
+          "@5": 1.0
+        }
+      }
+    }
+  ]
+}

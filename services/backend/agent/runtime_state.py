@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
+from agent.contracts.task import SlotState, TaskEnvelope
 from pydantic import BaseModel, ConfigDict, Field
 
 SCHEMA_VERSION = "1.0"
@@ -32,7 +33,10 @@ class RuntimeStatus(StrEnum):
     PENDING = "pending"
     PLANNING = "planning"
     RUNNING = "running"
+    WAITING_USER = "waiting_user"
     WAITING_APPROVAL = "waiting_approval"
+    RETRYING = "retrying"
+    DEGRADED = "degraded"
     CANCEL_REQUESTED = "cancel_requested"  # API 已请求取消，Runtime 在安全点停止
     COMPLETED = "completed"
     FAILED = "failed"
@@ -300,6 +304,16 @@ class ApprovalState(BaseModel):
     consumed_tokens: list[str] = Field(default_factory=list)
 
 
+class ArtifactReference(BaseModel):
+    """Immutable artifact pointer kept in runtime checkpoints."""
+
+    artifact_id: str = Field(..., min_length=1, max_length=100)
+    artifact_type: str = Field(default="", max_length=50)
+    version: int = Field(default=1, ge=1)
+    content_hash: str = Field(default="", max_length=100)
+    source_ids: list[str] = Field(default_factory=list, max_length=100)
+
+
 # ═══════════════════════════════════════════════════════════════
 # RuntimeState
 # ═══════════════════════════════════════════════════════════════
@@ -320,6 +334,13 @@ class RuntimeState(BaseModel):
     goal: str = ""
     acceptance_criteria: list[str] = Field(default_factory=list)
 
+    # Additive stage-1 conversation contract. Legacy callers may leave these empty.
+    task_envelope: TaskEnvelope | None = None
+    slot_states: dict[str, SlotState] = Field(default_factory=dict)
+    current_turn_id: str = ""
+    pending_questions: list[str] = Field(default_factory=list)
+    artifact_refs: list[ArtifactReference] = Field(default_factory=list)
+
     status: RuntimeStatus = RuntimeStatus.PENDING
     current_step: str = ""
     plan_version: int = 0
@@ -329,6 +350,9 @@ class RuntimeState(BaseModel):
     failed_steps: list[str] = Field(default_factory=list)
 
     tool_results: list[ToolResultRecord] = Field(default_factory=list)
+    # Bounded, normalized Tool observations. Large payloads are externalized by
+    # ObservationNormalizer, so checkpoints remain resumable without raw service responses.
+    normalized_observations: dict[str, dict[str, Any]] = Field(default_factory=dict)
     evidence: list[EvidenceRecord] = Field(default_factory=list)
     decision_summaries: list[DecisionSummary] = Field(default_factory=list)
 

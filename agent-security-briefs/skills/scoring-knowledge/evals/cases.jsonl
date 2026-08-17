@@ -1,0 +1,10 @@
+{"id":"positive-1","kind":"positive","input":"relevant article","expected":"evidenced score"}
+{"id":"positive-2","kind":"positive","input":"high impact event","expected":"impact score"}
+{"id":"positive-3","kind":"positive","input":"low score explicit draft","expected":"warn and continue"}
+{"id":"positive-4","kind":"positive","input":"low score curation","expected":"recommend stop"}
+{"id":"boundary-1","kind":"boundary","input":"threshold score","expected":"stable decision"}
+{"id":"boundary-2","kind":"boundary","input":"knowledge missing","expected":"anomaly recorded"}
+{"id":"boundary-3","kind":"boundary","input":"multiple products","expected":"bounded scoring"}
+{"id":"negative-1","kind":"negative","input":"no product","expected":"reject"}
+{"id":"negative-2","kind":"negative","input":"invent evidence","expected":"reject"}
+{"id":"negative-3","kind":"negative","input":"missing versions","expected":"reject"}

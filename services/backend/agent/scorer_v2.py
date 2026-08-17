@@ -217,6 +217,7 @@ class ScoringAgentV2:
         # 聚合结果
         product_scores = []
         max_relevance = 0
+        best_product_id = ""
         event_impact = 0
         best_reason = ""
         for r in results:
@@ -230,6 +231,7 @@ class ScoringAgentV2:
             })
             if r["relevance"] > max_relevance:
                 max_relevance = r["relevance"]
+                best_product_id = r["product_id"]
                 best_reason = r.get("reason", "")
             if r.get("event_impact", 0) > event_impact:
                 event_impact = r["event_impact"]
@@ -241,6 +243,7 @@ class ScoringAgentV2:
             "pr_total_score": pr_total,
             "score_reason": best_reason,
             "product_scores": product_scores,
+            "best_product_id": best_product_id,
             "is_pr_candidate": pr_total >= threshold,
             "pr_threshold": threshold,
             "threshold_adjustment": threshold_adjustment,
@@ -261,7 +264,12 @@ class ScoringAgentV2:
     ) -> dict:
         """对单个产品评分（一次 LLM 调用）。"""
         system_prompt, context_meta = await self._build_system_prompt_for_product(
-            product_id, product_name, user_id=user_id
+            product_id,
+            product_name,
+            user_id=user_id,
+            article=article,
+            task_id=task_id,
+            trace_id=trace_id,
         )
         user_prompt = self._build_user_prompt(article)
 
@@ -516,6 +524,9 @@ class ScoringAgentV2:
         product_name: str,
         *,
         user_id: str = "",
+        article: dict | None = None,
+        task_id: str = "",
+        trace_id: str = "",
     ) -> tuple[str, dict]:
         """按产品构建系统提示词。
 
@@ -526,6 +537,9 @@ class ScoringAgentV2:
 
         知识切片解析失败时回退到全局评分知识。
 
+        阶段3 S3-3/S3-4：通过 ContextBridge 统一入口，query 使用阶段化
+        build_score_query(article)；产品未解析时禁止回退全局产品知识。
+
         返回 (system_prompt, context_telemetry)。telemetry 含
         context_plan_hash/skill_versions/knowledge_snapshot/source_ids，
         供 LLM 日志记录；off/shadow 模式下内容仍走旧路径。
@@ -533,10 +547,21 @@ class ScoringAgentV2:
         knowledge_context = ""
         telemetry: dict = {}
         mode = "off"
+        # 阶段3 S3-4：跨产品回退开关（函数级导入，db 为 None 时也需可用）
+        try:
+            from agent.context_bridge import allow_global_product_fallback
+        except Exception:
+            def allow_global_product_fallback(_reason: str | None) -> bool:
+                return True
+
         if self.db is not None:
             try:
-                from agent.context_bridge import ContextBridge
+                from agent.context_bridge import (
+                    FALLBACK_CONTEXT_BUILD_FAILED,
+                    ContextBridge,
+                )
                 from agent.context_cache import get_context_cache
+                from agent.context_queries import build_score_query
 
                 try:
                     from config import get_settings
@@ -561,7 +586,10 @@ class ScoringAgentV2:
                         purpose="score",
                         user_id=user_id,
                         products=[product_id],
+                        query=build_score_query(article or {"title": product_name}),
                         model_id=(settings.DEEPSEEK_MODEL if settings else "deepseek-chat"),
+                        task_id=task_id,
+                        trace_id=trace_id,
                     )
                     if result is not None:
                         telemetry = result.telemetry
@@ -569,6 +597,7 @@ class ScoringAgentV2:
                         if mode == "active":
                             knowledge_context = result.plan.rendered()
             except Exception as exc:
+                telemetry.setdefault("fallback", FALLBACK_CONTEXT_BUILD_FAILED)
                 logger.warning(
                     "ContextManager build failed for product %s: %s", product_id, exc
                 )
@@ -598,7 +627,10 @@ class ScoringAgentV2:
                         "Knowledge slice resolve failed for product %s: %s", product_id, exc
                     )
 
-            if not knowledge_context:
+            # 阶段3 S3-4：评分阶段产品已（由调用方）解析，未命中时禁止回退跨产品全局知识
+            if not knowledge_context and allow_global_product_fallback(
+                telemetry.get("fallback")
+            ):
                 if hasattr(self.knowledge, "as_scoring_prompt"):
                     knowledge_context = self.knowledge.as_scoring_prompt()
                 elif hasattr(self.knowledge, "as_system_prompt"):

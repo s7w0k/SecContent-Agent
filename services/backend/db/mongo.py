@@ -824,6 +824,12 @@ class MongoDB:
                     name="idx_runtime_event_run_created",
                 ),
                 IndexModel(
+                    [("run_id", ASCENDING), ("deduplication_key", ASCENDING)],
+                    unique=True,
+                    partialFilterExpression={"deduplication_key": {"$gt": ""}},
+                    name="uq_runtime_event_dedup",
+                ),
+                IndexModel(
                     [("expires_at", ASCENDING)],
                     expireAfterSeconds=0,
                     name="ttl_runtime_events_expires",
@@ -858,6 +864,80 @@ class MongoDB:
                 IndexModel(
                     [("code_revision", ASCENDING)],
                     name="idx_manifest_code_revision",
+                ),
+            ],
+            # ── 全链路对话任务（阶段 1）：租户状态、CAS 与 TTL ─────────
+            "conversation_tasks": [
+                IndexModel(
+                    [("task_id", ASCENDING)],
+                    unique=True,
+                    name="uq_task_state_task_id",
+                ),
+                IndexModel(
+                    [
+                        ("tenant_id", ASCENDING),
+                        ("user_id", ASCENDING),
+                        ("thread_id", ASCENDING),
+                        ("updated_at", DESCENDING),
+                    ],
+                    name="idx_task_state_scope_thread_updated",
+                ),
+                IndexModel(
+                    [
+                        ("tenant_id", ASCENDING),
+                        ("user_id", ASCENDING),
+                        ("status", ASCENDING),
+                        ("updated_at", DESCENDING),
+                    ],
+                    name="idx_task_state_scope_active",
+                ),
+                IndexModel(
+                    [("expires_at", ASCENDING)],
+                    expireAfterSeconds=0,
+                    name="ttl_task_state_expires",
+                ),
+            ],
+            # ── 阶段 2 业务 Tool：不可变草稿版本与导出引用 ───────────
+            "agent_draft_artifacts": [
+                IndexModel(
+                    [
+                        ("tenant_id", ASCENDING),
+                        ("user_id", ASCENDING),
+                        ("artifact_id", ASCENDING),
+                    ],
+                    unique=True,
+                    name="uq_agent_artifact_scope_id",
+                ),
+                IndexModel(
+                    [("tenant_id", ASCENDING), ("tool_idempotency_key", ASCENDING)],
+                    unique=True,
+                    partialFilterExpression={"tool_idempotency_key": {"$gt": ""}},
+                    name="uq_agent_artifact_tool_idempotency",
+                ),
+                IndexModel(
+                    [
+                        ("tenant_id", ASCENDING),
+                        ("user_id", ASCENDING),
+                        ("parent_artifact_id", ASCENDING),
+                        ("version", ASCENDING),
+                    ],
+                    name="idx_agent_artifact_lineage",
+                ),
+            ],
+            "agent_draft_exports": [
+                IndexModel(
+                    [("tenant_id", ASCENDING), ("export_id", ASCENDING)],
+                    unique=True,
+                    name="uq_agent_export_scope_id",
+                ),
+                IndexModel(
+                    [
+                        ("tenant_id", ASCENDING),
+                        ("user_id", ASCENDING),
+                        ("artifact_id", ASCENDING),
+                        ("artifact_version", ASCENDING),
+                    ],
+                    name="idx_agent_export_artifact_version",
                 ),
             ],
             "runtime_leases": [

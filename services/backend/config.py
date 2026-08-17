@@ -570,11 +570,79 @@ class Settings(BaseSettings):
         default=8192,
         description="DeepSeek API 单次请求最大生成 token 数（推理模型需留足推理+输出空间）",
     )
+    DRAFT_MAX_OUTPUT_TOKENS: int = Field(
+        default=1800,
+        ge=256,
+        le=8192,
+        description="PR 草稿单次调用最大输出 token，避免沿用全局 8192 上限",
+    )
+    SINGLE_ARTICLE_DRAFT_VARIANTS: int = Field(
+        default=1,
+        ge=1,
+        le=4,
+        description="单篇生成默认版本数；用户可在请求中覆盖为 1~4",
+    )
 
     # ── 知识库 ───────────────────────────────────────
     KNOWLEDGE_BASE_DIR: str = Field(
         default="/app/docs",
         description="产品知识库文档目录",
+    )
+    KNOWLEDGE_INDEX_PATH: str = Field(
+        default="/app/docs/_index/kb-index.json",
+        description="轻量知识库 JSON 索引路径",
+    )
+    # 检索开关（阶段四仅建立索引，不改变 active 检索行为）
+    KNOWLEDGE_RETRIEVAL_ENABLED: bool = Field(
+        default=False,
+        description="总开关：启用内部文档检索（阶段五起启用）",
+    )
+    KNOWLEDGE_RETRIEVAL_SHADOW_ENABLED: bool = Field(
+        default=True,
+        description="影子开关：构建新上下文但 LLM 仍使用旧上下文",
+    )
+    KNOWLEDGE_RETRIEVAL_ROLLOUT_PERCENT: int = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="检索灰度百分比（0~100）",
+    )
+    KNOWLEDGE_LLM_RERANK_ENABLED: bool = Field(
+        default=False,
+        description="是否启用 LLM 文档重排（阶段八按评测启用）",
+    )
+    KNOWLEDGE_EMBEDDING_ENABLED: bool = Field(
+        default=False,
+        description="是否启用 embedding 召回（阶段八按评测启用）",
+    )
+    KNOWLEDGE_LLM_RERANK_TOP_N: int = Field(
+        default=12,
+        ge=1,
+        le=50,
+        description="LLM 文档重排只处理 BM25 Top-N 候选（阶段八 11.1）",
+    )
+    KNOWLEDGE_EMBEDDING_DIM: int = Field(
+        default=0,
+        ge=0,
+        description="embedding 向量维度（0 表示按首个向量自适应）",
+    )
+    KNOWLEDGE_EMBEDDING_WEIGHT: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="embedding 分数在混合排序中的权重（阶段八 11.3，默认 0 即不启用）",
+    )
+    KNOWLEDGE_MAX_OPTIONAL_DOCS: int = Field(
+        default=6,
+        ge=0,
+        le=20,
+        description="可选文档最大召回数",
+    )
+    KNOWLEDGE_MAX_EXPANDED_SECTIONS: int = Field(
+        default=2,
+        ge=0,
+        le=10,
+        description="每次最多展开的章节数",
     )
 
     # ── 流水线 ───────────────────────────────────────

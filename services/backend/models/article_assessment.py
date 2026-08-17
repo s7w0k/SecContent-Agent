@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from models.generation_config import ProductRoutingSnapshot
 from pydantic import BaseModel, Field
 
 
@@ -42,6 +43,8 @@ class ProductSnapshot(BaseModel):
     requested_product_ids: list[str] = Field(default_factory=list)
     resolved_products: list[dict[str, Any]] = Field(default_factory=list)
     knowledge_hash: str = ""
+    # 阶段0：用户级单篇评分同时保存路由快照副本或稳定引用
+    routing: ProductRoutingSnapshot | None = None
 
 
 class PromptRefSnapshot(BaseModel):

@@ -355,6 +355,9 @@ class TestMongoDBIndexes:
             "runtime_events",
             "runtime_approvals",
             "runtime_manifests",
+            "conversation_tasks",
+            "agent_draft_artifacts",
+            "agent_draft_exports",
             "runtime_leases",
             "event_outbox",
             "event_outbox_dead_letter",
@@ -397,9 +400,12 @@ class TestMongoDBIndexes:
         assert len(result["execution_step_ledger"]) == 6
         assert len(result["ledger_repair_queue"]) == 2
         assert len(result["runtime_runs"]) == 3
-        assert len(result["runtime_events"]) == 3
+        assert len(result["runtime_events"]) == 4
         assert len(result["runtime_approvals"]) == 3
         assert len(result["runtime_manifests"]) == 3
+        assert len(result["conversation_tasks"]) == 4
+        assert len(result["agent_draft_artifacts"]) == 3
+        assert len(result["agent_draft_exports"]) == 2
         assert len(result["runtime_leases"]) == 2
         assert len(result["event_outbox"]) == 3
         assert len(result["event_outbox_dead_letter"]) == 1
@@ -450,6 +456,24 @@ class TestMongoDBIndexes:
         }
         assert prompt_indexes["uq_user_prompt_key"]["unique"] is True
 
+        artifact_indexes = {
+            index.document["name"]: index.document
+            for index in collections["agent_draft_artifacts"].received_indexes
+        }
+        assert artifact_indexes["uq_agent_artifact_scope_id"]["unique"] is True
+        assert artifact_indexes["uq_agent_artifact_tool_idempotency"]["unique"] is True
+
+        export_indexes = {
+            index.document["name"]: index.document
+            for index in collections["agent_draft_exports"].received_indexes
+        }
+        assert list(export_indexes["idx_agent_export_artifact_version"]["key"].items()) == [
+            ("tenant_id", 1),
+            ("user_id", 1),
+            ("artifact_id", 1),
+            ("artifact_version", 1),
+        ]
+
         lock_indexes = {
             index.document["name"]: index.document
             for index in collections["pipeline_locks"].received_indexes
@@ -487,5 +511,5 @@ class TestMongoDBIndexes:
             second = await MongoDB.ensure_indexes()
 
         assert first == second
-        assert collection.create_indexes.await_count == 100
+        assert collection.create_indexes.await_count == 106
         assert collection.drop_index.await_count == 2

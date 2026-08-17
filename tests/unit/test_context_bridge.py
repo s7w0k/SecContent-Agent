@@ -22,7 +22,11 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "backend"))
 
 from agent.context_bridge import (
+    FALLBACK_CONTEXT_BUILD_FAILED,
+    FALLBACK_PRODUCT_UNRESOLVED,
+    FALLBACK_REQUIRED_KNOWLEDGE_MISSING,
     ContextBridge,
+    allow_global_product_fallback,
     context_mode,
     user_in_rollout,
 )
@@ -305,6 +309,115 @@ async def test_resolve_off_returns_none(tmp_path):
     )
     assert content is None
     assert telemetry == {"mode": "off"}
+
+
+# ═══════════════════════════════════════════════════════════════
+# 4. 阶段3 S3-1/S3-4/S3-5：统一请求 + fallback + telemetry
+# ═══════════════════════════════════════════════════════════════
+
+
+def test_allow_global_product_fallback_gate():
+    # 未指定原因 → 允许（兼容旧路径）
+    assert allow_global_product_fallback(None) is True
+    # 明确的无命中/知识缺失 → 禁止跨产品回退
+    assert allow_global_product_fallback(FALLBACK_PRODUCT_UNRESOLVED) is False
+    assert allow_global_product_fallback(FALLBACK_REQUIRED_KNOWLEDGE_MISSING) is False
+    # index/构建失败类 → 仍允许走全局兜底
+    assert allow_global_product_fallback(FALLBACK_CONTEXT_BUILD_FAILED) is True
+
+
+@pytest.mark.asyncio
+async def test_build_plan_threads_task_trace_and_telemetry(tmp_path):
+    """S3-1/S3-5：build_plan 透传 task_id/trace_id，telemetry 记录产品/来源/fallback。"""
+    bridge = _bridge(
+        tmp_path,
+        {
+            "KNOWLEDGE_SKILLS_ENABLED": True,
+            "KNOWLEDGE_SKILLS_ROLLOUT_PERCENT": 100,
+        },
+        db=_make_db(),
+    )
+    result = await bridge.build_plan(
+        purpose="score",
+        user_id="u-1",
+        products=["prod-1"],
+        model_id="deepseek-chat",
+        task_id="task-9",
+        trace_id="trace-9",
+    )
+    assert result is not None
+    telemetry = result.telemetry
+    assert telemetry["task_id"] == "task-9"
+    assert telemetry["trace_id"] == "trace-9"
+    assert telemetry["products"] == ["prod-1"]
+    assert telemetry["source"] == telemetry["source_ids"]
+    # fallback 默认 None（有来源时无回退）
+    assert telemetry["fallback"] is None
+    # request 溯源字段已写入 ContextRequest
+    assert result.plan.request.task_id == "task-9"
+    assert result.plan.request.trace_id == "trace-9"
+    # telemetry 不含知识全文
+    assert "外部攻击面发现与管理" not in str(telemetry)
+
+
+@pytest.mark.asyncio
+async def test_resolve_knowledge_threads_task_trace(tmp_path):
+    bridge = _bridge(
+        tmp_path,
+        {
+            "KNOWLEDGE_SKILLS_ENABLED": True,
+            "KNOWLEDGE_SKILLS_ROLLOUT_PERCENT": 100,
+        },
+        db=_make_db(),
+    )
+    content, telemetry = await bridge.resolve_knowledge(
+        purpose="score", user_id="u-1", products=["prod-1"], task_id="t1", trace_id="tr1"
+    )
+    assert content is not None
+    assert telemetry["task_id"] == "t1"
+    assert telemetry["trace_id"] == "tr1"
+
+
+# ═══════════════════════════════════════════════════════════════
+# 5. 阶段3 S3-2：阶段化 query 构造
+# ═══════════════════════════════════════════════════════════════
+
+
+def test_staged_query_builders():
+    from agent.context_queries import (
+        build_chat_query,
+        build_draft_query,
+        build_rewrite_query,
+        build_score_query,
+    )
+
+    article = {
+        "title": "新型身份认证漏洞",
+        "summary_cn": "发现绕过身份认证的 0day 利用方式",
+        "category_v2": "漏洞情报",
+    }
+    score_q = build_score_query(article)
+    assert "新型身份认证漏洞" in score_q
+    assert "绕过身份认证" in score_q
+    assert "漏洞情报" in score_q
+
+    draft_q = build_draft_query(article, template=None, perspective="威胁视角")
+    assert "威胁视角" in draft_q
+
+    rewrite_q = build_rewrite_query(article, draft={"title": "旧稿标题"}, issue="事实错误")
+    assert "旧稿标题" in rewrite_q
+    assert "事实错误" in rewrite_q
+
+    chat_q = build_chat_query("请改写结尾", article, {"title": "草稿标题"})
+    assert "请改写结尾" in chat_q
+
+
+def test_staged_query_truncates_long_input():
+    from agent.context_queries import build_score_query
+
+    long_article = {"title": "x" * 500, "summary_cn": "y" * 500}
+    q = build_score_query(long_article)
+    assert len(q) <= 400 + 1  # 上限 + 省略号
 
 
 @pytest.mark.asyncio

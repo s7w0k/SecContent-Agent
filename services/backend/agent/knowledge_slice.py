@@ -22,9 +22,12 @@ import hashlib
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from agent.product_catalog import ProductCatalogService
+
+if TYPE_CHECKING:
+    from agent.document_retriever import DocumentRetriever
 
 logger = logging.getLogger("backend.knowledge_slice")
 
@@ -64,6 +67,11 @@ class KnowledgeSlice:
     char_count: int = 0
     truncated: bool = False
     knowledge_missing: list[str] = field(default_factory=list)
+    # 阶段五 S5-6：自适应文档召回元信息
+    selected_document_ids: list[str] = field(default_factory=list)
+    expanded_section_ids: list[str] = field(default_factory=list)
+    retrieval_trace: dict | None = None
+    index_version: str = ""
 
 
 def _normalize_doc_type(doc_type: str | None) -> str:
@@ -91,11 +99,17 @@ class KnowledgeSliceResolver:
         knowledge_base_dir: str | Path = "/app/docs",
         max_chars: int = DEFAULT_MAX_CHARS,
         db=None,
+        retriever: DocumentRetriever | None = None,
+        max_optional_docs: int = 0,
+        section_expander: Any = None,
     ):
         self._catalog = ProductCatalogService(knowledge_base_dir)
         self._knowledge_base_dir = Path(knowledge_base_dir)
         self._max_chars = max_chars
         self._db = db
+        self._retriever = retriever
+        self._max_optional_docs = max_optional_docs
+        self._section_expander = section_expander
 
     async def resolve(
         self,
@@ -105,6 +119,9 @@ class KnowledgeSliceResolver:
         include_shared: bool = True,
         max_chars: int | None = None,
         user_id: str | None = None,
+        query: str = "",
+        index_version: str = "",
+        expand_section_ids: list[str] | None = None,
     ) -> KnowledgeSlice:
         """解析知识切片。
 
@@ -114,6 +131,9 @@ class KnowledgeSliceResolver:
             include_shared: 是否包含全局共享参考文件
             max_chars: 总字符预算
             user_id: 用户 ID（传入时合并用户级知识，严格按 user_id 隔离）
+            query: 检索查询（非空且配置 retriever 时启用自适应 optional/fallback 召回）
+            index_version: 期望的知识索引版本（用于追踪）
+            expand_section_ids: 需要展开的章节 ID 列表（fallback 章节摘要注入）
 
         Returns:
             KnowledgeSlice
@@ -123,6 +143,13 @@ class KnowledgeSliceResolver:
         source_docs: list[str] = []
         knowledge_missing: list[str] = []
         truncated = False
+        selected_document_ids: list[str] = []
+        expanded_section_ids: list[str] = []
+        retrieval_trace: dict | None = None
+        actual_index_version = index_version
+
+        # 是否启用自适应召回：仅当注入 retriever 且 query 非空
+        use_retrieval = self._retriever is not None and bool((query or "").strip())
 
         def _append(part: str, source: str) -> bool:
             """预算在追加前计算；返回 False 表示预算已满（调用方停止）。"""
@@ -164,6 +191,7 @@ class KnowledgeSliceResolver:
                         product.product_id, purpose
                     )
                     required_files = self._required_files_for_purpose(purpose)
+                    required_fname_set = set(required_files)
                     loaded_names = {fp.name for fp in file_paths}
                     for req in required_files:
                         if req not in loaded_names:
@@ -172,6 +200,9 @@ class KnowledgeSliceResolver:
                             )
 
                     for fp in file_paths:
+                        # 自适应召回开启时，optional 文件交给 retriever 选择注入
+                        if use_retrieval and fp.name not in required_fname_set:
+                            continue
                         content = self._read_file(fp)
                         if not content:
                             continue
@@ -188,6 +219,24 @@ class KnowledgeSliceResolver:
 
                     if truncated:
                         break
+
+            # 阶段五 S5-6：自适应 optional/fallback 召回注入
+            if use_retrieval and not truncated:
+                retrieval_trace, injected = self._retrieval_inject(
+                    purpose=purpose,
+                    user_id=user_id,
+                    product_ids=global_product_ids,
+                    query=query,
+                    include_shared=include_shared,
+                    expand_section_ids=expand_section_ids,
+                    append=_append,
+                )
+                if retrieval_trace is not None:
+                    actual_index_version = retrieval_trace.get("index_version") or index_version
+                selected_document_ids.extend(injected["selected_document_ids"])
+                expanded_section_ids.extend(injected["expanded_section_ids"])
+                if injected.get("truncated"):
+                    truncated = True
 
             # 解析用户产品知识（从 MongoDB 读取，按 purpose/doc_type 分层）
             if user_product_ids and not truncated:
@@ -291,7 +340,117 @@ class KnowledgeSliceResolver:
             char_count=len(content),
             truncated=truncated,
             knowledge_missing=knowledge_missing,
+            selected_document_ids=selected_document_ids,
+            expanded_section_ids=expanded_section_ids,
+            retrieval_trace=retrieval_trace,
+            index_version=actual_index_version,
         )
+
+    def _retrieval_inject(
+        self,
+        *,
+        purpose: Purpose,
+        user_id: str | None,
+        product_ids: list[str],
+        query: str,
+        include_shared: bool,
+        expand_section_ids: list[str] | None,
+        append,
+    ) -> tuple[dict | None, dict]:
+        """使用 DocumentRetriever 召回 optional/fallback 并注入。
+
+        - optional：注入 summary（携带 doc_id/title/source_path）
+        - fallback/raw：仅需 expand_section_ids 命中时注入章节摘要，否则返回候选提示
+        - 每块携带 doc_id/title/source_path；fallback 显式标注 needs_confirmation
+        """
+        retriever = self._retriever
+        max_optional = self._max_optional_docs or 6
+        from agent.document_retriever import RetrievalRequest, RetrievalResult
+
+        request = RetrievalRequest(
+            purpose=purpose,
+            user_id=user_id,
+            product_ids=product_ids,
+            query=query,
+            max_optional_docs=max_optional,
+            include_shared=include_shared,
+        )
+        try:
+            result: RetrievalResult = retriever.retrieve(request)
+        except Exception as exc:
+            logger.warning("DocumentRetriever retrieve failed: %s", exc)
+            return None, {"selected_document_ids": [], "expanded_section_ids": [], "truncated": False}
+
+        trace = result.trace.model_dump() if result.trace else None
+
+        selected: list[str] = []
+        expanded: list[str] = []
+        truncated = False
+
+        # optional 文档注入（summary）
+        for doc in result.optional_docs:
+            heading = f"### {doc.title}（可选·{doc.doc_type}）"
+            block = f"{heading}\n\n来源: {doc.relative_path}\ndoc_id: {doc.doc_id}\n\n{doc.excerpt}"
+            if not append(block, doc.relative_path):
+                truncated = True
+                break
+            selected.append(doc.doc_id)
+
+        # fallback/raw：按 expand_section_ids 展开章节正文（S6-3/S6-4）
+        if expand_section_ids:
+            expander = self._section_expander
+            for doc in result.fallback_candidates:
+                doc_section_ids = [
+                    s for s in expand_section_ids if s.startswith(doc.doc_id + ":")
+                ]
+                if doc.doc_id not in expand_section_ids and not doc_section_ids:
+                    continue
+                heading = f"### {doc.title}（原始文档候选·需确认）"
+                if expander is not None and doc_section_ids:
+                    # 阶段六：注入真实章节正文并渲染引用块
+                    from agent.fact_citation import render_citation
+
+                    bodies = expander.expand_sections(
+                        doc.doc_id,
+                        doc_section_ids,
+                        product_ids=product_ids,
+                        user_id=user_id,
+                        index_version=trace.get("index_version", "") if trace else "",
+                    )
+                    if bodies:
+                        parts = [
+                            f"{heading}\n\n来源: {doc.relative_path}\ndoc_id: {doc.doc_id}\n"
+                            + render_citation(
+                                b.doc_id,
+                                b.section_id,
+                                needs_confirmation=True,
+                                quote=b.content,
+                            )
+                            for b in bodies
+                        ]
+                        block = "\n\n".join(parts)
+                        if not append(block, doc.relative_path):
+                            truncated = True
+                            break
+                        selected.append(doc.doc_id)
+                        expanded.extend(doc_section_ids)
+                        continue
+                # 无 expander 或正文缺失：回退到章节摘要候选
+                block = (
+                    f"{heading}\n\n来源: {doc.relative_path}\ndoc_id: {doc.doc_id}\n"
+                    f"needs_confirmation: true\n\n{doc.excerpt}"
+                )
+                if not append(block, doc.relative_path):
+                    truncated = True
+                    break
+                selected.append(doc.doc_id)
+                expanded.extend(doc_section_ids)
+
+        return trace, {
+            "selected_document_ids": selected,
+            "expanded_section_ids": expanded,
+            "truncated": truncated,
+        }
 
     async def _resolve_user_product(
         self,

@@ -278,6 +278,7 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
           selected_product_ids: config.selected_product_ids,
           product_relevance_enabled: config.product_relevance_enabled,
           force_generate: config.force_generate,
+          draft_variants: config.draft_variants,
         });
         setDraftTask({ taskId: res.data.task_id, articleHash: article.url_hash });
         message.success({ content: '草稿任务已创建', key: 'v2single', duration: 2 });

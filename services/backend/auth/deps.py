@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 
@@ -33,6 +33,18 @@ async def get_current_user(request: Request) -> str:
     if not user_id:
         raise AuthError(401, "NOT_AUTHENTICATED", "请先登录")
     return user_id
+
+
+async def get_current_tenant(
+    request: Request,
+    user_id: str = Depends(get_current_user),
+) -> str:
+    """Return tenant context established by trusted auth middleware.
+
+    Deployments without a separate tenant claim remain isolated by user ID.
+    Client-supplied tenant headers must not define the authorization boundary.
+    """
+    return str(getattr(request.state, "tenant_id", "") or user_id)
 
 
 async def get_developer_user(request: Request) -> tuple[str, dict[str, Any]]:

@@ -577,3 +577,96 @@ class TestProductKnowledgeInjection:
         assert "GLOBAL_KNOWLEDGE_PLACEHOLDER" in prompt
         # off 模式（默认）不产生 telemetry
         assert context_meta == {}
+
+
+# ═══════════════════════════════════════════════════════════════
+# 8. 阶段2 S2-2：并发聚合 best_product_id 测试
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestScoreConcurrentBestProduct:
+    @pytest.mark.asyncio
+    async def test_concurrent_aggregation_sets_best_product_id(self):
+        """阶段2 S2-2：逐产品评分聚合后按 relevance 明确 best_product_id。"""
+        from agent.scorer_v2 import ScoringAgentV2
+
+        llm = MagicMock()
+        llm.temperature = None
+        knowledge = MagicMock()
+        knowledge.as_scoring_prompt.return_value = "GLOBAL_KNOWLEDGE_PLACEHOLDER"
+        scorer = ScoringAgentV2(llm=llm, knowledge=knowledge, db=None)
+
+        relevances = {"ai-bom": 70, "agent-security": 90}
+
+        async def fake_score(
+            article,
+            *,
+            product_id,
+            product_name,
+            threshold,
+            threshold_adjustment,
+            user_id,
+            trace_id,
+            task_id,
+        ):
+            return {
+                "product_id": product_id,
+                "product_name": product_name,
+                "relevance": relevances[product_id],
+                "event_impact": 20,
+                "reason": f"reason for {product_id}",
+                "_fallback": False,
+            }
+
+        scorer._score_single_product = fake_score
+
+        result = await scorer._score_concurrent(
+            {},
+            products=[
+                {"product_id": "ai-bom", "product_name": "AI-BOM"},
+                {"product_id": "agent-security", "product_name": "智能体安全"},
+            ],
+            threshold=80,
+        )
+
+        assert result["best_product_id"] == "agent-security"
+        assert result["product_relevance"] == 90
+        assert result["product_scores"][0]["product_id"] == "ai-bom"
+        assert result["product_scores"][1]["product_id"] == "agent-security"
+        assert result["_fallback"] is False
+
+    @pytest.mark.asyncio
+    async def test_concurrent_all_fallback_leaves_best_empty(self):
+        """阶段2 S2-2：所有产品回退时 product_scores 为空、best_product_id 为空。"""
+        from agent.scorer_v2 import ScoringAgentV2
+
+        llm = MagicMock()
+        llm.temperature = None
+        knowledge = MagicMock()
+        knowledge.as_scoring_prompt.return_value = "GLOBAL_KNOWLEDGE_PLACEHOLDER"
+        scorer = ScoringAgentV2(llm=llm, knowledge=knowledge, db=None)
+
+        async def fake_score(
+            article,
+            *,
+            product_id,
+            product_name,
+            threshold,
+            threshold_adjustment,
+            user_id,
+            trace_id,
+            task_id,
+        ):
+            return {"_fallback": True, "product_id": product_id}
+
+        scorer._score_single_product = fake_score
+
+        result = await scorer._score_concurrent(
+            {},
+            products=[{"product_id": "ai-bom", "product_name": "AI-BOM"}],
+            threshold=80,
+        )
+
+        assert result["product_scores"] == []
+        assert result["best_product_id"] == ""
+        assert result["_fallback"] is True

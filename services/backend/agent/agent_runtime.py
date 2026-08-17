@@ -311,6 +311,24 @@ class AgentRuntime:
         # ── PLAN：生成/修订结构化计划 ─────────────────────────
         action = await self.planner(state)
         if action is None:
+            pause_status = getattr(self.planner, "pause_status", None)
+            pause_reason = str(getattr(self.planner, "pause_reason", "") or "")
+            pause_code = str(getattr(self.planner, "pause_reason_code", "") or "")
+            if pause_status is not None:
+                state = state.model_copy(
+                    update={
+                        "pending_questions": list(
+                            getattr(self.planner, "pending_questions", ()) or ()
+                        )[:20]
+                    }
+                )
+                decision = TerminationDecision(
+                    stop=True,
+                    status=RuntimeStatus(pause_status),
+                    reason=pause_reason or "runtime paused for user input",
+                    reason_code=pause_code or "waiting_user",
+                )
+                return state, decision, phases
             state = self._record_decision(
                 state,
                 step_id=state.current_step,
@@ -753,6 +771,14 @@ class AgentRuntime:
         updated = state.model_copy(
             update={
                 "tool_results": tool_results,
+                "normalized_observations": {
+                    **state.normalized_observations,
+                    **(
+                        {action.step_id: result["normalized_observation"]}
+                        if isinstance(result.get("normalized_observation"), dict)
+                        else {}
+                    ),
+                },
                 "evidence": evidence,
                 "completed_steps": [*state.completed_steps, action.step_id]
                 if success

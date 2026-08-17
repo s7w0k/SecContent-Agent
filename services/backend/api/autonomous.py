@@ -23,7 +23,7 @@ import logging
 from typing import Any
 
 from agent.autonomous_service import AutonomousRunService
-from auth.deps import get_current_user
+from auth.deps import get_current_tenant, get_current_user
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -44,6 +44,17 @@ class CreateRunRequest(BaseModel):
     thread_id: str = Field(default="", max_length=100)
     tool_chain: list[str] | None = None
     max_steps: int | None = Field(default=None, ge=1, le=100)
+    initial_slots: dict[str, Any] = Field(default_factory=dict, max_length=20)
+
+
+class UserResponseRequest(BaseModel):
+    slot_values: dict[str, Any] = Field(default_factory=dict, max_length=20)
+    message: str = Field(default="", max_length=2000)
+    turn_id: str = Field(default="", max_length=100)
+
+    @property
+    def has_answer(self) -> bool:
+        return bool(self.slot_values or self.message.strip())
 
 
 class RunSummary(BaseModel):
@@ -58,6 +69,8 @@ class RunSummary(BaseModel):
     decision_count: int = 0
     budget_usage: dict[str, Any] = Field(default_factory=dict)
     pending_approvals: list[dict[str, Any]] = Field(default_factory=list)
+    pending_questions: list[str] = Field(default_factory=list)
+    result: dict[str, Any] = Field(default_factory=dict)
     decision_summaries: list[dict[str, Any]] = Field(default_factory=list)
     evidence: list[dict[str, Any]] = Field(default_factory=list)
     created_at: str = ""
@@ -67,6 +80,26 @@ class RunSummary(BaseModel):
 
 def _summarize(state) -> RunSummary:
     """脱敏摘要：不返回参数/提示词/推理链，仅返回决策摘要元数据。"""
+    observations = state.normalized_observations
+    discover = observations.get("discover", {}).get("data", {})
+    article = observations.get("article", {}).get("data", {}).get("article", {})
+    # Article content is intentionally excluded from the status payload.
+    article_summary = {
+        key: article.get(key)
+        for key in ("article_id", "source_ref", "content_hash", "title", "source", "published_at", "summary")
+        if article.get(key) not in (None, "")
+    }
+    draft = observations.get("draft", {}).get("data", {})
+    revision = observations.get("revise", {}).get("data", {})
+    result_view = {
+        "candidates": discover.get("items") or discover.get("articles") or [],
+        "article": article_summary,
+        "classification": observations.get("classify", {}).get("data", {}),
+        "products": observations.get("products", {}).get("data", {}),
+        "score": observations.get("score", {}).get("data", {}),
+        "artifact": draft.get("artifact") or revision.get("artifact") or {},
+        "review": observations.get("review", {}).get("data", {}) or revision.get("review", {}),
+    }
     return RunSummary(
         run_id=state.run_id,
         status=state.status.value,
@@ -98,6 +131,8 @@ def _summarize(state) -> RunSummary:
             }
             for a in state.approval_state.pending_approvals
         ],
+        pending_questions=list(state.pending_questions),
+        result=result_view,
         # 决策摘要（脱敏：不含参数原文/提示词/私有推理链），只取最近 20 条
         decision_summaries=[
             {
@@ -144,16 +179,19 @@ async def create_run(
     body: CreateRunRequest,
     request: Request,
     user_id: str = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
 ) -> RunSummary:
     service = _get_service(request)
     try:
         state = await service.create_run(
             user_id=user_id,
+            tenant_id=tenant_id,
             goal=body.goal,
             acceptance_criteria=body.acceptance_criteria,
             thread_id=body.thread_id,
             tool_chain=body.tool_chain,
             max_steps=body.max_steps,
+            initial_slots=body.initial_slots,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -226,6 +264,31 @@ async def cancel_run(
     if not await service.cancel_run(run_id, user_id):
         raise HTTPException(status_code=409, detail="run not cancelable")
     return {"run_id": run_id, "status": "cancel_requested"}
+
+
+@router.post("/runs/{run_id}/respond", summary="回答追问并从 checkpoint 继续")
+async def respond_to_run(
+    run_id: str,
+    body: UserResponseRequest,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+) -> RunSummary:
+    service = _get_service(request)
+    if not body.has_answer:
+        raise HTTPException(status_code=422, detail="response requires slot_values or message")
+    try:
+        state = await service.respond(
+            run_id,
+            user_id,
+            slot_values=body.slot_values,
+            message=body.message,
+            turn_id=body.turn_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if state is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    return _summarize(state)
 
 
 @router.post("/runs/{run_id}/resume", summary="恢复运行（审批后）")

@@ -17,6 +17,7 @@ export interface GenerationConfig {
   product_target_mode: 'none' | 'auto' | 'selected';
   selected_product_ids: string[];
   force_generate: boolean;
+  draft_variants: 1 | 2 | 4;
   reference_template?: string;
 }
 
@@ -42,6 +43,7 @@ export default function GenerationConfigModal({
   const [relevanceEnabled, setRelevanceEnabled] = useState(true);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [forceGenerate, setForceGenerate] = useState(false);
+  const [draftVariants, setDraftVariants] = useState<1 | 2 | 4>(1);
   const [templates, setTemplates] = useState<{ name: string; text: string }[]>([]);
   const [showBelowThresholdConfirm, setShowBelowThresholdConfirm] = useState(false);
 
@@ -79,6 +81,7 @@ export default function GenerationConfigModal({
       product_target_mode: mode,
       selected_product_ids: mode === 'selected' ? selectedIds : [],
       force_generate: forceGenerate,
+      draft_variants: draftVariants,
       reference_template: referenceTemplate,
     });
   };
@@ -89,6 +92,7 @@ export default function GenerationConfigModal({
     setRelevanceEnabled(true);
     setSelectedIds([]);
     setForceGenerate(false);
+    setDraftVariants(1);
     setTemplates([]);
     onCancel();
   };
@@ -173,6 +177,25 @@ export default function GenerationConfigModal({
             </Select>
           </div>
         )}
+
+        <div>
+          <Text strong style={{ display: 'block', marginBottom: 8 }}>
+            生成版本数
+          </Text>
+          <Radio.Group
+            value={draftVariants}
+            onChange={(event) => setDraftVariants(event.target.value)}
+            optionType="button"
+            buttonStyle="solid"
+          >
+            <Radio.Button value={1}>1 个首稿（推荐）</Radio.Button>
+            <Radio.Button value={2}>2 个备选</Radio.Button>
+            <Radio.Button value={4}>4 个全量</Radio.Button>
+          </Radio.Group>
+          <Paragraph type="secondary" style={{ fontSize: 12, margin: '8px 0 0' }}>
+            每增加一个版本都会增加一次写稿和一次内容检查；首稿模式耗时和 Token 最低。
+          </Paragraph>
+        </div>
 
         <div>
           <Text strong style={{ display: 'block', marginBottom: 8 }}>

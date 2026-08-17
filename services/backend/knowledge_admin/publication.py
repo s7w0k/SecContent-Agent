@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from agent.knowledge import KnowledgeLoader
+from agent.knowledge_index import KnowledgeIndexBuilder
 from knowledge_admin.file_store import KnowledgeFileStore
 from knowledge_admin.repository import KnowledgeDraftRepository
 from models.knowledge_management import (
@@ -42,6 +43,25 @@ class KnowledgePublicationService:
     def _generate_id(prefix: str) -> str:
         date_part = datetime.now(UTC).strftime("%Y%m%d")
         return f"{prefix}-{date_part}-{secrets.token_hex(3)}"
+
+    # ── 知识索引（S4-5 对接）────────────────────────────────
+
+    def _build_index_preview(self, content_overrides: dict[str, str] | None):
+        """基于（可能覆盖的）内容构建并校验新索引，返回 (manifest, index_version)。
+
+        校验失败抛 ValueError，保证不覆盖线上知识后再尝试构建索引。
+        """
+        builder = KnowledgeIndexBuilder(self.file_store.root_dir)
+        manifest = builder.build_manifest(content_overrides=content_overrides)
+        errors = builder.validate(manifest)
+        if errors:
+            raise ValueError("知识索引校验失败: " + "; ".join(errors))
+        return manifest, manifest.index_version
+
+    def _write_index(self, manifest) -> str:
+        """原子写入知识索引，返回 index_version。"""
+        builder = KnowledgeIndexBuilder(self.file_store.root_dir)
+        return builder.write(manifest)
 
     # ── 发布锁 ───────────────────────────────────────────────
 
@@ -165,6 +185,13 @@ class KnowledgePublicationService:
             await loader.load(force=True)
             hash_before = loader._last_hash
 
+            # 构建并校验新索引（发布前预览，不覆盖线上知识）
+            content_overrides = {
+                item["relative_path"]: item["after_content"]
+                for item in files_to_publish
+            }
+            new_manifest, new_index_version = self._build_index_preview(content_overrides)
+
             # Create publication record
             now = datetime.now(UTC)
             pub_files = [
@@ -185,6 +212,7 @@ class KnowledgePublicationService:
                 files=pub_files,
                 knowledge_hash_before=hash_before,
                 knowledge_hash_after="",
+                index_version=new_index_version,
                 release_notes=release_notes,
                 published_by=user_id,
                 published_at=now,
@@ -237,6 +265,9 @@ class KnowledgePublicationService:
             await loader.load(force=True)
             hash_after = loader._last_hash
 
+            # 原子发布知识索引（作为本次知识发布的提交点）
+            self._write_index(new_manifest)
+
             # Update publication record
             await self._publications.update_one(
                 {"publication_id": publication_id},
@@ -280,6 +311,7 @@ class KnowledgePublicationService:
                 "status": "published",
                 "knowledge_hash_before": hash_before,
                 "knowledge_hash_after": hash_after,
+                "index_version": new_index_version,
                 "changed_files": len(written),
             }
 
@@ -380,6 +412,14 @@ class KnowledgePublicationService:
             await loader.load(force=True)
             hash_after = loader._last_hash
 
+            # 重建并原子写入知识索引（内容已回滚到历史版本）
+            try:
+                new_manifest, index_version = self._build_index_preview(None)
+                self._write_index(new_manifest)
+            except Exception as rollback_exc:
+                logger.error("回滚后重建索引失败: %s", rollback_exc)
+                index_version = ""
+
             # Mark original as rolled_back
             await self._publications.update_one(
                 {"publication_id": publication_id},
@@ -409,6 +449,7 @@ class KnowledgePublicationService:
                 ],
                 knowledge_hash_before=original.get("knowledge_hash_after", ""),
                 knowledge_hash_after=hash_after,
+                index_version=index_version,
                 release_notes=f"回滚原因: {reason}",
                 published_by=user_id,
                 published_at=datetime.now(UTC),

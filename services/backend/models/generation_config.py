@@ -10,9 +10,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -78,6 +78,102 @@ class PipelineConfigSnapshot(BaseModel):
     knowledge_hash: str = ""
     config_fingerprint: str = ""
     force_generate: bool = False
+    # 阶段0：产品路由契约（保存位置；旧快照缺少该字段时保持兼容读取）
+    routing: ProductRoutingSnapshot | None = None
+    routing_version: str = ""
+    knowledge_source_ids: list[str] = Field(default_factory=list)
+    knowledge_fallback: str | None = None
+
+
+class ResolvedProduct(BaseModel):
+    """单个产品路由结果。
+
+    产品路由契约（阶段0 S0-2）：auto 模式下由规则（或规则+LLM 重排）解析，
+    selected 模式下来源于用户选择，none 模式下为空。
+    """
+
+    product_id: str
+    product_name: str = ""
+    match_score: int = Field(default=0, ge=0, le=100)
+    match_reason: str = ""
+    match_source: Literal["user_selected", "rule", "rule+llm"] = "rule"
+
+
+class ProductRoutingSnapshot(BaseModel):
+    """产品路由快照（阶段0 S0-2）。
+
+    在任务创建时冻结，作为评分与 PR 生成的统一产品输入。
+    保存位置：优先放入 ``PipelineConfigSnapshot.routing``；
+    用户级单篇评分结果同时保存副本或稳定引用（见 article_assessment.ProductSnapshot）。
+    """
+
+    mode: Literal["selected", "auto", "none"] = "auto"
+    resolved_products: list[ResolvedProduct] = Field(default_factory=list)
+    routing_version: str = ""
+    resolved_at: datetime | None = Field(default=None)
+    # 阶段1：auto 路由结果是否歧义（Top1 置信不足或 Top1/Top2 分差过小）
+    ambiguous: bool = False
+    confidence: int = Field(default=0, ge=0, le=100)
+
+    @property
+    def product_ids(self) -> list[str]:
+        """按输入顺序返回解析出的产品 ID 列表。"""
+        return [p.product_id for p in self.resolved_products]
+
+    @model_validator(mode="after")
+    def validate_mode_consistency(self) -> ProductRoutingSnapshot:
+        """mode 与产品列表约束：
+        - selected 必须有至少一个产品；
+        - none 必须为空产品列表。
+        """
+        if self.mode == "selected" and not self.resolved_products:
+            raise ValueError("selected 模式必须解析出至少一个产品")
+        if self.mode == "none" and self.resolved_products:
+            raise ValueError("none 模式不允许解析出产品")
+        return self
+
+
+def compute_routing_version(
+    *,
+    mode: Literal["selected", "auto", "none"],
+    product_ids: list[str],
+    routing_rules_hash: str = "routing-v1",
+) -> str:
+    """确定性计算路由版本：相同输入永远得到相同版本号。
+
+    用于判断同一文章的自动路由结果是否漂移（阶段1 及以后复用）。
+    """
+    import hashlib
+    import json
+
+    parts = {
+        "mode": mode,
+        "product_ids": sorted(product_ids),
+        "routing_rules_hash": routing_rules_hash,
+    }
+    content = json.dumps(parts, sort_keys=True, ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def build_routing_snapshot(
+    *,
+    mode: Literal["selected", "auto", "none"],
+    resolved_products: list[ResolvedProduct],
+    routing_rules_hash: str = "routing-v1",
+    resolved_at: datetime | None = None,
+) -> ProductRoutingSnapshot:
+    """基于 mode 与已解析产品构造路由快照并计算路由版本。"""
+    snapshot = ProductRoutingSnapshot(
+        mode=mode,
+        resolved_products=list(resolved_products),
+        resolved_at=resolved_at or datetime.now(UTC),
+    )
+    snapshot.routing_version = compute_routing_version(
+        mode=mode,
+        product_ids=[p.product_id for p in resolved_products],
+        routing_rules_hash=routing_rules_hash,
+    )
+    return snapshot
 
 
 class UserGenerationPreferences(BaseModel):

@@ -62,6 +62,8 @@ function makeRun(overrides: Partial<RuntimeSummary> = {}): RuntimeSummary {
       consecutive_failures: 0,
     },
     pending_approvals: [],
+    pending_questions: [],
+    result: {},
     decision_summaries: [
       {
         step_id: 's1',

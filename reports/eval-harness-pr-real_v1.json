@@ -5,20 +5,20 @@
   "report": {
     "schema_version": "2.0",
     "runner": "eval_harness_v2",
-    "generated_at": "2026-08-11T02:16:17.680883+00:00",
+    "generated_at": "2026-08-11T06:14:30.849130+00:00",
     "dataset_version": "real_v1",
-    "n_cases": 11,
+    "n_cases": 155,
     "legacy": {
-      "total": 11,
-      "success_rate": 0.8182,
-      "success_count": 9,
+      "total": 155,
+      "success_rate": 0.871,
+      "success_count": 135,
       "tokens": {
-        "mean": 11.0,
+        "mean": 11.1935,
         "p50": 12.0,
         "p95": 16.0,
-        "ci95_lo": 8.0,
-        "ci95_hi": 13.5455,
-        "n": 11
+        "ci95_lo": 10.5224,
+        "ci95_hi": 11.8258,
+        "n": 155
       },
       "cost_usd": {
         "mean": 0.0,
@@ -26,34 +26,34 @@
         "p95": 0.0,
         "ci95_lo": 0.0,
         "ci95_hi": 0.0,
-        "n": 11
+        "n": 155
       },
       "latency_ms": {
-        "mean": 0.0263,
+        "mean": 0.0239,
         "p50": 0.02,
-        "p95": 0.0685,
-        "ci95_lo": 0.0158,
-        "ci95_hi": 0.0414,
-        "n": 11
+        "p95": 0.0362,
+        "ci95_lo": 0.0203,
+        "ci95_hi": 0.0297,
+        "n": 155
       },
-      "usage_estimated_ratio": 0.1818,
-      "error_rate": 0.1818,
+      "usage_estimated_ratio": 0.129,
+      "error_rate": 0.129,
       "errors_by_type": {
-        "RuntimeError": 2
+        "RuntimeError": 20
       },
-      "avg_deterministic_pass_rate": 0.9798
+      "avg_deterministic_pass_rate": 0.9821
     },
     "candidate": {
-      "total": 11,
-      "success_rate": 0.8182,
-      "success_count": 9,
+      "total": 155,
+      "success_rate": 0.8387,
+      "success_count": 130,
       "tokens": {
-        "mean": 43.9091,
-        "p50": 33.0,
-        "p95": 73.0,
-        "ci95_lo": 30.8159,
-        "ci95_hi": 57.8182,
-        "n": 11
+        "mean": 47.5484,
+        "p50": 58.0,
+        "p95": 74.0,
+        "ci95_lo": 44.5289,
+        "ci95_hi": 50.5487,
+        "n": 155
       },
       "cost_usd": {
         "mean": 0.0,
@@ -61,91 +61,93 @@
         "p95": 0.0,
         "ci95_lo": 0.0,
         "ci95_hi": 0.0,
-        "n": 11
+        "n": 155
       },
       "latency_ms": {
-        "mean": 0.4439,
-        "p50": 0.2589,
-        "p95": 1.5197,
-        "ci95_lo": 0.1886,
-        "ci95_hi": 0.8325,
-        "n": 11
+        "mean": 49.1838,
+        "p50": 0.2779,
+        "p95": 1.1967,
+        "ci95_lo": 10.2881,
+        "ci95_hi": 98.6114,
+        "n": 155
       },
       "usage_estimated_ratio": 0.0,
-      "error_rate": 0.1818,
+      "error_rate": 0.1613,
       "errors_by_type": {
-        "LLM failed on round 0: RuntimeError": 1,
-        "budget_exhausted_no_finalization": 1
+        "LLM failed on round 0: RuntimeError": 10,
+        "LLM failed on round 0: TimeoutError": 5,
+        "no_budget_for_round": 5,
+        "budget_exhausted_no_finalization": 5
       },
       "avg_deterministic_pass_rate": 1.0
     },
     "paired": {
-      "token_reduction_pct": -299.17,
+      "token_reduction_pct": -324.78,
       "token_delta_ci95": [
-        -595.16,
-        -171.26
+        -532.34,
+        -370.2
       ],
-      "cost_reduction_pct": -176.65,
-      "success_rate_delta": 0.0,
-      "quality_pass_rate_delta": 0.0202,
-      "latency_p95_reduction_pct": -2118.47,
+      "cost_reduction_pct": -186.42,
+      "success_rate_delta": -0.0323,
+      "quality_pass_rate_delta": 0.0179,
+      "latency_p95_reduction_pct": -3205.75,
       "quality_regressed_cases": []
     },
     "by_category": {
       "a2a": {
-        "n": 1,
-        "token_reduction_pct": -163.64,
-        "cost_reduction_pct": -89.01
+        "n": 10,
+        "token_reduction_pct": -142.53,
+        "cost_reduction_pct": -81.11
       },
       "article": {
-        "n": 1,
-        "token_reduction_pct": -384.62,
-        "cost_reduction_pct": -261.12
+        "n": 15,
+        "token_reduction_pct": -406.74,
+        "cost_reduction_pct": -268.4
       },
       "budget_limits": {
-        "n": 1,
-        "token_reduction_pct": -1350.0,
-        "cost_reduction_pct": -1811.11
+        "n": 15,
+        "token_reduction_pct": -1469.44,
+        "cost_reduction_pct": -1864.17
       },
       "finalization": {
-        "n": 1,
-        "token_reduction_pct": 100.0,
-        "cost_reduction_pct": 100.0
+        "n": 10,
+        "token_reduction_pct": -625.0,
+        "cost_reduction_pct": -855.56
       },
       "insufficient_evidence": {
-        "n": 1,
-        "token_reduction_pct": -357.14,
-        "cost_reduction_pct": -170.24
+        "n": 15,
+        "token_reduction_pct": -341.83,
+        "cost_reduction_pct": -158.13
       },
       "multi_tool": {
-        "n": 1,
-        "token_reduction_pct": -343.75,
-        "cost_reduction_pct": -218.06
+        "n": 15,
+        "token_reduction_pct": -407.77,
+        "cost_reduction_pct": -263.55
       },
       "multi_turn": {
-        "n": 1,
-        "token_reduction_pct": -581.82,
-        "cost_reduction_pct": -373.22
+        "n": 15,
+        "token_reduction_pct": -591.52,
+        "cost_reduction_pct": -374.85
       },
       "no_tool": {
-        "n": 1,
-        "token_reduction_pct": -154.55,
-        "cost_reduction_pct": -84.07
+        "n": 15,
+        "token_reduction_pct": -160.61,
+        "cost_reduction_pct": -92.68
       },
       "permissions": {
-        "n": 1,
-        "token_reduction_pct": -106.25,
-        "cost_reduction_pct": -60.08
+        "n": 15,
+        "token_reduction_pct": -119.48,
+        "cost_reduction_pct": -63.98
       },
       "product_knowledge": {
-        "n": 1,
-        "token_reduction_pct": -400.0,
-        "cost_reduction_pct": -226.18
+        "n": 15,
+        "token_reduction_pct": -406.31,
+        "cost_reduction_pct": -253.08
       },
       "security": {
-        "n": 1,
-        "token_reduction_pct": -121.43,
-        "cost_reduction_pct": -64.65
+        "n": 15,
+        "token_reduction_pct": -199.6,
+        "cost_reduction_pct": -98.21
       }
     },
     "results": [
@@ -158,7 +160,7 @@
           "terminal_status": "completed",
           "tokens": 11.0,
           "cost_usd": 5.46e-06,
-          "latency_ms": 0.09219999992637895,
+          "latency_ms": 0.09940000018104911,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
@@ -167,13 +169,391 @@
           "terminal_status": "completed",
           "tokens": 28.0,
           "cost_usd": 1.005e-05,
-          "latency_ms": 0.1731000002109795,
+          "latency_ms": 0.19439999960013665,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
         "token_delta_pct": -154.55,
         "cost_delta_pct": -84.07,
-        "latency_delta_pct": -87.74,
+        "latency_delta_pct": -95.57,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R001",
+        "category": "no_tool",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 5.46e-06,
+          "latency_ms": 0.02790000053209951,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 28.0,
+          "cost_usd": 1.005e-05,
+          "latency_ms": 0.12489999971876387,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -154.55,
+        "cost_delta_pct": -84.07,
+        "latency_delta_pct": -347.67,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R001",
+        "category": "no_tool",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 5.46e-06,
+          "latency_ms": 0.020700000277429353,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 28.0,
+          "cost_usd": 1.005e-05,
+          "latency_ms": 0.09680000039224979,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -154.55,
+        "cost_delta_pct": -84.07,
+        "latency_delta_pct": -367.63,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R001",
+        "category": "no_tool",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 5.46e-06,
+          "latency_ms": 0.019899999642802868,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 28.0,
+          "cost_usd": 1.005e-05,
+          "latency_ms": 0.1081000000340282,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -154.55,
+        "cost_delta_pct": -84.07,
+        "latency_delta_pct": -443.22,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R001",
+        "category": "no_tool",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 5.46e-06,
+          "latency_ms": 0.022600000193051528,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 28.0,
+          "cost_usd": 1.005e-05,
+          "latency_ms": 0.09500000032858225,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -154.55,
+        "cost_delta_pct": -84.07,
+        "latency_delta_pct": -320.35,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R002",
+        "category": "no_tool",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.019100000827165786,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 9.49e-06,
+          "latency_ms": 0.08320000051753595,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -163.64,
+        "cost_delta_pct": -104.97,
+        "latency_delta_pct": -335.6,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R002",
+        "category": "no_tool",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.38219999987632036,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 9.49e-06,
+          "latency_ms": 0.11770000037358841,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -163.64,
+        "cost_delta_pct": -104.97,
+        "latency_delta_pct": 69.2,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R002",
+        "category": "no_tool",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.02009999934671214,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 9.49e-06,
+          "latency_ms": 0.08830000024317997,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -163.64,
+        "cost_delta_pct": -104.97,
+        "latency_delta_pct": -339.3,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R002",
+        "category": "no_tool",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.053199999456410296,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 9.49e-06,
+          "latency_ms": 0.12909999986732146,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -163.64,
+        "cost_delta_pct": -104.97,
+        "latency_delta_pct": -142.67,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R002",
+        "category": "no_tool",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.022599999283556826,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 9.49e-06,
+          "latency_ms": 0.094600000011269,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -163.64,
+        "cost_delta_pct": -104.97,
+        "latency_delta_pct": -318.58,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R003",
+        "category": "no_tool",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 5.46e-06,
+          "latency_ms": 0.02229999972769292,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 0.09030000001075678,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -163.64,
+        "cost_delta_pct": -89.01,
+        "latency_delta_pct": -304.93,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R003",
+        "category": "no_tool",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 5.46e-06,
+          "latency_ms": 0.023300000066228677,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 0.08429999979853164,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -163.64,
+        "cost_delta_pct": -89.01,
+        "latency_delta_pct": -261.8,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R003",
+        "category": "no_tool",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 5.46e-06,
+          "latency_ms": 0.017899999875226058,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 0.10209999982180307,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -163.64,
+        "cost_delta_pct": -89.01,
+        "latency_delta_pct": -470.39,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R003",
+        "category": "no_tool",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 5.46e-06,
+          "latency_ms": 0.022199999875738285,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 0.09049999971466605,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -163.64,
+        "cost_delta_pct": -89.01,
+        "latency_delta_pct": -307.66,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R003",
+        "category": "no_tool",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 5.46e-06,
+          "latency_ms": 0.017800000023271423,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 0.07829999958630651,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -163.64,
+        "cost_delta_pct": -89.01,
+        "latency_delta_pct": -339.89,
         "quality_regressed": false
       },
       {
@@ -185,7 +565,7 @@
           "terminal_status": "completed",
           "tokens": 12.0,
           "cost_usd": 5.73e-06,
-          "latency_ms": 0.020899999981338624,
+          "latency_ms": 0.019699999938893598,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
@@ -194,13 +574,391 @@
           "terminal_status": "completed",
           "tokens": 60.0,
           "cost_usd": 1.869e-05,
-          "latency_ms": 0.37639999982275185,
+          "latency_ms": 0.5780999999842606,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
         "token_delta_pct": -400.0,
         "cost_delta_pct": -226.18,
-        "latency_delta_pct": -1700.96,
+        "latency_delta_pct": -2834.52,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R004",
+        "category": "product_knowledge",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 5.73e-06,
+          "latency_ms": 0.02750000021478627,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 60.0,
+          "cost_usd": 1.869e-05,
+          "latency_ms": 0.3821000000243657,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -400.0,
+        "cost_delta_pct": -226.18,
+        "latency_delta_pct": -1289.45,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R004",
+        "category": "product_knowledge",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 5.73e-06,
+          "latency_ms": 0.02429999949526973,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 60.0,
+          "cost_usd": 1.869e-05,
+          "latency_ms": 0.31380000018543797,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -400.0,
+        "cost_delta_pct": -226.18,
+        "latency_delta_pct": -1191.36,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R004",
+        "category": "product_knowledge",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 5.73e-06,
+          "latency_ms": 0.02500000027794158,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 60.0,
+          "cost_usd": 1.869e-05,
+          "latency_ms": 0.29769999946438475,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -400.0,
+        "cost_delta_pct": -226.18,
+        "latency_delta_pct": -1090.8,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R004",
+        "category": "product_knowledge",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 5.73e-06,
+          "latency_ms": 0.023800000235496555,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 60.0,
+          "cost_usd": 1.869e-05,
+          "latency_ms": 0.3195999997842591,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -400.0,
+        "cost_delta_pct": -226.18,
+        "latency_delta_pct": -1242.86,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R005",
+        "category": "product_knowledge",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 4.9e-06,
+          "latency_ms": 0.02210000002378365,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 59.0,
+          "cost_usd": 1.759e-05,
+          "latency_ms": 0.28470000052038813,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -391.67,
+        "cost_delta_pct": -258.98,
+        "latency_delta_pct": -1188.24,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R005",
+        "category": "product_knowledge",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 4.9e-06,
+          "latency_ms": 0.022199999875738285,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 59.0,
+          "cost_usd": 1.759e-05,
+          "latency_ms": 0.2657000004546717,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -391.67,
+        "cost_delta_pct": -258.98,
+        "latency_delta_pct": -1096.85,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R005",
+        "category": "product_knowledge",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 4.9e-06,
+          "latency_ms": 0.022599999283556826,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 59.0,
+          "cost_usd": 1.759e-05,
+          "latency_ms": 0.29630000062752515,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -391.67,
+        "cost_delta_pct": -258.98,
+        "latency_delta_pct": -1211.06,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R005",
+        "category": "product_knowledge",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 4.9e-06,
+          "latency_ms": 0.021099999685247894,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 59.0,
+          "cost_usd": 1.759e-05,
+          "latency_ms": 0.28019999990647193,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -391.67,
+        "cost_delta_pct": -258.98,
+        "latency_delta_pct": -1227.96,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R005",
+        "category": "product_knowledge",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 4.9e-06,
+          "latency_ms": 0.019699999938893598,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 59.0,
+          "cost_usd": 1.759e-05,
+          "latency_ms": 0.3997999992861878,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -391.67,
+        "cost_delta_pct": -258.98,
+        "latency_delta_pct": -1929.44,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R006",
+        "category": "product_knowledge",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.03239999932702631,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 58.0,
+          "cost_usd": 1.732e-05,
+          "latency_ms": 0.37509999947360484,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -427.27,
+        "cost_delta_pct": -274.08,
+        "latency_delta_pct": -1057.72,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R006",
+        "category": "product_knowledge",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.022000000171829015,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 58.0,
+          "cost_usd": 1.732e-05,
+          "latency_ms": 0.3069000003961264,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -427.27,
+        "cost_delta_pct": -274.08,
+        "latency_delta_pct": -1295.0,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R006",
+        "category": "product_knowledge",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.020000000404252205,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 58.0,
+          "cost_usd": 1.732e-05,
+          "latency_ms": 0.289100000372855,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -427.27,
+        "cost_delta_pct": -274.08,
+        "latency_delta_pct": -1345.5,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R006",
+        "category": "product_knowledge",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.022400000489142258,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 58.0,
+          "cost_usd": 1.732e-05,
+          "latency_ms": 0.43449999975564424,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -427.27,
+        "cost_delta_pct": -274.08,
+        "latency_delta_pct": -1839.73,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R006",
+        "category": "product_knowledge",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.022400000489142258,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 58.0,
+          "cost_usd": 1.732e-05,
+          "latency_ms": 0.2786999993986683,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -427.27,
+        "cost_delta_pct": -274.08,
+        "latency_delta_pct": -1144.2,
         "quality_regressed": false
       },
       {
@@ -212,7 +970,7 @@
           "terminal_status": "completed",
           "tokens": 13.0,
           "cost_usd": 5.17e-06,
-          "latency_ms": 0.020000000404252205,
+          "latency_ms": 0.02099999983329326,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
@@ -221,13 +979,391 @@
           "terminal_status": "completed",
           "tokens": 63.0,
           "cost_usd": 1.867e-05,
-          "latency_ms": 0.3583000002436165,
+          "latency_ms": 0.2716999997574021,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
         "token_delta_pct": -384.62,
         "cost_delta_pct": -261.12,
-        "latency_delta_pct": -1691.5,
+        "latency_delta_pct": -1193.81,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R007",
+        "category": "article",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 13.0,
+          "cost_usd": 5.17e-06,
+          "latency_ms": 0.02930000027845381,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 63.0,
+          "cost_usd": 1.867e-05,
+          "latency_ms": 0.3125000002910383,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -384.62,
+        "cost_delta_pct": -261.12,
+        "latency_delta_pct": -966.55,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R007",
+        "category": "article",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 13.0,
+          "cost_usd": 5.17e-06,
+          "latency_ms": 0.026000000616477337,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 63.0,
+          "cost_usd": 1.867e-05,
+          "latency_ms": 0.31260000014299294,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -384.62,
+        "cost_delta_pct": -261.12,
+        "latency_delta_pct": -1102.31,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R007",
+        "category": "article",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 13.0,
+          "cost_usd": 5.17e-06,
+          "latency_ms": 0.020899999981338624,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 63.0,
+          "cost_usd": 1.867e-05,
+          "latency_ms": 0.2795999998852494,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -384.62,
+        "cost_delta_pct": -261.12,
+        "latency_delta_pct": -1237.8,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R007",
+        "category": "article",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 13.0,
+          "cost_usd": 5.17e-06,
+          "latency_ms": 0.01990000055229757,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 63.0,
+          "cost_usd": 1.867e-05,
+          "latency_ms": 0.2834999995684484,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -384.62,
+        "cost_delta_pct": -261.12,
+        "latency_delta_pct": -1324.62,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R008",
+        "category": "article",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.02320000021427404,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 58.0,
+          "cost_usd": 1.732e-05,
+          "latency_ms": 0.27349999982106965,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -427.27,
+        "cost_delta_pct": -274.08,
+        "latency_delta_pct": -1078.88,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R008",
+        "category": "article",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.020600000425474718,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 58.0,
+          "cost_usd": 1.732e-05,
+          "latency_ms": 0.2739000001383829,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -427.27,
+        "cost_delta_pct": -274.08,
+        "latency_delta_pct": -1229.61,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R008",
+        "category": "article",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.019899999642802868,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 58.0,
+          "cost_usd": 1.732e-05,
+          "latency_ms": 0.2663999994183541,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -427.27,
+        "cost_delta_pct": -274.08,
+        "latency_delta_pct": -1238.69,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R008",
+        "category": "article",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.021099999685247894,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 58.0,
+          "cost_usd": 1.732e-05,
+          "latency_ms": 0.2764999999271822,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -427.27,
+        "cost_delta_pct": -274.08,
+        "latency_delta_pct": -1210.43,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R008",
+        "category": "article",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.02789999962260481,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 58.0,
+          "cost_usd": 1.732e-05,
+          "latency_ms": 0.2905999999711639,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -427.27,
+        "cost_delta_pct": -274.08,
+        "latency_delta_pct": -941.58,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R009",
+        "category": "article",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 4.9e-06,
+          "latency_ms": 0.019899999642802868,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 1.813e-05,
+          "latency_ms": 0.2696999999898253,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -408.33,
+        "cost_delta_pct": -270.0,
+        "latency_delta_pct": -1255.28,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R009",
+        "category": "article",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 4.9e-06,
+          "latency_ms": 0.019299999621580355,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 1.813e-05,
+          "latency_ms": 0.2801000000545173,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -408.33,
+        "cost_delta_pct": -270.0,
+        "latency_delta_pct": -1351.3,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R009",
+        "category": "article",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 4.9e-06,
+          "latency_ms": 0.023100000362319406,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 1.813e-05,
+          "latency_ms": 0.2870999996957835,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -408.33,
+        "cost_delta_pct": -270.0,
+        "latency_delta_pct": -1142.86,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R009",
+        "category": "article",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 4.9e-06,
+          "latency_ms": 0.08520000028511276,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 1.813e-05,
+          "latency_ms": 0.7405999995171442,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -408.33,
+        "cost_delta_pct": -270.0,
+        "latency_delta_pct": -769.25,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R009",
+        "category": "article",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 4.9e-06,
+          "latency_ms": 0.028700000257231295,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 1.813e-05,
+          "latency_ms": 0.30919999971956713,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -408.33,
+        "cost_delta_pct": -270.0,
+        "latency_delta_pct": -977.35,
         "quality_regressed": false
       },
       {
@@ -239,7 +1375,7 @@
           "terminal_status": "completed",
           "tokens": 11.0,
           "cost_usd": 4.63e-06,
-          "latency_ms": 0.04479999961404246,
+          "latency_ms": 0.022000000171829015,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
@@ -248,13 +1384,391 @@
           "terminal_status": "completed",
           "tokens": 75.0,
           "cost_usd": 2.191e-05,
-          "latency_ms": 0.2589000000625674,
+          "latency_ms": 0.39509999987785704,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
         "token_delta_pct": -581.82,
         "cost_delta_pct": -373.22,
-        "latency_delta_pct": -477.9,
+        "latency_delta_pct": -1695.91,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R010",
+        "category": "multi_turn",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.03079999987676274,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 75.0,
+          "cost_usd": 2.191e-05,
+          "latency_ms": 0.3625999997893814,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -581.82,
+        "cost_delta_pct": -373.22,
+        "latency_delta_pct": -1077.27,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R010",
+        "category": "multi_turn",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.022500000341096893,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 75.0,
+          "cost_usd": 2.191e-05,
+          "latency_ms": 0.3482000001895358,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -581.82,
+        "cost_delta_pct": -373.22,
+        "latency_delta_pct": -1447.56,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R010",
+        "category": "multi_turn",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.024599999960628338,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 75.0,
+          "cost_usd": 2.191e-05,
+          "latency_ms": 0.31089999993128004,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -581.82,
+        "cost_delta_pct": -373.22,
+        "latency_delta_pct": -1163.82,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R010",
+        "category": "multi_turn",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.034100000448233914,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 75.0,
+          "cost_usd": 2.191e-05,
+          "latency_ms": 0.2903000004153,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -581.82,
+        "cost_delta_pct": -373.22,
+        "latency_delta_pct": -751.32,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R011",
+        "category": "multi_turn",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.02210000002378365,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 74.0,
+          "cost_usd": 2.164e-05,
+          "latency_ms": 0.31089999993128004,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -572.73,
+        "cost_delta_pct": -367.39,
+        "latency_delta_pct": -1306.79,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R011",
+        "category": "multi_turn",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.022899999748915434,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 74.0,
+          "cost_usd": 2.164e-05,
+          "latency_ms": 0.32129999999597203,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -572.73,
+        "cost_delta_pct": -367.39,
+        "latency_delta_pct": -1303.06,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R011",
+        "category": "multi_turn",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.0411000000895001,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 74.0,
+          "cost_usd": 2.164e-05,
+          "latency_ms": 0.3102000000581029,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -572.73,
+        "cost_delta_pct": -367.39,
+        "latency_delta_pct": -654.74,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R011",
+        "category": "multi_turn",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.0227999998969608,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 74.0,
+          "cost_usd": 2.164e-05,
+          "latency_ms": 0.3088000003117486,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -572.73,
+        "cost_delta_pct": -367.39,
+        "latency_delta_pct": -1254.39,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R011",
+        "category": "multi_turn",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.02769999991869554,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 74.0,
+          "cost_usd": 2.164e-05,
+          "latency_ms": 0.3090999998676125,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -572.73,
+        "cost_delta_pct": -367.39,
+        "latency_delta_pct": -1015.88,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R012",
+        "category": "multi_turn",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 10.0,
+          "cost_usd": 4.36e-06,
+          "latency_ms": 0.023499999770137947,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 72.0,
+          "cost_usd": 2.11e-05,
+          "latency_ms": 0.28339999971649377,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -620.0,
+        "cost_delta_pct": -383.94,
+        "latency_delta_pct": -1105.96,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R012",
+        "category": "multi_turn",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 10.0,
+          "cost_usd": 4.36e-06,
+          "latency_ms": 0.019600000086938962,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 72.0,
+          "cost_usd": 2.11e-05,
+          "latency_ms": 0.6172000003061839,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -620.0,
+        "cost_delta_pct": -383.94,
+        "latency_delta_pct": -3048.98,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R012",
+        "category": "multi_turn",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 10.0,
+          "cost_usd": 4.36e-06,
+          "latency_ms": 0.025999999706982635,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 72.0,
+          "cost_usd": 2.11e-05,
+          "latency_ms": 0.3600000000005821,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -620.0,
+        "cost_delta_pct": -383.94,
+        "latency_delta_pct": -1284.62,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R012",
+        "category": "multi_turn",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 10.0,
+          "cost_usd": 4.36e-06,
+          "latency_ms": 0.02119999953720253,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 72.0,
+          "cost_usd": 2.11e-05,
+          "latency_ms": 0.33349999921483686,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -620.0,
+        "cost_delta_pct": -383.94,
+        "latency_delta_pct": -1473.11,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R012",
+        "category": "multi_turn",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 10.0,
+          "cost_usd": 4.36e-06,
+          "latency_ms": 0.022500000341096893,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 72.0,
+          "cost_usd": 2.11e-05,
+          "latency_ms": 0.2733000001171604,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -620.0,
+        "cost_delta_pct": -383.94,
+        "latency_delta_pct": -1114.67,
         "quality_regressed": false
       },
       {
@@ -266,7 +1780,7 @@
           "terminal_status": "completed",
           "tokens": 16.0,
           "cost_usd": 6.81e-06,
-          "latency_ms": 0.015099999927770114,
+          "latency_ms": 0.022400000489142258,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
@@ -275,13 +1789,391 @@
           "terminal_status": "completed",
           "tokens": 71.0,
           "cost_usd": 2.166e-05,
-          "latency_ms": 0.266999999894324,
+          "latency_ms": 0.6505000001197914,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
         "token_delta_pct": -343.75,
         "cost_delta_pct": -218.06,
-        "latency_delta_pct": -1668.21,
+        "latency_delta_pct": -2804.02,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R013",
+        "category": "multi_tool",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 16.0,
+          "cost_usd": 6.81e-06,
+          "latency_ms": 0.022899999748915434,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 71.0,
+          "cost_usd": 2.166e-05,
+          "latency_ms": 0.4073000000062166,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -343.75,
+        "cost_delta_pct": -218.06,
+        "latency_delta_pct": -1678.6,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R013",
+        "category": "multi_tool",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 16.0,
+          "cost_usd": 6.81e-06,
+          "latency_ms": 0.019899999642802868,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 71.0,
+          "cost_usd": 2.166e-05,
+          "latency_ms": 0.3496999997878447,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -343.75,
+        "cost_delta_pct": -218.06,
+        "latency_delta_pct": -1657.29,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R013",
+        "category": "multi_tool",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 16.0,
+          "cost_usd": 6.81e-06,
+          "latency_ms": 0.019699999938893598,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 71.0,
+          "cost_usd": 2.166e-05,
+          "latency_ms": 0.32310000005963957,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -343.75,
+        "cost_delta_pct": -218.06,
+        "latency_delta_pct": -1540.1,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R013",
+        "category": "multi_tool",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 16.0,
+          "cost_usd": 6.81e-06,
+          "latency_ms": 0.01900000006571645,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 71.0,
+          "cost_usd": 2.166e-05,
+          "latency_ms": 0.45310000041354215,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -343.75,
+        "cost_delta_pct": -218.06,
+        "latency_delta_pct": -2284.74,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R014",
+        "category": "multi_tool",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 4.9e-06,
+          "latency_ms": 0.021100000594742596,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 63.0,
+          "cost_usd": 1.867e-05,
+          "latency_ms": 0.4871000001003267,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -425.0,
+        "cost_delta_pct": -281.02,
+        "latency_delta_pct": -2208.53,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R014",
+        "category": "multi_tool",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 4.9e-06,
+          "latency_ms": 0.06759999996575061,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 63.0,
+          "cost_usd": 1.867e-05,
+          "latency_ms": 0.426300000071933,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -425.0,
+        "cost_delta_pct": -281.02,
+        "latency_delta_pct": -530.62,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R014",
+        "category": "multi_tool",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 4.9e-06,
+          "latency_ms": 0.021800000467919745,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 63.0,
+          "cost_usd": 1.867e-05,
+          "latency_ms": 0.3630999999586493,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -425.0,
+        "cost_delta_pct": -281.02,
+        "latency_delta_pct": -1565.6,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R014",
+        "category": "multi_tool",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 4.9e-06,
+          "latency_ms": 0.042499999835854396,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 63.0,
+          "cost_usd": 1.867e-05,
+          "latency_ms": 0.5397000004450092,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -425.0,
+        "cost_delta_pct": -281.02,
+        "latency_delta_pct": -1169.88,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R014",
+        "category": "multi_tool",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 4.9e-06,
+          "latency_ms": 0.0822000001790002,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 63.0,
+          "cost_usd": 1.867e-05,
+          "latency_ms": 0.519700000040757,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -425.0,
+        "cost_delta_pct": -281.02,
+        "latency_delta_pct": -532.24,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R015",
+        "category": "multi_tool",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.026499999876250513,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 1.813e-05,
+          "latency_ms": 0.3817999995590071,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -454.55,
+        "cost_delta_pct": -291.58,
+        "latency_delta_pct": -1340.75,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R015",
+        "category": "multi_tool",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.022300000637187622,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 1.813e-05,
+          "latency_ms": 0.3882000000885455,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -454.55,
+        "cost_delta_pct": -291.58,
+        "latency_delta_pct": -1640.81,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R015",
+        "category": "multi_tool",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.02320000021427404,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 1.813e-05,
+          "latency_ms": 0.39449999985663453,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -454.55,
+        "cost_delta_pct": -291.58,
+        "latency_delta_pct": -1600.43,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R015",
+        "category": "multi_tool",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.024899999516492244,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 1.813e-05,
+          "latency_ms": 0.3724999996848055,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -454.55,
+        "cost_delta_pct": -291.58,
+        "latency_delta_pct": -1395.98,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R015",
+        "category": "multi_tool",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 4.63e-06,
+          "latency_ms": 0.020599999515980016,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 1.813e-05,
+          "latency_ms": 0.3589999996620463,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -454.55,
+        "cost_delta_pct": -291.58,
+        "latency_delta_pct": -1642.72,
         "quality_regressed": false
       },
       {
@@ -293,7 +2185,7 @@
           "terminal_status": "completed",
           "tokens": 14.0,
           "cost_usd": 7.93e-06,
-          "latency_ms": 0.014799999917158857,
+          "latency_ms": 0.02210000002378365,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
@@ -302,13 +2194,391 @@
           "terminal_status": "completed",
           "tokens": 64.0,
           "cost_usd": 2.143e-05,
-          "latency_ms": 0.19010000005437178,
+          "latency_ms": 0.8196999997380772,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
         "token_delta_pct": -357.14,
         "cost_delta_pct": -170.24,
-        "latency_delta_pct": -1184.46,
+        "latency_delta_pct": -3609.05,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R016",
+        "category": "insufficient_evidence",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.93e-06,
+          "latency_ms": 0.029100000574544538,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 64.0,
+          "cost_usd": 2.143e-05,
+          "latency_ms": 0.31709999984741444,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -357.14,
+        "cost_delta_pct": -170.24,
+        "latency_delta_pct": -989.69,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R016",
+        "category": "insufficient_evidence",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.93e-06,
+          "latency_ms": 0.01900000006571645,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 64.0,
+          "cost_usd": 2.143e-05,
+          "latency_ms": 0.26479999996809056,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -357.14,
+        "cost_delta_pct": -170.24,
+        "latency_delta_pct": -1293.68,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R016",
+        "category": "insufficient_evidence",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.93e-06,
+          "latency_ms": 0.01849999989644857,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 64.0,
+          "cost_usd": 2.143e-05,
+          "latency_ms": 0.2784000007522991,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -357.14,
+        "cost_delta_pct": -170.24,
+        "latency_delta_pct": -1404.86,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R016",
+        "category": "insufficient_evidence",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.93e-06,
+          "latency_ms": 0.018700000509852543,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 64.0,
+          "cost_usd": 2.143e-05,
+          "latency_ms": 0.25490000007266644,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -357.14,
+        "cost_delta_pct": -170.24,
+        "latency_delta_pct": -1263.1,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R017",
+        "category": "insufficient_evidence",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 6.56e-06,
+          "latency_ms": 0.01739999970595818,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 1.979e-05,
+          "latency_ms": 0.2654999998412677,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -408.33,
+        "cost_delta_pct": -201.68,
+        "latency_delta_pct": -1425.86,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R017",
+        "category": "insufficient_evidence",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 6.56e-06,
+          "latency_ms": 0.020599999515980016,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 1.979e-05,
+          "latency_ms": 0.26509999952395447,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -408.33,
+        "cost_delta_pct": -201.68,
+        "latency_delta_pct": -1186.89,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R017",
+        "category": "insufficient_evidence",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 6.56e-06,
+          "latency_ms": 0.018400000044493936,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 1.979e-05,
+          "latency_ms": 0.2505000002201996,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -408.33,
+        "cost_delta_pct": -201.68,
+        "latency_delta_pct": -1261.41,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R017",
+        "category": "insufficient_evidence",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 6.56e-06,
+          "latency_ms": 0.018199999431089964,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 1.979e-05,
+          "latency_ms": 0.2449000003252877,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -408.33,
+        "cost_delta_pct": -201.68,
+        "latency_delta_pct": -1245.6,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R017",
+        "category": "insufficient_evidence",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 6.56e-06,
+          "latency_ms": 0.017600000319362152,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 1.979e-05,
+          "latency_ms": 0.27629999931377824,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -408.33,
+        "cost_delta_pct": -201.68,
+        "latency_delta_pct": -1469.89,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R018",
+        "category": "insufficient_evidence",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 20.0,
+          "cost_usd": 1.37e-05,
+          "latency_ms": 0.02099999983329326,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 72.0,
+          "cost_usd": 2.774e-05,
+          "latency_ms": 0.25649999952293,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -260.0,
+        "cost_delta_pct": -102.48,
+        "latency_delta_pct": -1121.43,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R018",
+        "category": "insufficient_evidence",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 20.0,
+          "cost_usd": 1.37e-05,
+          "latency_ms": 0.018900000213761814,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 72.0,
+          "cost_usd": 2.774e-05,
+          "latency_ms": 0.2506000000721542,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -260.0,
+        "cost_delta_pct": -102.48,
+        "latency_delta_pct": -1225.93,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R018",
+        "category": "insufficient_evidence",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 20.0,
+          "cost_usd": 1.37e-05,
+          "latency_ms": 0.01759999940986745,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 72.0,
+          "cost_usd": 2.774e-05,
+          "latency_ms": 0.27119999958813423,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -260.0,
+        "cost_delta_pct": -102.48,
+        "latency_delta_pct": -1440.91,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R018",
+        "category": "insufficient_evidence",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 20.0,
+          "cost_usd": 1.37e-05,
+          "latency_ms": 0.02479999966453761,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 72.0,
+          "cost_usd": 2.774e-05,
+          "latency_ms": 0.28139999994891696,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -260.0,
+        "cost_delta_pct": -102.48,
+        "latency_delta_pct": -1034.68,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R018",
+        "category": "insufficient_evidence",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 20.0,
+          "cost_usd": 1.37e-05,
+          "latency_ms": 0.019999999494757503,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 72.0,
+          "cost_usd": 2.774e-05,
+          "latency_ms": 0.2778999996735365,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -260.0,
+        "cost_delta_pct": -102.48,
+        "latency_delta_pct": -1289.5,
         "quality_regressed": false
       },
       {
@@ -320,7 +2590,7 @@
           "terminal_status": "failed",
           "tokens": 2.0,
           "cost_usd": 5.4e-07,
-          "latency_ms": 0.01250000013897079,
+          "latency_ms": 0.01739999970595818,
           "deterministic_pass_rate": 0.8888888888888888,
           "tool_allowlist": true
         },
@@ -329,13 +2599,391 @@
           "terminal_status": "budget_exceeded",
           "tokens": 29.0,
           "cost_usd": 1.032e-05,
-          "latency_ms": 2.149299999928189,
+          "latency_ms": 3.11630000032892,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
         "token_delta_pct": -1350.0,
         "cost_delta_pct": -1811.11,
-        "latency_delta_pct": -17094.4,
+        "latency_delta_pct": -17809.77,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R019",
+        "category": "budget_limits",
+        "repetitions": 1,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 2.0,
+          "cost_usd": 5.4e-07,
+          "latency_ms": 0.02170000061596511,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 1.1556999997992534,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -1350.0,
+        "cost_delta_pct": -1811.11,
+        "latency_delta_pct": -5225.81,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R019",
+        "category": "budget_limits",
+        "repetitions": 2,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 2.0,
+          "cost_usd": 5.4e-07,
+          "latency_ms": 0.01849999989644857,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 1.3878999998269137,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -1350.0,
+        "cost_delta_pct": -1811.11,
+        "latency_delta_pct": -7402.16,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R019",
+        "category": "budget_limits",
+        "repetitions": 3,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 2.0,
+          "cost_usd": 5.4e-07,
+          "latency_ms": 0.01700000029813964,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 1.073999999789521,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -1350.0,
+        "cost_delta_pct": -1811.11,
+        "latency_delta_pct": -6217.65,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R019",
+        "category": "budget_limits",
+        "repetitions": 4,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 2.0,
+          "cost_usd": 5.4e-07,
+          "latency_ms": 0.015999999959603883,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 0.9574000005159178,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -1350.0,
+        "cost_delta_pct": -1811.11,
+        "latency_delta_pct": -5883.75,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R020",
+        "category": "budget_limits",
+        "repetitions": 0,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 1.0,
+          "cost_usd": 2.7e-07,
+          "latency_ms": 0.027600000066740904,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 28.0,
+          "cost_usd": 1.005e-05,
+          "latency_ms": 1017.6291999996465,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -2700.0,
+        "cost_delta_pct": -3622.22,
+        "latency_delta_pct": -3686962.31,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R020",
+        "category": "budget_limits",
+        "repetitions": 1,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 1.0,
+          "cost_usd": 2.7e-07,
+          "latency_ms": 0.030700000024808105,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 28.0,
+          "cost_usd": 1.005e-05,
+          "latency_ms": 954.6140000002197,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -2700.0,
+        "cost_delta_pct": -3622.22,
+        "latency_delta_pct": -3109391.85,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R020",
+        "category": "budget_limits",
+        "repetitions": 2,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 1.0,
+          "cost_usd": 2.7e-07,
+          "latency_ms": 0.020600000425474718,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 28.0,
+          "cost_usd": 1.005e-05,
+          "latency_ms": 1542.276999999558,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -2700.0,
+        "cost_delta_pct": -3622.22,
+        "latency_delta_pct": -7486681.4,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R020",
+        "category": "budget_limits",
+        "repetitions": 3,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 1.0,
+          "cost_usd": 2.7e-07,
+          "latency_ms": 0.01720000000204891,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 28.0,
+          "cost_usd": 1.005e-05,
+          "latency_ms": 1884.0860000000248,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -2700.0,
+        "cost_delta_pct": -3622.22,
+        "latency_delta_pct": -10953888.37,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R020",
+        "category": "budget_limits",
+        "repetitions": 4,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 1.0,
+          "cost_usd": 2.7e-07,
+          "latency_ms": 0.021400000150606502,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 28.0,
+          "cost_usd": 1.005e-05,
+          "latency_ms": 2175.913000000037,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -2700.0,
+        "cost_delta_pct": -3622.22,
+        "latency_delta_pct": -10167717.69,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R021",
+        "category": "budget_limits",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 5.73e-06,
+          "latency_ms": 0.024500000108673703,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 55.0,
+          "cost_usd": 1.485e-05,
+          "latency_ms": 0.3074999995078542,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -358.33,
+        "cost_delta_pct": -159.16,
+        "latency_delta_pct": -1155.1,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R021",
+        "category": "budget_limits",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 5.73e-06,
+          "latency_ms": 0.020899999981338624,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 55.0,
+          "cost_usd": 1.485e-05,
+          "latency_ms": 0.21250000008876668,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -358.33,
+        "cost_delta_pct": -159.16,
+        "latency_delta_pct": -916.75,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R021",
+        "category": "budget_limits",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 5.73e-06,
+          "latency_ms": 0.014399999599845614,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 55.0,
+          "cost_usd": 1.485e-05,
+          "latency_ms": 0.19119999979011482,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -358.33,
+        "cost_delta_pct": -159.16,
+        "latency_delta_pct": -1227.78,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R021",
+        "category": "budget_limits",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 5.73e-06,
+          "latency_ms": 0.013099999705445953,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 55.0,
+          "cost_usd": 1.485e-05,
+          "latency_ms": 0.17459999980928842,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -358.33,
+        "cost_delta_pct": -159.16,
+        "latency_delta_pct": -1232.82,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R021",
+        "category": "budget_limits",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 5.73e-06,
+          "latency_ms": 0.013300000318849925,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 55.0,
+          "cost_usd": 1.485e-05,
+          "latency_ms": 0.18490000002202578,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -358.33,
+        "cost_delta_pct": -159.16,
+        "latency_delta_pct": -1290.23,
         "quality_regressed": false
       },
       {
@@ -347,7 +2995,7 @@
           "terminal_status": "completed",
           "tokens": 16.0,
           "cost_usd": 7.64e-06,
-          "latency_ms": 0.021099999685247894,
+          "latency_ms": 0.013700000636163168,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
@@ -356,13 +3004,391 @@
           "terminal_status": "completed",
           "tokens": 33.0,
           "cost_usd": 1.223e-05,
-          "latency_ms": 0.07100000038917642,
+          "latency_ms": 0.06339999981719302,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
         "token_delta_pct": -106.25,
         "cost_delta_pct": -60.08,
-        "latency_delta_pct": -236.49,
+        "latency_delta_pct": -362.77,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R022",
+        "category": "permissions",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 16.0,
+          "cost_usd": 7.64e-06,
+          "latency_ms": 0.011899999663000926,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 33.0,
+          "cost_usd": 1.223e-05,
+          "latency_ms": 0.05510000028152717,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -106.25,
+        "cost_delta_pct": -60.08,
+        "latency_delta_pct": -363.03,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R022",
+        "category": "permissions",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 16.0,
+          "cost_usd": 7.64e-06,
+          "latency_ms": 0.01049999991664663,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 33.0,
+          "cost_usd": 1.223e-05,
+          "latency_ms": 0.050999999984924216,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -106.25,
+        "cost_delta_pct": -60.08,
+        "latency_delta_pct": -385.71,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R022",
+        "category": "permissions",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 16.0,
+          "cost_usd": 7.64e-06,
+          "latency_ms": 0.01089999932446517,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 33.0,
+          "cost_usd": 1.223e-05,
+          "latency_ms": 0.05779999992228113,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -106.25,
+        "cost_delta_pct": -60.08,
+        "latency_delta_pct": -430.28,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R022",
+        "category": "permissions",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 16.0,
+          "cost_usd": 7.64e-06,
+          "latency_ms": 0.012500000593718141,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 33.0,
+          "cost_usd": 1.223e-05,
+          "latency_ms": 0.051199999688833486,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -106.25,
+        "cost_delta_pct": -60.08,
+        "latency_delta_pct": -309.6,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R023",
+        "category": "permissions",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.1e-06,
+          "latency_ms": 0.011199999789823778,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 31.0,
+          "cost_usd": 1.169e-05,
+          "latency_ms": 0.05070000042906031,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -121.43,
+        "cost_delta_pct": -64.65,
+        "latency_delta_pct": -352.68,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R023",
+        "category": "permissions",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.1e-06,
+          "latency_ms": 0.01140000040322775,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 31.0,
+          "cost_usd": 1.169e-05,
+          "latency_ms": 0.24670000038895523,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -121.43,
+        "cost_delta_pct": -64.65,
+        "latency_delta_pct": -2064.04,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R023",
+        "category": "permissions",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.1e-06,
+          "latency_ms": 0.015999999959603883,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 31.0,
+          "cost_usd": 1.169e-05,
+          "latency_ms": 0.06180000036692945,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -121.43,
+        "cost_delta_pct": -64.65,
+        "latency_delta_pct": -286.25,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R023",
+        "category": "permissions",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.1e-06,
+          "latency_ms": 0.011799999811046291,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 31.0,
+          "cost_usd": 1.169e-05,
+          "latency_ms": 0.054799999816168565,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -121.43,
+        "cost_delta_pct": -64.65,
+        "latency_delta_pct": -364.41,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R023",
+        "category": "permissions",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.1e-06,
+          "latency_ms": 0.011000000085914508,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 31.0,
+          "cost_usd": 1.169e-05,
+          "latency_ms": 0.05220000002736924,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -121.43,
+        "cost_delta_pct": -64.65,
+        "latency_delta_pct": -374.55,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R024",
+        "category": "permissions",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 13.0,
+          "cost_usd": 6.83e-06,
+          "latency_ms": 0.01160000010713702,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 30.0,
+          "cost_usd": 1.142e-05,
+          "latency_ms": 0.04859999990003416,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -130.77,
+        "cost_delta_pct": -67.2,
+        "latency_delta_pct": -318.97,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R024",
+        "category": "permissions",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 13.0,
+          "cost_usd": 6.83e-06,
+          "latency_ms": 0.012399999832268804,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 30.0,
+          "cost_usd": 1.142e-05,
+          "latency_ms": 0.05359999977372354,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -130.77,
+        "cost_delta_pct": -67.2,
+        "latency_delta_pct": -332.26,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R024",
+        "category": "permissions",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 13.0,
+          "cost_usd": 6.83e-06,
+          "latency_ms": 0.011000000085914508,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 30.0,
+          "cost_usd": 1.142e-05,
+          "latency_ms": 0.04979999994247919,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -130.77,
+        "cost_delta_pct": -67.2,
+        "latency_delta_pct": -352.73,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R024",
+        "category": "permissions",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 13.0,
+          "cost_usd": 6.83e-06,
+          "latency_ms": 0.010700000530050602,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 30.0,
+          "cost_usd": 1.142e-05,
+          "latency_ms": 0.04839999928663019,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -130.77,
+        "cost_delta_pct": -67.2,
+        "latency_delta_pct": -352.34,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R024",
+        "category": "permissions",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 13.0,
+          "cost_usd": 6.83e-06,
+          "latency_ms": 0.010600000678095967,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 30.0,
+          "cost_usd": 1.142e-05,
+          "latency_ms": 0.04840000019612489,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -130.77,
+        "cost_delta_pct": -67.2,
+        "latency_delta_pct": -356.6,
         "quality_regressed": false
       },
       {
@@ -374,7 +3400,7 @@
           "terminal_status": "completed",
           "tokens": 14.0,
           "cost_usd": 7.1e-06,
-          "latency_ms": 0.013100000160193304,
+          "latency_ms": 0.010400000064691994,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
@@ -383,13 +3409,391 @@
           "terminal_status": "completed",
           "tokens": 31.0,
           "cost_usd": 1.169e-05,
-          "latency_ms": 0.059699999837903306,
+          "latency_ms": 0.0486999997519888,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
         "token_delta_pct": -121.43,
         "cost_delta_pct": -64.65,
-        "latency_delta_pct": -355.73,
+        "latency_delta_pct": -368.27,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R025",
+        "category": "security",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.1e-06,
+          "latency_ms": 0.01089999932446517,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 31.0,
+          "cost_usd": 1.169e-05,
+          "latency_ms": 0.05739999960496789,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -121.43,
+        "cost_delta_pct": -64.65,
+        "latency_delta_pct": -426.61,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R025",
+        "category": "security",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.1e-06,
+          "latency_ms": 0.011900000572495628,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 31.0,
+          "cost_usd": 1.169e-05,
+          "latency_ms": 0.05049999981565634,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -121.43,
+        "cost_delta_pct": -64.65,
+        "latency_delta_pct": -324.37,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R025",
+        "category": "security",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.1e-06,
+          "latency_ms": 0.011199999789823778,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 31.0,
+          "cost_usd": 1.169e-05,
+          "latency_ms": 0.05050000072515104,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -121.43,
+        "cost_delta_pct": -64.65,
+        "latency_delta_pct": -350.89,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R025",
+        "category": "security",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.1e-06,
+          "latency_ms": 0.012500000593718141,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 31.0,
+          "cost_usd": 1.169e-05,
+          "latency_ms": 0.05539999983739108,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -121.43,
+        "cost_delta_pct": -64.65,
+        "latency_delta_pct": -343.2,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R026",
+        "category": "security",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.93e-06,
+          "latency_ms": 0.014700000065204222,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 2.062e-05,
+          "latency_ms": 0.25579999964975286,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -335.71,
+        "cost_delta_pct": -160.03,
+        "latency_delta_pct": -1640.14,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R026",
+        "category": "security",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.93e-06,
+          "latency_ms": 0.013100000614940654,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 2.062e-05,
+          "latency_ms": 0.21250000008876668,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -335.71,
+        "cost_delta_pct": -160.03,
+        "latency_delta_pct": -1522.14,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R026",
+        "category": "security",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.93e-06,
+          "latency_ms": 0.014199999895936344,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 2.062e-05,
+          "latency_ms": 0.25770000047486974,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -335.71,
+        "cost_delta_pct": -160.03,
+        "latency_delta_pct": -1714.79,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R026",
+        "category": "security",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.93e-06,
+          "latency_ms": 0.016899999536690302,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 2.062e-05,
+          "latency_ms": 0.225499999942258,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -335.71,
+        "cost_delta_pct": -160.03,
+        "latency_delta_pct": -1234.32,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R026",
+        "category": "security",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 7.93e-06,
+          "latency_ms": 0.01759999940986745,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 61.0,
+          "cost_usd": 2.062e-05,
+          "latency_ms": 0.21610000021610176,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -335.71,
+        "cost_delta_pct": -160.03,
+        "latency_delta_pct": -1127.84,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R027",
+        "category": "security",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 6.56e-06,
+          "latency_ms": 0.015800000255694613,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 1.115e-05,
+          "latency_ms": 0.06899999971210491,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -141.67,
+        "cost_delta_pct": -69.97,
+        "latency_delta_pct": -336.71,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R027",
+        "category": "security",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 6.56e-06,
+          "latency_ms": 0.013900000340072438,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 1.115e-05,
+          "latency_ms": 0.060200000007171184,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -141.67,
+        "cost_delta_pct": -69.97,
+        "latency_delta_pct": -333.09,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R027",
+        "category": "security",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 6.56e-06,
+          "latency_ms": 0.013699999726668466,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 1.115e-05,
+          "latency_ms": 0.06200000007083872,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -141.67,
+        "cost_delta_pct": -69.97,
+        "latency_delta_pct": -352.55,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R027",
+        "category": "security",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 6.56e-06,
+          "latency_ms": 0.014799999917158857,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 1.115e-05,
+          "latency_ms": 0.07120000009308569,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -141.67,
+        "cost_delta_pct": -69.97,
+        "latency_delta_pct": -381.08,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R027",
+        "category": "security",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 12.0,
+          "cost_usd": 6.56e-06,
+          "latency_ms": 0.0152000002344721,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 1.115e-05,
+          "latency_ms": 0.08499999967170879,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -141.67,
+        "cost_delta_pct": -69.97,
+        "latency_delta_pct": -459.21,
         "quality_regressed": false
       },
       {
@@ -401,7 +3805,7 @@
           "terminal_status": "failed",
           "tokens": 1.0,
           "cost_usd": 2.7e-07,
-          "latency_ms": 0.008800000159681076,
+          "latency_ms": 0.010300000212737359,
           "deterministic_pass_rate": 0.8888888888888888,
           "tool_allowlist": true
         },
@@ -410,13 +3814,391 @@
           "terminal_status": "budget_exceeded",
           "tokens": 0.0,
           "cost_usd": 0.0,
-          "latency_ms": 0.8900000002540764,
+          "latency_ms": 0.9493999996266211,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
         "token_delta_pct": 100.0,
         "cost_delta_pct": 100.0,
-        "latency_delta_pct": -10013.64,
+        "latency_delta_pct": -9117.48,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R028",
+        "category": "finalization",
+        "repetitions": 1,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 1.0,
+          "cost_usd": 2.7e-07,
+          "latency_ms": 0.021400000150606502,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 0.0,
+          "cost_usd": 0.0,
+          "latency_ms": 0.8251999997810344,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": 100.0,
+        "cost_delta_pct": 100.0,
+        "latency_delta_pct": -3756.07,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R028",
+        "category": "finalization",
+        "repetitions": 2,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 1.0,
+          "cost_usd": 2.7e-07,
+          "latency_ms": 0.016400000276917126,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 0.0,
+          "cost_usd": 0.0,
+          "latency_ms": 0.7677999992665718,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": 100.0,
+        "cost_delta_pct": 100.0,
+        "latency_delta_pct": -4581.71,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R028",
+        "category": "finalization",
+        "repetitions": 3,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 1.0,
+          "cost_usd": 2.7e-07,
+          "latency_ms": 0.01609999981155852,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 0.0,
+          "cost_usd": 0.0,
+          "latency_ms": 0.8284999994430109,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": 100.0,
+        "cost_delta_pct": 100.0,
+        "latency_delta_pct": -5045.96,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R028",
+        "category": "finalization",
+        "repetitions": 4,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 1.0,
+          "cost_usd": 2.7e-07,
+          "latency_ms": 0.016900000446185004,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 0.0,
+          "cost_usd": 0.0,
+          "latency_ms": 0.7414000001517707,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": 100.0,
+        "cost_delta_pct": 100.0,
+        "latency_delta_pct": -4286.98,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R029",
+        "category": "finalization",
+        "repetitions": 0,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 2.0,
+          "cost_usd": 5.4e-07,
+          "latency_ms": 0.016599999980826396,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 0.8560000005672919,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -1350.0,
+        "cost_delta_pct": -1811.11,
+        "latency_delta_pct": -5056.63,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R029",
+        "category": "finalization",
+        "repetitions": 1,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 2.0,
+          "cost_usd": 5.4e-07,
+          "latency_ms": 0.012099999366910197,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 0.8195999998861225,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -1350.0,
+        "cost_delta_pct": -1811.11,
+        "latency_delta_pct": -6673.55,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R029",
+        "category": "finalization",
+        "repetitions": 2,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 2.0,
+          "cost_usd": 5.4e-07,
+          "latency_ms": 0.011799999811046291,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 1.0077000006276648,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -1350.0,
+        "cost_delta_pct": -1811.11,
+        "latency_delta_pct": -8439.83,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R029",
+        "category": "finalization",
+        "repetitions": 3,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 2.0,
+          "cost_usd": 5.4e-07,
+          "latency_ms": 0.012900000001536682,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 1.292299999477109,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -1350.0,
+        "cost_delta_pct": -1811.11,
+        "latency_delta_pct": -9917.83,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R029",
+        "category": "finalization",
+        "repetitions": 4,
+        "legacy": {
+          "success": false,
+          "terminal_status": "failed",
+          "tokens": 2.0,
+          "cost_usd": 5.4e-07,
+          "latency_ms": 0.02210000002378365,
+          "deterministic_pass_rate": 0.8888888888888888,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": false,
+          "terminal_status": "budget_exceeded",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 0.9403000003658235,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -1350.0,
+        "cost_delta_pct": -1811.11,
+        "latency_delta_pct": -4154.75,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R030",
+        "category": "a2a",
+        "repetitions": 0,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 6.27e-06,
+          "latency_ms": 0.02170000061596511,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 31.0,
+          "cost_usd": 1.086e-05,
+          "latency_ms": 0.08100000013655517,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -121.43,
+        "cost_delta_pct": -73.21,
+        "latency_delta_pct": -273.27,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R030",
+        "category": "a2a",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 6.27e-06,
+          "latency_ms": 0.016400000276917126,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 31.0,
+          "cost_usd": 1.086e-05,
+          "latency_ms": 0.12369999967631884,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -121.43,
+        "cost_delta_pct": -73.21,
+        "latency_delta_pct": -654.27,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R030",
+        "category": "a2a",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 6.27e-06,
+          "latency_ms": 0.018000000636675395,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 31.0,
+          "cost_usd": 1.086e-05,
+          "latency_ms": 0.07310000000870787,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -121.43,
+        "cost_delta_pct": -73.21,
+        "latency_delta_pct": -306.11,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R030",
+        "category": "a2a",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 6.27e-06,
+          "latency_ms": 0.014100000043981709,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 31.0,
+          "cost_usd": 1.086e-05,
+          "latency_ms": 0.06310000026132911,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -121.43,
+        "cost_delta_pct": -73.21,
+        "latency_delta_pct": -347.52,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R030",
+        "category": "a2a",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 14.0,
+          "cost_usd": 6.27e-06,
+          "latency_ms": 0.013800000488117803,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 31.0,
+          "cost_usd": 1.086e-05,
+          "latency_ms": 0.060600000324484427,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -121.43,
+        "cost_delta_pct": -73.21,
+        "latency_delta_pct": -339.13,
         "quality_regressed": false
       },
       {
@@ -428,7 +4210,7 @@
           "terminal_status": "completed",
           "tokens": 11.0,
           "cost_usd": 5.46e-06,
-          "latency_ms": 0.026400000024295878,
+          "latency_ms": 0.015800000255694613,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
@@ -437,13 +4219,121 @@
           "terminal_status": "completed",
           "tokens": 29.0,
           "cost_usd": 1.032e-05,
-          "latency_ms": 0.08870000010574586,
+          "latency_ms": 0.094600000011269,
           "deterministic_pass_rate": 1.0,
           "tool_allowlist": true
         },
         "token_delta_pct": -163.64,
         "cost_delta_pct": -89.01,
-        "latency_delta_pct": -235.98,
+        "latency_delta_pct": -498.73,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R031",
+        "category": "a2a",
+        "repetitions": 1,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 5.46e-06,
+          "latency_ms": 0.01849999989644857,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 0.15970000004017493,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -163.64,
+        "cost_delta_pct": -89.01,
+        "latency_delta_pct": -763.24,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R031",
+        "category": "a2a",
+        "repetitions": 2,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 5.46e-06,
+          "latency_ms": 0.02989999939018162,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 0.08340000022144523,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -163.64,
+        "cost_delta_pct": -89.01,
+        "latency_delta_pct": -178.93,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R031",
+        "category": "a2a",
+        "repetitions": 3,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 5.46e-06,
+          "latency_ms": 0.01700000029813964,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 0.07050000021990854,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -163.64,
+        "cost_delta_pct": -89.01,
+        "latency_delta_pct": -314.71,
+        "quality_regressed": false
+      },
+      {
+        "case_id": "R031",
+        "category": "a2a",
+        "repetitions": 4,
+        "legacy": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 11.0,
+          "cost_usd": 5.46e-06,
+          "latency_ms": 0.015300000086426735,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "candidate": {
+          "success": true,
+          "terminal_status": "completed",
+          "tokens": 29.0,
+          "cost_usd": 1.032e-05,
+          "latency_ms": 0.06370000028255163,
+          "deterministic_pass_rate": 1.0,
+          "tool_allowlist": true
+        },
+        "token_delta_pct": -163.64,
+        "cost_delta_pct": -89.01,
+        "latency_delta_pct": -316.34,
         "quality_regressed": false
       }
     ],
@@ -454,6 +4344,7 @@
       "judge_model": "",
       "rubric_version": "v1",
       "disagreement_cases": [
+        "R021",
         "R028"
       ],
       "position_bias_summary": {

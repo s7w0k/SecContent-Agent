@@ -263,6 +263,32 @@ async def test_single_pipeline_task_persists_progress_and_result():
         "article_url_hash": ARTICLE_HASH,
     }
     assert drafts.update_calls[0][2] == {"upsert": True}
+    assert app.state.draft_gen.generate.await_args.kwargs["max_drafts"] == 1
+
+
+@pytest.mark.asyncio
+async def test_single_pipeline_uses_frozen_draft_variant_count():
+    app, tasks, _drafts = _single_pipeline_app()
+    document = await _create_pipeline_task(
+        app.state.db,
+        "user-a",
+        "run-v2",
+        ARTICLE_HASH,
+    )
+    await tasks.update_one(
+        {"task_id": document["task_id"]},
+        {"$set": {"generation_options": {"draft_variants": 2}}},
+    )
+
+    await _execute_pipeline_task(
+        app,
+        document["task_id"],
+        "user-a",
+        "run-v2",
+        article_url_hash=ARTICLE_HASH,
+    )
+
+    assert app.state.draft_gen.generate.await_args.kwargs["max_drafts"] == 2
 
 
 @pytest.mark.asyncio

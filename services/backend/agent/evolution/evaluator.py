@@ -84,7 +84,8 @@ class Evaluator:
         await self.db["personalization_candidates"].update_one(
             {"candidate_id": candidate_id},
             {"$set": {
-                "status": "ready_for_review",
+                # Hard gates own the transition to ready_for_review.
+                "status": "evaluating",
                 "metrics": result,
                 "updated_at": datetime.now(UTC),
             }},

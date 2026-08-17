@@ -489,6 +489,117 @@ async def score_v2_node(state: dict, scorer: Any, knowledge: Any, db: Any) -> di
     return state
 
 
+async def _build_product_knowledge_slice(
+    db: Any,
+    product_ids: list[str],
+    user_id: str,
+) -> tuple[str | None, list[str]]:
+    """根据产品 ID 构建知识切片。
+
+    返回 (knowledge_slice, source_ids)。产品列表为空或用户知识未启用时返回 (None, [])，
+    避免空产品查询与越权读取。
+    """
+    if not product_ids:
+        return None, []
+    # 阶段3 S3-3：优先经 ContextBridge 统一入口（active 命中时用它，否则回退切片解析）
+    try:
+        from agent.context_bridge import ContextBridge
+        from agent.context_cache import get_context_cache
+        from agent.context_queries import build_draft_query
+        from config import get_settings
+
+        settings = get_settings()
+        bridge = ContextBridge(
+            db=db,
+            settings=settings,
+            cache=get_context_cache(settings.CONTEXT_CACHE_TTL_SECONDS)
+            if settings.KNOWLEDGE_SKILLS_ENABLED
+            else None,
+        )
+        mode = bridge.effective_mode(user_id)
+        if mode == "active":
+            result = await bridge.build_plan(
+                purpose="draft",
+                user_id=user_id,
+                products=list(product_ids),
+                query=build_draft_query({"title": "", "summary_cn": ""}),
+                model_id=settings.DEEPSEEK_MODEL,
+            )
+            if result is not None:
+                content = result.plan.rendered()
+                return content, [s.source_id for s in result.plan.sections]
+    except Exception as exc:
+        logger.debug("[draft] ContextBridge draft slice failed: %s", exc)
+
+    try:
+        from agent.knowledge_slice import KnowledgeSliceResolver
+        from config import get_settings
+
+        settings = get_settings()
+        if not settings.USER_KNOWLEDGE_ENABLED:
+            return None, []
+        resolver = KnowledgeSliceResolver(settings.KNOWLEDGE_BASE_DIR, db=db)
+        result = await resolver.resolve(
+            purpose="draft",
+            product_ids=list(product_ids),
+            include_shared=True,
+            user_id=user_id,
+        )
+        content = result.content if result.content else None
+        return content, list(result.source_document_ids or [])
+    except Exception as exc:
+        logger.warning("[draft] knowledge slice failed for %s: %s", user_id, exc)
+        return None, []
+
+
+async def _resolve_article_draft_context(
+    db: Any,
+    article: dict,
+    user_id: str,
+) -> tuple[list[str], str | None, dict]:
+    """批量草稿阶段：按文章解析产品路由并构建知识切片。
+
+    返回 (product_ids, knowledge_slice, routing_meta)。
+    - 路由使用 auto 模式；若 auto 无命中则回退到评分阶段的 best_product_id；
+    - 知识切片仅在存在产品时解析。
+    """
+    from agent.product_routing import ProductRoutingService
+    from models.generation_config import ProductTargetMode
+
+    product_ids: list[str] = []
+    routing_version = ""
+    try:
+        snapshot = await ProductRoutingService().resolve(
+            dict(article),
+            ProductTargetMode.AUTO,
+            [],
+            user_id,
+        )
+        product_ids = list(snapshot.product_ids)
+        routing_version = snapshot.routing_version
+    except Exception as exc:
+        logger.warning(
+            "[draft] auto routing failed for %s: %s", article.get("url_hash"), exc
+        )
+
+    if not product_ids:
+        best = article.get("best_product_id") or ""
+        if best:
+            product_ids = [best]
+
+    knowledge_slice, source_ids = await _build_product_knowledge_slice(
+        db, product_ids, user_id
+    )
+    routing_meta = {
+        "mode": "auto",
+        "resolved_products": product_ids,
+        "routing_version": routing_version,
+        "knowledge_source_ids": source_ids,
+        "knowledge_fallback": None,
+    }
+    return product_ids, knowledge_slice, routing_meta
+
+
 async def draft_node(
     state: dict,
     draft_gen: Any,
@@ -526,6 +637,10 @@ async def draft_node(
         draft_count = 0
         logged_categories: set[str] = set()
         for art in articles:
+            # 阶段2 S2-4：按文章解析产品路由并构建知识切片
+            _product_ids, knowledge_slice, routing_meta = (
+                await _resolve_article_draft_context(db, art, state["user_id"])
+            )
             v2_scores = {
                 "product_relevance": art.get("product_relevance", 0),
                 "event_impact": art.get("event_impact", 0),
@@ -557,6 +672,7 @@ async def draft_node(
                 style_hints=style_hints,
                 templates=templates,
                 system_prompt_template=system_prompt_template,
+                knowledge_slice=knowledge_slice,
             )
             if result["ok"] and result["drafts"]:
                 now = datetime.now(UTC)
@@ -569,6 +685,7 @@ async def draft_node(
                         "$set": {
                             "drafts": result["drafts"],
                             "updated_at": now,
+                            "routing_meta": routing_meta,
                         },
                         "$setOnInsert": {"created_at": now},
                     },
@@ -666,6 +783,20 @@ async def rewrite_node(
         article = await db["articles"].find_one({"url_hash": item["url_hash"]})
         if not article:
             continue
+        # 阶段2 S2-4：重写沿用原草稿的产品路由，不重新路由
+        existing = await db["user_drafts"].find_one(
+            {"user_id": state["user_id"], "article_url_hash": item["url_hash"]}
+        )
+        routing_meta = (existing or {}).get("routing_meta") or {}
+        product_ids = list(routing_meta.get("resolved_products") or [])
+        if not product_ids:
+            # 旧草稿无路由元数据时，按 auto 解析（可观测兼容策略）
+            product_ids, _, _ = await _resolve_article_draft_context(
+                db, article, state["user_id"]
+            )
+        knowledge_slice, _ = await _build_product_knowledge_slice(
+            db, product_ids, state["user_id"]
+        )
         scores = {
             "product_relevance": article.get("product_relevance", 0),
             "event_impact": article.get("event_impact", 0),
@@ -688,6 +819,7 @@ async def rewrite_node(
             style_hints=style_hints,
             templates=templates,
             system_prompt_template=system_prompt_template,
+            knowledge_slice=knowledge_slice,
         )
         if not generated.get("ok") or not generated.get("drafts"):
             continue

@@ -95,6 +95,10 @@ ignore = [
 "scripts/set_admin.py" = ["T201"]  # CLI 管理脚本输出
 "scripts/smoke_test_4_1.py" = ["T201"]  # CLI 冒烟脚本输出
 "scripts/validate_agent_skills.py" = ["T201", "N806"]  # CLI 脚本输出；WHITE/GRAY/BLACK 为 ANSI 颜色常量
+"tests/agent_evals/full_loop_journeys/validate_dataset.py" = ["T201"]
+"tests/agent_evals/knowledge_replay/*.py" = ["T201"]  # CLI 评测报告输出
+"tests/agent_evals/knowledge_retrieval/*.py" = ["T201"]  # CLI 数据集与评测报告输出
+"tests/unit/test_product_routing.py" = ["N801"]  # 测试类名保留阶段 WBS 编号
 "services/backend/agent/evals/gates.py" = ["N818"]  # GateViolation 为阶段2 对外契约名
 "services/backend/agent/harness/fault_harness.py" = ["N818"]  # FaultInjected 为阶段4 对外契约名
 

@@ -1,0 +1,10 @@
+{"id":"positive-1","kind":"positive","input":"shorten draft","expected":"child version"}
+{"id":"positive-2","kind":"positive","input":"replace title","expected":"non target preserved"}
+{"id":"positive-3","kind":"positive","input":"local selection","expected":"bounded edit"}
+{"id":"positive-4","kind":"positive","input":"branch old version","expected":"new branch"}
+{"id":"boundary-1","kind":"boundary","input":"same content","expected":"deduplicate"}
+{"id":"boundary-2","kind":"boundary","input":"review warning","expected":"needs review"}
+{"id":"boundary-3","kind":"boundary","input":"one auto repair","expected":"bounded repair"}
+{"id":"negative-1","kind":"negative","input":"unknown parent","expected":"reject"}
+{"id":"negative-2","kind":"negative","input":"overwrite parent","expected":"reject"}
+{"id":"negative-3","kind":"negative","input":"unbounded repairs","expected":"stop"}

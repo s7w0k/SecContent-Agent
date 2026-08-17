@@ -18,12 +18,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
 from agent.agent_runtime import AgentRuntime, PlannedAction
+from agent.business_tools.execution import BusinessToolAdapterKind
+from agent.contracts.task import TaskEnvelope, TaskIntent
 from agent.error_taxonomy import ErrorCategory, classify_error
 from agent.goal_validator import GoalValidator
 from agent.model_router import ModelRouter
@@ -44,6 +47,8 @@ from agent.runtime_state import (
     RuntimeStatus,
 )
 from agent.runtime_store import RuntimeStateStore
+from agent.slot_merger import merge_task_envelope
+from agent.task_understanding import TaskUnderstandingService
 from agent.trace import TraceReport, build_trace, load_trace
 from pydantic import BaseModel
 
@@ -118,6 +123,7 @@ class CreateRunRequest(BaseModel):
     trace_id: str = ""
     tool_chain: list[str] | None = None  # 覆盖默认工具链（服务端校验白名单）
     max_steps: int | None = None  # 覆盖预算（0 = 使用默认）
+    initial_slots: dict[str, Any] = {}
 
 
 class AutonomousRunService:
@@ -135,6 +141,10 @@ class AutonomousRunService:
         db: Any = None,
         planner_factory: Callable[[RuntimeState], Any] | None = None,
         executor_factory: Callable[[RuntimeState], Any] | None = None,
+        business_executor: Any = None,
+        business_registry: Any = None,
+        business_tool_adapter: BusinessToolAdapterKind | str = BusinessToolAdapterKind.PRODUCTION,
+        skill_registry: Any = None,
         metrics: Any = None,
     ):
         self.store = store
@@ -160,6 +170,13 @@ class AutonomousRunService:
         self.approval_service = approval_service or ApprovalService(db=db)
         self.planner_factory = planner_factory
         self.executor_factory = executor_factory
+        self.business_executor = business_executor
+        self.business_registry = business_registry
+        self.business_tool_adapter = business_tool_adapter
+        self.skill_registry = skill_registry
+        self.production_mode = business_executor is not None or business_registry is not None
+        if self.production_mode and (business_executor is None or business_registry is None):
+            raise RuntimeError("production runtime requires business executor and registry")
         self._tasks: dict[str, asyncio.Task] = {}
         self._cancel_events: dict[str, asyncio.Event] = {}
         self._default_budget = (
@@ -174,6 +191,8 @@ class AutonomousRunService:
 
     def _tool_registry_version(self) -> str:
         """工具契约注册表版本（RunManifest 冻结）。"""
+        if self.business_registry is not None:
+            return str(self.business_registry.manifest_version)
         return str(getattr(self.settings, "TOOL_REGISTRY_VERSION", "") or "1.0")
 
     # ── 创建 / 读取 ──────────────────────────────────────────
@@ -182,28 +201,87 @@ class AutonomousRunService:
         self,
         *,
         user_id: str,
+        tenant_id: str = "",
         goal: str,
         acceptance_criteria: list[str],
         thread_id: str = "",
         trace_id: str = "",
         tool_chain: list[str] | None = None,
         max_steps: int | None = None,
+        initial_slots: dict[str, Any] | None = None,
     ) -> RuntimeState:
         chain = tool_chain or DEFAULT_TOOL_CHAIN
-        # 服务端校验：仅允许规则表中存在的工具（安全优先）
-        chain = [t for t in chain if t in self.policy.rules]
-        if not chain:
-            raise ValueError("tool_chain contains no allowed tools")
+        if not self.production_mode:
+            # Demo/legacy compatibility only. Production never trusts client tool chains.
+            chain = [t for t in chain if t in self.policy.rules]
+            if not chain:
+                raise ValueError("tool_chain contains no allowed tools")
         budget = self._default_budget
         if max_steps is not None and max_steps > 0:
             budget = budget.model_copy(update={"max_steps": max_steps})
+        run_id = "run-" + uuid.uuid4().hex[:12]
+        effective_tenant_id = tenant_id or user_id
+        effective_thread_id = thread_id or "thread-" + uuid.uuid4().hex[:12]
+        envelope = TaskEnvelope.from_user_input(
+            task_id=run_id,
+            thread_id=effective_thread_id,
+            user_id=user_id,
+            tenant_id=effective_tenant_id,
+            goal=goal[:2000],
+            intent=TaskIntent.UNKNOWN,
+            acceptance_criteria=[c[:500] for c in acceptance_criteria],
+        )
+        skill_versions: dict[str, str] = {}
+        skill_snapshot_hash = ""
+        planner_version = "demo-sequential-v1"
+        runtime_adapter = "agent-runtime-legacy-adapter"
+        tool_adapter = "demo"
+        if self.production_mode:
+            understanding = await TaskUnderstandingService().understand(goal)
+            envelope = merge_task_envelope(
+                envelope, understanding.patch, turn_id="turn-initial"
+            ).envelope
+            if initial_slots:
+                allowed_initial = {
+                    key: value
+                    for key, value in initial_slots.items()
+                    if key in set(TaskEnvelope.SLOT_NAMES)
+                }
+                if allowed_initial:
+                    allowed_initial["explicit_slots"] = sorted(allowed_initial)
+                    envelope = merge_task_envelope(
+                        envelope, allowed_initial, turn_id="turn-initial-slots"
+                    ).envelope
+            from agent.rule_planner import RulePlannerV1
+
+            planned = await RulePlannerV1(self.business_registry).plan(
+                envelope, run_id=run_id
+            )
+            chain = [step.tool for step in planned.plan.steps]
+            planner_version = planned.plan.planner_version
+            runtime_adapter = "agent-runtime-production-v1"
+            tool_adapter = (
+                self.business_tool_adapter.value
+                if isinstance(self.business_tool_adapter, BusinessToolAdapterKind)
+                else str(self.business_tool_adapter)
+            )
+            if self.skill_registry is not None:
+                selection = self.skill_registry.select(
+                    intent=str(envelope.intent.value or TaskIntent.UNKNOWN.value),
+                    plan_tools=chain,
+                )
+                skill_versions = {item.name: item.version for item in selection.skills}
+                skill_snapshot_hash = self.skill_registry.snapshot_hash
         state = RuntimeState(
-            run_id="run-" + uuid.uuid4().hex[:12],
-            thread_id=thread_id,
+            run_id=run_id,
+            thread_id=effective_thread_id,
             trace_id=trace_id,
             user_id=user_id,
+            tenant_id=effective_tenant_id,
             goal=goal[:2000],
             acceptance_criteria=[c[:500] for c in acceptance_criteria],
+            task_envelope=envelope,
+            slot_states=envelope.slot_states(),
             budget=budget,
             usage=BudgetUsage(),
             pending_steps=list(chain),
@@ -216,11 +294,20 @@ class AutonomousRunService:
                 run_id=state.run_id,
                 user_id=user_id,
                 tenant_id=state.tenant_id,
-                thread_id=thread_id,
+                thread_id=effective_thread_id,
                 trace_id=trace_id,
                 execution_mode=ExecutionMode.AUTONOMOUS,
                 code_revision=self._code_revision(),
+                skill_snapshot_hash=skill_snapshot_hash,
+                skill_versions=skill_versions,
                 tool_registry_version=self._tool_registry_version(),
+                task_schema_version=envelope.schema_version,
+                task_snapshot_hash=envelope.fingerprint(),
+                slot_snapshot_hash=envelope.slot_fingerprint(),
+                plan_version=state.plan_version,
+                planner_version=planner_version,
+                runtime_adapter=runtime_adapter,
+                tool_adapter=tool_adapter,
                 budget=budget,
                 acceptance_criteria=state.acceptance_criteria,
             )
@@ -380,6 +467,93 @@ class AutonomousRunService:
             return False
         return await self.start_run(run_id, user_id)
 
+    async def respond(
+        self,
+        run_id: str,
+        user_id: str,
+        *,
+        slot_values: dict[str, Any],
+        message: str = "",
+        turn_id: str = "",
+    ) -> RuntimeState | None:
+        """Merge an explicit user answer and resume only the invalidated suffix."""
+        state = await self.store.load(run_id)
+        if state is None or state.user_id != user_id:
+            return None
+        if state.status != RuntimeStatus.WAITING_USER or state.task_envelope is None:
+            raise ValueError("run is not waiting for user input")
+        combined_values = dict(slot_values)
+        if message.strip():
+            understood = await self.task_understanding.understand(message)
+            combined_values = {**understood.patch.slot_values(), **combined_values}
+            normalized = message.strip().lower()
+            if any(marker in normalized for marker in ("你决定", "你来定", "随便", "都可以")):
+                combined_values["auto_select"] = True
+            ordinal_map = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5}
+            match = re.search(r"第?\s*([一二三四五\d]+)\s*(?:条|篇|个)?", normalized)
+            if match and "selected_article_ids" not in combined_values:
+                raw_index = match.group(1)
+                index = ordinal_map.get(raw_index, int(raw_index) if raw_index.isdigit() else 0)
+                discover = state.normalized_observations.get("discover", {}).get("data", {})
+                candidates = discover.get("items") or discover.get("articles") or []
+                if 0 < index <= len(candidates):
+                    candidate_id = candidates[index - 1].get("article_id")
+                    if candidate_id:
+                        combined_values["selected_article_ids"] = [candidate_id]
+        patch = {
+            key: value
+            for key, value in combined_values.items()
+            if key in set(TaskEnvelope.SLOT_NAMES)
+        }
+        if not patch:
+            raise ValueError("answer contains no allowed task slots")
+        patch["explicit_slots"] = sorted(patch)
+        merged = merge_task_envelope(
+            state.task_envelope,
+            patch,
+            turn_id=turn_id or "turn-" + uuid.uuid4().hex[:12],
+            completed_steps=set(state.completed_steps),
+        )
+        invalidate_by_slot = {
+            "selected_article_ids": {"article", "classify", "products", "score", "draft", "review", "save", "export"},
+            "product_ids": {"score", "draft", "review", "save", "export"},
+            "template_key": {"draft", "review", "save", "export"},
+            "angle": {"draft", "review", "save", "export"},
+            "tone": {"draft", "review", "save", "export"},
+            "length": {"draft", "review", "save", "export"},
+            "revision_instruction": {"revise", "review", "save", "export"},
+            "crawl_approved": {"discover", "article", "classify", "products", "score", "draft", "review"},
+            "auto_select": {"article", "classify", "products", "score", "draft", "review"},
+        }
+        invalidated: set[str] = set()
+        for name in merged.changed_slots:
+            invalidated.update(invalidate_by_slot.get(name, set()))
+        resumed = state.model_copy(
+            update={
+                "task_envelope": merged.envelope,
+                "slot_states": merged.envelope.slot_states(),
+                "completed_steps": [s for s in state.completed_steps if s not in invalidated],
+                "failed_steps": [s for s in state.failed_steps if s not in invalidated],
+                "normalized_observations": {
+                    key: value
+                    for key, value in state.normalized_observations.items()
+                    if key not in invalidated
+                },
+                "pending_questions": [],
+                "status": RuntimeStatus.PENDING,
+                "reason": "",
+                "reason_code": "",
+            }
+        )
+        await self.store.save(resumed)
+        await self._emit_event(
+            "user_response_applied",
+            resumed,
+            {"changed_slots": merged.changed_slots, "invalidated_steps": sorted(invalidated)},
+        )
+        await self.start_run(run_id, user_id)
+        return resumed
+
     # ── 人工审批 ─────────────────────────────────────────────
 
     async def approve(self, approval_id: str, user_id: str) -> RuntimeState | None:
@@ -488,6 +662,37 @@ class AutonomousRunService:
     # ── 内部 ─────────────────────────────────────────────────
 
     def _build_runtime(self, state: RuntimeState) -> AgentRuntime:
+        if self.production_mode:
+            from agent.production_runtime import (
+                ProductionActionPlanner,
+                ProductionBusinessExecutor,
+                ProductionGoalAdapter,
+                build_business_policy,
+            )
+            from agent.rule_planner import RulePlannerV1
+
+            planner = ProductionActionPlanner(RulePlannerV1(self.business_registry))
+            executor = ProductionBusinessExecutor(
+                self.business_executor,
+                planner,
+                adapter=self.business_tool_adapter,
+            )
+
+            async def _production_checkpoint(s: RuntimeState) -> None:
+                await self.store.save(s)
+
+            return AgentRuntime(
+                planner=planner,
+                executor=executor,
+                policy=build_business_policy(self.business_registry),
+                approval_service=self.approval_service,
+                goal_validator=ProductionGoalAdapter(planner),
+                model_router=self.model_router,
+                checkpointer=_production_checkpoint,
+                event_emitter=self._emit_event,
+                max_retries=getattr(self._default_budget, "max_retries", 2),
+                backoff_jitter=0.0,
+            )
         planner = (
             self.planner_factory(state)
             if self.planner_factory

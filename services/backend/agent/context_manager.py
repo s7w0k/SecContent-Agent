@@ -108,6 +108,10 @@ class ContextRequest:
     reserved_output: int = _DEFAULT_RESERVED_OUTPUT
     history_tokens: int = _DEFAULT_HISTORY_BUDGET
     task_anchor_tokens: int = _DEFAULT_TASK_ANCHOR
+    # 阶段3 S3-1：统一请求溯源字段（用于重建每次上下文来源）
+    task_id: str = ""
+    trace_id: str = ""
+    index_version: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

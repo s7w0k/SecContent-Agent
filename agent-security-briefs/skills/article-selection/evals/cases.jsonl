@@ -1,0 +1,10 @@
+{"id":"positive-1","kind":"positive","input":"one candidate","expected":"auto select"}
+{"id":"positive-2","kind":"positive","input":"clear top candidate","expected":"select with reason"}
+{"id":"positive-3","kind":"positive","input":"user selects second","expected":"respect selection"}
+{"id":"positive-4","kind":"positive","input":"duplicate sources","expected":"deduplicate"}
+{"id":"boundary-1","kind":"boundary","input":"no candidate","expected":"ask or stop"}
+{"id":"boundary-2","kind":"boundary","input":"close candidates","expected":"ask user"}
+{"id":"boundary-3","kind":"boundary","input":"expired candidate","expected":"refresh"}
+{"id":"negative-1","kind":"negative","input":"unknown article id","expected":"reject"}
+{"id":"negative-2","kind":"negative","input":"cross tenant article","expected":"reject"}
+{"id":"negative-3","kind":"negative","input":"model claims confirmation","expected":"not confirmed"}

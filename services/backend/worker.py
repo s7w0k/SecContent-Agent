@@ -68,7 +68,11 @@ async def startup(ctx: dict[str, Any]) -> None:
     )
     classifier_v2 = ClassifierV2(llm=llm, db=db)
     scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge, db=db)
-    draft_gen = DraftGenerator(llm=llm, knowledge=knowledge._cache)
+    draft_gen = DraftGenerator(
+        llm=llm,
+        knowledge=knowledge._cache,
+        max_output_tokens=settings.DRAFT_MAX_OUTPUT_TOKENS,
+    )
     draft_reviewer = DraftReviewer(llm=llm)
     pipeline_v2 = PipelineManagerV2(
         tools=tools,

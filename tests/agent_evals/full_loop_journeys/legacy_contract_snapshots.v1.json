@@ -1,0 +1,206 @@
+{
+  "schema_version": "1.0",
+  "captured_at": "2026-08-16",
+  "snapshots": [
+    {
+      "id": "pipeline-run-v1",
+      "method": "POST",
+      "path": "/api/pipeline/run",
+      "request": {"crawl_days": 3},
+      "response_keys": ["pipeline_id", "status", "state", "trace_id"],
+      "status_codes": [200, 401, 503],
+      "writes": ["articles", "reports", "activity_logs"],
+      "retry": "PipelineManager controls phase retries; request has no public idempotency key."
+    },
+    {
+      "id": "pipeline-run-v2",
+      "method": "POST",
+      "path": "/api/pipeline/run-v2",
+      "request": {"crawl_days": 3},
+      "response_keys": ["ok", "data.task_id", "data.trace_id", "data.run_id", "data.execution_mode", "data.input_snapshot_hash"],
+      "status_codes": [200, 401, 503],
+      "writes": ["pipeline_tasks", "arq_jobs"],
+      "retry": "Worker resumes from checkpoints; task creation is not client-idempotent."
+    },
+    {
+      "id": "pipeline-crawl",
+      "method": "POST",
+      "path": "/api/pipeline/crawl",
+      "request": {"crawl_days": 1},
+      "response_keys": ["ok", "data.task_id", "data.trace_id"],
+      "status_codes": [200, 401, 503],
+      "writes": ["pipeline_tasks", "articles", "crawl_runs"],
+      "retry": "ARQ retries and source-level deduplication apply."
+    },
+    {
+      "id": "pipeline-classify-single",
+      "method": "POST",
+      "path": "/api/pipeline/classify-v2/{url_hash}",
+      "request": {},
+      "response_keys": ["ok", "url_hash", "category_v2", "skipped"],
+      "status_codes": [200, 401, 404, 409, 502, 503, 504],
+      "writes": ["articles", "pipeline_locks", "execution_logs"],
+      "retry": "Article lock and existing derived fields make repeated calls idempotent."
+    },
+    {
+      "id": "pipeline-score-single",
+      "method": "POST",
+      "path": "/api/pipeline/score-v2/{url_hash}",
+      "request": {"force": false},
+      "response_keys": ["ok", "url_hash", "pr_total_score", "product_scores", "skipped"],
+      "status_codes": [200, 401, 404, 409, 502, 503, 504],
+      "writes": ["articles", "article_assessments", "pipeline_locks", "execution_logs"],
+      "retry": "Article lock and score completeness check suppress duplicate scoring."
+    },
+    {
+      "id": "pipeline-generate-single",
+      "method": "POST",
+      "path": "/api/pipeline/run-v2/{url_hash}",
+      "request": {"force_generate": false, "draft_variants": 2},
+      "response_keys": ["ok", "data.task_id", "data.trace_id"],
+      "status_codes": [200, 401, 404, 422, 503],
+      "writes": ["pipeline_tasks", "user_drafts", "draft_reviews", "execution_logs"],
+      "retry": "Task checkpoints prevent completed nodes from rerunning; version creation is not yet a unified Tool contract."
+    },
+    {
+      "id": "pipeline-task-status",
+      "method": "GET",
+      "path": "/api/pipeline/tasks/{task_id}",
+      "request": {},
+      "response_keys": ["ok", "data.task_id", "data.status", "data.progress"],
+      "status_codes": [200, 401, 404, 503],
+      "writes": [],
+      "retry": "Read-only polling."
+    },
+    {
+      "id": "chat-ask",
+      "method": "POST",
+      "path": "/api/chat/ask",
+      "request": {"message": "这篇文章的核心事实是什么？", "article_url_hash": "fixture-article"},
+      "response_keys": ["ok", "data.answer", "data.references", "data.trace_id"],
+      "status_codes": [200, 401, 404, 422, 502, 503],
+      "writes": ["chat_sessions", "operation_logs", "activity_logs"],
+      "retry": "Model retry is internal; duplicate user messages create duplicate chat turns."
+    },
+    {
+      "id": "chat-revise",
+      "method": "POST",
+      "path": "/api/articles/{url_hash}/drafts/{draft_index}/revise",
+      "request": {"instruction": "缩短标题", "save": true},
+      "response_keys": ["ok", "data.revision_id", "data.revised_content_md", "data.change_summary", "data.saved"],
+      "status_codes": [200, 401, 404, 422, 502, 503],
+      "writes": ["user_drafts", "chat_sessions", "activity_logs", "memory_events"],
+      "retry": "Each successful retry creates a new revision_id; caller must avoid blind retries."
+    },
+    {
+      "id": "chat-review",
+      "method": "POST",
+      "path": "/api/articles/{url_hash}/drafts/{draft_index}/review",
+      "request": {},
+      "response_keys": ["ok", "data.status", "data.content_hash"],
+      "status_codes": [200, 401, 404, 502, 503],
+      "writes": ["user_drafts"],
+      "retry": "Review is derived from content hash and overwrites only the review field."
+    },
+    {
+      "id": "chat-apply-revision",
+      "method": "POST",
+      "path": "/api/articles/{url_hash}/drafts/{draft_index}/revisions/{revision_id}/apply",
+      "request": {},
+      "response_keys": ["ok", "data.article_url_hash", "data.draft_index", "data.revision_id", "data.applied", "data.trace_id"],
+      "status_codes": [200, 401, 404, 503],
+      "writes": ["user_drafts", "activity_logs", "memory_events"],
+      "retry": "Applying the same immutable revision is value-idempotent but still emits audit/memory attempts."
+    },
+    {
+      "id": "autonomous-create",
+      "method": "POST",
+      "path": "/api/autonomous/runs",
+      "request": {"goal": "分析文章", "acceptance_criteria": ["产出分析结果"]},
+      "response_keys": ["run_id", "status", "goal", "checkpoint_version", "budget_usage"],
+      "status_codes": [200, 401, 409, 422, 503],
+      "writes": ["runtime_manifests", "runtime_runs", "runtime_events", "event_outbox"],
+      "retry": "Server creates a new run_id per request; runtime steps use checkpoints and ledger semantics."
+    },
+    {
+      "id": "autonomous-cancel",
+      "method": "POST",
+      "path": "/api/autonomous/runs/{run_id}/cancel",
+      "request": {},
+      "response_keys": ["run_id", "status", "checkpoint_version"],
+      "status_codes": [200, 401, 404, 409, 503],
+      "writes": ["runtime_runs", "runtime_events"],
+      "retry": "Cancel is accepted only from planning/running and is safe to repeat."
+    },
+    {
+      "id": "autonomous-approval",
+      "method": "POST",
+      "path": "/api/autonomous/approvals/{approval_id}/approve",
+      "request": {},
+      "response_keys": ["run_id", "status", "pending_approvals"],
+      "status_codes": [200, 401, 404, 409, 503],
+      "writes": ["runtime_approvals", "runtime_runs", "runtime_events"],
+      "retry": "Approval token is one-time and scoped to the pending action."
+    },
+    {
+      "id": "autonomous-events",
+      "method": "GET",
+      "path": "/api/autonomous/runs/{run_id}/events",
+      "request": {"last_event_id": 0},
+      "response_keys": ["schema_version", "event_id", "sequence", "run_id", "event_type", "timestamp"],
+      "status_codes": [200, 401, 404, 503],
+      "writes": [],
+      "retry": "Last-Event-ID resumes from the next sequence."
+    }
+  ],
+  "write_snapshots": [
+    {
+      "id": "classify-article-derived-fields",
+      "collection": "articles",
+      "identity_filter": {"url_hash": "fixture-article"},
+      "before": {"pipeline_status": "crawled", "category_v2": null},
+      "after": {
+        "pipeline_status": "classified",
+        "category_v2": "attack",
+        "classification_content_hash": "sha256:fixture"
+      },
+      "invariant": "Source title, URL and content are unchanged."
+    },
+    {
+      "id": "score-article-derived-fields",
+      "collection": "articles",
+      "identity_filter": {"url_hash": "fixture-article"},
+      "before": {"pr_total_score": null, "product_scores": []},
+      "after": {
+        "pr_total_score": 82,
+        "product_scores": [{"product_id": "fixture-product", "score": 76}]
+      },
+      "invariant": "Classification and source article fields are unchanged."
+    },
+    {
+      "id": "revise-draft-new-revision",
+      "collection": "user_drafts",
+      "identity_filter": {"user_id": "fixture-user", "article_url_hash": "fixture-article"},
+      "before": {"drafts.0.content_hash": "sha256:original", "drafts.0.revisions": []},
+      "after": {
+        "drafts.0.content_hash": "sha256:original",
+        "drafts.0.revisions.0.revision_id": "fixture-revision",
+        "drafts.0.revisions.0.applied": false
+      },
+      "invariant": "Creating a revision does not overwrite the current draft content."
+    },
+    {
+      "id": "autonomous-run-create",
+      "collection": "runtime_runs",
+      "identity_filter": {"run_id": "fixture-run"},
+      "before": null,
+      "after": {
+        "status": "pending",
+        "checkpoint_version": 1,
+        "schema_version": "1.0",
+        "task_envelope.schema_version": "1.0"
+      },
+      "invariant": "A matching immutable runtime_manifests record exists before execution starts."
+    }
+  ]
+}

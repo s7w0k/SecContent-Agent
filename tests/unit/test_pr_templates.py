@@ -218,6 +218,33 @@ class TestDraftGenerator:
         assert result["ok"] is True
         assert len(result["drafts"]) == 4  # 2 templates × 2 perspectives
         assert result["error"] is None
+        assert result["metrics"]["requested_drafts"] == 4
+        assert result["metrics"]["llm_calls"] == 4
+
+    @pytest.mark.asyncio
+    async def test_generate_one_primary_draft_limits_calls_and_output_budget(
+        self, generator, mock_llm, sample_article, sample_scores
+    ):
+        result = await generator.generate(sample_article, sample_scores, max_drafts=1)
+
+        assert result["ok"] is True
+        assert len(result["drafts"]) == 1
+        assert result["drafts"][0]["template"] == "爆点A"
+        assert result["drafts"][0]["index"] == 1
+        assert mock_llm.ainvoke.await_count == 1
+        assert generator.max_output_tokens == 1800
+        assert result["metrics"]["requested_drafts"] == 1
+        assert result["metrics"]["llm_calls"] == 1
+        assert result["metrics"]["usage_estimated"] is True
+
+    @pytest.mark.asyncio
+    async def test_generate_two_drafts_rotates_templates_first(
+        self, generator, sample_article, sample_scores
+    ):
+        result = await generator.generate(sample_article, sample_scores, max_drafts=2)
+
+        assert [draft["template"] for draft in result["drafts"]] == ["爆点A", "爆点B"]
+        assert [draft["index"] for draft in result["drafts"]] == [1, 2]
 
     @pytest.mark.asyncio
     async def test_drafts_have_required_fields(self, generator, sample_article, sample_scores):

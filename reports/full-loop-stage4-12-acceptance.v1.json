@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-08-16",
+  "scope": "stages_4_through_12",
+  "engineering_acceptance": "passed",
+  "production_release": "pending_human_approval",
+  "checks": {
+    "ruff": {
+      "status": "passed",
+      "scope": "services/ tests/"
+    },
+    "backend_unit": {
+      "status": "passed",
+      "passed": 2497,
+      "skipped": 2
+    },
+    "backend_integration": {
+      "status": "passed",
+      "passed": 90
+    },
+    "frontend": {
+      "status": "passed",
+      "test_files": 31,
+      "tests": 204,
+      "typescript": "passed",
+      "production_build": "passed"
+    },
+    "conversation_harness": {
+      "status": "passed",
+      "frozen_journeys": 65,
+      "executed_core_journeys": 60,
+      "executed_core_journeys_passed": 60
+    },
+    "planner_harness": {
+      "status": "passed",
+      "invalid_mutation_block_rate": 1.0
+    },
+    "security_harness": {
+      "status": "passed",
+      "hard_gate_failures": 0
+    }
+  },
+  "stages": {
+    "4": "passed",
+    "5": "passed",
+    "6": "passed",
+    "7": "passed",
+    "8": "passed",
+    "9": "passed",
+    "10": "passed",
+    "11": "passed",
+    "12": "engineering_controls_passed"
+  },
+  "release_constraints": [
+    "Subjective draft quality requires dual human review and threshold sign-off.",
+    "Each traffic promotion requires an authorized human approval.",
+    "This report does not claim that production traffic has been promoted to 100 percent."
+  ]
+}

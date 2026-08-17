@@ -29,6 +29,8 @@ stages:
           - python3 -m pip install --upgrade pip -q
           - python3 -m pip install ruff -q
           - python3 -m ruff check services/ tests/
+          - python3 scripts/lint_adrs.py
+          - python3 -m tests.agent_evals.full_loop_journeys.validate_dataset
 
   # ═══════════════════════════════════════════════════════════
   # 阶段二：Test

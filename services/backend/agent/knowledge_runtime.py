@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("backend.agent.knowledge_runtime")
@@ -68,6 +70,33 @@ class KnowledgeRuntimeRefresher:
         if loader:
             return loader._last_hash or ""
         return ""
+
+    async def get_index_version(self) -> str:
+        """返回当前知识索引版本（阶段四 S4-5：任务边界加载新版本）。"""
+        index_path = self._index_path()
+        if index_path is None or not index_path.exists():
+            return ""
+        try:
+            data = index_path.read_text(encoding="utf-8")
+
+            payload = json.loads(data)
+            return payload.get("index_version", "")
+        except Exception as exc:
+            logger.warning("读取知识索引版本失败: %s", exc)
+            return ""
+
+    def _index_path(self) -> Path | None:
+        """定位知识索引文件路径（复用 knowledge_index 默认路径）。"""
+        try:
+            from agent.knowledge_index import DEFAULT_INDEX_FILENAME
+
+            loader = getattr(self.app_state, "knowledge_loader", None)
+            docs_dir = getattr(loader, "docs_dir", None)
+            if docs_dir is None:
+                return None
+            return Path(docs_dir) / "_index" / DEFAULT_INDEX_FILENAME
+        except Exception:
+            return None
 
     async def prepare_for_task(self) -> str:
         """任务开始前准备知识（等待发布锁释放 + 刷新）。

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from agent.knowledge import ProductKnowledge
@@ -44,6 +45,7 @@ logger = logging.getLogger("backend.agent.draft_generator")
 DRAFTS_PER_ARTICLE = 4  # 2 templates × 2 perspectives
 MAX_RETRIES = 1
 DEFAULT_TEMPERATURE = 0.4  # 报道需要适度创造性
+DEFAULT_MAX_OUTPUT_TOKENS = 1800
 MAX_CONTENT_LENGTH = 4000
 LOW_TRUST_BOUNDARY_TOKENS = (
     "【用户模板开始｜低信任结构数据】",
@@ -147,10 +149,17 @@ class DraftGenerator:
         llm: BaseChatModel,
         knowledge: ProductKnowledge,
         temperature: float = DEFAULT_TEMPERATURE,
+        max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
     ):
         self.llm = llm
         self.llm.temperature = temperature
         self.knowledge = knowledge
+        self.max_output_tokens = max(256, int(max_output_tokens))
+        self._draft_llm = (
+            llm.bind(max_tokens=self.max_output_tokens)
+            if isinstance(llm, BaseChatModel)
+            else llm
+        )
 
     # ── 公开接口 ──────────────────────────────────────────────
 
@@ -166,6 +175,7 @@ class DraftGenerator:
         *,
         knowledge_slice: str | None = None,
         user_business_prompt: str | None = None,
+        max_drafts: int | None = None,
     ) -> dict:
         """为单篇文章生成 4 篇 PR 草稿。
 
@@ -177,6 +187,7 @@ class DraftGenerator:
             system_prompt_template: 当前用户的 System Prompt 模板覆盖；None 时使用系统默认
             knowledge_slice: 用户选择产品的知识切片；None 时使用全局知识库
             user_business_prompt: 用户自定义业务提示词补充；None 时不追加
+            max_drafts: 最多生成的版本数；None 保持兼容行为（最多 4 篇）
 
         Returns:
             {
@@ -205,44 +216,112 @@ class DraftGenerator:
                 "error": f"No templates for category: {category_v2}",
             }
 
-        # 为每套模板的每个角度生成草稿
-        tasks = []
-        for tpl in effective_templates:
-            for perspective in tpl.perspectives:
-                tasks.append(
-                    self._generate_draft(
-                        art,
-                        scores,
-                        tpl,
-                        perspective,
-                        len(tasks) + 1,
-                        style_hints,
-                        system_prompt_template,
-                        reference_template,
-                        memory_pack,
-                        knowledge_slice=knowledge_slice,
-                        user_business_prompt=user_business_prompt,
-                    ),
-                )
+        candidates = self._select_candidates(effective_templates, max_drafts)
+        started = time.perf_counter()
+        tasks = [
+            self._generate_draft(
+                art,
+                scores,
+                tpl,
+                perspective,
+                index,
+                style_hints,
+                system_prompt_template,
+                reference_template,
+                memory_pack,
+                knowledge_slice=knowledge_slice,
+                user_business_prompt=user_business_prompt,
+            )
+            for index, (tpl, perspective) in enumerate(candidates, start=1)
+        ]
 
         results = await asyncio.gather(*tasks)
         drafts = []
+        call_metrics: list[dict[str, Any]] = []
         for r in results:
             if r is not None:
+                metrics = r.pop("_generation_metrics", None)
+                if isinstance(metrics, dict):
+                    call_metrics.append(metrics)
                 drafts.append(r)
 
         ok = len(drafts) > 0
         logger.info(
             "Generated %d/%d drafts for: %s",
             len(drafts),
-            DRAFTS_PER_ARTICLE,
+            len(candidates),
             art.get("title", "")[:40],
+        )
+
+        metrics = self._aggregate_metrics(
+            call_metrics,
+            requested_drafts=len(candidates),
+            duration_ms=int((time.perf_counter() - started) * 1000),
         )
 
         return {
             "ok": ok,
             "drafts": drafts,
             "error": None if ok else "All drafts failed",
+            "metrics": metrics,
+        }
+
+    @staticmethod
+    def _select_candidates(
+        templates: list[PRTemplate | EffectivePRTemplate],
+        max_drafts: int | None,
+    ) -> list[tuple[PRTemplate | EffectivePRTemplate, str]]:
+        """选择确定且有差异化的模板/视角组合。
+
+        生成全部版本时保留历史 A1/A2/B1/B2 顺序。限制版本数时优先轮换
+        模板，避免两个版本都来自模板 A。
+        """
+        all_candidates = [
+            (template, perspective)
+            for template in templates
+            for perspective in template.perspectives
+        ]
+        if max_drafts is None or max_drafts >= len(all_candidates):
+            return all_candidates
+
+        limit = max(1, int(max_drafts))
+        diverse: list[tuple[PRTemplate | EffectivePRTemplate, str]] = []
+        perspective_index = 0
+        while len(diverse) < limit:
+            added = False
+            for template in templates:
+                if perspective_index < len(template.perspectives):
+                    diverse.append((template, template.perspectives[perspective_index]))
+                    added = True
+                    if len(diverse) == limit:
+                        return diverse
+            if not added:
+                break
+            perspective_index += 1
+        return diverse
+
+    def _aggregate_metrics(
+        self,
+        calls: list[dict[str, Any]],
+        *,
+        requested_drafts: int,
+        duration_ms: int,
+    ) -> dict[str, Any]:
+        return {
+            "requested_drafts": requested_drafts,
+            "llm_calls": sum(int(call.get("llm_calls", 0)) for call in calls),
+            "retry_count": sum(int(call.get("retry_count", 0)) for call in calls),
+            "input_tokens": sum(int(call.get("input_tokens", 0)) for call in calls),
+            "output_tokens": sum(int(call.get("output_tokens", 0)) for call in calls),
+            "cached_input_tokens": sum(
+                int(call.get("cached_input_tokens", 0)) for call in calls
+            ),
+            "usage_estimated": any(bool(call.get("usage_estimated")) for call in calls),
+            "duration_ms": duration_ms,
+            "llm_duration_ms_total": sum(
+                int(call.get("duration_ms", 0)) for call in calls
+            ),
+            "max_output_tokens_per_call": self.max_output_tokens,
         }
 
     # ── 单篇草稿生成 ──────────────────────────────────────────
@@ -283,16 +362,22 @@ class DraftGenerator:
         )
         user_prompt = self._build_user_prompt(article, scores)
 
+        call_started = time.perf_counter()
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt),
+        ]
         for attempt in range(MAX_RETRIES + 1):
             try:
-                response = await self.llm.ainvoke(
-                    [
-                        SystemMessage(content=system_prompt),
-                        HumanMessage(content=user_prompt),
-                    ]
-                )
+                response = await self._draft_llm.ainvoke(messages)
                 raw = response.content if hasattr(response, "content") else str(response)
                 content = self._clean_draft(raw, article.get("title", ""))
+
+                from agent.llm_wrapper import LLMWrapper
+
+                input_tokens, output_tokens, cached_tokens, estimated = (
+                    LLMWrapper._resolve_usage(messages, response)
+                )
 
                 return {
                     "template": template.name,
@@ -301,6 +386,15 @@ class DraftGenerator:
                     "title": article.get("title", ""),
                     "index": index,
                     **self._template_metadata(template, perspective),
+                    "_generation_metrics": {
+                        "llm_calls": attempt + 1,
+                        "retry_count": attempt,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "cached_input_tokens": cached_tokens,
+                        "usage_estimated": estimated,
+                        "duration_ms": int((time.perf_counter() - call_started) * 1000),
+                    },
                 }
             except Exception as e:
                 if attempt == MAX_RETRIES:
@@ -310,7 +404,24 @@ class DraftGenerator:
                         index,
                         e,
                     )
-                    return self._fallback_draft(article, template, perspective, index, str(e))
+                    fallback = self._fallback_draft(
+                        article, template, perspective, index, str(e)
+                    )
+                    estimated_input = max(
+                        1,
+                        sum(len(str(getattr(message, "content", ""))) for message in messages)
+                        // 4,
+                    )
+                    fallback["_generation_metrics"] = {
+                        "llm_calls": attempt + 1,
+                        "retry_count": attempt,
+                        "input_tokens": estimated_input * (attempt + 1),
+                        "output_tokens": 0,
+                        "cached_input_tokens": 0,
+                        "usage_estimated": True,
+                        "duration_ms": int((time.perf_counter() - call_started) * 1000),
+                    }
+                    return fallback
 
         return None
 

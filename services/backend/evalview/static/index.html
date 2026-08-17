@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>知识检索评测可视化</title>
+  <link rel="stylesheet" href="https://unpkg.com/antd@5.22.0/dist/reset.css" />
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/dayjs@1.11.10/dayjs.min.js"></script>
+  <script src="https://unpkg.com/antd@5.22.0/dist/antd.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
+  <style>
+    body { margin: 0; background: #f0f2f5; font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .app-header { background: #001529; padding: 16px 24px; color: #fff; display: flex; align-items: center; gap: 16px; }
+    .app-header h1 { margin: 0; font-size: 20px; color: #fff; flex: 1; }
+    .app-header .sub { color: #8c8c8c; font-size: 12px; }
+    .content { padding: 24px; max-width: 1400px; margin: 0 auto; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+    .stat-card .label { color: #8c8c8c; font-size: 12px; }
+    .stat-card .value { font-size: 24px; font-weight: 600; margin-top: 4px; }
+    .stat-card .value.ok { color: #52c41a; }
+    .stat-card .value.fail { color: #ff4d4f; }
+    .gate-list { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+    .gate-chip { background: #fff; border-radius: 6px; padding: 8px 12px; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+    .gate-chip .tag { font-weight: 600; margin-right: 6px; }
+    .gate-chip.pass { border-left: 3px solid #52c41a; }
+    .gate-chip.fail { border-left: 3px solid #ff4d4f; }
+    .section-title { font-size: 16px; font-weight: 600; margin: 24px 0 12px; }
+    .detail-code { background: #f5f5f5; border-radius: 6px; padding: 16px; overflow: auto; max-height: 480px; font-size: 12px; }
+    .mono { font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; margin-right: 6px; }
+    .pill.ok { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+    .pill.fail { background: #fff2f0; color: #ff4d4f; border: 1px solid #ffa39e; }
+    .pill.info { background: #e6f4ff; color: #1677ff; border: 1px solid #91caff; }
+    table.ant-table { font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+const { Menu, Table, Tag, Descriptions, Spin, Alert } = antd;
+
+const REPORTS = [
+  { name: 'baseline', title: '产品路由基线评测', type: 'baseline' },
+  { name: 'baseline-v2', title: '检索评测·真实用户输入', type: 'baseline' },
+  { name: 'baseline-query', title: '检索评测·线上用户Query', type: 'baseline' },
+  { name: 'ranking', title: '检索排序指标 (Recall@K/Precision@K/MRR/NDCG@K/HitRate)', type: 'ranking' },
+  { name: 'ranking-query', title: '检索排序·真实线上Query (Recall@K/Precision@K/MRR/NDCG@K/HitRate)', type: 'ranking' },
+  { name: 'replay', title: '知识检索离线回放', type: 'replay' },
+  { name: 'eval-pr', title: 'PR 上下文评测', type: 'harness' },
+  { name: 'eval-nightly', title: '夜间上下文评测', type: 'harness' },
+];
+
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+function fmtPct(v) {
+  if (v === null || v === undefined) return '-';
+  return (v * 100).toFixed(1) + '%';
+}
+
+function GateChips({ gates }) {
+  if (!gates) return null;
+  const items = Object.entries(gates).map(([k, g]) => {
+    const val = g.value;
+    const isPct = typeof val === 'number' && val >= 0 && val <= 1;
+    const shown = isPct ? fmtPct(val) : String(val);
+    return (
+      <div className={'gate-chip ' + (g.pass ? 'pass' : 'fail')} key={k}>
+        <span className="tag">{k}</span>
+        <span className="mono">{shown}</span>
+        <span style={{ color: '#8c8c8c', marginLeft: 6 }}>(要求 {g.threshold})</span>
+        <Tag color={g.pass ? 'green' : 'red'} style={{ marginLeft: 6 }}>{g.pass ? '通过' : '未过'}</Tag>
+      </div>
+    );
+  });
+  return <div className="gate-list">{items}</div>;
+}
+
+function StatCards({ data }) {
+  const cards = [];
+  if (data.total !== undefined) {
+    cards.push(<StatCard key="total" label="用例总数" value={data.total} />);
+  }
+  if (data.passed !== undefined) {
+    cards.push(<StatCard key="passed" label="通过" value={data.passed} ok={data.failed === 0} />);
+  }
+  if (data.failed !== undefined) {
+    cards.push(<StatCard key="failed" label="失败" value={data.failed} ok={data.failed === 0} fail={data.failed > 0} />);
+  }
+  if (data.top1_accuracy !== undefined) cards.push(<StatCard key="t1" label="Top1 准确率" value={fmtPct(data.top1_accuracy)} ok={data.top1_accuracy >= 0.9} />);
+  if (data.top2_recall !== undefined) cards.push(<StatCard key="t2" label="Top2 召回" value={fmtPct(data.top2_recall)} ok={data.top2_recall >= 0.97} />);
+  if (data.forbidden_violation_rate !== undefined) cards.push(<StatCard key="fb" label="禁止产品命中率" value={fmtPct(data.forbidden_violation_rate)} ok={data.forbidden_violation_rate === 0} fail={data.forbidden_violation_rate > 0} />);
+  if (data.false_positive_rate !== undefined) cards.push(<StatCard key="fp" label="无命中误报率" value={fmtPct(data.false_positive_rate)} ok={data.false_positive_rate === 0} />);
+  if (data.expansion_coverage !== undefined) cards.push(<StatCard key="ec" label="展开覆盖率" value={fmtPct(data.expansion_coverage)} />);
+  if (data.total_cases !== undefined) cards.push(<StatCard key="tc" label="用例数" value={data.total_cases} />);
+  if (data.legacy && data.legacy.fact_source_rate !== undefined) {
+    cards.push(<StatCard key="fsr-l" label="事实来源率(旧)" value={fmtPct(data.legacy.fact_source_rate)} />);
+  }
+  if (data.new && data.new.fact_source_rate !== undefined) {
+    cards.push(<StatCard key="fsr-n" label="事实来源率(新)" value={fmtPct(data.new.fact_source_rate)} />);
+  }
+  if (data.new && data.new.unsupported_high_risk !== undefined) {
+    cards.push(<StatCard key="uhr" label="无依据高风险事实(新)" value={data.new.unsupported_high_risk} ok={data.new.unsupported_high_risk === 0} fail={data.new.unsupported_high_risk > 0} />);
+  }
+  if (data.report && data.report.paired) {
+    const p = data.report.paired;
+    if (p.success_rate_delta !== undefined) cards.push(<StatCard key="srd" label="成功率变化" value={(p.success_rate_delta*100).toFixed(1)+'pp'} ok={p.success_rate_delta >= 0} fail={p.success_rate_delta < 0} />);
+    if (p.token_reduction_pct !== undefined) cards.push(<StatCard key="trp" label="Token 变化" value={(p.token_reduction_pct).toFixed(1)+'%'} />);
+  }
+  if (data.metrics && data.metrics.mrr !== undefined) {
+    const m = data.metrics;
+    cards.push(<StatCard key="mrr" label="MRR" value={m.mrr.toFixed(3)} ok={m.mrr >= 0.5} fail={m.mrr < 0.5} />);
+    cards.push(<StatCard key="r3" label="Recall@3" value={fmtPct(m.recall['@3'])} ok={m.recall['@3'] >= 0.5} fail={m.recall['@3'] < 0.5} />);
+    cards.push(<StatCard key="p3" label="Precision@3" value={fmtPct(m.precision['@3'])} />);
+    cards.push(<StatCard key="n3" label="NDCG@3" value={fmtPct(m.ndcg['@3'])} ok={m.ndcg['@3'] >= 0.5} fail={m.ndcg['@3'] < 0.5} />);
+    cards.push(<StatCard key="h3" label="HitRate@3" value={fmtPct(m.hit_rate['@3'])} ok={m.hit_rate['@3'] >= 0.6} fail={m.hit_rate['@3'] < 0.6} />);
+    if (data.target_in_top5 !== undefined) cards.push(<StatCard key="t5" label="目标文档进Top5" value={fmtPct(data.target_in_top5)} />);
+  }
+  return <div className="stat-grid">{cards}</div>;
+}
+
+function StatCard({ label, value, ok, fail }) {
+  const cls = ok ? 'ok' : (fail ? 'fail' : '');
+  return (
+    <div className="stat-card">
+      <div className="label">{label}</div>
+      <div className={'value ' + cls}>{value}</div>
+    </div>
+  );
+}
+
+// ── 详情渲染封装 ─────────────────────────────
+function DetailView({ report, name }) {
+  if (name === 'baseline' || name === 'baseline-v2' || name === 'baseline-query') return <BaselineDetail data={report} />;
+  if (name === 'replay') return <ReplayDetail data={report} />;
+  if (name === 'ranking') return <RankingDetail data={report} />;
+  if (name === 'eval-pr' || name === 'eval-nightly') return <HarnessDetail data={report} />;
+  return <pre className="detail-code">{JSON.stringify(report, null, 2)}</pre>;
+}
+
+function BaselineDetail({ data }) {
+  const rows = (data.results || []).map((r) => ({
+    key: r.case_id,
+    case_id: r.case_id,
+    mode: r.mode || 'auto',
+    role: r.role || '',
+    title: r.query || r.title || '',
+    expected: (r.expected || []).join(', '),
+    predicted: (r.predicted || []).join(', '),
+    pass: !!r.pass,
+    requires_expansion: !!r.requires_expansion,
+    checks: r.checks || [],
+    raw: r,
+  }));
+  const columns = [
+    { title: '用例', dataIndex: 'case_id', width: 90 },
+    { title: '角色', dataIndex: 'role', width: 110, render: (v) => v || '-' },
+    { title: '输入标题', dataIndex: 'title', ellipsis: true, render: (v) => v ? <span title={v}>{v}</span> : '-' },
+    { title: '模式', dataIndex: 'mode', width: 70 },
+    { title: '期望产品', dataIndex: 'expected', ellipsis: true },
+    { title: '预测产品', dataIndex: 'predicted', ellipsis: true },
+    { title: '需展开', dataIndex: 'requires_expansion', width: 70, render: (v) => v ? <Tag color="blue">是</Tag> : <Tag>否</Tag> },
+    { title: '结果', dataIndex: 'pass', width: 70, render: (v) => v ? <Tag color="green">通过</Tag> : <Tag color="red">失败</Tag> },
+  ];
+  return (
+    <>
+      <GateChips gates={data.gates} />
+      <Table size="small" columns={columns} dataSource={rows} pagination={{ pageSize: 20 }}
+        expandable={{ expandedRowRender: (record) => (
+          <div>
+            <Descriptions size="small" column={1}>
+              {record.checks.map((c, i) => (
+                <Descriptions.Item key={i} label={<span className="mono">{c.name}</span>}>
+                  <Tag color={c.pass ? 'green' : 'red'}>{c.pass ? '通过' : '失败'}</Tag> {c.reason}
+                </Descriptions.Item>
+              ))}
+            </Descriptions>
+            <div className="detail-code">{JSON.stringify(record.raw.predicted_matches || [], null, 2)}</div>
+          </div>
+        )}} />
+    </>
+  );
+}
+
+function RankingDetail({ data }) {
+  const ks = data.ks || [1, 3, 5];
+  const rows = (data.results || []).map((r) => ({
+    key: r.case_id || r.relevant_doc_id,
+    case_id: r.case_id || '',
+    title: r.title || r.query || '',
+    product_id: r.product_id || (r.expected || []).join('+') || '',
+    doc_type: r.doc_type || '',
+    query: r.query || '',
+    rank: r.rank || 0,
+    ranked_docs: r.ranked_docs || [],
+  }));
+  const columns = [
+    { title: '用例', dataIndex: 'case_id', width: 80, render: (v) => v || '-' },
+    { title: '相关文档/Query', dataIndex: 'title', width: 200, ellipsis: true, render: (v) => v ? <span title={v}>{v}</span> : '-' },
+    { title: '期望产品', dataIndex: 'product_id', width: 150, render: (v) => v ? <span title={v}>{v}</span> : '-' },
+    {
+      title: '目标排名', dataIndex: 'rank', width: 90,
+      render: (v) => v > 0
+        ? <Tag color={v <= 3 ? 'green' : (v <= 5 ? 'orange' : 'red')}>#{v}</Tag>
+        : <Tag color="red">未命中</Tag>,
+    },
+    {
+      title: 'Top@K', dataIndex: 'rank', width: 140,
+      render: (v) => ks.map((k) => <Tag key={k} color={(0 < v && v <= k) ? 'green' : 'default'}>@{k}</Tag>),
+    },
+  ];
+  return (
+    <>
+      <GateChips gates={data.gates} />
+      <Table size="small" columns={columns} dataSource={rows} pagination={{ pageSize: 20 }}
+        expandable={{ expandedRowRender: (record) => (
+          <div>
+            <Descriptions size="small" column={1}>
+              <Descriptions.Item label="Query"><span className="mono">{record.query || '-'}</span></Descriptions.Item>
+              <Descriptions.Item label="Top5 排序">
+                <span className="mono">{(record.ranked_docs || []).join(' → ') || '-'}</span>
+              </Descriptions.Item>
+            </Descriptions>
+          </div>
+        )}} />
+    </>
+  );
+}
+
+function ReplayDetail({ data }) {
+  const rows = (data.results || []).map((r) => ({
+    key: r.case_id + '-' + r.mode,
+    case_id: r.case_id,
+    mode: r.mode,
+    product_ok: r.product_ok,
+    fact_source_rate: r.fact_source_rate,
+    citation_blocks: r.citation_blocks,
+    unsupported_high_risk: r.unsupported_high_risk,
+    competitor_terms: (r.competitor_terms || []).join(', '),
+    char_count: r.char_count,
+  }));
+  const columns = [
+    { title: '用例', dataIndex: 'case_id', width: 110 },
+    { title: '链路', dataIndex: 'mode', width: 80, render: (v) => <Tag color={v === 'new' ? 'blue' : 'default'}>{v}</Tag> },
+    { title: '产品相关', dataIndex: 'product_ok', width: 100, render: (v) => v ? <Tag color="green">OK</Tag> : <Tag color="red">否</Tag> },
+    { title: '事实来源率', dataIndex: 'fact_source_rate', width: 110, render: (v) => fmtPct(v) },
+    { title: '引用块数', dataIndex: 'citation_blocks', width: 90 },
+    { title: '无依据高风险', dataIndex: 'unsupported_high_risk', width: 110, render: (v) => v > 0 ? <Tag color="red">{v}</Tag> : <Tag color="green">{v}</Tag> },
+    { title: '竞品词', dataIndex: 'competitor_terms', ellipsis: true },
+    { title: '字数', dataIndex: 'char_count', width: 80 },
+  ];
+  return (
+    <>
+      <GateChips gates={data.gates} />
+      <Table size="small" columns={columns} dataSource={rows} pagination={{ pageSize: 20 }} />
+    </>
+  );
+}
+
+function HarnessDetail({ data }) {
+  const report = data.report || data;
+  const legacy = report.legacy || {};
+  const candidate = report.candidate || {};
+  const paired = report.paired || {};
+  const rows = (report.results || []).map((r, i) => ({
+    key: r.case_id + '-' + (r.repetitions ?? i),
+    case_id: r.case_id,
+    category: r.category || '-',
+    rep: r.repetitions,
+    legacy_success: r.legacy && r.legacy.success,
+    legacy_tokens: r.legacy && r.legacy.tokens,
+    cand_success: r.candidate && r.candidate.success,
+    cand_tokens: r.candidate && r.candidate.tokens,
+    token_delta: r.token_delta_pct,
+    quality_regressed: r.quality_regressed,
+  }));
+  const columns = [
+    { title: '用例', dataIndex: 'case_id', width: 90 },
+    { title: '类别', dataIndex: 'category', width: 100 },
+    { title: '重复', dataIndex: 'rep', width: 60 },
+    { title: '旧-success', dataIndex: 'legacy_success', width: 100, render: (v) => v ? <Tag color="green">成功</Tag> : <Tag color="red">失败</Tag> },
+    { title: '旧-token', dataIndex: 'legacy_tokens', width: 90, render: (v) => Math.round(v || 0) },
+    { title: '新-success', dataIndex: 'cand_success', width: 100, render: (v) => v ? <Tag color="green">成功</Tag> : <Tag color="red">失败</Tag> },
+    { title: '新-token', dataIndex: 'cand_tokens', width: 90, render: (v) => Math.round(v || 0) },
+    { title: 'Token 变化', dataIndex: 'token_delta', width: 100, render: (v) => <span className="mono">{v != null ? v.toFixed(1) + '%' : '-'}</span> },
+    { title: '质量回退', dataIndex: 'quality_regressed', width: 90, render: (v) => v ? <Tag color="red">是</Tag> : <Tag color="green">否</Tag> },
+  ];
+  return (
+    <>
+      <div className="stat-grid">
+        <StatCard label="旧成功率" value={fmtPct(legacy.success_rate)} ok={(legacy.success_rate||0) >= 0.9} fail={(legacy.success_rate||0) < 0.9} />
+        <StatCard label="新成功率" value={fmtPct(candidate.success_rate)} ok={(candidate.success_rate||0) >= 0.9} fail={(candidate.success_rate||0) < 0.9} />
+        <StatCard label="Token 减少" value={paired.token_reduction_pct != null ? paired.token_reduction_pct.toFixed(1)+'%' : '-'} ok={(paired.token_reduction_pct||0) > 0} fail={(paired.token_reduction_pct||0) < 0} />
+        <StatCard label="成功率变化" value={paired.success_rate_delta != null ? (paired.success_rate_delta*100).toFixed(1)+'pp' : '-'} ok={(paired.success_rate_delta||0) >= 0} fail={(paired.success_rate_delta||0) < 0} />
+      </div>
+      <Table size="small" columns={columns} dataSource={rows} pagination={{ pageSize: 20 }} />
+    </>
+  );
+}
+
+function App() {
+  const [active, setActive] = useState('baseline');
+  const [reports, setReports] = useState([]);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    fetchJSON('/api/reports').then(setReports).catch(() => setReports(REPORTS));
+  }, []);
+
+  useEffect(() => {
+    setLoading(true); setError(null);
+    fetchJSON('/api/reports/' + active)
+      .then(setData)
+      .catch((e) => setError(String(e)))
+      .finally(() => setLoading(false));
+  }, [active]);
+
+  const statData = useMemo(() => {
+    if (!data) return {};
+    if (active === 'eval-pr' || active === 'eval-nightly') return { report: data };
+    return data;
+  }, [data, active]);
+
+  return (
+    <>
+      <div className="app-header">
+        <h1>🎯 知识检索评测可视化 <span className="sub">类似 Langfuse 的只读评测视图</span></h1>
+        <span className="sub">数据源: reports/*.json</span>
+      </div>
+      <div className="content">
+        <Menu mode="horizontal" selectedKeys={[active]} onClick={({ key }) => setActive(key)}
+          items={reports.map((r) => ({ key: r.name, label: r.title }))} style={{ marginBottom: 24 }} />
+        {loading && <div style={{ textAlign: 'center', padding: 48 }}><Spin size="large" /></div>}
+        {error && <Alert type="error" message="加载失败" description={error} showIcon style={{ marginBottom: 16 }} />}
+        {!loading && !error && data && (
+          <>
+            <StatCards data={statData} />
+            <div className="section-title">用例明细</div>
+            <DetailView report={data} name={active} />
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
