@@ -95,6 +95,7 @@ class ClassifyResultV2:
         "reason",
         "relevance_confidence",
         "relevance_reason",
+        "security_domain",
     )
 
     def __init__(
@@ -107,6 +108,7 @@ class ClassifyResultV2:
         is_relevant: bool | None = None,
         relevance_confidence: int | None = None,
         relevance_reason: str = "",
+        security_domain: str = "未知",
     ):
         self.category = category
         self.confidence = confidence
@@ -120,6 +122,7 @@ class ClassifyResultV2:
             confidence if relevance_confidence is None else relevance_confidence
         )
         self.relevance_reason = relevance_reason or reason
+        self.security_domain = security_domain
 
     @property
     def is_pr_eligible(self) -> bool:
@@ -141,6 +144,7 @@ class ClassifyResultV2:
             "is_ai_agent_security_relevant": self.is_relevant,
             "ai_agent_security_relevance_confidence": self.relevance_confidence,
             "ai_agent_security_relevance_reason": self.relevance_reason,
+            "security_domain": self.security_domain,
         }
 
 
@@ -182,6 +186,12 @@ SYSTEM_PROMPT = """你是一个专注 AI 安全与智能体安全的情报分析
 - 仅出现“AI”“Agent”“大模型”等关键词不构成相关，必须存在明确的安全风险、攻击、防护、身份权限或治理内容
 - 仅出现普通“安全”“漏洞”“攻击”等关键词也不构成相关，必须与 AI 系统或智能体形成直接关系
 - 若证据不足或只是边缘提及，判为不相关
+
+**同时输出 security_domain（安全域归属，4选1）：**
+- "agent安全"：核心议题围绕智能体（Agent）及其生态——智能体身份/权限/工具调用/MCP/A2A/Agent运行时/恶意Agent/Agent间信任等
+- "AI安全"：核心议题围绕大模型与生成式AI安全（提示注入、越狱、投毒、对抗样本、模型供应链等），但非智能体特有
+- "传统安全"：仅涉及传统网络/终端/云/数据安全，未直接涉及 AI 系统或智能体（此时第一步应为 false）
+- "不相关"：与安全议题无关（此时第一步应为 false）
 
 ## 第二步：若相关，归入以下6类之一
 
@@ -238,10 +248,10 @@ AI 安全或智能体安全相关友商的商业与产品动态。
 
 ## 输出格式与门控规则
 严格按 JSON 格式输出，不要添加代码块标记：
-{"is_relevant": true或false, "relevance_confidence": 0-100的整数, "relevance_reason": "相关性理由", "category": "类别名", "confidence": 0-100的整数, "reason": "分类理由"}
+{"is_relevant": true或false, "relevance_confidence": 0-100的整数, "relevance_reason": "相关性理由", "security_domain": "agent安全或AI安全或传统安全或不相关", "category": "类别名", "confidence": 0-100的整数, "reason": "分类理由"}
 
-- 第一步为 false 时：category 必须为“不相关”，不得继续套用六分类
-- 第一步为 true 时：category 必须从六分类中选择，不得为“不相关”
+- 第一步为 false 时：category 必须为“不相关”，security_domain 为“传统安全”或“不相关”，不得继续套用六分类
+- 第一步为 true 时：category 必须从六分类中选择，不得为“不相关”，security_domain 为“agent安全”或“AI安全”
 
 **最终 category 标签共7个（六分类 + 不相关）：**
 - "不相关" — 与AI/Agent安全无关
@@ -500,6 +510,14 @@ class ClassifierV2:
         result["category"] = category
         result["is_relevant"] = is_relevant
 
+        # security_domain - 安全域归属（agent安全/AI安全/传统安全/不相关），非法值归为“未知”
+        domain = str(parsed.get("security_domain", "")).strip()
+        if not is_relevant:
+            domain = domain if domain in {"传统安全", "不相关"} else "传统安全"
+        else:
+            domain = domain if domain in {"agent安全", "AI安全"} else "未知"
+        result["security_domain"] = domain
+
         # confidence — 范围限制
         try:
             confidence = int(parsed.get("confidence", 50))
@@ -537,6 +555,7 @@ class ClassifierV2:
             is_relevant=validated["is_relevant"],
             relevance_confidence=validated["relevance_confidence"],
             relevance_reason=validated["relevance_reason"],
+            security_domain=validated.get("security_domain", "未知"),
         )
 
     @staticmethod
@@ -548,4 +567,5 @@ class ClassifierV2:
             reason=f"分类失败(降级): {error[:80]}",
             fallback=True,
             error=error[:200],
+            security_domain="未知",
         )

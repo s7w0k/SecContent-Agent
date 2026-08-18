@@ -271,6 +271,18 @@ class Settings(BaseSettings):
     CHAT_SSE_SCHEMA_VERSION: str = Field(
         default="1.0", description="SSE 事件 schema 版本"
     )
+    CHAT_AGENT_MEMORY_ENABLED: bool = Field(
+        default=True, description="聊天 Agent 注入用户长期记忆（token 预算内）"
+    )
+    CHAT_AGENT_SKILL_ENABLED: bool = Field(
+        default=True, description="聊天 Agent 按诉求召回并注入 Skill 指令"
+    )
+    CHAT_AGENT_HISTORY_TOKENS: int = Field(
+        default=6000, ge=1000, le=64000, description="聊天 Agent 单轮历史 token 预算"
+    )
+    CHAT_AGENT_EVOLUTION_ENABLED: bool = Field(
+        default=True, description="聊天 Agent 自进化闭环（落库 generation_runs + 记忆事件）"
+    )
 
     # ── 知识 Skills 与上下文工程（阶段二）──────────────────────
     KNOWLEDGE_SKILLS_ENABLED: bool = Field(
@@ -338,6 +350,10 @@ class Settings(BaseSettings):
     )
     AUTONOMOUS_AGENT_ROLLOUT_PERCENT: int = Field(
         default=0, ge=0, le=100, description="灰度百分比（0-100，按 user_id 确定性分流）"
+    )
+    AGENT_PLANNER: str = Field(
+        default="rule",
+        description="自主运行选步模式：rule=固定顺序 SOP；llm=LLM 每轮决策下一步（关卡护栏不变，LLM 故障自动回退 rule）",
     )
     AUTONOMOUS_MAX_STEPS: int = Field(
         default=20, ge=1, le=100, description="自主运行最大步骤数"

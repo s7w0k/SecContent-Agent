@@ -94,17 +94,54 @@ class ProductionActionPlanner:
             self.plan = outcome.plan
         self.pause_status = None
         self.pending_questions = []
+        # 用户"授权系统决定/继续"的开关：分类离题或产品无匹配时，若用户已授权则由系统继续
+        auto_slot = state.slot_states.get("auto_select")
+        auto_select = bool(
+            auto_slot and auto_slot.status.value == "confirmed" and auto_slot.value
+        )
+        # ── 关卡 1：分类结果与用户主题不符/离题 -> 停下让用户决定 ──
+        classify = self.observations.get("classify")
+        if classify and not auto_select:
+            cdata = classify.data or {}
+            conflict = str(cdata.get("conflict") or "")
+            eligible = bool(cdata.get("eligible", True))
+            category = str(cdata.get("category") or "unknown")
+            domain = str(cdata.get("security_domain") or "")
+            domain_hint = f"，安全域：{domain}" if domain and domain != "未知" else ""
+            if (not eligible) or conflict:
+                self.pause_status = RuntimeStatus.WAITING_USER
+                self.pause_reason_code = "category_mismatch"
+                self.pause_reason = "article classification conflicts with or is off-topic for the user request"
+                if conflict:
+                    hint = f"分类结果与您要求的类别不符（{conflict}；六分类：{category}{domain_hint}）"
+                else:
+                    hint = f"该新闻与目标主题不相关（六分类：{category}{domain_hint}）"
+                self.pending_questions = [
+                    f"{hint}。请处理：①仍用这篇继续 ②换下一条候选新闻 ③取消本次任务"
+                ]
+                return None
         products = self.observations.get("products")
         product_slot = state.slot_states.get("product_ids")
         product_confirmed = bool(
             product_slot and product_slot.status.value == "confirmed" and product_slot.value
         )
-        if products and products.data.get("outcome") == "ambiguous" and not product_confirmed:
-            self.pause_status = RuntimeStatus.WAITING_USER
-            self.pause_reason_code = "product_ambiguity"
-            self.pause_reason = "multiple products have similar confidence"
-            self.pending_questions = ["请选择要用于评分和写稿的产品。"]
-            return None
+        # ── 关卡 2：分类通过但无产品匹配 / 产品歧义 → 停下让用户决定 ──
+        if products and not product_confirmed:
+            outcome = products.data.get("outcome")
+            if outcome == "no_related_product":
+                self.pause_status = RuntimeStatus.WAITING_USER
+                self.pause_reason_code = "product_none"
+                self.pause_reason = "no product in the catalog matches this article"
+                self.pending_questions = [
+                    "没有匹配到相关安全产品。请处理：①仍用这篇按通用口径继续 ②换下一条候选新闻 ③取消本次任务"
+                ]
+                return None
+            if outcome == "ambiguous":
+                self.pause_status = RuntimeStatus.WAITING_USER
+                self.pause_reason_code = "product_ambiguity"
+                self.pause_reason = "multiple products have similar confidence"
+                self.pending_questions = ["请选择要用于评分和写稿的产品。"]
+                return None
         discovery = self.observations.get("discover")
         article_slot = state.slot_states.get("selected_article_ids")
         article_confirmed = bool(
@@ -128,6 +165,10 @@ class ProductionActionPlanner:
                 self.pause_reason = "multiple news candidates require selection"
                 self.pending_questions = ["请选择一篇新闻，或明确授权系统选择第一名。"]
                 return None
+        return await self._select_next_action(state)
+
+    async def _select_next_action(self, state: RuntimeState) -> PlannedAction | None:
+        """确定性选步：按计划顺序返回下一个可执行步骤（SOP 兜底路径）。"""
         completed = set(state.completed_steps)
         failed = set(state.failed_steps)
         for step in self.plan.steps:

@@ -211,18 +211,21 @@ async def lifespan(app: FastAPI):
             build_business_tool_registry,
         )
         from agent.business_tools.production import ProductionBusinessToolService
-        from agent.conversational_service import ConversationalAgentService
-        from agent.run_manifest import RunManifestStore
         from agent.runtime_events import RuntimeEventStore
-        from agent.task_state_store import InMemoryTaskStateStore, TaskStateStore
 
         business_registry = build_business_tool_registry()
+        from agent.draft_chat import DraftChatAgent
         production_tools = ProductionBusinessToolService(
             db=app.state.db,
             classifier=classifier_v2,
             scorer=scorer_v2,
             draft_generator=draft_gen,
             draft_reviewer=draft_reviewer,
+            draft_chat=DraftChatAgent(
+                llm=llm,
+                knowledge_loader=knowledge_loader,
+                db=app.state.db,
+            ),
             crawl_client=app.state.mcp_crawl_client,
             search_client=getattr(app.state, "searxng_client", None),
         )
@@ -240,25 +243,28 @@ async def lifespan(app: FastAPI):
         )
         app.state.business_tool_registry = business_registry
         app.state.business_tool_executor = business_executor
-        app.state.conversational_agent_service = ConversationalAgentService(
-            task_store=(
-                TaskStateStore(app.state.db)
-                if app.state.db is not None
-                else InMemoryTaskStateStore()
-            ),
-            tool_executor=business_executor,
-            tool_adapter=(
-                BusinessToolAdapterKind.PRODUCTION
-                if app.state.db is not None
-                else BusinessToolAdapterKind.FAKE
-            ),
-            event_store=(RuntimeEventStore(app.state.db) if app.state.db is not None else None),
-            manifest_store=(RunManifestStore(app.state.db) if app.state.db is not None else None),
-        )
         _log(
             "INFO",
             f"Business tools initialized: {len(business_registry.names())} contracts",
         )
+
+        # 聊天式 Agent 引擎（真正的 LLM tool-loop + 聊天工作台）
+        from agent.chat_agent_service import ChatAgentService
+        from agent.llm_wrapper import LLMWrapper
+
+        app.state.llm_wrapper = LLMWrapper(llm, app.state.db)
+        app.state.chat_agent_service = ChatAgentService(
+            llm_wrapper=app.state.llm_wrapper,
+            executor=business_executor,
+            registry=business_registry,
+            adapter=(
+                BusinessToolAdapterKind.PRODUCTION
+                if app.state.db is not None
+                else BusinessToolAdapterKind.FAKE
+            ),
+            db=app.state.db,
+        )
+        _log("INFO", "Chat Agent engine initialized (LLM tool-loop)")
 
         pipeline_manager = PipelineManager(
             tools=tools,
@@ -534,10 +540,9 @@ async def log_requests(request: Request, call_next):
 from api.a2a import router as a2a_router
 from api.accounts import router as accounts_router
 from api.activity import router as activity_router
-from api.agent import router as agent_router
 from api.auth import router as auth_router
+from api.agent_engine import router as agent_engine_router
 from api.autonomous import router as autonomous_router
-from api.chat import router as chat_router
 from api.crawl_config import router as crawl_config_router
 from api.dashboard import router as dashboard_router
 from api.dev_logs import router as dev_logs_router
@@ -557,6 +562,7 @@ from api.profile import router as profile_router
 from api.profile_policy import router as profile_policy_router
 from api.reports import router as reports_router
 from api.upload import router as upload_router
+from api.manuscripts import router as manuscripts_router
 from api.user_knowledge import router as user_knowledge_router
 from api.user_prompts import router as user_prompts_router
 from api.web_search import router as web_search_router
@@ -565,10 +571,9 @@ app.include_router(pipeline_router)
 app.include_router(llm_router)
 app.include_router(dashboard_router)
 app.include_router(reports_router)
-app.include_router(chat_router)
 app.include_router(feedback_router)
 app.include_router(activity_router)
-app.include_router(agent_router)
+app.include_router(agent_engine_router)
 app.include_router(profile_router)
 app.include_router(pr_templates_router)
 app.include_router(auth_router)
@@ -578,6 +583,7 @@ app.include_router(dev_logs_router)
 app.include_router(crawl_config_router)
 app.include_router(overseas_router)
 app.include_router(upload_router)
+app.include_router(manuscripts_router)
 app.include_router(user_prompts_router)
 app.include_router(profile_policy_router)
 app.include_router(personalization_router)
@@ -649,3 +655,13 @@ try:
     _log("INFO", "Static files mounted from ./static")
 except RuntimeError:
     _log("INFO", "Static directory not found - running in API-only mode")
+
+
+# index.html 不做缓存，否则浏览器会持续加载旧版前端资源（已带内容hash的 JS/CSS 仍走长缓存）
+@app.middleware("http")
+async def no_cache_index_html(request, call_next):
+    response = await call_next(request)
+    if request.url.path in ("/", "/index.html"):
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    return response

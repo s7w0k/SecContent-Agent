@@ -110,6 +110,7 @@ class ClassifyArticleArgs(ToolModel):
 class ClassifyArticleResult(ToolModel):
     article: ArticleReference
     category: str = Field(..., min_length=1, max_length=160)
+    security_domain: str = Field(default="未知", max_length=60)
     confidence: float = Field(..., ge=0, le=1)
     reason: str = Field(default="", max_length=1000)
     eligible: bool
@@ -185,6 +186,7 @@ class DraftArtifact(ToolModel):
 class GenerateDraftResult(ToolModel):
     artifact: DraftArtifact
     summary: str = Field(default="", max_length=2000)
+    content: str = Field(default="", max_length=100_000)
     evidence_refs: list[str] = Field(default_factory=list, max_length=100)
     model_version: str = Field(..., min_length=1, max_length=160)
     prompt_version: str = Field(..., min_length=1, max_length=160)

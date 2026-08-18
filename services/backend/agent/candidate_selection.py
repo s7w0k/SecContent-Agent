@@ -29,6 +29,22 @@ _CHINESE_ORDINALS = {
     "最后一个": -1,
 }
 
+# 用户授权"由 agent 决定"时，直接从当前候选里自动选取首条，不再要求逐条挑选
+_AUTO_MARKERS = (
+    "你决定",
+    "你来定",
+    "你看着办",
+    "你定",
+    "随便",
+    "都可以",
+    "听你的",
+    "由你",
+    "自动选择",
+    "自动选",
+    "全权交给你",
+    "auto",
+)
+
 
 class CandidateSelector:
     def select(
@@ -82,6 +98,16 @@ class CandidateSelector:
                     reason=f"已按标题描述选择《{selected.title}》。",
                     matched_by="title",
                 )
+        # 用户授权"由 agent 决定"时自动选首条（最早/最相关候选优先），避免空转等待
+        if user_text.strip() and any(marker in user_text for marker in _AUTO_MARKERS):
+            selected = available[0]
+            return CandidateSelectionResult(
+                outcome="auto_selected",
+                selected=selected,
+                candidates=available,
+                reason=f"你已授权由我来定，我选择了《{selected.title}》作为底稿来源。",
+                matched_by="user_auto_grant",
+            )
         return CandidateSelectionResult(
             outcome="needs_selection",
             candidates=available,

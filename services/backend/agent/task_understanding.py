@@ -110,6 +110,15 @@ _ARTICLE_ID = re.compile(
 _LENGTH = re.compile(r"(?:约|控制在|不超过|长度)?\s*(\d{3,5})\s*(?:字|字符)")
 _RECENT_DAYS = re.compile(r"(?:最近|近)\s*(\d{1,2})\s*天")
 
+# 未明确指明产品时，按用户表达的安全域自动推断主推产品；无域可判时回落到旗舰产品
+_DOMAIN_DEFAULT_PRODUCT = {
+    "agent安全": "agent-security",
+    "AI安全": "ai-bom",
+    "传统安全": "agent-security",
+}
+_DEFAULT_PR_PRODUCT = "agent-security"
+_DRAFT_INTENTS = {TaskIntent.GENERATE_DRAFT, TaskIntent.SEARCH_AND_DRAFT}
+
 
 class TaskUnderstandingService:
     def __init__(
@@ -167,22 +176,23 @@ class TaskUnderstandingService:
         if more_requested:
             values["search_more"] = True
             explicit.add("search_more")
-        if not is_refinement:
-            has_search = any(marker in lowered for marker in ("搜索", "检索", "找新闻", "search"))
-            has_draft = _has_draft_intent(text, lowered)
-            is_revise = any(marker in lowered for marker in _REVISE_MARKERS)
-            if has_search and has_draft:
-                values["intent"] = TaskIntent.SEARCH_AND_DRAFT
-                explicit.add("intent")
-            elif has_draft and not is_revise:
-                values["intent"] = TaskIntent.GENERATE_DRAFT
-                explicit.add("intent")
-            else:
-                for intent, markers in _INTENT_RULES:
-                    if any(marker.lower() in lowered for marker in markers):
-                        values["intent"] = intent
-                        explicit.add("intent")
-                        break
+        # 意图推断：refinement（爬取/更多）不应吞掉同轮新表达的写作/搜索意图，
+        # 例如“爬取最新X并起草一篇新闻稿”应识别为 GENERATE_DRAFT 且 crawl_approved=true。
+        has_search = any(marker in lowered for marker in ("搜索", "检索", "找新闻", "search"))
+        has_draft = _has_draft_intent(text, lowered)
+        is_revise = any(marker in lowered for marker in _REVISE_MARKERS)
+        if has_search and has_draft:
+            values["intent"] = TaskIntent.SEARCH_AND_DRAFT
+            explicit.add("intent")
+        elif has_draft and not is_revise:
+            values["intent"] = TaskIntent.GENERATE_DRAFT
+            explicit.add("intent")
+        elif not is_refinement:
+            for intent, markers in _INTENT_RULES:
+                if any(marker.lower() in lowered for marker in markers):
+                    values["intent"] = intent
+                    explicit.add("intent")
+                    break
         article_ids = list(dict.fromkeys(_ARTICLE_ID.findall(text)))
         if article_ids:
             values["selected_article_ids"] = article_ids
@@ -193,6 +203,19 @@ class TaskUnderstandingService:
                 values["category"] = category
                 explicit.add("category")
                 break
+        else:
+            # 用户以安全域口径指定类别（agent安全/AI安全/传统安全）时，
+            # 归一后落入 category 槽，供 classify 步骤做域级比对
+            lowered_text = lowered
+            for domain, keywords in (
+                ("agent安全", ("agent安全", "智能体安全", "agent 安全", "智能体 安全", "agentic security")),
+                ("AI安全", ("ai安全", "ai 安全", "人工智能安全", "大模型安全", "llm安全", "模型安全")),
+                ("传统安全", ("传统安全", "传统 安全")),
+            ):
+                if any(keyword in lowered_text for keyword in keywords):
+                    values["category"] = domain
+                    explicit.add("category")
+                    break
 
         product_ids: list[str] = []
         for product in self.catalog.list_products(published_only=True):
@@ -202,6 +225,27 @@ class TaskUnderstandingService:
         if product_ids:
             values["product_ids"] = list(dict.fromkeys(product_ids))[:5]
             explicit.add("product_ids")
+
+        # 起草/搜索+起草类：未明确产品时自动推断主推产品（结合安全域），不阻塞先问"选产品"
+        if (
+            values.get("intent") in _DRAFT_INTENTS
+            and not values.get("product_ids")
+            and "product_ids" not in explicit
+        ):
+            domain = values.get("category")
+            default_pid = _DOMAIN_DEFAULT_PRODUCT.get(domain) or _DEFAULT_PR_PRODUCT
+            entry = self.catalog.get_product(default_pid)
+            if entry is not None and entry.published:
+                values["product_ids"] = [entry.product_id]
+                assumptions = list(values.get("assumptions") or [])
+                assumptions.append(
+                    TaskAssumption(
+                        text=f"你未指定目标产品，我默认以「{entry.name}」为主推产品起草，结果随时可改。",
+                        source=SlotSource.MODEL,
+                        confidence=0.8,
+                    )
+                )
+                values["assumptions"] = assumptions
 
         length_match = _LENGTH.search(text)
         if length_match:
@@ -231,7 +275,7 @@ class TaskUnderstandingService:
             explicit.add("news_query")
         if any(marker in text for marker in ("你决定", "你来定", "随便", "都可以")):
             values["assumptions"] = [
-                TaskAssumption(text="用户授权系统在未指定的低风险选项中采用默认值", source=SlotSource.USER, confidence=1.0)
+                TaskAssumption(text="你已授权我来定细节，未指定的选项我会按默认处理，结果随时可改", source=SlotSource.USER, confidence=1.0)
             ]
         values["explicit_slots"] = frozenset(explicit)
         return TaskEnvelopePatch(**values)

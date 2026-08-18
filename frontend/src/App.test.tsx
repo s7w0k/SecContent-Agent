@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { isAgentWorkspaceEnabled, MainLayout } from './App';
+import { MainLayout } from './App';
 import { AuthContext, type AuthContextValue } from './auth/AuthContext';
 
 interface MockMenuConfig {
@@ -49,8 +49,8 @@ vi.mock('antd', async (importOriginal) => {
 vi.mock('./pages/Dashboard', () => ({
   default: () => <div>Dashboard Page</div>,
 }));
-vi.mock('./pages/AgentWorkspace', () => ({
-  default: () => <div>Agent Workspace Page</div>,
+vi.mock('./pages/AgentChatPage', () => ({
+  default: () => <div>Agent Chat Page</div>,
 }));
 vi.mock('./pages/DevLogsPage', () => ({
   default: () => <div>Developer Logs Page</div>,
@@ -71,9 +71,6 @@ vi.mock('./pages/SettingsPage', () => ({
       模拟未保存提示词
     </button>
   ),
-}));
-vi.mock('./pages/WebSearchPage', () => ({
-  default: () => <div>Web Search Page</div>,
 }));
 
 describe('App', () => {
@@ -114,34 +111,26 @@ describe('App', () => {
 
   it('shows Agent as the primary navigation entry', () => {
     renderApp();
-    expect(screen.getByText('Agent 工作台')).toBeDefined();
+    expect(screen.getByText('Agent 对话')).toBeDefined();
     expect(screen.getByText('仪表盘')).toBeDefined();
-    expect(screen.getByText('关于')).toBeDefined();
     expect(screen.getByText('配置')).toBeDefined();
     // 'PR 模板' 位于「配置」子菜单内，mock Menu 直接渲染全部项
     expect(screen.getByText('PR 模板')).toBeDefined();
     expect(screen.queryByText('海外搜索')).not.toBeInTheDocument();
   });
 
-  it('places settings between PR templates and logs and opens the settings page', () => {
+  it('places settings between PR templates and opens the settings page', () => {
     renderApp();
     const menuLabels = getMenuLabels();
     expect(menuLabels.indexOf('PR 模板')).toBeLessThan(menuLabels.indexOf('提示词配置'));
-    expect(menuLabels.indexOf('配置')).toBeLessThan(menuLabels.indexOf('运行日志'));
 
     fireEvent.click(screen.getByText('提示词配置'));
     expect(screen.getByText('模拟未保存提示词')).toBeInTheDocument();
   });
 
-  it('shows Agent workspace content by default', () => {
+  it('shows Agent chat content by default', () => {
     renderApp();
-    expect(screen.getByText('Agent Workspace Page')).toBeDefined();
-  });
-
-  it('disables the Agent workspace only when the flag is explicitly false', () => {
-    expect(isAgentWorkspaceEnabled(undefined)).toBe(true);
-    expect(isAgentWorkspaceEnabled('true')).toBe(true);
-    expect(isAgentWorkspaceEnabled('false')).toBe(false);
+    expect(screen.getByText('Agent Chat Page')).toBeDefined();
   });
 
   it('hides developer logs from normal users', () => {

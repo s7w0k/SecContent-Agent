@@ -17,25 +17,14 @@ import type {
   ActivityLogResponse,
   ActivityQuery,
   ActivityStats,
-  AgentEventEnvelope,
-  AgentRun,
-  AgentTurnResponse,
-  ApplyRevisionResponse,
   Article,
   ArticleQuery,
   AuthResponse,
-  ChatAgentEvent,
-  ChatAskRequest,
-  ChatAskResponse,
-  ChatMessage,
   CreateAutonomousRunRequest,
   DevLogQuery,
   DevLogQueryResult,
   DevLogStats,
   DevLogTrace,
-  DraftReview,
-  DraftReviseRequest,
-  DraftReviseResponse,
   EffectivePRTemplate,
   EffectivePrompt,
   FeedbackCreate,
@@ -657,242 +646,6 @@ export const accountsApi = {
   async deleteAccount(accountId: string): Promise<{ ok: boolean }> {
     const { data } = await client.delete(`/accounts/delete/${accountId}`);
     return data;
-  },
-};
-
-// ═══════════════════════════════════════════════════════════
-// Chat API（对话改稿）
-// ═══════════════════════════════════════════════════════════
-
-export const chatApi = {
-  /** 对话问答 */
-  async ask(request: ChatAskRequest): Promise<ChatAskResponse> {
-    const { data } = await client.post('/chat/ask', request);
-    return data.data;
-  },
-
-  /**
-   * 流式对话问答（SSE）
-   *
-   * 通过 fetch + ReadableStream 接收 SSE 事件，逐 chunk 回调。
-   * 兼容旧格式（chunk/done/error）与 v1 Agent SSE（含 schema_version + type）。
-   *
-   * @param request   问答请求
-   * @param onChunk   每收到一个文本片段时的回调
-   * @param onDone    流结束时的回调（收到完整回答）
-   * @param onError   出错时的回调
-   * @param onStatus  v1 Agent 事件回调（tool_started/tool_finished 等）
-   * @param signal    AbortSignal，支持取消请求
-   */
-  async askStream(
-    request: ChatAskRequest,
-    onChunk: (chunk: string) => void,
-    onDone?: (fullAnswer: string, meta?: { memory_learning?: boolean }) => void,
-    onError?: (error: string) => void,
-    onStatus?: (status: ChatAgentEvent) => void,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    const url = buildSSEUrl('/chat/ask_stream');
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request),
-        signal,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        onError?.(errorText || `HTTP ${response.status}`);
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        onError?.('无法读取响应流');
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        // 按 SSE 事件分割（双换行）
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const jsonStr = line.slice(6).trim();
-          if (!jsonStr) continue;
-
-          try {
-            const event = JSON.parse(jsonStr);
-
-            // v1 Agent SSE：含 type 字段且 schema_version 存在
-            if (event.type && event.schema_version) {
-              const agentEvent = event as ChatAgentEvent;
-              onStatus?.(agentEvent);
-
-              // text_delta 仍需将 chunk 传给 onChunk 以逐步渲染文本
-              if (agentEvent.type === 'text_delta' && agentEvent.chunk) {
-                onChunk(agentEvent.chunk);
-              } else if (agentEvent.type === 'run_finished' && agentEvent.answer !== undefined) {
-                onDone?.(agentEvent.answer, { memory_learning: event.memory_learning });
-                return;
-              } else if (agentEvent.type === 'error' && agentEvent.error) {
-                onError?.(agentEvent.error);
-                return;
-              }
-            } else if (event.chunk) {
-              // 旧格式：文本片段
-              onChunk(event.chunk);
-            } else if (event.done && event.answer !== undefined) {
-              // 旧格式：流结束
-              onDone?.(event.answer, { memory_learning: event.memory_learning });
-              return;
-            } else if (event.error) {
-              // 旧格式：错误
-              onError?.(event.error);
-              return;
-            }
-          } catch {
-            // JSON 解析失败，跳过
-          }
-        }
-      }
-    } catch (err) {
-      // AbortError 不视为错误
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      onError?.(err instanceof Error ? err.message : '网络错误');
-    }
-  },
-
-  /** 生成修订稿 */
-  async reviseDraft(
-    urlHash: string,
-    draftIndex: number,
-    request: DraftReviseRequest,
-  ): Promise<DraftReviseResponse> {
-    const { data } = await client.post(`/articles/${urlHash}/drafts/${draftIndex}/revise`, request);
-    return data.data;
-  },
-
-  /**
-   * 流式改稿（SSE）
-   *
-   * @param onChunk     每收到一个文本片段时的回调
-   * @param onDone      流结束时的回调（收到解析后的修订稿数据）
-   * @param onError     出错时的回调
-   */
-  async reviseDraftStream(
-    urlHash: string,
-    draftIndex: number,
-    request: DraftReviseRequest,
-    onChunk: (chunk: string) => void,
-    onDone?: (result: DraftReviseResponse) => void,
-    onError?: (error: string) => void,
-  ): Promise<void> {
-    const url = buildSSEUrl(`/articles/${urlHash}/drafts/${draftIndex}/revise_stream`);
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        onError?.(errorText || `HTTP ${response.status}`);
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        onError?.('无法读取响应流');
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const jsonStr = line.slice(6).trim();
-          if (!jsonStr) continue;
-
-          try {
-            const event = JSON.parse(jsonStr);
-            if (event.chunk) {
-              onChunk(event.chunk);
-            } else if (event.done) {
-              onDone?.({
-                revision_id: event.revision_id,
-                revised_content_md: event.revised_content_md,
-                change_summary: event.change_summary || [],
-                saved: event.saved || false,
-              });
-              return;
-            } else if (event.error) {
-              onError?.(event.error);
-              return;
-            }
-          } catch {
-            // JSON 解析失败，跳过
-          }
-        }
-      }
-    } catch (err) {
-      onError?.(err instanceof Error ? err.message : '网络错误');
-    }
-  },
-
-  /** 应用修订稿 */
-  async applyRevision(
-    urlHash: string,
-    draftIndex: number,
-    revisionId: string,
-  ): Promise<ApplyRevisionResponse> {
-    const { data } = await client.post(
-      `/articles/${urlHash}/drafts/${draftIndex}/revisions/${revisionId}/apply`,
-    );
-    return data.data;
-  },
-
-  /** 重新检查稿件内容与宣传话术 */
-  async reviewDraft(urlHash: string, draftIndex: number): Promise<DraftReview> {
-    const { data } = await client.post(`/articles/${urlHash}/drafts/${draftIndex}/review`);
-    return data.data;
-  },
-
-  /** 获取对话历史 */
-  async getChatHistory(urlHash: string, draftIndex: number): Promise<ChatMessage[]> {
-    const { data } = await client.get(`/articles/${urlHash}/drafts/${draftIndex}/chat-history`);
-    return data.data.messages;
-  },
-
-  /** 清空对话历史 */
-  async clearChatHistory(urlHash: string, draftIndex: number): Promise<{ cleared: boolean }> {
-    const { data } = await client.delete(`/articles/${urlHash}/drafts/${draftIndex}/chat-history`);
-    return data.data;
   },
 };
 
@@ -1609,64 +1362,148 @@ export const autonomousApi = {
 };
 
 // ────────────────────────────────────────────────────────────
-// Conversational Agent API（阶段3；旧 Chat API 保持不变）
+// AgentEngine Chat API（真正的 LLM tool-loop + 聊天工作台）
 // ────────────────────────────────────────────────────────────
-export const agentApi = {
-  async submitTurn(body: {
-    content: string;
-    turn_id?: string;
-    task_id?: string;
-    thread_id?: string;
-  }): Promise<AgentTurnResponse> {
-    const { data } = await client.post('/agent/turns', body);
+export interface AgentEngineThinkingStep {
+  type: 'text' | 'tool';
+  text?: string;
+  name?: string;
+}
+export interface AgentEngineMsg {
+  role: string;
+  content: string;
+  draft?: { tool?: string; heading?: string; content?: string } | null;
+  thinking?: AgentEngineThinkingStep[];
+  created_at?: string;
+}
+export interface AgentEngineThread {
+  thread_id: string;
+  title: string;
+  status: string;
+  messages: AgentEngineMsg[];
+  created_at: string;
+  updated_at: string;
+}
+export interface AgentEngineEvent {
+  sequence: number;
+  event_type: string;
+  run_id: string;
+  thread_id: string;
+  timestamp: string;
+  data: Record<string, unknown>;
+}
+
+export const agentEngineApi = {
+  async createThread(): Promise<AgentEngineThread> {
+    const { data } = await client.post('/agent-engine/threads');
     return data;
   },
-
-  async listRuns(limit = 30): Promise<AgentRun[]> {
-    const { data } = await client.get('/agent/runs', { params: { limit } });
+  async listThreads(limit = 50): Promise<AgentEngineThread[]> {
+    const { data } = await client.get('/agent-engine/threads', { params: { limit } });
     return data;
   },
-
-  async getRun(runId: string): Promise<AgentRun> {
-    const { data } = await client.get(`/agent/runs/${runId}`);
+  async getThread(threadId: string): Promise<AgentEngineThread> {
+    const { data } = await client.get(`/agent-engine/threads/${threadId}`);
     return data;
   },
-
-  async cancelRun(runId: string): Promise<AgentRun> {
-    const { data } = await client.post(`/agent/runs/${runId}/cancel`);
+  async sendMessage(
+    threadId: string,
+    content: string,
+    manuscriptId?: string,
+  ): Promise<AgentEngineThread> {
+    const { data } = await client.post(`/agent-engine/threads/${threadId}/messages`, {
+      content,
+      manuscript_id: manuscriptId || null,
+    });
     return data;
   },
-
-  async approveRun(runId: string): Promise<AgentRun> {
-    const { data } = await client.post(`/agent/runs/${runId}/approve`);
+  async resolveApproval(approvalId: string, approved: boolean): Promise<{ ok: boolean }> {
+    const { data } = await client.post('/agent-engine/approvals/resolve', {
+      approval_id: approvalId,
+      approved,
+    });
     return data;
   },
-
-  openEventSource(runId: string, onEvent: (event: AgentEventEnvelope) => void): EventSource {
-    const source = new EventSource(buildSSEUrl(`/agent/runs/${runId}/events`));
-    const eventTypes = [
-      'turn.persisted',
-      'understanding.completed',
-      'clarification.required',
-      'candidate.selected',
-      'candidate.selection_required',
-      'tool_started',
-      'tool_finished',
-      'run.completed',
-      'run.failed',
-      'run.canceled',
-      'run.approved',
+  async stopGeneration(threadId: string): Promise<{ ok: boolean; stopped: boolean }> {
+    const { data } = await client.post(`/agent-engine/threads/${threadId}/stop`);
+    return data;
+  },
+  openEventSource(
+    threadId: string,
+    onEvent: (event: AgentEngineEvent) => void,
+    onDone?: () => void,
+  ): EventSource {
+    const source = new EventSource(buildSSEUrl(`/agent-engine/threads/${threadId}/events`));
+    const KNOWN = [
+      'run_started',
+      'agent_message',
+      'tool_call',
+      'tool_result',
+      'tool_error',
+      'approval_requested',
+      'approval_resolved',
+      'final',
+      'error',
+      'user_message',
+      'done',
+      'interrupted',
+      'resumed',
     ];
-    const handle = (message: MessageEvent<string>) => {
+    const handler = (message: MessageEvent<string>) => {
       try {
-        onEvent(JSON.parse(message.data) as AgentEventEnvelope);
+        onEvent(JSON.parse(message.data) as AgentEngineEvent);
       } catch {
-        // Ignore malformed event data and keep the resumable stream alive.
+        // ignore malformed
       }
     };
-    for (const eventType of eventTypes) source.addEventListener(eventType, handle);
-    source.addEventListener('done', () => source.close());
+    for (const type of KNOWN) source.addEventListener(type, handler);
+    source.addEventListener('done', () => {
+      source.close();
+      onDone?.();
+    });
     return source;
+  },
+};
+
+// ═══════════════════════════════════════════════════════════
+// 我的稿件库
+// ═══════════════════════════════════════════════════════════
+export interface Manuscript {
+  manuscript_id: string;
+  title: string;
+  source: string;
+  news_title?: string;
+  content_length: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export const manuscriptApi = {
+  async create(input: {
+    title: string;
+    content_md: string;
+    source?: string;
+    news_title?: string;
+  }): Promise<Manuscript> {
+    const { data } = await client.post('/manuscripts/', input);
+    return data.data as Manuscript;
+  },
+  async list(): Promise<Manuscript[]> {
+    const { data } = await client.get('/manuscripts/');
+    return (data.items as Manuscript[]) || [];
+  },
+  async get(manuscriptId: string): Promise<Manuscript & { content_md: string }> {
+    const { data } = await client.get(`/manuscripts/${manuscriptId}`);
+    return data.data as Manuscript & { content_md: string };
+  },
+  async download(manuscriptId: string): Promise<Blob> {
+    const { data } = await client.get(`/manuscripts/${manuscriptId}/download`, {
+      responseType: 'blob',
+    });
+    return data as Blob;
+  },
+  async remove(manuscriptId: string): Promise<void> {
+    await client.delete(`/manuscripts/${manuscriptId}`);
   },
 };
 
@@ -1681,7 +1518,6 @@ const api = {
   ...pipelineApi,
   ...reportsApi,
   ...accountsApi,
-  ...chatApi,
   ...feedbackApi,
   ...activityApi,
   ...profileApi,
@@ -1696,7 +1532,8 @@ const api = {
   knowledgeAdmin: knowledgeAdminApi,
   webSearchApi,
   autonomousApi,
-  agentApi,
+  agentEngineApi,
+  manuscriptApi,
 };
 
 export default api;

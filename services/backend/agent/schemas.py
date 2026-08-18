@@ -27,6 +27,9 @@ _VALID_CATEGORIES = {
 }
 
 
+_VALID_DOMAINS = {"agent安全", "AI安全", "传统安全", "不相关", "未知"}
+
+
 class ClassifyResultSchema(BaseModel):
     """Validated output produced by the V2 classification agent."""
 
@@ -45,6 +48,16 @@ class ClassifyResultSchema(BaseModel):
     confidence: int = Field(ge=0, le=100, description="分类置信度 0-100")
     reason: str = Field(max_length=200, description="分类理由")
     is_pr_eligible: bool = Field(default=False, description="是否可进入 PR 流程")
+    security_domain: str = Field(
+        default="未知",
+        description="安全域归属：agent安全 / AI安全 / 传统安全 / 不相关 / 未知",
+    )
+
+    @field_validator("security_domain", mode="before")
+    @classmethod
+    def normalize_security_domain(cls, value: Any) -> str:
+        domain = str(value or "").strip()
+        return domain if domain in _VALID_DOMAINS else "未知"
 
     @field_validator("category", mode="before")
     @classmethod

@@ -6,7 +6,7 @@ import hashlib
 import re
 import uuid
 from dataclasses import asdict, is_dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from agent.business_tools.contracts import BusinessToolContract, ToolRequestContext
@@ -16,6 +16,29 @@ from agent.product_matcher import ProductMatcher
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _parse_published_at(value: Any) -> datetime | None:
+    """DB 中部分文章 published_at 可能被写入损坏的拼接字符串，这里安全解析；
+    无法解析则返回 None，避免候选构建被无效时间打断。"""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day)
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    for loader, fmt in ((datetime.fromisoformat, None), (date.fromisoformat, "date")):
+        try:
+            parsed = loader(text)
+        except (ValueError, TypeError):
+            continue
+        return datetime(parsed.year, parsed.month, parsed.day) if fmt else parsed
+    return None
 
 
 def _hash_text(value: str) -> str:
@@ -28,6 +51,34 @@ def _plain(value: Any) -> dict[str, Any]:
     if is_dataclass(value):
         return asdict(value)
     return dict(value) if isinstance(value, dict) else {"value": value}
+
+
+# 用户类别词到安全域的归一（用户说“agent安全/AI安全/传统安全”等时用于域级比对）
+_SECURITY_DOMAIN_KEYWORDS = {
+    "agent安全": ("agent安全", "智能体安全", "agentic", "agent security", "智能体", "mcp", "a2a"),
+    "AI安全": ("ai安全", "人工智能安全", "大模型安全", "llm安全", "生成式", "提示注入", "模型安全"),
+    "传统安全": ("传统安全", "网络安全", "终端安全", "数据安全", "云安全", "等保"),
+}
+
+
+def _normalize_security_domain(text: str) -> str:
+    lowered = (text or "").strip().lower()
+    if not lowered:
+        return ""
+    for domain, keywords in _SECURITY_DOMAIN_KEYWORDS.items():
+        if any(keyword in lowered for keyword in keywords):
+            return domain
+    return "未知"
+
+
+_SIX_CATEGORIES = {
+    "爆点事件",
+    "法律法规/监管动态",
+    "AI技术重大进展",
+    "国内外竞品信息",
+    "运营商/行业事件",
+    "学术/会展/高校",
+}
 
 
 class ProductionBusinessToolService:
@@ -97,7 +148,7 @@ class ProductionBusinessToolService:
             "content_hash": _hash_text(content) if content else "",
             "title": str(doc.get("title") or "")[:500],
             "source": str(doc.get("source") or doc.get("source_name") or "")[:160],
-            "published_at": doc.get("published_at") or doc.get("publish_time"),
+            "published_at": _parse_published_at(doc.get("published_at") or doc.get("publish_time")),
             "summary": str(doc.get("summary_cn") or doc.get("summary") or "")[:2000],
             "content_available": bool(content),
             "untrusted_content": True,
@@ -125,8 +176,18 @@ class ProductionBusinessToolService:
         if date_filter:
             filters.append({"published_at": date_filter})
         effective = {"$and": filters}
-        cursor = self.db["articles"].find(effective).sort("published_at", -1).limit(args["limit"])
-        docs = await cursor.to_list(length=args["limit"])
+        cursor = self.db["articles"].find(effective).sort("published_at", -1)
+        # 先取充足的原始行，过滤掉 published_at 损坏/缺失的行（损坏行常为拼接乱串，
+        # 且会被 Mongo 排到最前，若先 limit 后过滤会把有效行整批截掉），再按 limit 切片
+        prefetch = max(args["limit"] * 3, 100)
+        docs = await cursor.to_list(length=prefetch)
+        docs = [
+            doc
+            for doc in docs
+            if _parse_published_at(doc.get("published_at") or doc.get("publish_time")) is not None
+            and (str(doc.get("content_md") or doc.get("content") or "").strip())
+        ]
+        docs = docs[: args["limit"]]
         items = [self._article_candidate(doc) for doc in docs]
         replay_ref = _hash_text("|".join(item["article_id"] for item in items))
         return {"items": items, "total": len(items), "replay_ref": replay_ref}
@@ -218,14 +279,26 @@ class ProductionBusinessToolService:
         if confidence > 1:
             confidence /= 100
         category = str(result.get("category") or "unknown")
+        security_domain = str(result.get("security_domain") or "未知")
         user_category = args.get("user_category") or ""
+        # 用户指定的类别若能归一到安全域（agent安全/AI安全/传统安全），
+        # 则在安全域层面比对；若是六分类词则按六分类比对；
+        # 自由主题（如“APT 攻击”）不做类别比对，由检索过滤与 eligible 把关。
+        user_domain = _normalize_security_domain(user_category)
+        conflict = ""
+        if user_domain and user_domain != "未知":
+            if security_domain != "未知" and user_domain != security_domain:
+                conflict = f"user={user_category}(域:{user_domain}); model域={security_domain}"
+        elif user_category in _SIX_CATEGORIES and user_category != category:
+            conflict = f"user={user_category}; model={category}"
         return {
             "article": ref,
             "category": category,
+            "security_domain": security_domain,
             "confidence": confidence,
             "reason": str(result.get("reason") or "")[:1000],
             "eligible": bool(result.get("is_relevant", category != "不相关")),
-            "conflict": f"user={user_category}; model={category}" if user_category and user_category != category else "",
+            "conflict": conflict,
             "model_version": str(result.get("model_version") or "classifier-v2"),
             "prompt_version": str(result.get("prompt_version") or "classifier-v2"),
         }
@@ -285,7 +358,7 @@ class ProductionBusinessToolService:
         artifact_id = "draft-" + uuid.uuid4().hex[:24]
         content_hash = _hash_text(content)
         artifact = {"artifact_id": artifact_id, "version": 1, "content_hash": content_hash, "status": "draft"}
-        result = {"artifact": artifact, "summary": content[:300], "evidence_refs": [ref["article_id"], *args["product_ids"]], "model_version": str(generated.get("model_version") or "draft-generator"), "prompt_version": str(generated.get("prompt_version") or args["template_key"]), "skill_version": "generate-draft.v1", "context_hash": _hash_text("|".join([ref["article_id"], *args["product_ids"], args["template_key"]]))}
+        result = {"artifact": artifact, "summary": content[:300], "content": content, "evidence_refs": [ref["article_id"], *args["product_ids"]], "model_version": str(generated.get("model_version") or "draft-generator"), "prompt_version": str(generated.get("prompt_version") or args["template_key"]), "skill_version": "generate-draft.v1", "context_hash": _hash_text("|".join([ref["article_id"], *args["product_ids"], args["template_key"]]))}
         await self.db[self.ARTIFACTS].insert_one({**artifact, "root_artifact_id": artifact_id, "parent_artifact_id": "", "tenant_id": context.tenant_id, "user_id": context.user_id, "article_id": ref["article_id"], "product_ids": args["product_ids"], "content_md": content, "created_by": "agent", "instruction": "", "source_ids": [ref["article_id"], *args["product_ids"]], "tool_idempotency_key": args["idempotency_key"], "tool_result": result, "created_at": _now(), "updated_at": _now()})
         return result
 

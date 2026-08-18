@@ -255,12 +255,18 @@ class RulePlannerV1:
     def _assessment_and_draft_steps(
         self, article_step: str, include_draft: bool, run_id: str, confirmed: set[str]
     ) -> list[PlanStep]:
+        # 用户明确指定了类别时，把 user_category 传入，使分类结果与用户要求不符时可在编排层触发"停下让用户决定"
+        classify_args: dict[str, ArgumentBinding] = {
+            "article": _obs("article", article_step, "article")
+        }
+        if "category" in confirmed:
+            classify_args["user_category"] = _slot("category")
         steps = [
             _step(
                 "classify",
                 "Classify the immutable article",
                 "classify_article",
-                {"article": _obs("article", article_step, "article")},
+                classify_args,
                 dependencies=[article_step],
                 expected=["article.article_id", "category", "model_version"],
                 acceptance=["classification has model and prompt provenance"],

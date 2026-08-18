@@ -82,8 +82,7 @@ class ClarificationPolicy:
         if intent in {TaskIntent.REVISE, TaskIntent.REVISE_DRAFT, TaskIntent.SAVE, TaskIntent.SAVE_DRAFT, TaskIntent.EXPORT_DRAFT} and not self._available(envelope.selected_article_ids):
             needed.append(("selected_article_ids", "the target article is ambiguous"))
         if intent == TaskIntent.GENERATE_DRAFT and not self._available(envelope.selected_article_ids):
-            if not self._available(envelope.category):
-                needed.append(("category", "a target news category is required"))
+            # 六分类由 classify 步骤对文章自识别产出，不再向用户追问 category
             if not self._available(envelope.product_ids):
                 needed.append(("product_ids", "at least one target product is required"))
         if candidate_count is not None and candidate_count > 1 and not self._available(envelope.selected_article_ids):

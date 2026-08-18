@@ -3,7 +3,8 @@
 FROM node:22-alpine AS frontend-builder
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci --cache /tmp/.npm --prefer-offline 2>&1 || npm install --cache /tmp/.npm
+RUN npm config set registry https://registry.npmmirror.com \
+    && npm ci --cache /tmp/.npm --prefer-offline 2>&1 || npm install --cache /tmp/.npm
 COPY frontend/ ./
 RUN npx vite build
 

@@ -10,24 +10,22 @@ import {
   Button,
   Checkbox,
   Col,
-  Collapse,
   Drawer,
-  Input,
   Modal,
   Row,
+  Segmented,
   Space,
+  Table,
   Tag,
   Typography,
   message,
 } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import api, { userKnowledgeApi } from '../api/client';
+import api, { manuscriptApi, userKnowledgeApi, type Manuscript } from '../api/client';
 import ArticleTable from '../components/ArticleTable';
 import ArticleUpload from '../components/ArticleUpload';
 import DraftViewer from '../components/DraftViewer';
 import FilterBar from '../components/FilterBar';
-import HotRankingPanel from '../components/HotRankingPanel';
-import MultiAgentRunTree from '../components/MultiAgentRunTree';
 import PipelineControl from '../components/PipelineControl';
 import PipelineTaskProgress from '../components/PipelineTaskProgress';
 import ReportViewer from '../components/ReportViewer';
@@ -49,6 +47,13 @@ function getRequestErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '未知错误';
 }
 
+function formatTime(v?: string): string {
+  if (!v) return '—';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('zh-CN', { hour12: false });
+}
+
 interface DashboardProps {
   initialSourceType?: string;
   refreshKey?: number;
@@ -58,6 +63,12 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
   // ── 数据状态 ──────────────────────────────────────────────
   const [stats, setStats] = useState<StatsData | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
+  // 我的稿件库：列表展示，点击题目查看文章全文
+  const [manuscripts, setManuscripts] = useState<Manuscript[]>([]);
+  const [msLoading, setMsLoading] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [viewTitle, setViewTitle] = useState('');
+  const [viewContent, setViewContent] = useState('');
   const [totalArticles, setTotalArticles] = useState(0);
   const [reportCount, setReportCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -76,8 +87,8 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
   const [viewingArticle, setViewingArticle] = useState<Article | null>(null);
   const [draftArticle, setDraftArticle] = useState<Article | null>(null);
   const [draftTask, setDraftTask] = useState<{ taskId: string; articleHash: string } | null>(null);
-  // MultiAgent 编排视图（Step 9）：用户输入 run_id 后展示树形视图
-  const [viewRunId, setViewRunId] = useState<string>('');
+  // 文章展示区上方切换：新闻 / 稿件
+  const [viewMode, setViewMode] = useState<'news' | 'manuscript'>('news');
 
   // ── 页面重新挂载时恢复进行中的任务 ────────────────────────
   const { draftTask: restoredDraftTask } = useActiveTasks();
@@ -123,6 +134,48 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
       setTableLoading(false);
     }
   }, [page, pageSize, sortField, sortOrder, filter]);
+
+  // ── 加载稿件库（资料库·稿件栏） ─────────────────────────
+  const loadManuscripts = useCallback(async () => {
+    setMsLoading(true);
+    try {
+      const items = await manuscriptApi.list();
+      setManuscripts(items ?? []);
+    } catch {
+      message.error('加载稿件库失败');
+    } finally {
+      setMsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadManuscripts();
+  }, [loadManuscripts]);
+
+  // ── 查看稿件全文 / 下载 ─────────────────────────────────
+  const openManuscript = async (m: Manuscript) => {
+    try {
+      const full = await manuscriptApi.get(m.manuscript_id);
+      setViewTitle(m.title);
+      setViewContent(full.content_md || '（空内容）');
+      setViewOpen(true);
+    } catch {
+      message.error('加载稿件内容失败');
+    }
+  };
+
+  const handleDownloadMs = () => {
+    if (!viewContent) return;
+    const blob = new Blob([viewContent], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(viewTitle || '稿件').replace(/[\\/:*?"<>|]/g, '_')}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
   // ── 加载报道总数 ─────────────────────────────────────────
   const loadReportCount = useCallback(async () => {
@@ -355,42 +408,8 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
       <StatsCards stats={stats} loading={loading} reportCount={reportCount} />
       <TodayStatsRow stats={stats} loading={loading} />
 
-      {/* 热点排行 */}
-      <div style={{ marginBottom: 16 }}>
-        <HotRankingPanel />
-      </div>
-
       {/* 流水线控制 */}
       <PipelineControl onComplete={handlePipelineComplete} />
-
-      {/* MultiAgent 编排视图（Step 9）：输入 run_id 查看计划/步骤/事件树 */}
-      <Collapse
-        style={{ marginBottom: 16 }}
-        items={[
-          {
-            key: 'multi-agent-run',
-            label: 'MultiAgent 编排视图',
-            children: (
-              <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                <Input.Search
-                  allowClear
-                  placeholder="输入 run_id（如 run-xxxxxxxxxxxxxxxx）"
-                  enterButton="查看编排"
-                  onSearch={(value) => setViewRunId(value.trim())}
-                  style={{ maxWidth: 480 }}
-                />
-                {viewRunId ? (
-                  <MultiAgentRunTree runId={viewRunId} />
-                ) : (
-                  <Tag style={{ padding: 8 }}>
-                    输入 run_id 后展示计划摘要、步骤状态、耗时、重试与脱敏错误
-                  </Tag>
-                )}
-              </Space>
-            ),
-          },
-        ]}
-      />
 
       {draftTask && (
         <div style={{ marginBottom: 16 }}>
@@ -413,35 +432,88 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
         </div>
       )}
 
-      {/* 筛选栏 */}
-      <FilterBar
-        value={filter}
-        onChange={handleFilterChange}
-        categories={stats?.category_distribution ? Object.keys(stats.category_distribution) : []}
-      />
+      {/* 文章展示区上方：新闻 / 稿件 切换 */}
+      <div style={{ marginBottom: 16 }}>
+        <Segmented
+          value={viewMode}
+          onChange={(v) => setViewMode(v as 'news' | 'manuscript')}
+          options={[
+            { label: '新闻', value: 'news' },
+            { label: '稿件', value: 'manuscript' },
+          ]}
+        />
+      </div>
 
-      <Row style={{ marginBottom: 16 }}>
-        <Col span={24} data-testid="article-table-column">
-          <ArticleTable
-            articles={articles}
-            total={totalArticles}
-            loading={tableLoading}
-            page={page}
-            pageSize={pageSize}
-            onPageChange={(p, ps) => {
-              setPage(p);
-              setPageSize(ps);
-            }}
-            onSortChange={handleSortChange}
-            onViewReport={handleViewReport}
-            onViewDetail={handleViewDetail}
-            onViewDrafts={handleViewDrafts}
-            onRunV2Single={handleRunV2Single}
-            onScoreV2Single={handleScoreV2Single}
-            onRefresh={loadArticles}
+      {viewMode === 'news' ? (
+        <>
+          {/* 筛选栏 */}
+          <FilterBar
+            value={filter}
+            onChange={handleFilterChange}
+            categories={stats?.category_distribution ? Object.keys(stats.category_distribution) : []}
           />
-        </Col>
-      </Row>
+
+          <Row style={{ marginBottom: 16 }}>
+            <Col span={24} data-testid="article-table-column">
+              <ArticleTable
+                articles={articles}
+                total={totalArticles}
+                loading={tableLoading}
+                page={page}
+                pageSize={pageSize}
+                onPageChange={(p, ps) => {
+                  setPage(p);
+                  setPageSize(ps);
+                }}
+                onSortChange={handleSortChange}
+                onViewReport={handleViewReport}
+                onViewDetail={handleViewDetail}
+                onViewDrafts={handleViewDrafts}
+                onRunV2Single={handleRunV2Single}
+                onScoreV2Single={handleScoreV2Single}
+                onRefresh={loadArticles}
+              />
+            </Col>
+          </Row>
+        </>
+      ) : (
+        <Row style={{ marginBottom: 16 }}>
+          <Col span={24}>
+            <Table<Manuscript>
+              rowKey="manuscript_id"
+              loading={msLoading}
+              dataSource={manuscripts}
+              pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `共 ${t} 篇` }}
+              locale={{ emptyText: '稿件库为空，可先在 Agent 工作台保存或上传一份稿件' }}
+              bordered
+              style={{ background: '#fff', borderRadius: 12, overflow: 'hidden' }}
+              columns={[
+                {
+                  title: '稿件题目',
+                  dataIndex: 'title',
+                  ellipsis: true,
+                  render: (value: string, record: Manuscript) => (
+                    <a onClick={() => openManuscript(record)} style={{ color: '#2563eb' }}>
+                      {value}
+                    </a>
+                  ),
+                },
+                {
+                  title: '对应新闻题目',
+                  dataIndex: 'news_title',
+                  ellipsis: true,
+                  render: (value?: string) => value || <span style={{ color: '#bbb' }}>—</span>,
+                },
+                {
+                  title: '保存时间',
+                  width: 200,
+                  render: (_: unknown, record: Manuscript) => formatTime(record.created_at || record.updated_at),
+                },
+              ]}
+            />
+          </Col>
+        </Row>
+      )}
 
       {/* 报道查看器 Modal */}
       <ReportViewer
@@ -558,6 +630,38 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
             </Checkbox>
           ))}
         </Checkbox.Group>
+      </Modal>
+
+      {/* 稿件全文查看弹窗 */}
+      <Modal
+        title={viewTitle}
+        open={viewOpen}
+        onCancel={() => setViewOpen(false)}
+        footer={[
+          <Button key="download" type="primary" onClick={handleDownloadMs}>
+            下载 md
+          </Button>,
+          <Button key="close" onClick={() => setViewOpen(false)}>
+            关闭
+          </Button>,
+        ]}
+        width={720}
+      >
+        <div
+          style={{
+            maxHeight: '62vh',
+            overflow: 'auto',
+            whiteSpace: 'pre-wrap',
+            fontSize: 14,
+            lineHeight: 1.75,
+            color: '#333',
+            background: '#fafbfc',
+            borderRadius: 8,
+            padding: 14,
+          }}
+        >
+          {viewContent}
+        </div>
       </Modal>
     </div>
   );

@@ -43,7 +43,7 @@ export default function UserMenu() {
         },
       }}
     >
-      <Space style={{ color: '#fff', cursor: 'pointer', marginLeft: 16 }}>
+      <Space style={{ color: '#3d4757', cursor: 'pointer', marginLeft: 16 }}>
         <Avatar size="small" icon={<UserOutlined />} />
         <span>{user?.display_name || user?.username}</span>
         <DownOutlined style={{ fontSize: 10 }} />

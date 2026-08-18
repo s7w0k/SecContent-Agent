@@ -97,3 +97,11 @@ logs/
 .claude/plans/
 .npm-cache/
 agent-security-briefs/.git
+
+# ═══════════════════════════════════════════════
+# Docs / 临时 / 报告产物（不上传 GitHub，仅保留本地）
+# ═══════════════════════════════════════════════
+/docs/
+.workbuddy/
+_q.js
+reports/*.xlsx

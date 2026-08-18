@@ -174,6 +174,7 @@ class AutonomousRunService:
         self.business_registry = business_registry
         self.business_tool_adapter = business_tool_adapter
         self.skill_registry = skill_registry
+        self.task_understanding = TaskUnderstandingService()
         self.production_mode = business_executor is not None or business_registry is not None
         if self.production_mode and (business_executor is None or business_registry is None):
             raise RuntimeError("production runtime requires business executor and registry")
@@ -489,6 +490,39 @@ class AutonomousRunService:
             normalized = message.strip().lower()
             if any(marker in normalized for marker in ("你决定", "你来定", "随便", "都可以")):
                 combined_values["auto_select"] = True
+            # 分类/产品关卡：用户授权"仍用这篇继续" → 打开 auto_select 跳过离题关卡
+            if any(marker in normalized for marker in (
+                "继续用这篇", "仍用这篇", "继续", "用这篇", "通用口径", "第一个", "方案一", "选一"
+            )):
+                combined_values["auto_select"] = True
+            # 分类/产品关卡：用户要求换下一条候选 → 直接切到下一条（若有）
+            if any(marker in normalized for marker in (
+                "换下一条", "换一条", "换下一", "换一个", "下一个", "第二条", "方案二", "选二",
+                "换别的", "另一条", "其他一条",
+            )):
+                discover = state.normalized_observations.get("discover", {}).get("data", {})
+                candidates = discover.get("items") or discover.get("articles") or []
+                current = state.slot_states.get("selected_article_ids")
+                current_ids = list(current.value) if current and current.value else []
+                if candidates:
+                    # 从未选过或需前进：跳过已选，选择下一个未被选中的候选
+                    picked = None
+                    for cand in candidates:
+                        cid = cand.get("article_id")
+                        if cid and cid not in current_ids:
+                            picked = cid
+                            break
+                    if picked is None and candidates:
+                        picked = candidates[0].get("article_id")
+                    if picked:
+                        combined_values["selected_article_ids"] = [picked]
+                        combined_values["auto_select"] = True
+            # 用户对候选不满意，要求重新抓取最新 → 置 crawl_approved，使 discover 失效并改用 crawl_news 实爬
+            if any(marker in normalized for marker in (
+                "爬最新", "爬取最新", "抓取最新", "重新爬", "重新抓", "重新抓取",
+                "重新爬取", "重爬", "重抓", "更新新闻", "拉取最新", "拉最新", "不满意",
+            )):
+                combined_values["crawl_approved"] = True
             ordinal_map = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5}
             match = re.search(r"第?\s*([一二三四五\d]+)\s*(?:条|篇|个)?", normalized)
             if match and "selected_article_ids" not in combined_values:
@@ -671,7 +705,13 @@ class AutonomousRunService:
             )
             from agent.rule_planner import RulePlannerV1
 
-            planner = ProductionActionPlanner(RulePlannerV1(self.business_registry))
+            rule_planner = RulePlannerV1(self.business_registry)
+            if str(getattr(self.settings, "AGENT_PLANNER", "rule") or "rule").lower() == "llm":
+                from agent.llm_action_planner import LLMActionPlanner
+
+                planner = LLMActionPlanner(rule_planner, llm_factory=self._planner_llm_factory)
+            else:
+                planner = ProductionActionPlanner(rule_planner)
             executor = ProductionBusinessExecutor(
                 self.business_executor,
                 planner,
@@ -717,6 +757,21 @@ class AutonomousRunService:
             max_retries=getattr(self._default_budget, "max_retries", 2),
             backoff_jitter=0.0,
         )
+
+    def _planner_llm_factory(self):
+        """为 LLM 选步规划器懒构造低温度 LLM；构造失败抛错由规划器兜底逻辑接管。"""
+        if getattr(self, "_planner_llm", None) is None:
+            from langchain_openai import ChatOpenAI
+
+            self._planner_llm = ChatOpenAI(
+                model=getattr(self.settings, "DEEPSEEK_MODEL", "deepseek-chat"),
+                api_key=getattr(self.settings, "DEEPSEEK_API_KEY", ""),
+                base_url=getattr(self.settings, "DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+                temperature=0,
+                timeout=getattr(self.settings, "DEEPSEEK_TIMEOUT", 60),
+                max_tokens=getattr(self.settings, "DEEPSEEK_MAX_TOKENS", 2000),
+            )
+        return self._planner_llm
 
     async def _emit_event(
         self, event_type: str, state: RuntimeState, payload: dict[str, Any]

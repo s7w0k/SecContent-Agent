@@ -1,18 +1,14 @@
 import {
   DashboardOutlined,
   DatabaseOutlined,
-  EditOutlined,
-  FileTextOutlined,
   FormOutlined,
-  InfoCircleOutlined,
-  SearchOutlined,
   SettingOutlined,
   SnippetsOutlined,
   RobotOutlined,
   UserOutlined,
   WechatOutlined,
 } from '@ant-design/icons';
-import { ConfigProvider, Layout, Menu, Modal, Typography } from 'antd';
+import { ConfigProvider, Layout, Menu, Modal } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import dayjs from 'dayjs';
 import { useState } from 'react';
@@ -22,31 +18,20 @@ import ProtectedRoute from './auth/ProtectedRoute';
 import { useAuth } from './auth/useAuth';
 import UserMenu from './components/UserMenu';
 import AccountPage from './pages/AccountPage';
-import AgentWorkspace from './pages/AgentWorkspace';
-import ChatPage from './pages/ChatPage';
+import AgentChatPage from './pages/AgentChatPage';
 import Dashboard from './pages/Dashboard';
 import DevLogsPage from './pages/DevLogsPage';
 import LoginPage from './pages/LoginPage';
-import LogsPage from './pages/LogsPage';
 import PRTemplatesPage from './pages/PRTemplatesPage';
 import ProductKnowledgePage from './pages/ProductKnowledgePage';
 import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
-import WebSearchPage from './pages/WebSearchPage';
 
 const { Header, Content } = Layout;
-const { Text } = Typography;
-
-export const isAgentWorkspaceEnabled = (value?: string) => value !== 'false';
-const agentWorkspaceEnabled = isAgentWorkspaceEnabled(import.meta.env.VITE_AGENT_WORKSPACE_ENABLED);
 
 const baseMenuItems = [
-  ...(agentWorkspaceEnabled
-    ? [{ key: 'agent', icon: <RobotOutlined />, label: 'Agent 工作台' }]
-    : []),
+  { key: 'agent-chat', icon: <RobotOutlined />, label: 'Agent 对话' },
   { key: 'dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
-  { key: 'search', icon: <SearchOutlined />, label: '信息搜索' },
-  { key: 'chat', icon: <EditOutlined />, label: '对话改稿' },
   { key: 'accounts', icon: <WechatOutlined />, label: '公众号账号' },
   { key: 'profile', icon: <UserOutlined />, label: '个人偏好' },
   {
@@ -59,24 +44,18 @@ const baseMenuItems = [
       { key: 'product-knowledge', icon: <DatabaseOutlined />, label: '产品知识库' },
     ],
   },
-  { key: 'logs', icon: <FileTextOutlined />, label: '运行日志' },
-  { key: 'about', icon: <InfoCircleOutlined />, label: '关于' },
 ];
 
 export function MainLayout() {
-  const [tab, setTab] = useState(agentWorkspaceEnabled ? 'agent' : 'dashboard');
+  const [tab, setTab] = useState('agent-chat');
   const [templateDirty, setTemplateDirty] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
-  const [dashboardEntry, setDashboardEntry] = useState<{ sourceType?: string; refreshKey: number }>(
+  const [dashboardEntry] = useState<{ sourceType?: string; refreshKey: number }>(
     { refreshKey: 0 },
   );
   const { user } = useAuth();
   const menuItems = user?.is_developer
-    ? [
-        ...baseMenuItems.slice(0, -1),
-        { key: 'dev-logs', icon: <DatabaseOutlined />, label: '开发者日志' },
-        baseMenuItems[baseMenuItems.length - 1],
-      ]
+    ? [...baseMenuItems, { key: 'dev-logs', icon: <DatabaseOutlined />, label: '开发者日志' }]
     : baseMenuItems;
 
   const switchTab = (nextTab: string) => {
@@ -108,64 +87,64 @@ export function MainLayout() {
         style={{
           display: 'flex',
           alignItems: 'center',
-          background: '#001529',
-          padding: '0 24px',
+          background: '#ffffff',
+          padding: '0 20px',
+          height: 64,
+          lineHeight: '64px',
+          borderBottom: '1px solid #e8eaef',
+          boxShadow: '0 1px 4px rgba(16,24,40,0.05)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 100,
         }}
       >
-        <Text strong style={{ color: '#fff', fontSize: 18, marginRight: 32 }}>
-          🛡 PR Agent
-        </Text>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginRight: 28 }}>
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#fff',
+              fontSize: 18,
+              boxShadow: '0 6px 14px rgba(99,102,241,0.35)',
+              flex: 'none',
+            }}
+          >
+            <RobotOutlined />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+            <span style={{ fontWeight: 700, fontSize: 16, color: '#1f2329' }}>PR Agent</span>
+            <span style={{ fontSize: 11, color: '#8a919e' }}>智能体安全 PR 工作台</span>
+          </div>
+        </div>
         <Menu
-          theme="dark"
+          theme="light"
           mode="horizontal"
           selectedKeys={[tab]}
           onClick={({ key }) => switchTab(key)}
           items={menuItems}
-          style={{ flex: 1, minWidth: 0 }}
+          style={{ flex: 1, minWidth: 0, background: 'transparent', fontWeight: 500, fontSize: 14 }}
         />
         <UserMenu />
       </Header>
       <Content>
-        {tab === 'agent' && agentWorkspaceEnabled && (
-          <AgentWorkspace onLegacyFallback={() => setTab('dashboard')} />
-        )}
+        {tab === 'agent-chat' && <AgentChatPage />}
         {tab === 'dashboard' && (
           <Dashboard
             initialSourceType={dashboardEntry.sourceType}
             refreshKey={dashboardEntry.refreshKey}
           />
         )}
-        {tab === 'search' && (
-          <WebSearchPage
-            onNavigate={(page) => {
-              if (page === 'dashboard') {
-                setDashboardEntry({ sourceType: 'web_search', refreshKey: Date.now() });
-              }
-              setTab(page);
-            }}
-          />
-        )}
-        {tab === 'chat' && <ChatPage />}
         {tab === 'accounts' && <AccountPage />}
-        {tab === 'logs' && <LogsPage />}
         {tab === 'profile' && <ProfilePage />}
         {tab === 'pr-templates' && <PRTemplatesPage onDirtyChange={setTemplateDirty} />}
         {tab === 'settings' && <SettingsPage onDirtyChange={setSettingsDirty} />}
         {tab === 'product-knowledge' && <ProductKnowledgePage />}
         {tab === 'dev-logs' && user?.is_developer && <DevLogsPage />}
-        {tab === 'about' && (
-          <div style={{ padding: 48, maxWidth: 800, margin: '0 auto' }}>
-            <h2>🚀 PR Agent Dashboard</h2>
-            <p>智能体安全PR情报Agent系统</p>
-            <ul>
-              <li>MongoDB</li>
-              <li>mcp-wewe</li>
-              <li>mcp-crawl</li>
-              <li>Backend (FastAPI + Agent Pipeline)</li>
-              <li>Frontend (React + Ant Design)</li>
-            </ul>
-          </div>
-        )}
       </Content>
     </Layout>
   );
@@ -174,7 +153,17 @@ export function MainLayout() {
 export default function App() {
   dayjs.locale('zh-cn');
   return (
-    <ConfigProvider locale={zhCN}>
+    <ConfigProvider
+      locale={zhCN}
+      theme={{
+        token: {
+          colorPrimary: '#6366f1',
+          colorLink: '#6366f1',
+          borderRadius: 8,
+          fontSize: 14,
+        },
+      }}
+    >
       <AuthProvider>
         <ProtectedRoute fallback={<LoginPage />}>
           <MainLayout />
