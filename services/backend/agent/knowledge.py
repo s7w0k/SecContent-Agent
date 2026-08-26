@@ -324,12 +324,13 @@ _SCORING_FILE_PATTERNS = [
 
 def _is_scoring_relevant(root_dir: Path, filepath: Path) -> bool:
     """判断文件是否与产品相关度评分有关。排除 tasks/architecture/原始文档/海外版。"""
+    # `_wiki` 为 LLM Wiki 编译产物目录，必须排除，避免 Legacy 把 Wiki 当原始文档重复读取产生自我污染。
     for pattern in _SCORING_FILE_PATTERNS:
         if filepath.match(pattern.replace("/", os.sep)):
             return True
     rel = str(filepath.relative_to(root_dir)).replace("\\", "/")
     return not any(
-        p in rel for p in ("原始文档", "海外版", "tasks.md", "architecture-brief.md",
+        p in rel for p in ("原始文档", "海外版", "_wiki", "tasks.md", "architecture-brief.md",
                            "CLAUDE.md", "AGENTS.md", "README.md", "qa-log.md",
                            ".git", "项目核心逻辑.md", "工作日报.md")
     )

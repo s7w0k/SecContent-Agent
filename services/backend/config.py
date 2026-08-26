@@ -661,6 +661,44 @@ class Settings(BaseSettings):
         description="每次最多展开的章节数",
     )
 
+    # ── LLM Wiki（SecContent-Agent LLM Wiki Knowledge Layer）─────────────
+    # 知识后端：legacy=旧链路 | wiki=Wiki 为主 | shadow=旧结果同时后台跑 Wiki
+    KNOWLEDGE_BACKEND: str = Field(
+        default="legacy",
+        pattern=r"^(legacy|wiki|shadow)$",
+        description="知识后端模式：legacy=旧链路，wiki=Wiki 为主，shadow=旧结果同时后台跑 Wiki",
+    )
+    # Wiki Root（默认位于知识库根目录下）
+    WIKI_ROOT_DIR: str = Field(default="", description="Wiki 根目录；空则取 KNOWLEDGE_BASE_DIR/_wiki")
+    # 各类任务单次导航最多打开的页面数
+    WIKI_MAX_PAGES_SCORE: int = Field(default=6, ge=1, le=50, description="评分导航最大页面数")
+    WIKI_MAX_PAGES_DRAFT: int = Field(default=8, ge=1, le=50, description="草稿导航最大页面数")
+    WIKI_MAX_PAGES_CHAT: int = Field(default=8, ge=1, le=50, description="Chat 导航最大页面数")
+    # 导航深度 / 输入 token 预算
+    WIKI_MAX_DEPTH: int = Field(default=4, ge=1, le=8, description="Wiki 导航最大深度")
+    WIKI_MAX_INPUT_TOKENS: int = Field(
+        default=12000, ge=1000, le=128000, description="Wiki 单任务输入 token 预算"
+    )
+    # Grounding 要求
+    WIKI_REQUIRE_SOURCE_GROUNDING: bool = Field(
+        default=True, description="要求 Evidence 必须 grounding 到 Raw Source"
+    )
+    # 自动编译 / 自动发布（默认关闭；Maintainer 只写 staging，发布经 Gate）
+    WIKI_AUTO_COMPILE_ENABLED: bool = Field(
+        default=False, description="知识变更后是否自动编译 Wiki"
+    )
+    WIKI_AUTO_PUBLISH_ENABLED: bool = Field(
+        default=False, description="编译通过后是否自动发布 Wiki"
+    )
+    # Navigator 是否允许 LLM 决策（False=仅确定性工具）
+    WIKI_NAVIGATOR_LLM_ENABLED: bool = Field(
+        default=True, description="Wiki Navigator 是否启用 LLM 决策"
+    )
+    # Grounding Verifier 进入 scoring evidence 的置信度门槛
+    WIKI_EVIDENCE_CONFIDENCE_THRESHOLD: float = Field(
+        default=0.8, ge=0, le=1, description="EvidenceItem 进入 scoring 的最低置信度"
+    )
+
     # ── 流水线 ───────────────────────────────────────
     PIPELINE_SCORE_THRESHOLD: int = Field(
         default=140,

@@ -101,6 +101,49 @@ USER_PROMPT_TEMPLATE = """请对以下文章进行评分：
 **正文前段**: {content}
 """
 
+# Wiki 证据驱动的评分 Prompt（文档 17.4）：评分模型只 judge，不再 retrieve+understand+judge。
+# 知识以"已验证证据"而非大段 {knowledge_context} 形式注入。
+EVIDENCE_SYSTEM_PROMPT_TEMPLATE = """你是一个智能体安全领域的技术情报分析师。
+请基于以下**已验证证据**（每条均已 Grounding 到 Raw Source）与文章内容，对指定产品评估相关性，并评估事件影响面。
+
+## Verified Evidence
+{evidence_block}
+
+## Evidence Coverage
+{coverage}
+
+## Unknown / Missing
+{unknown_block}
+
+## 待评产品
+{product_list}
+
+## 评分维度
+
+### 1. 该产品能力相关度 (relevance: 0-100)
+评估这个事件与上述产品的关系--产品能否解决它？能否蹭这个热点？
+只能基于已验证证据判断，不要凭常识扩写产品能力。
+
+- **90-100**: 直接涉及产品核心能力，产品能直接解决/参与
+- **70-89**: 与产品能力有明确交集，可作为典型案例或营销素材
+- **50-69**: 泛安全/泛AI事件，产品能部分关联
+- **30-49**: 弱关联，仅作行业背景参考
+- **0-29**: 与产品无关
+
+### 2. 事件影响面与传播力 (event_impact: 0-100)
+评估这个事件本身有多大的话题价值。
+
+- **90-100**: 全球性/国家级重大事件，主流媒体广泛报道
+- **70-89**: 行业内有较大影响，安全圈热传
+- **50-69**: 细分领域有影响力，专业媒体覆盖
+- **30-49**: 一般性报道，有一定参考价值
+- **0-29**: 常规动态，无显著传播力
+
+## 输出格式
+严格输出 JSON，不要加代码块标记：
+{{"relevance": 85, "event_impact": 70, "reason": "40字以内的打分理由"}}
+"""
+
 
 # ═══════════════════════════════════════════════════════════════
 # ScoringAgentV2
@@ -122,11 +165,15 @@ class ScoringAgentV2:
         knowledge: Any,  # ProductKnowledge or KnowledgeLoader
         temperature: float = DEFAULT_TEMPERATURE,
         db: Any = None,
+        knowledge_provider: Any = None,
     ):
         self.llm = llm
         self.llm.temperature = temperature
         self.knowledge = knowledge
         self.db = db
+        # Wiki Knowledge Provider（KNOWLEDGE_BACKEND 决定 legacy/wiki/shadow）
+        # 为 None 时保持旧链路行为（评分仍走大段 knowledge_context 注入）。
+        self.knowledge_provider = knowledge_provider
         self.system_prompt = self._build_system_prompt()
         self.llm_wrapper = LLMWrapper(llm, db)
 
@@ -223,12 +270,14 @@ class ScoringAgentV2:
         for r in results:
             if r.get("_fallback"):
                 continue
-            product_scores.append({
-                "product_id": r["product_id"],
-                "product_name": r["product_name"],
-                "score": r["relevance"],
-                "reason": r.get("reason", ""),
-            })
+            product_scores.append(
+                {
+                    "product_id": r["product_id"],
+                    "product_name": r["product_name"],
+                    "score": r["relevance"],
+                    "reason": r.get("reason", ""),
+                }
+            )
             if r["relevance"] > max_relevance:
                 max_relevance = r["relevance"]
                 best_product_id = r["product_id"]
@@ -262,8 +311,14 @@ class ScoringAgentV2:
         trace_id: str = "",
         task_id: str = "",
     ) -> dict:
-        """对单个产品评分（一次 LLM 调用）。"""
-        system_prompt, context_meta = await self._build_system_prompt_for_product(
+        """对单个产品评分。
+
+        KNOWLEDGE_BACKEND 决策（文档 8 / 17.1）：
+          - legacy：走旧链路 `_build_system_prompt_for_product`（大段 knowledge_context）
+          - wiki：以 EvidenceBundle 为知识入口，构建增强提示词，评分只 judge
+          - shadow：旧结果返回给用户，后台同时跑 Wiki 并记录差异（_shadow_compare）
+        """
+        legacy_prompt, legacy_meta = await self._build_system_prompt_for_product(
             product_id,
             product_name,
             user_id=user_id,
@@ -272,7 +327,80 @@ class ScoringAgentV2:
             trace_id=trace_id,
         )
         user_prompt = self._build_user_prompt(article)
+        provider_mode = self._provider_mode()
 
+        bundle = None
+        if provider_mode in ("wiki", "shadow"):
+            bundle = await self._collect_evidence_bundle(
+                article, product_id, product_name, user_id=user_id
+            )
+
+        evidence_prompt = None
+        if bundle is not None and bundle.verified() and bundle.is_sufficient():
+            evidence_prompt = self._build_scoring_prompt_from_bundle(
+                bundle, product_id=product_id, product_name=product_name
+            )
+
+        # 主评分的系统提示词：wiki 用证据提示词；legacy/shadow 用旧提示词（用户结果不变）
+        if provider_mode == "wiki" and evidence_prompt:
+            system_prompt = evidence_prompt
+            context_meta = self._evidence_meta(bundle, legacy_meta)
+        else:
+            system_prompt = legacy_prompt
+            context_meta = legacy_meta
+
+        result = await self._invoke_judge(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            product_id=product_id,
+            product_name=product_name,
+            context_meta=context_meta,
+            user_id=user_id,
+            trace_id=trace_id,
+            task_id=task_id,
+        )
+
+        # shadow：后台再跑一次 Wiki 评分，对比差异但不影响用户可见结果
+        if provider_mode == "shadow" and evidence_prompt:
+            wiki_result = await self._invoke_judge(
+                system_prompt=evidence_prompt,
+                user_prompt=user_prompt,
+                product_id=product_id,
+                product_name=product_name,
+                context_meta=self._evidence_meta(bundle, legacy_meta),
+                user_id=user_id,
+                trace_id=trace_id,
+                task_id=task_id,
+            )
+            result["_shadow_compare"] = {
+                "legacy_score": result.get("relevance", 0),
+                "wiki_score": wiki_result.get("relevance", 0),
+                "score_delta": wiki_result.get("relevance", 0) - result.get("relevance", 0),
+                "wiki_status": bundle.status,
+                "wiki_coverage": bundle.coverage,
+                "wiki_grounded": bundle.confidence >= 0.8,
+                "wiki_version": bundle.wiki_version,
+                "wiki_pages_read": len(bundle.visited_pages),
+                "evidence_count": len(bundle.evidence),
+            }
+
+        if bundle is not None and provider_mode == "wiki" and evidence_prompt:
+            result.update(self._evidence_meta(bundle, {}))
+        return result
+
+    async def _invoke_judge(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        product_id: str,
+        product_name: str,
+        context_meta: dict,
+        user_id: str,
+        trace_id: str,
+        task_id: str,
+    ) -> dict:
+        """调用评分 Judge（含重试与降级），返回单产品评分结果。"""
         for attempt in range(MAX_RETRIES + 1):
             try:
                 structured = await self.llm_wrapper.invoke_structured(
@@ -290,7 +418,9 @@ class ScoringAgentV2:
                     "product_id": product_id,
                     "product_name": product_name,
                     "relevance": max(SCORE_MIN, min(SCORE_MAX, int(data.get("relevance", 0)))),
-                    "event_impact": max(SCORE_MIN, min(SCORE_MAX, int(data.get("event_impact", 0)))),
+                    "event_impact": max(
+                        SCORE_MIN, min(SCORE_MAX, int(data.get("event_impact", 0)))
+                    ),
                     "reason": str(data.get("reason", ""))[:200],
                     "_fallback": False,
                 }
@@ -304,7 +434,6 @@ class ScoringAgentV2:
                         "reason": f"Failed: {e!s}"[:200],
                         "_fallback": True,
                     }
-
         return {
             "product_id": product_id,
             "product_name": product_name,
@@ -313,6 +442,90 @@ class ScoringAgentV2:
             "reason": "max retries",
             "_fallback": True,
         }
+
+    # ── Wiki 证据集成（PR-07）────────────────────────────────
+
+    def _provider_mode(self) -> str:
+        if self.knowledge_provider is None:
+            return "legacy"
+        return getattr(self.knowledge_provider, "mode", "legacy")
+
+    async def _collect_evidence_bundle(
+        self,
+        article: dict,
+        product_id: str,
+        product_name: str,
+        *,
+        user_id: str = "",
+    ):
+        """通过 KnowledgeProvider 收集 EvidenceBundle（失败返回 None）。"""
+        try:
+            from agent.wiki.provider import KnowledgeRequest
+
+            request = KnowledgeRequest(
+                task_type="score",
+                query=self._score_query(article, product_id, product_name),
+                product_ids=[product_id],
+                user_id=user_id or None,
+            )
+            return await self.knowledge_provider.collect_evidence(request)
+        except Exception as exc:
+            logger.warning("collect_evidence failed for product %s: %s", product_id, exc)
+            return None
+
+    @staticmethod
+    def _score_query(article: dict, product_id: str, product_name: str) -> str:
+        title = article.get("title", "") or ""
+        summary = article.get("summary_cn", "") or article.get("summary", "") or ""
+        category = article.get("category_v2", "") or ""
+        return (
+            f"{title}。{category}。{summary}".strip()
+            or f"评估产品 {product_name}({product_id}) 与本文事件的相关性"
+        )
+
+    @staticmethod
+    def _evidence_meta(bundle, base: dict) -> dict:
+        meta = dict(base or {})
+        meta["knowledge_backend"] = "wiki"
+        meta["evidence_ids"] = [e.evidence_id for e in bundle.verified()]
+        meta["evidence_coverage"] = bundle.coverage
+        meta["evidence_confidence"] = bundle.confidence
+        meta["grounded"] = bundle.status == "SUFFICIENT" and bundle.confidence >= 0.8
+        meta["wiki_version"] = bundle.wiki_version
+        meta["visited_pages"] = list(bundle.visited_pages)
+        return meta
+
+    @classmethod
+    def _build_scoring_prompt_from_bundle(
+        cls, bundle, *, product_id: str, product_name: str
+    ) -> str:
+        """按文档 17.4 将 EvidenceBundle 渲染为评分系统提示词。"""
+        verified = bundle.verified()
+        lines: list[str] = []
+        for idx, e in enumerate(verified, 1):
+            source = e.source_refs[0].relative_path if e.source_refs else "无引用"
+            lines.append(
+                f"[E{idx}]\n"
+                f"Fact: {e.fact}\n"
+                f"Source: {source}\n"
+                f"Relation to event: {e.relation_to_task or 'potential_match'}"
+            )
+        evidence_block = "\n\n".join(lines) if lines else "（无已验证证据）"
+
+        missing: list[str] = []
+        if bundle.status == "INSUFFICIENT_EVIDENCE":
+            missing.append("知识不足，无法覆盖全部评分维度。")
+        if not verified and bundle.evidence:
+            missing.append("存在候选证据但均未通过 Source Grounding。")
+        unknown_block = "\n".join(missing) or "暂无。"
+        product_list = f"- product_id: {product_id}, product_name: {product_name}"
+
+        return EVIDENCE_SYSTEM_PROMPT_TEMPLATE.format(
+            evidence_block=evidence_block,
+            coverage=f"{bundle.coverage:.2f}",
+            unknown_block=unknown_block,
+            product_list=product_list,
+        )
 
     async def score_batch(
         self,
@@ -551,6 +764,7 @@ class ScoringAgentV2:
         try:
             from agent.context_bridge import allow_global_product_fallback
         except Exception:
+
             def allow_global_product_fallback(_reason: str | None) -> bool:
                 return True
 
@@ -598,9 +812,7 @@ class ScoringAgentV2:
                             knowledge_context = result.plan.rendered()
             except Exception as exc:
                 telemetry.setdefault("fallback", FALLBACK_CONTEXT_BUILD_FAILED)
-                logger.warning(
-                    "ContextManager build failed for product %s: %s", product_id, exc
-                )
+                logger.warning("ContextManager build failed for product %s: %s", product_id, exc)
 
         if not knowledge_context:
             # 旧路径：切片解析 + 全局评分知识兜底
@@ -628,9 +840,7 @@ class ScoringAgentV2:
                     )
 
             # 阶段3 S3-4：评分阶段产品已（由调用方）解析，未命中时禁止回退跨产品全局知识
-            if not knowledge_context and allow_global_product_fallback(
-                telemetry.get("fallback")
-            ):
+            if not knowledge_context and allow_global_product_fallback(telemetry.get("fallback")):
                 if hasattr(self.knowledge, "as_scoring_prompt"):
                     knowledge_context = self.knowledge.as_scoring_prompt()
                 elif hasattr(self.knowledge, "as_system_prompt"):
@@ -797,12 +1007,14 @@ class ScoringAgentV2:
                 score = max(0, min(100, int(ps.get("score", 0))))
             except (TypeError, ValueError):
                 score = 0
-            validated_ps.append({
-                "product_id": str(ps.get("product_id", ""))[:100],
-                "product_name": str(ps.get("product_name", ""))[:100],
-                "score": score,
-                "reason": str(ps.get("reason", ""))[:100],
-            })
+            validated_ps.append(
+                {
+                    "product_id": str(ps.get("product_id", ""))[:100],
+                    "product_name": str(ps.get("product_name", ""))[:100],
+                    "score": score,
+                    "reason": str(ps.get("reason", ""))[:100],
+                }
+            )
         result["product_scores"] = validated_ps
 
         # 如果 product_scores 非空，取最高分作为 product_relevance

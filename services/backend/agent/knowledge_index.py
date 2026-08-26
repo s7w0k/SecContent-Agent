@@ -83,7 +83,8 @@ DOC_PURPOSES: dict[DocType, tuple[str, ...]] = {
 RAW_DIR = "原始文档"
 
 # 全局排除目录（不进入产品事实索引）
-EXCLUDED_DIRS = frozenset({"skills", "_index", "海外版", ".git", "__pycache__"})
+# `_wiki` 为 LLM Wiki 的编译产物目录，必须排除，避免 Legacy 把 Wiki 当原始文档重复读取产生自我污染。
+EXCLUDED_DIRS = frozenset({"skills", "_index", "海外版", ".git", "__pycache__", "_wiki"})
 
 # 全局排除的根级管理文档（不作为产品事实文档）
 EXCLUDED_ROOT_FILES = frozenset({"AGENTS.md", "CLAUDE.md", "README.md", "qa-log.md"})
