@@ -228,6 +228,15 @@ def build_knowledge_runtime(
         index=index,
         source_registry=registry,
         source_root=str(source_root),
+        llm=llm,
+        navigator_llm_enabled=bool(getattr(settings, "WIKI_NAVIGATOR_LLM_ENABLED", False)),
+        confidence_threshold=float(getattr(settings, "WIKI_EVIDENCE_CONFIDENCE_THRESHOLD", 0.8)),
+        relevance_threshold=float(getattr(settings, "WIKI_EVIDENCE_RELEVANCE_THRESHOLD", 0.5)),
+        min_coverage={
+            "score": float(getattr(settings, "WIKI_MIN_COVERAGE_SCORE", 0.70)),
+            "draft": float(getattr(settings, "WIKI_MIN_COVERAGE_DRAFT", 0.80)),
+            "chat": float(getattr(settings, "WIKI_MIN_COVERAGE_CHAT", 0.60)),
+        },
     )
 
     return KnowledgeRuntime(

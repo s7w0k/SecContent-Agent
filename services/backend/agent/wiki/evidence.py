@@ -68,6 +68,10 @@ class EvidenceBundle(BaseModel):
     visited_pages: list[str] = Field(default_factory=list)
     wiki_version: str = Field(default="")
 
+    # PR-B（V2）：按 Requirement 评估的结果（替代 Page-count Coverage）
+    requirements: list[dict] = Field(default_factory=list, description="RequirementResult dict 列表")
+    missing_requirements: list[str] = Field(default_factory=list)
+
     status: BundleStatus = Field(default="FAILED")
 
     def verified(self, min_confidence: float = 0.8) -> list[EvidenceItem]:

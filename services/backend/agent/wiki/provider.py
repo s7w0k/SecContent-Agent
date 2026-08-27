@@ -68,16 +68,52 @@ def assemble_bundle(
     conflicts: list[EvidenceConflict] | None = None,
     coverage: float | None = None,
     confidence: float | None = None,
+    evaluation: Any | None = None,
+    coverage_threshold: float = 0.7,
 ) -> EvidenceBundle:
-    """把已验证证据组装成 EvidenceBundle，并给出状态判断。
+    """把已验证证据组装成 EvidenceBundle，并给出状态判断（§5.12）。
 
-    status 判定：
-      - FAILED：导航/收集阶段无任何访问页面
-      - CONFLICTED：存在冲突
-      - INSUFFICIENT_EVIDENCE：有证据但覆盖/置信度不足
-      - SUFFICIENT：达到覆盖与置信度阈值
+    evaluation（RequirementEvaluation）非空时：
+      - coverage/confidence/missing_requirements/requirements 全部由"已验证 Evidence"
+        驱动的 Requirement 评估决定；visited_pages 仅作观测，不参与 coverage 公式。
+      - status 判定：
+          FAILED                ← 无任何访问页面
+          CONFLICTED            ← 存在冲突
+          INSUFFICIENT_EVIDENCE ← 必选需求未满足 或 coverage < threshold
+          SUFFICIENT            ← 必选需求满足且 coverage/confidence 达标
+
+    evaluation 为空（legacy / shadow 直接构造）时保留旧的启发式逻辑。
     """
     conflicts = conflicts or []
+    if evaluation is not None:
+        coverage = coverage if coverage is not None else evaluation.coverage
+        confidence = confidence if confidence is not None else evaluation.confidence
+
+        if not visited_pages:
+            status = "FAILED"
+        elif conflicts:
+            status = "CONFLICTED"
+        elif not evaluation.all_required_met or coverage < coverage_threshold:
+            status = "INSUFFICIENT_EVIDENCE"
+        else:
+            status = "SUFFICIENT"
+
+        return EvidenceBundle(
+            task_type=request.task_type,
+            query=request.query,
+            product_ids=request.product_ids,
+            evidence=evidence,
+            coverage=round(coverage, 4),
+            confidence=round(confidence, 4),
+            conflicts=conflicts,
+            visited_pages=list(dict.fromkeys(visited_pages)),
+            wiki_version=wiki_version,
+            requirements=[r.model_dump() for r in evaluation.results],
+            missing_requirements=list(evaluation.missing_requirements),
+            status=status,  # type: ignore[arg-type]
+        )
+
+    # ── 旧启发式（legacy / 无 evaluation 的兼容路径）─────────
     if coverage is None:
         coverage = _coverage_of(visited_pages)
     if confidence is None:
@@ -197,13 +233,29 @@ class WikiKnowledgeProvider:
         collector: EvidenceCollector | None = None,
         verifier: EvidenceVerifier | None = None,
         resolver: EntityResolver | None = None,
+        *,
+        llm: Any | None = None,
+        navigator_llm_enabled: bool = False,
+        confidence_threshold: float = 0.8,
+        relevance_threshold: float = 0.5,
+        min_coverage: dict[str, float] | None = None,
     ):
         self.store = store
         self.index = index
         self.resolver = EntityResolver(store=store, index=index) if resolver is None else resolver
-        self.navigator = navigator or WikiNavigator(store, index=index, resolver=self.resolver)
+        nav_llm = llm if navigator_llm_enabled else None
+        self.navigator = navigator or WikiNavigator(
+            store, index=index, resolver=self.resolver, llm=nav_llm
+        )
         self.collector = collector or EvidenceCollector(store)
         self.verifier = verifier or EvidenceVerifier(store, source_registry, source_root)
+        from agent.wiki.requirement_evaluator import RequirementEvaluator
+
+        self.evaluator = RequirementEvaluator(
+            confidence_threshold=confidence_threshold,
+            relevance_threshold=relevance_threshold,
+        )
+        self.min_coverage = min_coverage or {"score": 0.7, "draft": 0.8, "chat": 0.6}
         self.metrics: KnowledgeMetrics | None = None
 
     async def collect_evidence(self, request: KnowledgeRequest) -> EvidenceBundle:
@@ -241,18 +293,25 @@ class WikiKnowledgeProvider:
     def _bundle_from_outcome(
         self, request: KnowledgeRequest, outcome: NavigationOutcome
     ) -> EvidenceBundle:
+        from agent.wiki.requirements import default_requirements
+
         candidates = self.collector.collect(
             request.query, outcome.opened_pages, task_type=request.task_type
         )
         verified = self.verifier.verify(candidates)
         conflicts = detect_conflicts(verified)
         wiki_version = self.index.wiki_version if self.index is not None else ""
+        evaluation = self.evaluator.evaluate(
+            default_requirements(request.task_type), verified, conflicts=conflicts
+        )
         return assemble_bundle(
             request=request,
             evidence=verified,
             visited_pages=outcome.visited,
             wiki_version=wiki_version,
             conflicts=conflicts,
+            evaluation=evaluation,
+            coverage_threshold=self.min_coverage.get(request.task_type, 0.7),
         )
 
 
@@ -307,6 +366,11 @@ def build_knowledge_provider(
     source_registry: Any | None = None,
     source_root: str | None = None,
     legacy_backend: Any | None = None,
+    llm: Any | None = None,
+    navigator_llm_enabled: bool = False,
+    confidence_threshold: float = 0.8,
+    relevance_threshold: float = 0.5,
+    min_coverage: dict[str, float] | None = None,
 ) -> KnowledgeProvider:
     """按 KNOWLEDGE_BACKEND 构建对应的 Provider。"""
     if mode == "legacy":
@@ -318,6 +382,11 @@ def build_knowledge_provider(
         index=index,
         source_registry=source_registry,
         source_root=source_root,
+        llm=llm,
+        navigator_llm_enabled=navigator_llm_enabled,
+        confidence_threshold=confidence_threshold,
+        relevance_threshold=relevance_threshold,
+        min_coverage=min_coverage,
     )
     if mode == "wiki":
         return wiki

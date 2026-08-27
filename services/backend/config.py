@@ -698,6 +698,27 @@ class Settings(BaseSettings):
     WIKI_EVIDENCE_CONFIDENCE_THRESHOLD: float = Field(
         default=0.8, ge=0, le=1, description="EvidenceItem 进入 scoring 的最低置信度"
     )
+    # PR-A：LLM Navigator 防循环上限（exceed → 本请求禁用 LLM 决策）
+    WIKI_NAVIGATOR_MAX_INVALID_ACTIONS: int = Field(
+        default=2, ge=1, le=20, description="LLM 非法动作上限，超出后本请求禁用 LLM 导航"
+    )
+    WIKI_NAVIGATOR_MAX_LLM_FAILURES: int = Field(
+        default=2, ge=1, le=20, description="LLM 决策失败上限，超出后本请求禁用 LLM 导航"
+    )
+    # PR-B：Evidence → Requirement 的相关性门槛
+    WIKI_EVIDENCE_RELEVANCE_THRESHOLD: float = Field(
+        default=0.5, ge=0, le=1, description="EvidenceItem 计入 Requirement 的最低相关性"
+    )
+    # PR-B：各任务类型的最小 Requirement Coverage 阈值
+    WIKI_MIN_COVERAGE_SCORE: float = Field(
+        default=0.70, ge=0, le=1, description="score 任务最小 Evidence Coverage"
+    )
+    WIKI_MIN_COVERAGE_DRAFT: float = Field(
+        default=0.80, ge=0, le=1, description="draft 任务最小 Evidence Coverage"
+    )
+    WIKI_MIN_COVERAGE_CHAT: float = Field(
+        default=0.60, ge=0, le=1, description="chat 任务最小 Evidence Coverage"
+    )
 
     # ── 流水线 ───────────────────────────────────────
     PIPELINE_SCORE_THRESHOLD: int = Field(

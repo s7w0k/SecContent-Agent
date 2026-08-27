@@ -40,6 +40,8 @@ class EvidenceRequirement(BaseModel):
     required_page_types: list[str] = Field(default_factory=list)
     minimum_evidence: int = Field(default=1, ge=1)
     status: RequirementStatus = RequirementStatus.OPEN
+    # PR-B（§5.14）：必选需求。MET 之前不得判定 SUFFICIENT。
+    required: bool = Field(default=False, description="必选需求；未 MET 不得 SUFFICIENT")
 
 
 _DEFAULT_REQUIREMENTS: dict[str, list[dict]] = {
@@ -50,6 +52,7 @@ _DEFAULT_REQUIREMENTS: dict[str, list[dict]] = {
             "weight": 0.5,
             "required_page_types": ["product", "capability"],
             "minimum_evidence": 1,
+            "required": True,
         },
         {
             "requirement_id": "R2",

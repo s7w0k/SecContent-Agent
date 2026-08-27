@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from agent.wiki.contracts import WikiPage
+from agent.wiki.navigation_decider import NavigationAction, NavigationDecisionContext
 from agent.wiki.navigation_policy import NavigationState, budget_for
 from agent.wiki.navigation_tools import NavigationTools
 from agent.wiki.requirements import RequirementTracker, default_requirements
@@ -82,7 +83,7 @@ class NavigationOutcome:
 
 
 class WikiNavigator:
-    """有界 Wiki 导航器。确定性引擎 + 可选 LLM 决策（受白名单约束）。"""
+    """有界 Wiki 导航器。确定性引擎 + 可选 LLM 决策（受白名单 Harness 约束）。"""
 
     def __init__(
         self,
@@ -90,14 +91,33 @@ class WikiNavigator:
         tools: NavigationTools | None = None,
         index: Any | None = None,
         llm: Any | None = None,
+        decider: Any | None = None,
         preferences: dict[str, list[str]] | None = None,
         resolver: Any | None = None,
+        *,
+        max_invalid_actions: int = 2,
+        max_llm_failures: int = 2,
     ):
         self.store = store
         self.tools = tools or NavigationTools(store, index)
         self.llm = llm
         self.preferences = preferences or _PAGE_TYPE_PREFERENCE
         self.resolver = resolver
+        # PR-A：LLM 决策器；llm 非空但未显式给 decider 时按需构造
+        self._decider = decider
+        self.max_invalid_actions = max_invalid_actions
+        self.max_llm_failures = max_llm_failures
+
+    @property
+    def llm_enabled(self) -> bool:
+        return self.llm is not None
+
+    def _decider_for(self, llm: Any):
+        if self._decider is not None:
+            return self._decider
+        from agent.wiki.navigation_decider import LLMNavigationDecider
+
+        return LLMNavigationDecider(llm=llm)
 
     def state_for(self, task_type: str, query: str, product_ids: list[str]) -> NavigationState:
         budget = budget_for(task_type)
@@ -140,49 +160,54 @@ class WikiNavigator:
         state.frontier = [c.page_id for c in frontier]
         seen: set[str] = set()
         tool_calls = 0
+        llm_disabled = False  # 本请求内 LLM 决策被禁用（反复失败/非法）
+
+        decider = self._decider_for(self.llm) if self.llm_enabled else None
 
         while frontier and state.can_continue and tool_calls < state.max_tool_calls:
-            candidate = frontier.pop(0)
-            page_id = candidate.page_id
-            if page_id in seen:
-                continue
-            seen.add(page_id)
+            candidates = self._build_descriptors(frontier, requirements)
 
-            # max_depth 检查真实深度（§10.1）
-            if candidate.depth > state.max_depth:
-                continue
+            # ── 决策：LLM（受 Harness 约束）或确定性兜底 ──
+            action, used_llm = await self._choose_action(
+                state=state,
+                candidates=candidates,
+                frontier=frontier,
+                seen=seen,
+                tracker=tracker,
+                task_type=task_type,
+                query=query,
+                llm_enabled=self.llm_enabled and not llm_disabled,
+                decider=decider,
+                trace=trace,
+                record=record,
+            )
+            if action is None:
+                break
 
-            tool_calls += 1
-            try:
-                page = self.store.open_page(page_id)
-            except Exception as exc:
-                record("wiki.open_page", {"page_id": page_id, "error": str(exc)})
-                continue
+            if used_llm and action.action.startswith("STOP"):
+                record("wiki.llm_decision", {"status": "STOP_REJECTED"})
 
-            state.visit(page_id, depth=candidate.depth)
-            opened[page_id] = page
-            tracker.observe_page(page)
-            record("wiki.open_page", {"page_id": page_id, "page_type": page.meta.page_type})
-            state.tokens_used += self._estimate_tokens(page)
+            # ── 执行（Harness：任何越权/预算都用拓扑兜底）──
+            executed = self._execute_action(
+                action=action,
+                state=state,
+                frontier=frontier,
+                seen=seen,
+                opened=opened,
+                tracker=tracker,
+                tool_calls=tool_calls,
+                record=record,
+            )
+            if executed:
+                tool_calls += 1
 
-            children = self._children_for(page, candidate, seen)
-            ordered = self._order_by_preference(children, state.task_type)
-            pending_ids = {c.page_id for c in frontier}
-            for child in ordered:
-                if child.page_id in seen or child.page_id in pending_ids:
-                    continue
-                frontier.append(child)
-                state.frontier.append(child.page_id)
-
-        state.missing_requirements = tracker.missing
-        state.evidence_so_far = sum(1 for _r in requirements if _r.requirement_id in tracker.met)
+        state.missing_requirements = _hit_requirements_missing(tracker)
+        state.evidence_so_far = _hit_requirements_met_count(tracker)
         satisfaction = tracker.coverage()
 
-        # Stop Condition（§10.7）
+        # Stop Condition（§10.7 导航层：仅作导航终止，最终 SUFFICIENT 由 Provider 算）
         if state.stop_reason is None:
-            if satisfaction >= STOP_COVERAGE_THRESHOLD:
-                state.mark_stop("SUFFICIENT")
-            elif not state.can_continue:
+            if not state.can_continue:
                 state.mark_stop("BUDGET_EXHAUSTED")
             else:
                 state.mark_stop("EVIDENCE_COLLECTED")
@@ -190,6 +215,194 @@ class WikiNavigator:
         return NavigationOutcome(
             state=state, opened_pages=opened, trace=trace, satisfaction=satisfaction
         )
+
+    async def _choose_action(
+        self,
+        *,
+        state: NavigationState,
+        candidates: list[dict],
+        frontier: list[NavigationCandidate],
+        seen: set[str],
+        tracker: RequirementTracker,
+        task_type: str,
+        query: str,
+        llm_enabled: bool,
+        decider: Any | None,
+        trace: list[dict],
+        record,  # callable
+    ) -> tuple[NavigationAction | None, bool]:
+        """返回 (action, used_llm)。LLM 决策非法/失败则回退 deterministic（used_llm=False）。"""
+        if llm_enabled and decider is not None:
+            context_kwargs = {
+                "query": query,
+                "task_type": task_type,
+                "requirements": [r.model_dump() for r in tracker.requirements],
+                "missing_requirements": tracker.missing,
+                "visited_pages": list(state.visited_pages),
+                "candidate_pages": candidates,
+                "pages_remaining": max(0, state.max_pages - len(state.visited_pages)),
+                "tool_calls_remaining": max(0, state.max_tool_calls - len(state.action_history)),
+                "tokens_remaining": max(0, state.token_budget - state.tokens_used),
+            }
+
+            try:
+                state.missing_requirements = tracker.missing  # 刷新，供 validate_action STOP 守卫
+                action = await decider.decide(NavigationDecisionContext(**context_kwargs))
+            except Exception:
+                state.llm_failure_count += 1
+                if state.llm_failure_count >= self.max_llm_failures:
+                    llm_enabled = False
+                record("wiki.llm_decision", {"status": "FAILED", "count": state.llm_failure_count})
+                return self._deterministic_action(frontier, state), False
+
+            ok, reason = self.validate_action(
+                action.model_dump(), state=state, frontier=frontier, visited=seen
+            )
+            if not ok:
+                state.invalid_action_count += 1
+                if state.invalid_action_count >= self.max_invalid_actions:
+                    llm_enabled = False
+                record(
+                    "wiki.llm_decision",
+                    {"status": "INVALID", "action": action.action, "reason": reason},
+                )
+                return self._deterministic_action(frontier, state), False
+
+            if self._is_repeated(state, action):
+                state.repeated_action_count += 1
+                record(
+                    "wiki.llm_decision",
+                    {"status": "REPEATED", "action": action.action, "target": action.target},
+                )
+                return self._deterministic_action(frontier, state), False
+
+            state.action_history.append(f"{action.action}:{action.target}")
+            record(
+                "wiki.llm_decision",
+                {
+                    "status": "ACCEPTED",
+                    "action": action.action,
+                    "target": action.target,
+                    "requirement_id": action.requirement_id,
+                },
+            )
+            return action, True
+
+        return self._deterministic_action(frontier, state), False
+
+    def _deterministic_action(self, frontier: list[NavigationCandidate], state: NavigationState):
+        from agent.wiki.navigation_decider import deterministic_decision
+
+        candidates = [
+            {
+                "page_id": c.page_id,
+                "via_relation": c.via_relation,
+                "depth": c.depth,
+                "task_affinity": _requirement_affinity(c.page_id),
+            }
+            for c in frontier
+        ]
+        return deterministic_decision(candidates, missing_requirements=list(state.missing_requirements))
+
+    def _is_repeated(self, state: NavigationState, action) -> bool:
+        key = f"{action.action}:{action.target}"
+        history = state.action_history[-2:]
+        return len(history) >= 2 and history[-1] == key and history[-2] == key
+
+    def _execute_action(
+        self,
+        *,
+        action,
+        state: NavigationState,
+        frontier: list[NavigationCandidate],
+        seen: set[str],
+        opened: dict[str, WikiPage],
+        tracker: RequirementTracker,
+        tool_calls: int,
+        record,
+    ) -> bool:
+        """执行 action；返回是否消耗了一个 tool_call。越权一律忽略（Harness）。"""
+        if action.action in {"STOP_SUFFICIENT", "STOP_INSUFFICIENT"}:
+            if action.action == "STOP_SUFFICIENT":
+                state.mark_stop("SUFFICIENT")
+            else:
+                state.mark_stop("EVIDENCE_COLLECTED")
+            return False
+
+        # 其余动作都要落到某个 Candidate 页面
+        target = action.target or ""
+        idx = next((i for i, c in enumerate(frontier) if c.page_id == target), None)
+        if idx is None:
+            return False  # target 不在候选，忽略（validate_action 已拦住，二次防御）
+        candidate = frontier.pop(idx)
+        state.frontier = [c.page_id for c in frontier]
+        if candidate.page_id in seen:
+            return False
+
+        # max_depth 检查真实深度（§10.1）
+        if candidate.depth > state.max_depth:
+            return False
+
+        try:
+            page = self.store.open_page(candidate.page_id)
+        except Exception as exc:
+            record("wiki.open_page", {"page_id": candidate.page_id, "error": str(exc)})
+            return False
+
+        seen.add(candidate.page_id)
+        state.visit(candidate.page_id, depth=candidate.depth)
+        opened[candidate.page_id] = page
+        tracker.observe_page(page)
+        record(
+            "wiki.open_page",
+            {"page_id": candidate.page_id, "page_type": page.meta.page_type},
+        )
+        state.tokens_used += self._estimate_tokens(page)
+
+        children = self._children_for(page, candidate, seen)
+        ordered = self._order_by_preference(children, state.task_type)
+        pending_ids = {c.page_id for c in frontier}
+        for child in ordered:
+            if child.page_id in seen or child.page_id in pending_ids:
+                continue
+            frontier.append(child)
+            state.frontier.append(child.page_id)
+        return True
+
+    def _build_descriptors(
+        self, frontier: list[NavigationCandidate], requirements
+    ) -> list[dict]:
+        """把 frontier 压成 ≤8 个 PageDescriptor（§4.3）。"""
+        page_type_affinity: dict[str, list[str]] = {}
+        for r in requirements:
+            for pt in r.required_page_types:
+                page_type_affinity.setdefault(pt, []).append(r.requirement_id)
+
+        descs: list[dict] = []
+        for c in frontier[:8]:
+            page_id = c.page_id
+            page_type = page_id.split(".", 1)[0] if "." in page_id else page_id
+            title = ""
+            summary = ""
+            try:
+                page = self.store.open_page(page_id)
+                page_type = page.meta.page_type or page_type
+                title = page.meta.title
+                summary = (page.summary() or "")[:300]
+            except Exception:
+                pass
+            descs.append(
+                {
+                    "page_id": page_id,
+                    "title": title,
+                    "page_type": page_type,
+                    "summary": summary,
+                    "via_relation": c.via_relation,
+                    "depth": c.depth,
+                    "task_affinity": list(page_type_affinity.get(page_type, [])),
+                }
+            )
+        return descs
 
     # ── 起点页面 ──────────────────────────────────────────
 
@@ -289,20 +502,24 @@ class WikiNavigator:
             return False, f"ACTION_NOT_ALLOWED:{kind or 'unknown'}"
 
         target = action.get("target", "")
-        # STOP 类动作无需 target
-        if kind in {"STOP_SUFFICIENT", "STOP_INSUFFICIENT"}:
+        # STOP 类动作：STOP_SUFFICIENT 在仍缺 Requirement 时禁止（不得谎称证据充分）
+        if kind == "STOP_SUFFICIENT":
+            if state.missing_requirements:
+                return False, "REQUIREMENTS_MISSING"
+            return True, ""
+        if kind == "STOP_INSUFFICIENT":
             return True, ""
 
         if not target or (state.product_ids and _tenant_mismatch(target, state.product_ids)):
             return False, "TARGET_NOT_IN_PRODUCTS"
 
-        # OPEN_PAGE/FOLLOW_LINK 需要 target 在候选列表
+        # OPEN_PAGE/FOLLOW_LINK/OPEN_SECTION 需要 target 在候选列表且未被访问
+        # （LLM 不能发明 page_id、不能重开已访问页面，§4.2/§4.9）
         if kind in {"OPEN_PAGE", "FOLLOW_LINK", "OPEN_SECTION"}:
             ids = {c.page_id for c in frontier}
+            if target in visited:
+                return False, "TARGET_ALREADY_VISITED"
             if target not in ids:
-                # READ 型动作允许打开 visited 中已解析目标，但不允许发明 page_id
-                if target in visited:
-                    return True, ""
                 return False, "TARGET_NOT_IN_CANDIDATES"
 
         # budget 合法
@@ -321,6 +538,23 @@ def _tenant_mismatch(target: str, product_ids: list[str]) -> bool:
         if target.startswith("product.") and target.startswith("product." + pid):
             return False
     return True
+
+
+def _requirement_affinity(page_id: str) -> list[str]:
+    """为确定性决策粗估页面可能满足的 Requirement（按页面类型前缀）。"""
+    seg = page_id.split(".", 1)[0] if "." in page_id else page_id
+    mapping = {"capability": ["R1"], "scenario": ["R2"], "limitation": ["R3"]}
+    return list(mapping.get(seg, []))
+
+
+def _hit_requirements_met_count(tracker: RequirementTracker) -> int:
+    """导航层 hint 统计：有候选页面命中过其要求类型的 Requirement 数。"""
+    return len(tracker.met)
+
+
+def _hit_requirements_missing(tracker: RequirementTracker) -> list[str]:
+    """导航层 hint：尚未有页面命中的 Requirement id。"""
+    return tracker.missing
 
 
 def _extract_entity_candidates(query: str) -> list[str]:
