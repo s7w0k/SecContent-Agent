@@ -55,24 +55,43 @@ def _task(retry_count: int = 0) -> dict:
     }
 
 
+def _make_router(*, execute, resume=None):
+    """按 worker 装配方式构建注入 runner 的 ExecutionRouter（Cutover 接缝等价物）。"""
+    from agent.execution.factory import build_execution_runtime
+    from agent.execution.legacy_executor import LegacyPipelineExecutor
+
+    class _Settings:
+        AGENT_EXECUTION_MODE = "legacy"
+        AGENT_SHADOW_SAMPLE_PERCENT = 100
+        AGENT_SHADOW_TIMEOUT_SECONDS = 60
+        AGENT_SKILL_CANARY_PERCENT = 0
+        AGENT_CANARY_HASH_SEED = "seccontent-agent-v1"
+        KNOWLEDGE_BACKEND = "wiki"
+
+    legacy = LegacyPipelineExecutor(execute_runner=execute, resume_runner=resume)
+    bundle = build_execution_runtime(settings=_Settings(), legacy_executor=legacy)
+    return bundle.execution_router
+
+
 @pytest.mark.asyncio
 async def test_execute_pipeline_runs_worker_operation():
     from agent.task_queue import execute_pipeline
 
     db = Database(_task())
 
-    async def complete(_app, task_id, user_id, task_type, **kwargs):
-        assert (task_id, user_id, task_type) == ("task-a", "user-a", "run-v2")
-        assert kwargs["raise_errors"] is True
+    async def runner(request):
+        assert request.task_id == "task-a"
+        assert request.task_type == "run-v2"
         db.tasks.document["status"] = "completed"
+        return {"status": "completed", "artifact_refs": [], "output": {}}
 
-    with patch("api.pipeline._execute_pipeline_task", new=AsyncMock(side_effect=complete)):
-        result = await execute_pipeline(
-            {"db": db, "app": SimpleNamespace()},
-            "task-a",
-            "user-a",
-            "run-v2",
-        )
+    router = _make_router(execute=runner)
+    result = await execute_pipeline(
+        {"db": db, "app": SimpleNamespace(), "execution_router": router},
+        "task-a",
+        "user-a",
+        "run-v2",
+    )
 
     assert result == {"task_id": "task-a", "status": "completed"}
 
@@ -133,15 +152,14 @@ async def test_execute_pipeline_requests_retry_after_failure():
     from agent.task_queue import execute_pipeline
 
     db = Database(_task())
-    with (
-        patch(
-            "api.pipeline._execute_pipeline_task",
-            new=AsyncMock(side_effect=RuntimeError("temporary")),
-        ),
-        pytest.raises(Retry),
-    ):
+
+    async def runner(request):
+        raise RuntimeError("temporary")
+
+    router = _make_router(execute=runner)
+    with pytest.raises(Retry):
         await execute_pipeline(
-            {"db": db, "app": SimpleNamespace()},
+            {"db": db, "app": SimpleNamespace(), "execution_router": router},
             "task-a",
             "user-a",
             "run-v2",
@@ -156,15 +174,14 @@ async def test_execute_pipeline_stops_after_retry_limit():
     from config import get_settings
 
     db = Database(_task(retry_count=get_settings().ARQ_MAX_RETRIES))
-    with (
-        patch(
-            "api.pipeline._execute_pipeline_task",
-            new=AsyncMock(side_effect=RuntimeError("permanent")),
-        ),
-        pytest.raises(RuntimeError, match="permanent"),
-    ):
+
+    async def runner(request):
+        raise RuntimeError("permanent")
+
+    router = _make_router(execute=runner)
+    with pytest.raises(RuntimeError, match="permanent"):
         await execute_pipeline(
-            {"db": db, "app": SimpleNamespace()},
+            {"db": db, "app": SimpleNamespace(), "execution_router": router},
             "task-a",
             "user-a",
             "run-v2",
@@ -249,17 +266,16 @@ async def test_resume_pipeline_runs_checkpoint_recovery():
     from agent.task_queue import resume_pipeline
 
     db = Database(_task())
-    pipeline_v2 = SimpleNamespace(
-        resume_from_checkpoint=AsyncMock(
-            return_value={"pipeline_id": "task-a", "status": "completed"}
-        )
-    )
 
+    async def resume_runner(request):
+        return {"status": "completed"}
+
+    router = _make_router(execute=lambda req: None, resume=resume_runner)
     result = await resume_pipeline(
-        {"db": db, "pipeline_v2": pipeline_v2},
+        {"db": db, "execution_router": router},
         "task-a",
         "user-a",
     )
 
-    pipeline_v2.resume_from_checkpoint.assert_awaited_once_with("task-a")
     assert result["status"] == "completed"
+    assert result["engine"] == "legacy"

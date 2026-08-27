@@ -32,6 +32,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     from agent.knowledge import KnowledgeLoader
     from agent.multi_agent import build_multi_agent_runtime
     from agent.pipeline import PipelineManager
+    from agent.pipeline_state import PipelineStateManager
     from agent.pipeline_v2 import PipelineManagerV2
     from agent.reporter import ReportAgent
     from agent.scorer import ScoringAgent
@@ -146,6 +147,55 @@ async def startup(ctx: dict[str, Any]) -> None:
             multi_agent=multi_agent,
         )
     )
+
+    # ── Cutover 接缝（计划 §9 / §10 / §16-18）：统一 Execution 运行时 ──
+    # legacy 通过注入 runner 隔离旧链；runner 闭包懒 import api.pipeline，
+    # 使 task_queue 主路径满足硬门禁（不 import _execute_pipeline_task）。
+    from agent.execution.contracts import ExecutionRequest
+    from agent.execution.legacy_executor import LegacyPipelineExecutor
+
+    async def _legacy_execute_runner(request: ExecutionRequest) -> dict[str, Any]:
+        from api.pipeline import _execute_pipeline_task
+
+        await _execute_pipeline_task(
+            app,
+            request.task_id,
+            request.user_id,
+            request.task_type,
+            crawl_days=request.crawl_days,
+            article_url_hash=request.article_url_hash,
+            trace_id=request.trace_id,
+            username=request.username,
+            request_id=request.request_id,
+            run_id=request.run_id,
+            execution_mode=request.execution_mode,
+            input_snapshot_hash=request.input_snapshot_hash,
+            raise_errors=True,
+        )
+        task = await PipelineStateManager(db).get_task(request.task_id, request.user_id)
+        return {
+            "status": (task.get("status") if task else "completed") or "completed",
+            "artifact_refs": [],
+            "output": {},
+        }
+
+    async def _legacy_resume_runner(request: ExecutionRequest) -> dict[str, Any]:
+        result = await pipeline_v2.resume_from_checkpoint(request.task_id)
+        return {"status": result.get("status") or "failed"}
+
+    legacy_executor = LegacyPipelineExecutor(
+        execute_runner=_legacy_execute_runner,
+        resume_runner=_legacy_resume_runner,
+    )
+    from agent.execution.factory import build_execution_runtime
+
+    # 默认 AGENT_EXECUTION_MODE=legacy：本装配仅含 legacy（skill 栈在 main 装配校验）。
+    execution_runtime = build_execution_runtime(
+        settings=settings,
+        legacy_executor=legacy_executor,
+    )
+    app.state.execution_runtime = execution_runtime
+    app.state.execution_router = execution_runtime.execution_router
     ctx.update(
         {
             "app": app,
@@ -155,9 +205,15 @@ async def startup(ctx: dict[str, Any]) -> None:
             "mcp_crawl_client": mcp_crawl_client,
             "template_repository": template_repository,
             "multi_agent": multi_agent,
+            "execution_runtime": execution_runtime,
+            "execution_router": execution_runtime.execution_router,
         }
     )
-    logger.info("ARQ worker runtime initialized")
+    logger.info(
+        "ARQ worker runtime initialized: mode=%s engine=%s",
+        execution_runtime.mode,
+        execution_runtime.metadata.get("engine"),
+    )
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:

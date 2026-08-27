@@ -57,6 +57,7 @@ ci: ## 本地 CI 模拟 — 快速（Lint + Test）
 	python scripts/check_wiki_default.py  # CI Hard Gate 2：禁止生产默认 legacy
 	python scripts/check_wiki_scoring_isolation.py  # CI Hard Gate 3：Wiki 评分严格隔离 (PR-2)
 	python scripts/check_multiagent_architecture.py  # CI Hard Gate 4：Multi-Agent 分层架构不变量
+	python scripts/check_agent_cutover.py  # CI Hard Gate 5：Cutover 接缝不变量（新架构生产接管）
 	pytest tests/ --cov=services --cov-report=term-missing -v --tb=short
 
 ci-all: lint test ## 本地 CI 模拟 — 全流程（Lint + Test + Security）

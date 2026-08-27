@@ -341,6 +341,34 @@ class Settings(BaseSettings):
         default=3, ge=1, le=10, description="Worker 最大尝试次数"
     )
 
+    # ── 新架构生产接管（Cutover 计划 §27 / §49 / §118）────────────
+    # 唯一 authoritative rollout 配置。legacy=显式回滚；skill_planned=正式新主链。
+    # 过渡期默认 legacy 以保持既有行为；最终 Cutover 后切换为 skill_planned（PR-12）。
+    AGENT_EXECUTION_MODE: str = Field(
+        default="legacy",
+        pattern=r"^(legacy|skill_shadow|skill_canary|skill_planned)$",
+        description="生产执行模式：legacy / skill_shadow / skill_canary / skill_planned",
+    )
+    AGENT_SHADOW_SAMPLE_PERCENT: int = Field(
+        default=100, ge=0, le=100, description="Shadow 双跑抽样比例（0-100，按 tenant:user 确定性）"
+    )
+    AGENT_SHADOW_TIMEOUT_SECONDS: int = Field(
+        default=60, ge=1, le=600, description="Shadow Skill 路径超时（秒），超时不影响 legacy primary"
+    )
+    AGENT_SKILL_CANARY_PERCENT: int = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="Canary 灰度百分比（0-100，按 tenant:user 确定性、sticky）",
+    )
+    AGENT_CANARY_HASH_SEED: str = Field(
+        default="seccontent-agent-v1",
+        description="Canary 确定性散列种子",
+    )
+    AGENT_EXECUTION_REQUIRE_SKILL_SNAPSHOT_MATCH: bool = Field(
+        default=False, description="FastAPI 与 Worker 的 skill_snapshot_hash 是否强制一致（startup fail）"
+    )
+
     # ── 全自主 Agent（阶段四 4A，默认关闭）────────────────────────
     AUTONOMOUS_AGENT_ENABLED: bool = Field(
         default=False, description="自主模式总开关（默认关闭；开启后仍独立于标准/AgentLoop）"

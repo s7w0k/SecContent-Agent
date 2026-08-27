@@ -197,9 +197,7 @@ async def lifespan(app: FastAPI):
         )
 
         try:
-            knowledge_runtime = build_knowledge_runtime(
-                settings, llm=llm, db=app.state.db
-            )
+            knowledge_runtime = build_knowledge_runtime(settings, llm=llm, db=app.state.db)
             app.state.knowledge_runtime = knowledge_runtime
             _log(
                 "INFO",
@@ -249,6 +247,7 @@ async def lifespan(app: FastAPI):
 
         business_registry = build_business_tool_registry()
         from agent.draft_chat import DraftChatAgent
+
         production_tools = ProductionBusinessToolService(
             db=app.state.db,
             classifier=classifier_v2,
@@ -280,6 +279,29 @@ async def lifespan(app: FastAPI):
         _log(
             "INFO",
             f"Business tools initialized: {len(business_registry.names())} contracts",
+        )
+
+        # Cutover 接缝（计划 §16-18 / §21-26）：共享装配统一 Execution 运行时。
+        # FastAPI 与 Worker 必须共用 build_execution_runtime（§24）。此处校验 skill 栈
+        # 装配（fail-fast），但默认 AGENT_EXECUTION_MODE=legacy 仅路由 legacy；
+        # 实际任务执行在 ARQ Worker，main 侧 Runtime 供探查/门禁/API 校验。
+        from agent.execution.factory import build_execution_runtime
+
+        execution_runtime = build_execution_runtime(
+            settings=settings,
+            business_registry=business_registry,
+            business_executor=business_executor,
+        )
+        app.state.execution_runtime = execution_runtime
+        app.state.execution_router = execution_runtime.execution_router
+        app.state.orchestration_runtime = execution_runtime.orchestration_runtime
+        app.state.skill_runtime = execution_runtime.skill_runtime
+        app.state.skill_registry = execution_runtime.skill_registry
+        _log(
+            "INFO",
+            f"Execution runtime assembled: mode={execution_runtime.mode} "
+            f"skills={len(execution_runtime.skill_registry.names()) if execution_runtime.skill_registry else 0} "
+            f"snapshot={execution_runtime.skill_snapshot_hash[:8]}",
         )
 
         # 聊天式 Agent 引擎（真正的 LLM tool-loop + 聊天工作台）

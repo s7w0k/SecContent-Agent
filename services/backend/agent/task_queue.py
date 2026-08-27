@@ -57,19 +57,26 @@ async def execute_pipeline(
             logger.info("Task starting with knowledge hash: %s", knowledge_hash[:8])
 
     try:
-        from api.pipeline import _execute_pipeline_task
+        # Cutover：统一经由 ExecutionRouter（PR-1 §61），避免反向依赖 api.pipeline。
+        from agent.execution.contracts import ExecutionRequest
 
-        await _execute_pipeline_task(
-            ctx["app"],
-            task_id,
-            user_id,
-            task_type,
-            crawl_days=crawl_days,
-            article_url_hash=article_url_hash,
-            trace_id=trace_id,
-            username=username,
-            request_id=request_id,
-            raise_errors=True,
+        router = ctx.get("execution_router")
+        if router is None:
+            raise RuntimeError("execution_router not configured in worker ctx")
+        await router.execute(
+            ExecutionRequest(
+                task_id=task_id,
+                task_type=task_type,
+                goal="",
+                user_id=user_id,
+                tenant_id=user_id,
+                trace_id=trace_id,
+                request_id=request_id,
+                crawl_days=crawl_days,
+                article_url_hash=article_url_hash,
+                username=username,
+                execution_mode=get_settings().AGENT_EXECUTION_MODE,
+            )
         )
     except Exception as exc:
         retry_count = await state_manager.increment_retry(task_id)
@@ -144,10 +151,12 @@ async def enrich_web_search_articles(
         if not url or not is_safe_url(url):
             await db["articles"].update_one(
                 {"url_hash": url_hash},
-                {"$set": {
-                    "content_fetch_status": "blocked",
-                    "content_fetch_error": "URL不安全",
-                }},
+                {
+                    "$set": {
+                        "content_fetch_status": "blocked",
+                        "content_fetch_error": "URL不安全",
+                    }
+                },
             )
             failed += 1
             continue
@@ -168,15 +177,16 @@ async def enrich_web_search_articles(
                 resp = await client.get(url)
                 content_type = resp.headers.get("content-type", "")
                 if not any(
-                    t in content_type
-                    for t in ("text/html", "text/plain", "application/xhtml")
+                    t in content_type for t in ("text/html", "text/plain", "application/xhtml")
                 ):
                     await db["articles"].update_one(
                         {"url_hash": url_hash},
-                        {"$set": {
-                            "content_fetch_status": "blocked",
-                            "content_fetch_error": f"不支持的内容类型: {content_type}",
-                        }},
+                        {
+                            "$set": {
+                                "content_fetch_status": "blocked",
+                                "content_fetch_error": f"不支持的内容类型: {content_type}",
+                            }
+                        },
                     )
                     failed += 1
                     continue
@@ -189,40 +199,48 @@ async def enrich_web_search_articles(
             if not content:
                 await db["articles"].update_one(
                     {"url_hash": url_hash},
-                    {"$set": {
-                        "content_fetch_status": "failed",
-                        "content_fetch_error": "内容为空",
-                    }},
+                    {
+                        "$set": {
+                            "content_fetch_status": "failed",
+                            "content_fetch_error": "内容为空",
+                        }
+                    },
                 )
                 failed += 1
                 continue
 
             await db["articles"].update_one(
                 {"url_hash": url_hash},
-                {"$set": {
-                    "content_md": content[:50000],
-                    "content_fetch_status": "completed",
-                    "content_fetch_error": None,
-                    "pipeline_status": "ready",
-                }},
+                {
+                    "$set": {
+                        "content_md": content[:50000],
+                        "content_fetch_status": "completed",
+                        "content_fetch_error": None,
+                        "pipeline_status": "ready",
+                    }
+                },
             )
             success += 1
         except httpx.TimeoutException:
             await db["articles"].update_one(
                 {"url_hash": url_hash},
-                {"$set": {
-                    "content_fetch_status": "failed",
-                    "content_fetch_error": "抓取超时",
-                }},
+                {
+                    "$set": {
+                        "content_fetch_status": "failed",
+                        "content_fetch_error": "抓取超时",
+                    }
+                },
             )
             failed += 1
         except Exception as e:
             await db["articles"].update_one(
                 {"url_hash": url_hash},
-                {"$set": {
-                    "content_fetch_status": "failed",
-                    "content_fetch_error": str(e)[:200],
-                }},
+                {
+                    "$set": {
+                        "content_fetch_status": "failed",
+                        "content_fetch_error": str(e)[:200],
+                    }
+                },
             )
             failed += 1
 
@@ -248,10 +266,30 @@ async def resume_pipeline(
         return {"status": "failed", "error": "task not found"}
 
     try:
-        result = await ctx["pipeline_v2"].resume_from_checkpoint(task_id)
-        if result.get("status") != "completed":
-            raise RuntimeError(result.get("error") or "checkpoint resume failed")
-        return result
+        # Cutover：Resume 统一经由 ExecutionRouter（§31-32 / §65），读取任务创建时
+        # 选定的 engine，sticky 复用，不重新 rollout；消除对 worker 上下文中旧 DAG 的直接依赖。
+        from agent.execution.contracts import ExecutionRequest
+
+        router = ctx.get("execution_router")
+        if router is None:
+            raise RuntimeError("execution_router not configured in worker ctx")
+        result = await router.resume(
+            ExecutionRequest(
+                task_id=task_id,
+                task_type="run-v2",
+                goal="",
+                user_id=user_id,
+                tenant_id=user_id,
+            )
+        )
+        if result.status == "FAILED":
+            raise RuntimeError(result.error_message or "checkpoint resume failed")
+        return {
+            "task_id": task_id,
+            "pipeline_id": task_id,
+            "status": "completed",
+            "engine": result.engine,
+        }
     except Exception as exc:
         await state_manager.update_status(task_id, "failed", error=str(exc))
         retry_count = await state_manager.increment_retry(task_id)
@@ -337,10 +375,12 @@ async def decay_user_memories(ctx: dict[str, Any]) -> dict[str, Any]:
     now = datetime.now(UTC)
 
     # 查询所有 active 和 pending_approval 的非用户确认记忆
-    cursor = db["user_memory_items"].find({
-        "status": {"$in": ["active", "pending_approval", "candidate"]},
-        "confirmed_by_user": False,
-    })
+    cursor = db["user_memory_items"].find(
+        {
+            "status": {"$in": ["active", "pending_approval", "candidate"]},
+            "confirmed_by_user": False,
+        }
+    )
     items = await cursor.to_list(length=10000)
 
     expired_count = 0
@@ -380,16 +420,20 @@ async def cleanup_expired_articles(ctx: dict[str, Any]) -> dict:
 
     # 48 小时前的"不相关"文章
     cutoff_48h = now - timedelta(hours=48)
-    result_irrelevant = await db["articles"].delete_many({
-        "added_at": {"$lt": cutoff_48h},
-        "category_v2": "不相关",
-    })
+    result_irrelevant = await db["articles"].delete_many(
+        {
+            "added_at": {"$lt": cutoff_48h},
+            "category_v2": "不相关",
+        }
+    )
 
     # 14 天前的所有文章
     cutoff_14d = now - timedelta(days=14)
-    result_all = await db["articles"].delete_many({
-        "added_at": {"$lt": cutoff_14d},
-    })
+    result_all = await db["articles"].delete_many(
+        {
+            "added_at": {"$lt": cutoff_14d},
+        }
+    )
 
     logger.info(
         "cleanup_expired_articles: deleted %d irrelevant (>48h), %d expired (>14d)",
@@ -438,13 +482,19 @@ async def _auto_classify_and_score(
         return result
 
     # 1. 查询本次抓取的未分类文章
-    articles = await db["articles"].find({
-        "crawl_run_id": run_id,
-        "$or": [
-            {"category_v2": {"$in": ["", None]}},
-            {"category_v2": {"$exists": False}},
-        ],
-    }).to_list(length=500)
+    articles = (
+        await db["articles"]
+        .find(
+            {
+                "crawl_run_id": run_id,
+                "$or": [
+                    {"category_v2": {"$in": ["", None]}},
+                    {"category_v2": {"$exists": False}},
+                ],
+            }
+        )
+        .to_list(length=500)
+    )
 
     if not articles:
         logger.info("[overseas-schedule] no new articles to classify")
@@ -452,7 +502,8 @@ async def _auto_classify_and_score(
 
     logger.info(
         "[overseas-schedule] auto-classifying %d articles for run_id=%s",
-        len(articles), run_id,
+        len(articles),
+        run_id,
     )
 
     # 2. 并发分类（并发度 5）
@@ -468,8 +519,11 @@ async def _auto_classify_and_score(
                     task_id=run_id,
                 )
             except Exception as exc:
-                logger.warning("[overseas-schedule] classify failed for %s: %s",
-                               article.get("url_hash", ""), exc)
+                logger.warning(
+                    "[overseas-schedule] classify failed for %s: %s",
+                    article.get("url_hash", ""),
+                    exc,
+                )
                 return None
 
     futures = [asyncio.create_task(classify_one(a)) for a in articles]
@@ -507,7 +561,9 @@ async def _auto_classify_and_score(
 
     logger.info(
         "[overseas-schedule] classified %d/%d, %d PR-eligible",
-        result["classified"], len(articles), len(classified_articles),
+        result["classified"],
+        len(articles),
+        len(classified_articles),
     )
 
     # 3. 对 PR-eligible 文章打分
@@ -517,7 +573,8 @@ async def _auto_classify_and_score(
 
     logger.info(
         "[overseas-schedule] auto-scoring %d PR-eligible articles for run_id=%s",
-        len(classified_articles), run_id,
+        len(classified_articles),
+        run_id,
     )
 
     async def score_one(article: dict[str, Any]) -> dict[str, Any] | None:
@@ -530,8 +587,9 @@ async def _auto_classify_and_score(
                     task_id=run_id,
                 )
             except Exception as exc:
-                logger.warning("[overseas-schedule] score failed for %s: %s",
-                               article.get("url_hash", ""), exc)
+                logger.warning(
+                    "[overseas-schedule] score failed for %s: %s", article.get("url_hash", ""), exc
+                )
                 return None
 
     score_futures = [asyncio.create_task(score_one(a)) for a in classified_articles]
@@ -541,14 +599,16 @@ async def _auto_classify_and_score(
             try:
                 await db["articles"].update_one(
                     {"url_hash": score_result.get("url_hash", "")},
-                    {"$set": {
-                        "product_relevance": score_result["product_relevance"],
-                        "event_impact": score_result["event_impact"],
-                        "pr_total_score": score_result["pr_total_score"],
-                        "score_reason": score_result.get("score_reason", ""),
-                        "product_scores": score_result.get("product_scores", []),
-                        "pipeline_status": "scored",
-                    }},
+                    {
+                        "$set": {
+                            "product_relevance": score_result["product_relevance"],
+                            "event_impact": score_result["event_impact"],
+                            "pr_total_score": score_result["pr_total_score"],
+                            "score_reason": score_result.get("score_reason", ""),
+                            "product_scores": score_result.get("product_scores", []),
+                            "pipeline_status": "scored",
+                        }
+                    },
                 )
                 result["scored"] += 1
                 if score_result.get("is_pr_candidate", False):
@@ -558,7 +618,9 @@ async def _auto_classify_and_score(
 
     logger.info(
         "[overseas-schedule] scored %d/%d, %d PR candidates",
-        result["scored"], len(classified_articles), result["pr_candidates"],
+        result["scored"],
+        len(classified_articles),
+        result["pr_candidates"],
     )
 
     return result
@@ -652,16 +714,18 @@ async def scheduled_overseas_news_crawl(ctx: dict[str, Any]) -> dict[str, Any]:
     try:
         await db["pipeline_locks"].update_one(
             {"lock_key": lock_key, "status": {"$in": [None, "completed", "failed", "expired"]}},
-            {"$set": {
-                "lock_key": lock_key,
-                "lock_type": "crawl",
-                "source": "overseas_news",
-                "status": "running",
-                "user_id": "system:scheduler",
-                "run_id": run_id,
-                "created_at": now,
-                "expires_at": lock_expires,
-            }},
+            {
+                "$set": {
+                    "lock_key": lock_key,
+                    "lock_type": "crawl",
+                    "source": "overseas_news",
+                    "status": "running",
+                    "user_id": "system:scheduler",
+                    "run_id": run_id,
+                    "created_at": now,
+                    "expires_at": lock_expires,
+                }
+            },
             upsert=True,
         )
     except Exception:
@@ -711,6 +775,7 @@ async def scheduled_overseas_news_crawl(ctx: dict[str, Any]) -> dict[str, Any]:
         # 4. 更新 crawl_runs 结果
         finished = datetime.now(UTC)
         from models.crawl_run import CrawlRun
+
         run = CrawlRun(
             run_key=run_key,
             run_id=run_id,
@@ -728,20 +793,22 @@ async def scheduled_overseas_news_crawl(ctx: dict[str, Any]) -> dict[str, Any]:
 
         await db["crawl_runs"].update_one(
             {"run_key": run_key},
-            {"$set": {
-                "status": result["status"],
-                "total": result["total"],
-                "saved": result["saved"],
-                "duplicates": result["duplicates"],
-                "invalid": result["invalid"],
-                "fulltext_queued": result["fulltext_queued"],
-                "fulltext_status": result["fulltext_status"],
-                "per_site": result["per_site"],
-                "errors": result["errors"],
-                "finished_at": finished,
-                "updated_at": finished,
-                "expires_at": run.compute_expires_at(settings.OVERSEAS_NEWS_RUN_RETENTION_DAYS),
-            }},
+            {
+                "$set": {
+                    "status": result["status"],
+                    "total": result["total"],
+                    "saved": result["saved"],
+                    "duplicates": result["duplicates"],
+                    "invalid": result["invalid"],
+                    "fulltext_queued": result["fulltext_queued"],
+                    "fulltext_status": result["fulltext_status"],
+                    "per_site": result["per_site"],
+                    "errors": result["errors"],
+                    "finished_at": finished,
+                    "updated_at": finished,
+                    "expires_at": run.compute_expires_at(settings.OVERSEAS_NEWS_RUN_RETENTION_DAYS),
+                }
+            },
         )
 
         # 6. 自动分类 + 打分（仅当有新文章入库时）
@@ -759,13 +826,15 @@ async def scheduled_overseas_news_crawl(ctx: dict[str, Any]) -> dict[str, Any]:
             finished_cs = datetime.now(UTC)
             await db["crawl_runs"].update_one(
                 {"run_key": run_key},
-                {"$set": {
-                    "classified": classify_score_result["classified"],
-                    "scored": classify_score_result["scored"],
-                    "pr_candidates": classify_score_result["pr_candidates"],
-                    "classify_errors": classify_score_result.get("errors", {}),
-                    "updated_at": finished_cs,
-                }},
+                {
+                    "$set": {
+                        "classified": classify_score_result["classified"],
+                        "scored": classify_score_result["scored"],
+                        "pr_candidates": classify_score_result["pr_candidates"],
+                        "classify_errors": classify_score_result.get("errors", {}),
+                        "updated_at": finished_cs,
+                    }
+                },
             )
 
         # 7. 释放锁
@@ -777,8 +846,12 @@ async def scheduled_overseas_news_crawl(ctx: dict[str, Any]) -> dict[str, Any]:
         logger.info(
             "[overseas-schedule] completed: run_id=%s status=%s saved=%d duplicates=%d "
             "classified=%d scored=%d pr_candidates=%d",
-            run_id, result["status"], result["saved"], result["duplicates"],
-            classify_score_result["classified"], classify_score_result["scored"],
+            run_id,
+            result["status"],
+            result["saved"],
+            result["duplicates"],
+            classify_score_result["classified"],
+            classify_score_result["scored"],
             classify_score_result["pr_candidates"],
         )
         result["classified"] = classify_score_result["classified"]
@@ -790,12 +863,14 @@ async def scheduled_overseas_news_crawl(ctx: dict[str, Any]) -> dict[str, Any]:
         finished = datetime.now(UTC)
         await db["crawl_runs"].update_one(
             {"run_key": run_key},
-            {"$set": {
-                "status": CrawlRunStatus.FAILED.value,
-                "errors": {exc.code: exc.message},
-                "finished_at": finished,
-                "updated_at": finished,
-            }},
+            {
+                "$set": {
+                    "status": CrawlRunStatus.FAILED.value,
+                    "errors": {exc.code: exc.message},
+                    "finished_at": finished,
+                    "updated_at": finished,
+                }
+            },
         )
         # 释放锁
         await db["pipeline_locks"].update_one(
@@ -814,12 +889,14 @@ async def scheduled_overseas_news_crawl(ctx: dict[str, Any]) -> dict[str, Any]:
         finished = datetime.now(UTC)
         await db["crawl_runs"].update_one(
             {"run_key": run_key},
-            {"$set": {
-                "status": CrawlRunStatus.FAILED.value,
-                "errors": {"UNEXPECTED": str(exc)[:500]},
-                "finished_at": finished,
-                "updated_at": finished,
-            }},
+            {
+                "$set": {
+                    "status": CrawlRunStatus.FAILED.value,
+                    "errors": {"UNEXPECTED": str(exc)[:500]},
+                    "finished_at": finished,
+                    "updated_at": finished,
+                }
+            },
         )
         await db["pipeline_locks"].update_one(
             {"lock_key": lock_key},
