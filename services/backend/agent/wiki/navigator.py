@@ -21,7 +21,7 @@ from agent.wiki.contracts import WikiPage
 from agent.wiki.navigation_decider import NavigationAction, NavigationDecisionContext
 from agent.wiki.navigation_policy import NavigationState, budget_for
 from agent.wiki.navigation_tools import NavigationTools
-from agent.wiki.requirements import RequirementTracker, default_requirements
+from agent.wiki.requirements import affinity_for_page_type, default_requirements
 from agent.wiki.store import WikiStore
 
 logger = logging.getLogger("backend.agent.wiki.navigator")
@@ -72,6 +72,9 @@ class NavigationOutcome:
     opened_pages: dict[str, WikiPage] = field(default_factory=dict)
     trace: list[dict] = field(default_factory=list)
     satisfaction: float = 0.0
+    # GOAL A/PR-3：导航期间的单一事实源——已验证 Evidence Snapshot。
+    # Provider 直接复用该 Snapshot 组装最终 Bundle，禁止导航后再算第二套 Coverage。
+    evidence_snapshot: Any = None
 
     @property
     def stop_reason(self) -> str | None:
@@ -97,6 +100,7 @@ class WikiNavigator:
         *,
         max_invalid_actions: int = 2,
         max_llm_failures: int = 2,
+        no_progress_stop_rounds: int = 2,
     ):
         self.store = store
         self.tools = tools or NavigationTools(store, index)
@@ -107,6 +111,8 @@ class WikiNavigator:
         self._decider = decider
         self.max_invalid_actions = max_invalid_actions
         self.max_llm_failures = max_llm_failures
+        # GOAL A/§14：仍有候选但连续无进展的轮次上限（达到后才允许 raise STOP_INSUFFICIENT）
+        self.no_progress_stop_rounds = max(1, no_progress_stop_rounds)
 
     @property
     def llm_enabled(self) -> bool:
@@ -138,7 +144,15 @@ class WikiNavigator:
         task_type: str = "score",
         max_pages: int | None = None,
         max_depth: int | None = None,
+        evidence_session: Any | None = None,
     ) -> NavigationOutcome:
+        """GOAL A（§11）：Live Evidence-driven Navigation。
+
+        - 每打开一页立即 `assess_page`（增量 Collect→Verify→Evaluate），更新 live snapshot
+        - Requirement MET / missing / coverage / confidence 全部来自 **Verified Evidence Snapshot**
+        - `sufficient` 由快照硬校验；LLM 的 STOP 需通过 `validate_action` 校验
+        - `evidence_session` 由 `WikiKnowledgeProvider` 按请求创建并注入
+        """
         state = self.state_for(task_type, query, product_ids or [])
         if max_pages is not None:
             state.max_pages = max_pages
@@ -146,7 +160,10 @@ class WikiNavigator:
             state.max_depth = max_depth
 
         requirements = default_requirements(task_type)
-        tracker = RequirementTracker(requirements)
+        snapshot_holder: dict[str, Any] = {"current": None}
+        if evidence_session is not None:
+            snapshot_holder["current"] = evidence_session.initial_snapshot()
+
         trace: list[dict] = []
         opened: dict[str, WikiPage] = {}
 
@@ -164,7 +181,14 @@ class WikiNavigator:
 
         decider = self._decider_for(self.llm) if self.llm_enabled else None
 
+        # GOAL A/§14：no-progress 检测
+        prev_evidence = 0
+        prev_coverage = 0.0
+        prev_missing: set[str] = set()
+
         while frontier and state.can_continue and tool_calls < state.max_tool_calls:
+            snapshot = snapshot_holder["current"]
+            missing = list(snapshot.missing_requirements) if snapshot else []
             candidates = self._build_descriptors(frontier, requirements)
 
             # ── 决策：LLM（受 Harness 约束）或确定性兜底 ──
@@ -173,7 +197,9 @@ class WikiNavigator:
                 candidates=candidates,
                 frontier=frontier,
                 seen=seen,
-                tracker=tracker,
+                requirements=requirements,
+                snapshot=snapshot,
+                missing_requirements=missing,
                 task_type=task_type,
                 query=query,
                 llm_enabled=self.llm_enabled and not llm_disabled,
@@ -194,18 +220,53 @@ class WikiNavigator:
                 frontier=frontier,
                 seen=seen,
                 opened=opened,
-                tracker=tracker,
+                evidence_session=evidence_session,
+                snapshot_holder=snapshot_holder,
                 tool_calls=tool_calls,
                 record=record,
             )
             if executed:
                 tool_calls += 1
 
-        state.missing_requirements = _hit_requirements_missing(tracker)
-        state.evidence_so_far = _hit_requirements_met_count(tracker)
-        satisfaction = tracker.coverage()
+            # ── GOAL A：用快照刷新导航状态 + no-progress 判定 ──
+            snapshot = snapshot_holder["current"]
+            if snapshot is not None:
+                state.missing_requirements = list(snapshot.missing_requirements)
+                state.coverage = snapshot.coverage
+                state.confidence = snapshot.confidence
+                state.evidence_so_far = len(snapshot.evidence)
+                cur_missing: set[str] = set(snapshot.missing_requirements)
+                no_progress = (
+                    len(snapshot.evidence) <= prev_evidence
+                    and snapshot.coverage <= prev_coverage + 1e-9
+                    and prev_missing.issubset(cur_missing)
+                )
+                state.no_progress_rounds = (
+                    state.no_progress_rounds + 1 if no_progress else 0
+                )
+                prev_evidence = len(snapshot.evidence)
+                prev_coverage = snapshot.coverage
+                prev_missing = cur_missing
+                # STOP_SUFFICIENT 必须由 Verified Evidence 状态硬校验（§13）
+                if snapshot.sufficient:
+                    state.mark_stop("SUFFICIENT")
+                    break
 
-        # Stop Condition（§10.7 导航层：仅作导航终止，最终 SUFFICIENT 由 Provider 算）
+        snapshot = snapshot_holder["current"]
+        if snapshot is not None:
+            state.missing_requirements = list(snapshot.missing_requirements)
+            state.coverage = snapshot.coverage
+            state.confidence = snapshot.confidence
+            state.evidence_so_far = len(snapshot.evidence)
+            satisfaction = snapshot.coverage
+        else:
+            # 无注入 session（测试/工具直接调用）：仅作导航 hint，不判定 Requirement MET
+            hint_missing, hint_met = _navigator_hints(state.visited_pages, task_type)
+            state.missing_requirements = hint_missing
+            state.evidence_so_far = hint_met
+            satisfaction = 0.0
+
+        # Stop Condition（导航层仅作导航终止；SUFFICIENT 已由上面 Verified 快照判定）
         if state.stop_reason is None:
             if not state.can_continue:
                 state.mark_stop("BUDGET_EXHAUSTED")
@@ -213,7 +274,11 @@ class WikiNavigator:
                 state.mark_stop("EVIDENCE_COLLECTED")
         record("wiki.stop", {"reason": state.stop_reason, "coverage": round(satisfaction, 3)})
         return NavigationOutcome(
-            state=state, opened_pages=opened, trace=trace, satisfaction=satisfaction
+            state=state,
+            opened_pages=opened,
+            trace=trace,
+            satisfaction=satisfaction,
+            evidence_snapshot=snapshot,
         )
 
     async def _choose_action(
@@ -223,7 +288,9 @@ class WikiNavigator:
         candidates: list[dict],
         frontier: list[NavigationCandidate],
         seen: set[str],
-        tracker: RequirementTracker,
+        requirements: list[Any],
+        snapshot: Any | None,
+        missing_requirements: list[str],
         task_type: str,
         query: str,
         llm_enabled: bool,
@@ -236,17 +303,29 @@ class WikiNavigator:
             context_kwargs = {
                 "query": query,
                 "task_type": task_type,
-                "requirements": [r.model_dump() for r in tracker.requirements],
-                "missing_requirements": tracker.missing,
+                "requirements": [r.model_dump() for r in requirements],
+                "missing_requirements": missing_requirements,
                 "visited_pages": list(state.visited_pages),
                 "candidate_pages": candidates,
                 "pages_remaining": max(0, state.max_pages - len(state.visited_pages)),
                 "tool_calls_remaining": max(0, state.max_tool_calls - len(state.action_history)),
                 "tokens_remaining": max(0, state.token_budget - state.tokens_used),
+                "coverage": snapshot.coverage if snapshot else 0.0,
+                "confidence": snapshot.confidence if snapshot else 0.0,
+                "verified_evidence_count": (
+                    len([e for e in snapshot.evidence if e.reason_code == "VERIFIED"])
+                    if snapshot
+                    else 0
+                ),
+                "conflicted_requirements": (
+                    [r.requirement_id for r in snapshot.requirements if r.status == "CONFLICTED"]
+                    if snapshot
+                    else []
+                ),
             }
 
             try:
-                state.missing_requirements = tracker.missing  # 刷新，供 validate_action STOP 守卫
+                state.missing_requirements = missing_requirements  # 刷新，供 validate_action STOP 守卫
                 action = await decider.decide(NavigationDecisionContext(**context_kwargs))
             except Exception:
                 state.llm_failure_count += 1
@@ -256,7 +335,12 @@ class WikiNavigator:
                 return self._deterministic_action(frontier, state), False
 
             ok, reason = self.validate_action(
-                action.model_dump(), state=state, frontier=frontier, visited=seen
+                action.model_dump(),
+                state=state,
+                frontier=frontier,
+                visited=seen,
+                snapshot=snapshot,
+                missing_requirements=missing_requirements,
             )
             if not ok:
                 state.invalid_action_count += 1
@@ -317,11 +401,16 @@ class WikiNavigator:
         frontier: list[NavigationCandidate],
         seen: set[str],
         opened: dict[str, WikiPage],
-        tracker: RequirementTracker,
+        evidence_session: Any | None,
+        snapshot_holder: dict[str, Any] | None,
         tool_calls: int,
         record,
     ) -> bool:
-        """执行 action；返回是否消耗了一个 tool_call。越权一律忽略（Harness）。"""
+        """执行 action；返回是否消耗了一个 tool_call。越权一律忽略（Harness）。
+
+        GOAL A：每打开一个新 Wiki Page 立即 `assess_page`（增量 Collect→Verify→Evaluate），
+        把当前 Verified 快照写回 `snapshot_holder`。不再 `tracker.observe_page(page)`。
+        """
         if action.action in {"STOP_SUFFICIENT", "STOP_INSUFFICIENT"}:
             if action.action == "STOP_SUFFICIENT":
                 state.mark_stop("SUFFICIENT")
@@ -352,7 +441,12 @@ class WikiNavigator:
         seen.add(candidate.page_id)
         state.visit(candidate.page_id, depth=candidate.depth)
         opened[candidate.page_id] = page
-        tracker.observe_page(page)
+        # GOAL A：开页后立即增量评估，更新 Live Evidence Snapshot
+        if evidence_session is not None and snapshot_holder is not None:
+            snapshot_holder["current"] = evidence_session.assess_page(
+                page_id=candidate.page_id,
+                page=page,
+            )
         record(
             "wiki.open_page",
             {"page_id": candidate.page_id, "page_type": page.meta.page_type},
@@ -495,19 +589,38 @@ class WikiNavigator:
         state: NavigationState,
         frontier: list[NavigationCandidate],
         visited: set[str],
+        snapshot: Any | None = None,
+        missing_requirements: list[str] | None = None,
     ) -> tuple[bool, str]:
-        """校验 LLM 提议的 action。非法 → (False, reason)，调用方计数并走 deterministic fallback。"""
+        """校验 LLM 提议的 action。非法 → (False, reason)，调用方计数并走 deterministic fallback。
+
+        GOAL A（§13/§14）：
+          - STOP_SUFFICIENT 必须由 Verified Evidence Snapshot 硬校验（.sufficient）
+          - STOP_INSUFFICIENT 若仍有能补齐 Missing Requirement 的合法 Candidate 且无足够
+            无进展轮次，则拒绝过早停止
+        """
         kind = action.get("action", "")
         if kind not in ALLOWED_ACTIONS:
             return False, f"ACTION_NOT_ALLOWED:{kind or 'unknown'}"
 
+        missing = (
+            list(missing_requirements)
+            if missing_requirements is not None
+            else list(state.missing_requirements)
+        )
         target = action.get("target", "")
-        # STOP 类动作：STOP_SUFFICIENT 在仍缺 Requirement 时禁止（不得谎称证据充分）
+        # STOP 类动作基于 Verified Evidence 状态（§13/§14）
         if kind == "STOP_SUFFICIENT":
-            if state.missing_requirements:
-                return False, "REQUIREMENTS_MISSING"
+            sufficient = bool(snapshot is not None and snapshot.sufficient)
+            if not sufficient:
+                return False, "EVIDENCE_NOT_SUFFICIENT"
             return True, ""
         if kind == "STOP_INSUFFICIENT":
+            actionable = bool(snapshot is not None) and self._has_actionable_candidate(
+                frontier, missing, state
+            )
+            if actionable and state.no_progress_rounds < self.no_progress_stop_rounds:
+                return False, "STOP_INSUFFICIENT_PREMATURE"
             return True, ""
 
         if not target or (state.product_ids and _tenant_mismatch(target, state.product_ids)):
@@ -526,6 +639,23 @@ class WikiNavigator:
         if len(state.visited_pages) >= state.max_pages or state.depth >= state.max_depth:
             return False, "BUDGET_INVALID"
         return True, ""
+
+    def _has_actionable_candidate(
+        self,
+        frontier: list[NavigationCandidate],
+        missing_requirements: list[str],
+        state: NavigationState,
+    ) -> bool:
+        """是否存在能补齐 Missing Requirement 的合法 Candidate（§14 防过早 STOP_INSUFFICIENT）。"""
+        if not missing_requirements:
+            return False
+        if len(state.visited_pages) >= state.max_pages or state.depth >= state.max_depth:
+            return False
+        for c in frontier:
+            affine = set(_requirement_affinity(c.page_id))
+            if affine & set(missing_requirements):
+                return True
+        return False
 
     @staticmethod
     def _estimate_tokens(page: WikiPage) -> int:
@@ -547,14 +677,19 @@ def _requirement_affinity(page_id: str) -> list[str]:
     return list(mapping.get(seg, []))
 
 
-def _hit_requirements_met_count(tracker: RequirementTracker) -> int:
-    """导航层 hint 统计：有候选页面命中过其要求类型的 Requirement 数。"""
-    return len(tracker.met)
+def _navigator_hints(visited: list[str], task_type: str) -> tuple[list[str], int]:
+    """无注入 session 时的纯导航 hint（GOAL A：只作导航提示，不判定 Requirement MET）。
 
-
-def _hit_requirements_missing(tracker: RequirementTracker) -> list[str]:
-    """导航层 hint：尚未有页面命中的 Requirement id。"""
-    return tracker.missing
+    返回 (missing_requirements, met_hint_count)。仅用于直接调用 Navigator 的场景，
+    生产路径始终注入 `NavigationEvidenceSession`，Requirement 状态以 Verified Snapshot 为准。
+    """
+    satisfied: set[str] = set()
+    for pid in visited:
+        seg = pid.split(".", 1)[0] if "." in pid else pid
+        satisfied.update(affinity_for_page_type(task_type, seg))
+    reqs = default_requirements(task_type)
+    missing = [r.requirement_id for r in reqs if r.requirement_id not in satisfied]
+    return missing, len(satisfied)
 
 
 def _extract_entity_candidates(query: str) -> list[str]:

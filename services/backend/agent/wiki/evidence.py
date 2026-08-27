@@ -12,12 +12,44 @@ PR-06 产物：
 
 from __future__ import annotations
 
-from typing import Literal
+import hashlib
+from typing import Any, Literal
 
 from agent.wiki.contracts import SourceRef
 from pydantic import BaseModel, Field
 
 BundleStatus = Literal["SUFFICIENT", "INSUFFICIENT_EVIDENCE", "CONFLICTED", "FAILED"]
+
+
+def stable_evidence_id(
+    *,
+    page_id: str,
+    claim_id: str = "",
+    fact: str = "",
+    source_refs: list[Any] | None = None,
+) -> str:
+    """稳定 Evidence ID：同一 Claim/事实 + 同一页面 + 同一 Canonical Source 恒为同一 ID。
+
+    PR-1.2：增量导航期间同一 Claim 在多轮出现必须得到同一 evidence_id，
+    以保证 dedupe / minimum_evidence / coverage / trace / replay 的一致性。
+      - 有 claim_id：sha256(claim_id + page_id + canonical_source_refs)[:20]
+      - 无 claim_id：sha256(normalized_fact + page_id + canonical_source_refs)[:20]
+
+    canonical_source_refs 使用 (source_id, content_hash) 排序后的稳定串，
+    避免 SourceRef 中路径/章节等非稳定字段造成 ID 漂移。
+    """
+    from agent.wiki.resolver import normalize_text
+
+    refs_parts = sorted(
+        f"{getattr(r, 'source_id', '')}:{getattr(r, 'content_hash', '')}"
+        for r in (source_refs or [])
+    )
+    refs_blob = "|".join(refs_parts)
+    if claim_id:
+        key = f"{claim_id}|{page_id}|{refs_blob}"
+    else:
+        key = f"{normalize_text(fact)}|{page_id}|{refs_blob}"
+    return "ev:" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:20]
 
 
 class EvidenceItem(BaseModel):

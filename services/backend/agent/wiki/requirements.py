@@ -15,7 +15,6 @@ Score 任务示例（§10.4）：
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -118,7 +117,7 @@ def default_requirements(task_type: str) -> list[EvidenceRequirement]:
 
 
 class RequirementTracker:
-    """依据已打开页面累计 requirement 覆盖（§10.2/§10.4）。"""
+    """Requirement 状态（GOAL A：不再由 page_type 直接驱动 MET，见 `affinity_for_page_type`）。"""
 
     def __init__(self, requirements: list[EvidenceRequirement] | None = None):
         self.requirements = list(requirements or [])
@@ -151,13 +150,6 @@ class RequirementTracker:
         earned = sum(r.weight if r.requirement_id in self.met else 0.0 for r in self.requirements)
         return earned / total_weight
 
-    def observe_page(self, page: Any) -> None:
-        """按 page_type 计入对应 requirement 的 evidence 数量。"""
-        page_type = str(getattr(getattr(page, "meta", page), "page_type", ""))
-        for r in self.requirements:
-            if page_type and page_type in r.required_page_types:
-                self._evidence_by_requirement[r.requirement_id] += 1
-
     def snapshot(self) -> dict:
         return {
             "requirements": [r.model_dump() for r in self.requirements],
@@ -166,3 +158,19 @@ class RequirementTracker:
             "missing": self.missing,
             "coverage": self.coverage(),
         }
+
+
+def affinity_for_page_type(task_type: str, page_type: str) -> list[str]:
+    """GOAL A/§10：返回某 page_type **可能**补齐的 Requirement id。
+
+    语义严格区分：
+      - Page Type = “这页可能补哪个 Requirement”（导航提示）
+      - Verified Evidence = “Requirement 是否真的 MET”（唯一判定依据）
+
+    仅用作导航提示，绝不直接改变 Requirement 的 MET 状态。
+    """
+    return [
+        r.requirement_id
+        for r in default_requirements(task_type)
+        if page_type and page_type in r.required_page_types
+    ]

@@ -3,8 +3,8 @@
 覆盖（文档 17.1 / 17.4）：
   - wiki 模式：证据充分 → 用 EVIDENCE_SYSTEM_PROMPT，结果附加 _evidence_meta
   - shadow 模式：用户结果不变（旧提示词），后台附加 _shadow_compare
-  - INSUFFICIENT_EVIDENCE：证据不足 → 回退 legacy 提示词
-  - knowledge_provider=None：保持旧链路行为，无 wiki 副作用
+  - INSUFFICIENT_EVIDENCE：证据不足 → 显式 NO_SCORE（不回退 legacy 补分）
+  - legacy：显式注入 LegacyKnowledgeProvider，保持旧链路行为，无 wiki 副作用
 """
 
 from __future__ import annotations
@@ -84,7 +84,15 @@ def _make_bundle(status: str) -> EvidenceBundle:
 
 
 def _make_scorer(mode: str, bundle: EvidenceBundle):
-    provider = _FakeProvider(mode, bundle) if mode != "legacy" else None
+    from agent.wiki.provider import LegacyKnowledgeProvider
+
+    # Hard Gate (GOAL B): provider=None 不再等价于 legacy。
+    # legacy 模式也必须显式注入 LegacyKnowledgeProvider。
+    provider = (
+        LegacyKnowledgeProvider()
+        if mode == "legacy"
+        else _FakeProvider(mode, bundle)
+    )
     scorer = ScoringAgentV2(
         llm=_FakeLLM(),
         knowledge=_FakeKnowledge(),

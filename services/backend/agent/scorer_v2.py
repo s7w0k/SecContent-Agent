@@ -482,9 +482,17 @@ class ScoringAgentV2:
     # ── Wiki 证据集成（PR-07）────────────────────────────────
 
     def _provider_mode(self) -> str:
+        # Hard Gate (GOAL B): 不允许隐式 legacy 默认值。
+        # 未装配 KnowledgeProvider 时直接 fail-fast，禁止闪回 legacy 常识打分。
         if self.knowledge_provider is None:
-            return "legacy"
-        return getattr(self.knowledge_provider, "mode", "legacy")
+            from agent.wiki.runtime_factory import KnowledgeRuntimeError
+
+            raise KnowledgeRuntimeError(
+                "ScoringAgentV2.knowledge_provider is None — KNOWLEDGE_BACKEND "
+                "must be explicitly configured (default=wiki) and the runtime "
+                "assembled through the unified factory. Refusing legacy fallback."
+            )
+        return self.knowledge_provider.mode
 
     async def _collect_evidence_bundle(
         self,

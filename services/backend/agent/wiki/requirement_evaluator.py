@@ -55,6 +55,25 @@ class RequirementEvaluation(BaseModel):
     missing_requirements: list[str] = Field(default_factory=list)
     all_required_met: bool = Field(default=False)
 
+    def is_sufficient(
+        self,
+        *,
+        min_coverage: float = 0.7,
+        confidence_threshold: float = 0.8,
+        no_blocking_conflict: bool = True,
+    ) -> bool:
+        """GOAL A/§9：`sufficient` 必须由 Verified Evidence 状态硬校验决定。
+
+        由 `all_required_met` + coverage 达标 + confidence 达标 + 无阻断冲突 共同决定，
+        不允许由 LLM / page_type 自行声称"证据够了"。
+        """
+        return bool(
+            self.all_required_met
+            and self.coverage >= min_coverage
+            and self.confidence >= confidence_threshold
+            and no_blocking_conflict
+        )
+
 
 class RequirementEvaluator:
     """把已验证证据映射为 Requirement，并计算加权 Coverage（§5.2-§5.7）。"""

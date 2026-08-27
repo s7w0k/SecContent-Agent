@@ -71,7 +71,11 @@ class PageDescriptor(BaseModel):
 
 
 class NavigationDecisionContext(BaseModel):
-    """交给 LLM 的决策上下文（全部来自 Wrap，LLM 无法越权）。"""
+    """交给 LLM 的决策上下文（全部来自 Wrap，LLM 无法越权）。
+
+    GOAL A/§12：missing_requirements / coverage / confidence / verified_evidence_count /
+    conflicted_requirements 全部来自 **Verified Evidence Snapshot**，不读 Page Tracker。
+    """
 
     query: str
     task_type: str
@@ -82,6 +86,11 @@ class NavigationDecisionContext(BaseModel):
     pages_remaining: int = Field(default=0)
     tool_calls_remaining: int = Field(default=0)
     tokens_remaining: int = Field(default=0)
+    # GOAL A/§12：实时 Verified Evidence 状态
+    coverage: float = Field(default=0.0)
+    confidence: float = Field(default=0.0)
+    verified_evidence_count: int = Field(default=0)
+    conflicted_requirements: list[str] = Field(default_factory=list)
 
 
 class NavigationDecisionError(Exception):
@@ -149,7 +158,11 @@ class LLMNavigationDecider:
             "",
             "任务类型: " + context.task_type,
             "查询: " + context.query,
-            "缺失需求: " + ",".join(context.missing_requirements or ["<none>"]) ,
+            "缺失需求: " + ",".join(context.missing_requirements or ["<none>"]),
+            f"Verified Coverage: {context.coverage:.2f}",
+            f"Verified Confidence: {context.confidence:.2f}",
+            "已验证证据条数: " + str(context.verified_evidence_count),
+            "冲突需求: " + ",".join(context.conflicted_requirements or ["<none>"]),
             "已访问页面: " + ",".join(context.visited_pages[: self.max_candidates]),
             "页面预算剩余: " + str(context.pages_remaining),
             "动作预算剩余: " + str(context.tool_calls_remaining),

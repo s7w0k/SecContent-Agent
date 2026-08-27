@@ -663,10 +663,11 @@ class Settings(BaseSettings):
 
     # ── LLM Wiki（SecContent-Agent LLM Wiki Knowledge Layer）─────────────
     # 知识后端：legacy=旧链路 | wiki=Wiki 为主 | shadow=旧结果同时后台跑 Wiki
+    # GOAL B/§20：默认必须是 wiki；legacy 只能显式 rollback/shadow。
     KNOWLEDGE_BACKEND: str = Field(
-        default="legacy",
+        default="wiki",
         pattern=r"^(legacy|wiki|shadow)$",
-        description="知识后端模式：legacy=旧链路，wiki=Wiki 为主，shadow=旧结果同时后台跑 Wiki",
+        description="知识后端模式：wiki=Wiki 为主（默认），legacy=显式回滚，shadow=对比期",
     )
     # Wiki Root（默认位于知识库根目录下）
     WIKI_ROOT_DIR: str = Field(default="", description="Wiki 根目录；空则取 KNOWLEDGE_BASE_DIR/_wiki")

@@ -70,6 +70,31 @@ class TestSettingsDefaults:
         assert s.DEEPSEEK_BASE_URL == "https://api.deepseek.com"
         assert s.DEEPSEEK_MODEL == "deepseek-chat"
 
+    def test_default_backend_is_wiki(self, monkeypatch):
+        """CI Hard Gate 1（§28/§33）：默认 KNOWLEDGE_BACKEND 必须是 wiki。
+
+        清空相关环境变量，防止 CI 环境掩盖代码默认值。
+        """
+        from config import Settings
+
+        monkeypatch.delenv("KNOWLEDGE_BACKEND", raising=False)
+        s = Settings(DEEPSEEK_API_KEY="test", _env_file=None)
+        assert s.KNOWLEDGE_BACKEND == "wiki"
+
+    def test_env_can_explicitly_select_shadow(self, monkeypatch):
+        from config import Settings
+
+        monkeypatch.setenv("KNOWLEDGE_BACKEND", "shadow")
+        s = Settings(DEEPSEEK_API_KEY="test", _env_file=None)
+        assert s.KNOWLEDGE_BACKEND == "shadow"
+
+    def test_env_can_explicitly_select_legacy(self, monkeypatch):
+        from config import Settings
+
+        monkeypatch.setenv("KNOWLEDGE_BACKEND", "legacy")
+        s = Settings(DEEPSEEK_API_KEY="test", _env_file=None)
+        assert s.KNOWLEDGE_BACKEND == "legacy"
+
     def test_default_pipeline(self):
         from config import Settings
 
@@ -310,6 +335,18 @@ class TestSettingsValidation:
             s = Settings()
             # Key is stripped — verifies the field_validator runs
             assert s.DEEPSEEK_API_KEY.strip() == ""
+
+
+class TestKnowledgeBackendRepoGate:
+    """Repository Gate（§33）：禁止生产默认 legacy。"""
+
+    def test_no_production_legacy_default(self):
+        """运行 CI Hard Gate 2 脚本，repo 中不得出现 production/default 的 legacy 配置。"""
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        script = os.path.join(root, "scripts", "check_wiki_default.py")
+        assert os.path.exists(script), f"缺少门禁脚本: {script}"
+        rc = os.system(f'python "{script}" > NUL 2>&1')
+        assert rc == 0, "CI Hard Gate 2 失败：检测到隐式 / 生产默认 legacy"
 
 
 class TestSettingsSingleton:

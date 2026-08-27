@@ -108,7 +108,7 @@ async def _cmd_validate(settings: Any, db: Any | None = None) -> int:
 
     gates = validate_production_gates(
         settings,
-        mode=getattr(settings, "KNOWLEDGE_BACKEND", "legacy"),
+        mode=getattr(settings, "KNOWLEDGE_BACKEND", "wiki"),
         wiki_root=wiki_root,
         manifest_store=manifest_store,
         index_store=index_store,

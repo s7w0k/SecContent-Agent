@@ -180,7 +180,14 @@ def build_knowledge_runtime(
     from agent.wiki.source_registry import SourceRegistry
     from agent.wiki.store import WikiStore
 
-    mode = getattr(settings, "KNOWLEDGE_BACKEND", "legacy")
+    # GOAL B/§22：去掉隐藏的 legacy default。settings 缺 KNOWLEDGE_BACKEND 字段 = 配置 bug，
+    # ≠ 自动退 Legacy 的理由；必须显式抛错，禁止再静默默认到 legacy。
+    try:
+        mode = settings.KNOWLEDGE_BACKEND
+    except AttributeError as exc:
+        raise KnowledgeRuntimeError(
+            "KNOWLEDGE_BACKEND missing from settings — must be explicitly configured"
+        ) from exc
 
     if mode == "legacy":
         return KnowledgeRuntime(

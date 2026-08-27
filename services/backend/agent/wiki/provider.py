@@ -262,12 +262,28 @@ class WikiKnowledgeProvider:
         import time
 
         start = time.perf_counter()
+        # GOAL A：为每个 KnowledgeRequest 新建 request-scoped 证据会话，注入 Navigator。
+        # 禁止挂在全局 Provider/Navigator 上共享可变状态（并发隔离 §5/§15）。
+        from agent.wiki.navigation_evidence import NavigationEvidenceSession
+        from agent.wiki.requirements import default_requirements
+
+        session = NavigationEvidenceSession(
+            collector=self.collector,
+            verifier=self.verifier,
+            evaluator=self.evaluator,
+            task_requirements=default_requirements(request.task_type),
+            min_coverage=self.min_coverage.get(request.task_type, 0.7),
+            confidence_threshold=self.evaluator.confidence_threshold,
+            query=request.query,
+            task_type=request.task_type,
+        )
         outcome = await self.navigator.navigate(
             query=request.query,
             product_ids=request.product_ids or None,
             task_type=request.task_type,
             max_pages=request.max_pages,
             max_depth=request.max_depth,
+            evidence_session=session,
         )
         bundle = self._bundle_from_outcome(request, outcome)
         # 结构化 Trace（§21）：每次请求输出完整观测，并累计运行指标
@@ -293,6 +309,35 @@ class WikiKnowledgeProvider:
     def _bundle_from_outcome(
         self, request: KnowledgeRequest, outcome: NavigationOutcome
     ) -> EvidenceBundle:
+        """GOAL A/§15：直接复用导航期间生成的 `evidence_snapshot`（单一事实源）。
+
+        禁止 Navigator 用一套状态停止、Provider 再算第二套 Coverage。
+        """
+        snapshot = getattr(outcome, "evidence_snapshot", None)
+        wiki_version = self.index.wiki_version if self.index is not None else ""
+
+        if snapshot is not None:
+            from agent.wiki.requirement_evaluator import RequirementEvaluation
+
+            evaluation = RequirementEvaluation(
+                results=snapshot.requirements,
+                coverage=snapshot.coverage,
+                confidence=snapshot.confidence,
+                met_requirements=snapshot.met_requirements,
+                missing_requirements=snapshot.missing_requirements,
+                all_required_met=snapshot.all_required_met,
+            )
+            return assemble_bundle(
+                request=request,
+                evidence=snapshot.evidence,
+                visited_pages=outcome.visited,
+                wiki_version=wiki_version,
+                conflicts=snapshot.conflicts,
+                evaluation=evaluation,
+                coverage_threshold=self.min_coverage.get(request.task_type, 0.7),
+            )
+
+        # 无 session 注入（工具/测试直接导航）：回退到批量收尾，保持兼容。
         from agent.wiki.requirements import default_requirements
 
         candidates = self.collector.collect(
@@ -300,7 +345,6 @@ class WikiKnowledgeProvider:
         )
         verified = self.verifier.verify(candidates)
         conflicts = detect_conflicts(verified)
-        wiki_version = self.index.wiki_version if self.index is not None else ""
         evaluation = self.evaluator.evaluate(
             default_requirements(request.task_type), verified, conflicts=conflicts
         )

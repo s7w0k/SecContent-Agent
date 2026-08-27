@@ -189,12 +189,15 @@ async def lifespan(app: FastAPI):
 
         scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge_loader, db=app.state.db)
 
-        # Wiki Knowledge Runtime 统一装配（Phase 11/PR-15，G-02/G-03/G-11）
-        # 只有 KNOWLEDGE_BACKEND ∈ {wiki, shadow} 时才装配 Wiki Provider；
-        # default=legacy 保持旧链路，wiki 模式下 Active Wiki 缺失会 fail-fast。
-        from agent.wiki.runtime_factory import build_knowledge_runtime
+        # Wiki Knowledge Runtime 统一装配（Hard Gate：GOAL B）
+        # 一律通过统一 factory 装配，不再按 backend 分支隐式回退 legacy；
+        # KNOWLEDGE_BACKEND 必须显式配置（default=wiki），缺失 Active Wiki 会 fail-fast。
+        from agent.wiki.runtime_factory import (
+            KnowledgeRuntimeError,
+            build_knowledge_runtime,
+        )
 
-        if settings.KNOWLEDGE_BACKEND in {"wiki", "shadow"}:
+        try:
             knowledge_runtime = build_knowledge_runtime(
                 settings, llm=llm, db=app.state.db
             )
@@ -205,8 +208,14 @@ async def lifespan(app: FastAPI):
                 f"Knowledge Runtime assembled: mode={knowledge_runtime.mode} "
                 f"active={knowledge_runtime.active_version}",
             )
-        else:
-            app.state.knowledge_runtime = None
+        except KnowledgeRuntimeError:
+            # 严格 wiki 下缺失 wiki artifact 必须 fail-fast，不允许闪回 legacy。
+            _log(
+                "CRITICAL",
+                "Knowledge Runtime assembly failed under strict wiki mode; "
+                "refusing to fall back to legacy. Explicit rollback required.",
+            )
+            raise
 
         draft_gen = DraftGenerator(
             llm=llm,
@@ -424,6 +433,15 @@ async def lifespan(app: FastAPI):
             app.state.a2a_server = None
             app.state.a2a_client = None
             _log("INFO", "Autonomous agent service disabled (AUTONOMOUS_AGENT_ENABLED=false)")
+    except KnowledgeRuntimeError:
+        # Hard Gate (GOAL B): strict wiki 下 Knowledge Runtime 装配失败必须 fail-fast，
+        # 不得被下方的宽泛 except 吞掉并静默回退到 legacy。
+        _log(
+            "CRITICAL",
+            "Agent init aborted: KnowledgeRuntimeError under strict wiki backend; "
+            "refusing to continue with legacy fallback.",
+        )
+        raise
     except Exception as e:
         _log("WARNING", f"Agent init skipped: {e}")
         app.state.pipeline_manager = None

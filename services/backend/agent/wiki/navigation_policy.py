@@ -54,6 +54,11 @@ class NavigationState(BaseModel):
     missing_requirements: list[str] = Field(default_factory=list)
     repeated_actions: int = Field(default=0)
 
+    # ── GOAL A（§11/§12/§14）：Live Verified Evidence 状态 ────────
+    coverage: float = Field(default=0.0)
+    confidence: float = Field(default=0.0)
+    no_progress_rounds: int = Field(default=0)
+
     # ── PR-A：LLM 决策防循环计数器（§4.8）──────────────────
     action_history: list[str] = Field(default_factory=list)
     invalid_action_count: int = Field(default=0)

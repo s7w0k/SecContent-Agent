@@ -69,21 +69,28 @@ async def startup(ctx: dict[str, Any]) -> None:
     classifier_v2 = ClassifierV2(llm=llm, db=db)
     scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge, db=db)
 
-    # Wiki Knowledge Runtime 统一装配（Phase 11/PR-15，G-02/G-03/G-11）
-    # 只有 KNOWLEDGE_BACKEND ∈ {wiki, shadow} 时才装配 Wiki Provider；
-    # default=legacy 保持旧链路，wiki 模式下 Active Wiki 缺失会 fail-fast。
-    from agent.wiki.runtime_factory import build_knowledge_runtime
+    # Wiki Knowledge Runtime 统一装配（Hard Gate：GOAL B）
+    # 一律通过统一 factory 装配，不再按 backend 分支隐式回退 legacy；
+    # KNOWLEDGE_BACKEND 必须显式配置（default=wiki），缺失 Active Wiki 会 fail-fast。
+    from agent.wiki.runtime_factory import (
+        KnowledgeRuntimeError,
+        build_knowledge_runtime,
+    )
 
-    if settings.KNOWLEDGE_BACKEND in {"wiki", "shadow"}:
+    try:
         knowledge_runtime = build_knowledge_runtime(settings, llm=llm, db=db)
-        scorer_v2.knowledge_provider = knowledge_runtime.provider
-        logger.info(
-            "Knowledge Runtime assembled: mode=%s active=%s",
-            knowledge_runtime.mode,
-            knowledge_runtime.active_version,
+    except KnowledgeRuntimeError as exc:
+        logger.critical(
+            "Worker bootstrap aborted: %s — strict wiki mode refuses legacy fallback",
+            exc,
         )
-    else:
-        knowledge_runtime = None
+        raise
+    scorer_v2.knowledge_provider = knowledge_runtime.provider
+    logger.info(
+        "Knowledge Runtime assembled: mode=%s active=%s",
+        knowledge_runtime.mode,
+        knowledge_runtime.active_version,
+    )
 
     draft_gen = DraftGenerator(
         llm=llm,
