@@ -52,6 +52,9 @@ class ArtifactStore:
         run_id: str,
         step_id: str = "",
         parent_ref: str | None = None,
+        shadow: bool = False,
+        tenant_id: str = "",
+        user_id: str = "",
     ) -> dict[str, Any]:
         """写入并返回 artifact 记录（计划 §46 ArtifactRef 字段 + ref）。"""
         artifact_id = payload.get("artifact_id") or f"art-{len(self._records) + 1}"
@@ -70,6 +73,9 @@ class ArtifactStore:
             created_at=datetime.now(UTC),
         ).model_dump(mode="json")
         record["parent_ref"] = parent_ref
+        record["shadow"] = bool(shadow)
+        record["tenant_id"] = tenant_id
+        record["user_id"] = user_id
         record["ref"] = ArtifactRef(**{k: v for k, v in record.items() if k != "parent_ref"}).ref
         key = f"{artifact_type}:{artifact_id}@{version}"
         self._records[key] = record

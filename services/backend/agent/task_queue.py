@@ -63,21 +63,40 @@ async def execute_pipeline(
         router = ctx.get("execution_router")
         if router is None:
             raise RuntimeError("execution_router not configured in worker ctx")
-        await router.execute(
-            ExecutionRequest(
-                task_id=task_id,
-                task_type=task_type,
-                goal="",
-                user_id=user_id,
-                tenant_id=user_id,
-                trace_id=trace_id,
-                request_id=request_id,
-                crawl_days=crawl_days,
-                article_url_hash=article_url_hash,
-                username=username,
-                execution_mode=get_settings().AGENT_EXECUTION_MODE,
-            )
+        request = ExecutionRequest(
+            task_id=task_id,
+            task_type=task_type,
+            goal="",
+            user_id=user_id,
+            tenant_id=user_id,
+            trace_id=trace_id,
+            request_id=request_id,
+            crawl_days=crawl_days,
+            article_url_hash=article_url_hash,
+            username=username,
+            execution_mode=get_settings().AGENT_EXECUTION_MODE,
         )
+        # Retry sticky（§32 / §48）：任务已选 engine 则复用；否则首跑选定并持久化，
+        # 使失败重试仍走同一 engine，避免 ARQ 重跑被重新 rollout。
+        selected_engine = task.get("selected_engine")
+        if selected_engine is None:
+            selected_engine = router.select_engine(request)
+            try:
+                await state_manager.update_status(
+                    task_id,
+                    task.get("status") or "running",
+                    task_metadata={
+                        "selected_engine": selected_engine,
+                        "execution_mode": request.execution_mode,
+                    },
+                )
+            except Exception:
+                logger.warning("persist selected_engine failed; default to mode selection", exc_info=True)
+        request.selected_engine = selected_engine
+        logger.info(
+            "task selected_engine=%s task_id=%s", request.selected_engine, task_id
+        )
+        await router.execute(request)
     except Exception as exc:
         retry_count = await state_manager.increment_retry(task_id)
         max_retries = get_settings().ARQ_MAX_RETRIES
@@ -273,15 +292,17 @@ async def resume_pipeline(
         router = ctx.get("execution_router")
         if router is None:
             raise RuntimeError("execution_router not configured in worker ctx")
-        result = await router.resume(
-            ExecutionRequest(
-                task_id=task_id,
-                task_type="run-v2",
-                goal="",
-                user_id=user_id,
-                tenant_id=user_id,
-            )
+        resume_request = ExecutionRequest(
+            task_id=task_id,
+            task_type="run-v2",
+            goal="",
+            user_id=user_id,
+            tenant_id=user_id,
         )
+        # Resume sticky（§33 / §49）：读取任务创建时选定的 engine，不重新 rollout；
+        # 历史任务没有 selected_engine → router 回退到 legacy（§49）。
+        resume_request.selected_engine = task.get("selected_engine")
+        result = await router.resume(resume_request)
         if result.status == "FAILED":
             raise RuntimeError(result.error_message or "checkpoint resume failed")
         return {

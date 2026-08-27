@@ -231,76 +231,59 @@ async def lifespan(app: FastAPI):
         app.state.draft_reviewer = draft_reviewer
         _log("INFO", "V2 agents initialized; pipeline execution delegated to ARQ Worker")
 
-        # Stage 2/3: versioned business tools and the persistent conversational entry point.
-        from agent.business_tools import (
-            BusinessToolAdapterKind,
-            BusinessToolExecutor,
-            FakeBusinessToolAdapter,
-            ProductionBusinessToolAdapter,
-            ReadOnlyProductionBusinessToolAdapter,
-            RecordedBusinessToolAdapter,
-            SandboxBusinessToolAdapter,
-            build_business_tool_registry,
-        )
-        from agent.business_tools.production import ProductionBusinessToolService
-        from agent.runtime_events import RuntimeEventStore
-
-        business_registry = build_business_tool_registry()
+        # Stage 2/3 → Cutover（§15 / §20）：业务 Tool + Execution 运行时统一经由 production builder。
+        from agent.business_tools import BusinessToolAdapterKind
         from agent.draft_chat import DraftChatAgent
 
-        production_tools = ProductionBusinessToolService(
+        draft_chat = DraftChatAgent(
+            llm=llm,
+            knowledge_loader=knowledge_loader,
             db=app.state.db,
-            classifier=classifier_v2,
-            scorer=scorer_v2,
-            draft_generator=draft_gen,
-            draft_reviewer=draft_reviewer,
-            draft_chat=DraftChatAgent(
-                llm=llm,
-                knowledge_loader=knowledge_loader,
-                db=app.state.db,
-            ),
+        )
+
+        from agent.execution.production_factory import build_production_execution_runtime
+        from agent.execution.startup_validation import StartupValidationError, validate_runtime
+
+        execution_runtime = build_production_execution_runtime(
+            settings=settings,
+            db=app.state.db,
+            llm=llm,
+            knowledge_loader=knowledge_loader,
+            knowledge_runtime=getattr(app.state, "knowledge_runtime", None),
             crawl_client=app.state.mcp_crawl_client,
             search_client=getattr(app.state, "searxng_client", None),
+            classifier_v2=classifier_v2,
+            scorer_v2=scorer_v2,
+            draft_gen=draft_gen,
+            draft_reviewer=draft_reviewer,
+            draft_chat=draft_chat,
+            legacy_executor=None,
         )
-        business_executor = BusinessToolExecutor(
-            business_registry,
-            adapters={
-                BusinessToolAdapterKind.FAKE: FakeBusinessToolAdapter(),
-                BusinessToolAdapterKind.RECORDED: RecordedBusinessToolAdapter(),
-                BusinessToolAdapterKind.SANDBOX: SandboxBusinessToolAdapter(business_registry),
-                BusinessToolAdapterKind.PRODUCTION: ProductionBusinessToolAdapter(production_tools),
-                BusinessToolAdapterKind.PRODUCTION_READONLY: ReadOnlyProductionBusinessToolAdapter(
-                    production_tools
-                ),
-            },
-        )
+        # startup fail-fast（§34 / §35 / §36）：main 不执行任务，executes_tasks=False
+        try:
+            validate_runtime(execution_runtime, settings.AGENT_EXECUTION_MODE, executes_tasks=False)
+        except StartupValidationError as exc:
+            _log("CRITICAL", f"Execution startup matrix validation failed: {exc}")
+            raise
+
+        business_registry = execution_runtime.business_registry
+        business_executor = execution_runtime.business_executor
         app.state.business_tool_registry = business_registry
         app.state.business_tool_executor = business_executor
-        _log(
-            "INFO",
-            f"Business tools initialized: {len(business_registry.names())} contracts",
-        )
-
-        # Cutover 接缝（计划 §16-18 / §21-26）：共享装配统一 Execution 运行时。
-        # FastAPI 与 Worker 必须共用 build_execution_runtime（§24）。此处校验 skill 栈
-        # 装配（fail-fast），但默认 AGENT_EXECUTION_MODE=legacy 仅路由 legacy；
-        # 实际任务执行在 ARQ Worker，main 侧 Runtime 供探查/门禁/API 校验。
-        from agent.execution.factory import build_execution_runtime
-
-        execution_runtime = build_execution_runtime(
-            settings=settings,
-            business_registry=business_registry,
-            business_executor=business_executor,
-        )
         app.state.execution_runtime = execution_runtime
         app.state.execution_router = execution_runtime.execution_router
         app.state.orchestration_runtime = execution_runtime.orchestration_runtime
         app.state.skill_runtime = execution_runtime.skill_runtime
-        app.state.skill_registry = execution_runtime.skill_registry
+        app.state.skill_registry = (
+            execution_runtime.skill_runtime.registry
+            if execution_runtime.skill_runtime is not None
+            else None
+        )
         _log(
             "INFO",
             f"Execution runtime assembled: mode={execution_runtime.mode} "
-            f"skills={len(execution_runtime.skill_registry.names()) if execution_runtime.skill_registry else 0} "
+            f"skills={len(execution_runtime.skill_runtime.registry) if execution_runtime.skill_runtime else 0} "
+            f"legacy_loaded={execution_runtime.legacy_loaded} skill_loaded={execution_runtime.skill_loaded} "
             f"snapshot={execution_runtime.skill_snapshot_hash[:8]}",
         )
 
@@ -697,6 +680,36 @@ async def health():
         "mcp_wewe": settings.MCP_WEWE_URL,
         "mcp_crawl": settings.MCP_CRAWL_URL,
         "searxng": searxng_status,
+    }
+
+
+@app.get("/api/health/execution", tags=["System"])
+async def execution_health():
+    """Execution Runtime 就绪探针（OneShot计划 §100）。"""
+    runtime = getattr(app.state, "execution_runtime", None)
+    if runtime is None:
+        return {
+            "ready": False,
+            "mode": "unconfigured",
+            "legacy_loaded": False,
+            "skill_loaded": False,
+            "knowledge_backend": getattr(settings, "KNOWLEDGE_BACKEND", "wiki"),
+        }
+    skill_count = 0
+    if runtime.skill_runtime is not None:
+        try:
+            skill_count = len(runtime.skill_runtime.registry)
+        except Exception:
+            skill_count = 0
+    return {
+        "ready": True,
+        "mode": runtime.mode,
+        "legacy_loaded": runtime.legacy_loaded,
+        "skill_loaded": runtime.skill_loaded,
+        "skills": skill_count,
+        "skill_snapshot_hash": runtime.skill_snapshot_hash,
+        "knowledge_backend": runtime.knowledge_backend,
+        "wiki_version": runtime.wiki_version,
     }
 
 

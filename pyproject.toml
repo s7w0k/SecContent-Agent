@@ -108,6 +108,7 @@ ignore = [
 "services/backend/agent/wiki/source_registry.py" = ["T201"]  # CLI 差异报告输出
 "services/backend/agent/wiki/cli.py" = ["T201"]  # Wiki CLI 命令输出
 "scripts/check_agent_cutover.py" = ["T201"]  # CLI 门禁脚本输出
+"scripts/smoke_execution_modes.py" = ["T201"]  # CLI 冒烟脚本输出
 
 [tool.ruff.lint.isort]
 known-first-party = ["services", "mcp_wewe", "mcp_crawl"]

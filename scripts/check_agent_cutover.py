@@ -4,8 +4,9 @@
   - 主执行路径 task_queue 不得直接依赖旧链：不 import `_execute_pipeline_task`、
     不使用 `ctx["pipeline_v2"]`（execute_pipeline / resume_pipeline 改走 execution_router）。
   - worker.py 必须装配统一 Execution 运行时（构建 LegacyPipelineExecutor +
-    build_execution_runtime，并把 execution_router 注入 ctx）。
-  - main.py 必须装配统一 Execution 运行时（build_execution_runtime，接入 app.state.execution_*）。
+    build_production_execution_runtime，并把 execution_router 注入 ctx，legacy 侧注入 executor + validate_runtime）。
+  - main.py 必须装配统一 Execution 运行时（build_production_execution_runtime，
+    接入 app.state.execution_* + validate_runtime fail-fast）。
   - config.py 默认 AGENT_EXECUTION_MODE 必须为合法模式（cutover 阶段默认 legacy）。
   - execution 层关键契约可导入（contracts/errors/router/factory/legacy_executor）。
 
@@ -99,10 +100,12 @@ def _check_worker() -> list[str]:
     if not path.exists():
         return [f"缺失 {path.relative_to(ROOT)}"]
     src = _content(path)
-    if "LegacyPipelineExecutor" not in src or "build_execution_runtime" not in src:
+    if "LegacyPipelineExecutor" not in src or "build_production_execution_runtime" not in src:
         violations.append(
-            "worker.py 未装配统一 Execution 运行时（LegacyPipelineExecutor + build_execution_runtime）"
+            "worker.py 未装配统一 Execution 运行时（LegacyPipelineExecutor + build_production_execution_runtime）"
         )
+    if "legacy_executor" not in src or "validate_runtime" not in src:
+        violations.append("worker.py 未注入 legacy_executor 或未做 startup 矩阵校验（validate_runtime）")
     if "execution_router" not in src:
         violations.append("worker.py 未把 execution_router 注入 ctx / app.state")
     return violations
@@ -114,11 +117,11 @@ def _check_main() -> list[str]:
     if not path.exists():
         return [f"缺失 {path.relative_to(ROOT)}"]
     src = _content(path)
-    if "build_execution_runtime" not in src:
-        violations.append("main.py 未装配统一 Execution 运行时（build_execution_runtime）")
+    if "build_production_execution_runtime" not in src:
+        violations.append("main.py 未装配统一 Execution 运行时（build_production_execution_runtime）")
     # app.state.execution_runtime / execution_router 均由 execution_runtime 派生，此处不做字符串强约束
-    if "execution_runtime" not in src:
-        violations.append("main.py 未接入 execution_runtime（app.state.execution_* 缺失）")
+    if "execution_runtime" not in src or "validate_runtime" not in src:
+        violations.append("main.py 未接入 execution_runtime/startup 校验（app.state.execution_* + validate_runtime）")
     return violations
 
 

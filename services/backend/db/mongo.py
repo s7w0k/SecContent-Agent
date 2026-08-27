@@ -940,6 +940,34 @@ class MongoDB:
                     name="idx_agent_export_artifact_version",
                 ),
             ],
+            # ── Artifact Layer MongoArtifactStore（OneShot Cutover §17 / §18）──
+            "agent_artifacts": [
+                IndexModel(
+                    [
+                        ("artifact_type", ASCENDING),
+                        ("artifact_id", ASCENDING),
+                        ("version", ASCENDING),
+                    ],
+                    unique=True,
+                    name="uq_artifact_type_id_version",
+                ),
+                IndexModel(
+                    [("run_id", ASCENDING)],
+                    name="idx_artifact_run_id",
+                ),
+                IndexModel(
+                    [("tenant_id", ASCENDING), ("artifact_id", ASCENDING)],
+                    name="idx_artifact_tenant_id",
+                ),
+                IndexModel(
+                    [("parent_ref", ASCENDING)],
+                    name="idx_artifact_parent_ref",
+                ),
+                IndexModel(
+                    [("created_at", DESCENDING)],
+                    name="idx_artifact_created_at",
+                ),
+            ],
             "runtime_leases": [
                 IndexModel(
                     [("run_id", ASCENDING)],
