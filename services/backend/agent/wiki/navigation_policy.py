@@ -46,6 +46,14 @@ class NavigationState(BaseModel):
     visited_pages: list[str] = Field(default_factory=list)
     candidate_pages: list[str] = Field(default_factory=list)
 
+    # ── Navigator V2（§10.2）───────────────────────────────
+    resolved_entities: list[str] = Field(default_factory=list)
+    frontier: list[str] = Field(default_factory=list)
+    visited_sections: list[str] = Field(default_factory=list)
+    evidence_so_far: int = Field(default=0)
+    missing_requirements: list[str] = Field(default_factory=list)
+    repeated_actions: int = Field(default=0)
+
     evidence_count: int = Field(default=0)
 
     max_pages: int = Field(default=6)
@@ -72,10 +80,13 @@ class NavigationState(BaseModel):
             return False
         return True
 
-    def visit(self, page_id: str) -> None:
+    def visit(self, page_id: str, depth: int | None = None) -> None:
         if page_id not in self.visited_pages:
             self.visited_pages.append(page_id)
-            self.depth = min(self.depth + 1, self.max_depth)
+        # 真实图深度（§10.1）：由候选携带的 depth 决定，而非访问页数累积
+        if depth is None:
+            depth = min(self.depth + 1, self.max_depth)
+        self.depth = min(depth, self.max_depth)
         if len(self.visited_pages) >= self.max_pages:
             self.stop_reason = "MAX_PAGES"
 

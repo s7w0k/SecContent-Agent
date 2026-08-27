@@ -155,19 +155,45 @@ async def test_shadow_mode_keeps_legacy_result_and_compares() -> None:
     assert result.get("knowledge_backend") != "wiki"
 
 
-async def test_insufficient_evidence_falls_back_to_legacy() -> None:
+async def test_insufficient_evidence_no_score() -> None:
+    """严格 Wiki：证据不充分 → NO_SCORE，不调用 LLM、不回退 legacy 补分（§15.1）。"""
     scorer = _make_scorer("wiki", _make_bundle("INSUFFICIENT_EVIDENCE"))
     result = await scorer._score_single_product(
         _ARTICLE, product_id="agent_identity", product_name="身份"
     )
 
-    # 只调用一次，且用旧提示词（证据不足不切换）
-    assert len(scorer.llm_wrapper.calls) == 1
-    system_prompt = scorer.llm_wrapper.calls[0]["system_prompt"]
-    assert "## 产品知识库" in system_prompt
-    assert "## Verified Evidence" not in system_prompt
-    assert "knowledge_backend" not in result
+    # 不触发任何 LLM 评分调用（避免模型靠常识补分）
+    assert scorer.llm_wrapper.calls == []
+    assert result["_no_score"] is True
+    assert result["status"] == "INSUFFICIENT_PRODUCT_EVIDENCE"
+    assert result["relevance"] is None
+    assert "缺少经过验证的产品能力证据" in result["reason"]
+    # 仍附证据元信息（便于追踪为何不评分）
+    assert result["knowledge_backend"] == "wiki"
+    assert "## 产品知识库" not in result
     assert "_shadow_compare" not in result
+
+
+async def test_concurrent_all_no_score_surfaces_insufficient() -> None:
+    """严格 Wiki：所有产品证据不足时聚合结果显式 INSUFFICIENT_PRODUCT_EVIDENCE。"""
+    scorer = _make_scorer("wiki", _make_bundle("INSUFFICIENT_EVIDENCE"))
+
+    async def fake_score(article, **kwargs):
+        return scorer._no_score_result(
+            kwargs["product_id"],
+            kwargs["product_name"],
+            bundle=_make_bundle("INSUFFICIENT_EVIDENCE"),
+        )
+
+    scorer._score_single_product = fake_score
+    result = await scorer._score_concurrent(
+        _ARTICLE,
+        products=[{"product_id": "agent_identity", "product_name": "身份"}],
+    )
+    assert result["_no_score"] is True
+    assert result["status"] == "INSUFFICIENT_PRODUCT_EVIDENCE"
+    assert result["product_scores"] == []
+    assert result["product_relevance"] == 0
 
 
 async def test_legacy_provider_keeps_old_path() -> None:

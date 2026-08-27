@@ -68,6 +68,23 @@ async def startup(ctx: dict[str, Any]) -> None:
     )
     classifier_v2 = ClassifierV2(llm=llm, db=db)
     scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge, db=db)
+
+    # Wiki Knowledge Runtime 统一装配（Phase 11/PR-15，G-02/G-03/G-11）
+    # 只有 KNOWLEDGE_BACKEND ∈ {wiki, shadow} 时才装配 Wiki Provider；
+    # default=legacy 保持旧链路，wiki 模式下 Active Wiki 缺失会 fail-fast。
+    from agent.wiki.runtime_factory import build_knowledge_runtime
+
+    if settings.KNOWLEDGE_BACKEND in {"wiki", "shadow"}:
+        knowledge_runtime = build_knowledge_runtime(settings, llm=llm, db=db)
+        scorer_v2.knowledge_provider = knowledge_runtime.provider
+        logger.info(
+            "Knowledge Runtime assembled: mode=%s active=%s",
+            knowledge_runtime.mode,
+            knowledge_runtime.active_version,
+        )
+    else:
+        knowledge_runtime = None
+
     draft_gen = DraftGenerator(
         llm=llm,
         knowledge=knowledge._cache,
@@ -105,6 +122,7 @@ async def startup(ctx: dict[str, Any]) -> None:
         state=SimpleNamespace(
             db=db,
             knowledge_loader=knowledge,
+            knowledge_runtime=knowledge_runtime,
             classifier_v2=classifier_v2,
             scorer_v2=scorer_v2,
             draft_gen=draft_gen,

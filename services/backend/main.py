@@ -188,6 +188,26 @@ async def lifespan(app: FastAPI):
         from agent.scorer_v2 import ScoringAgentV2
 
         scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge_loader, db=app.state.db)
+
+        # Wiki Knowledge Runtime 统一装配（Phase 11/PR-15，G-02/G-03/G-11）
+        # 只有 KNOWLEDGE_BACKEND ∈ {wiki, shadow} 时才装配 Wiki Provider；
+        # default=legacy 保持旧链路，wiki 模式下 Active Wiki 缺失会 fail-fast。
+        from agent.wiki.runtime_factory import build_knowledge_runtime
+
+        if settings.KNOWLEDGE_BACKEND in {"wiki", "shadow"}:
+            knowledge_runtime = build_knowledge_runtime(
+                settings, llm=llm, db=app.state.db
+            )
+            scorer_v2.knowledge_provider = knowledge_runtime.provider
+            app.state.knowledge_runtime = knowledge_runtime
+            _log(
+                "INFO",
+                f"Knowledge Runtime assembled: mode={knowledge_runtime.mode} "
+                f"active={knowledge_runtime.active_version}",
+            )
+        else:
+            app.state.knowledge_runtime = None
+
         draft_gen = DraftGenerator(
             llm=llm,
             knowledge=knowledge_loader._cache,

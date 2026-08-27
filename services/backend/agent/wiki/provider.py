@@ -23,6 +23,8 @@ from agent.wiki.evidence_collector import EvidenceCollector
 from agent.wiki.evidence_verifier import EvidenceVerifier
 from agent.wiki.index import WikiIndex
 from agent.wiki.navigator import NavigationOutcome, WikiNavigator
+from agent.wiki.observability import KnowledgeMetrics, record_trace
+from agent.wiki.resolver import EntityResolver
 from agent.wiki.store import WikiStore
 from pydantic import BaseModel, Field
 
@@ -38,6 +40,10 @@ class KnowledgeRequest(BaseModel):
     user_id: str | None = Field(default=None)
     max_pages: int | None = Field(default=None)
     max_depth: int | None = Field(default=None)
+    # 观测/多租户预留字段（§19.3 / §21）：可选的请求上下文
+    trace_id: str = Field(default="")
+    task_id: str = Field(default="")
+    tenant_id: str = Field(default="")
 
 
 class KnowledgeProvider(Protocol):
@@ -190,14 +196,20 @@ class WikiKnowledgeProvider:
         navigator: WikiNavigator | None = None,
         collector: EvidenceCollector | None = None,
         verifier: EvidenceVerifier | None = None,
+        resolver: EntityResolver | None = None,
     ):
         self.store = store
         self.index = index
-        self.navigator = navigator or WikiNavigator(store, index=index)
+        self.resolver = EntityResolver(store=store, index=index) if resolver is None else resolver
+        self.navigator = navigator or WikiNavigator(store, index=index, resolver=self.resolver)
         self.collector = collector or EvidenceCollector(store)
         self.verifier = verifier or EvidenceVerifier(store, source_registry, source_root)
+        self.metrics: KnowledgeMetrics | None = None
 
     async def collect_evidence(self, request: KnowledgeRequest) -> EvidenceBundle:
+        import time
+
+        start = time.perf_counter()
         outcome = await self.navigator.navigate(
             query=request.query,
             product_ids=request.product_ids or None,
@@ -205,7 +217,26 @@ class WikiKnowledgeProvider:
             max_pages=request.max_pages,
             max_depth=request.max_depth,
         )
-        return self._bundle_from_outcome(request, outcome)
+        bundle = self._bundle_from_outcome(request, outcome)
+        # 结构化 Trace（§21）：每次请求输出完整观测，并累计运行指标
+        record_trace(
+            metrics=self.metrics,
+            success=bundle.status != "FAILED",
+            latency_ms=(time.perf_counter() - start) * 1000,
+            trace_id=request.trace_id,
+            task_id=request.task_id,
+            user_id=request.user_id,
+            tenant_id=request.tenant_id,
+            product_ids=request.product_ids,
+            wiki_version=bundle.wiki_version,
+            status=bundle.status,
+            reason=outcome.stop_reason,
+            coverage=bundle.coverage,
+            confidence=bundle.confidence,
+            evidence_count=len(bundle.evidence),
+            pages_opened=len(outcome.visited),
+        )
+        return bundle
 
     def _bundle_from_outcome(
         self, request: KnowledgeRequest, outcome: NavigationOutcome

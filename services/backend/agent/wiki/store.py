@@ -263,6 +263,23 @@ def meta_from_dict(data: dict) -> WikiPageMeta:
         if isinstance(src, dict):
             source_refs.append(src)
 
+    claims = []
+    for c in data.get("claims") or []:
+        if isinstance(c, dict):
+            c_srcs = [s for s in c.get("source_refs") or [] if isinstance(s, dict)]
+            claims.append(
+                {
+                    "claim_id": str(c.get("claim_id") or ""),
+                    "text": str(c.get("text") or ""),
+                    "claim_type": str(c.get("claim_type") or "capability"),
+                    "source_refs": c_srcs,
+                    "confidence": float(c.get("confidence") or 0.0),
+                    "effective_from": c.get("effective_from"),
+                    "effective_to": c.get("effective_to"),
+                    "status": str(c.get("status") or "active"),
+                }
+            )
+
     plan = {
         "schema_version": int(data.get("schema_version") or 1),
         "page_id": page_id,
@@ -273,6 +290,7 @@ def meta_from_dict(data: dict) -> WikiPageMeta:
         "task_affinity": list(data.get("task_affinity") or []),
         "relations": relations,
         "source_refs": source_refs,
+        "claims": claims,
         "status": str(data.get("status") or "draft"),
         "content_hash": str(data.get("content_hash") or ""),
         "updated_at": str(data.get("updated_at") or ""),

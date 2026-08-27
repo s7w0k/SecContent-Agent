@@ -114,6 +114,47 @@ class WikiRelation(BaseModel):
     target_page_id: str = Field(description="目标 page_id")
 
 
+class WikiClaim(BaseModel):
+    """Claim-level Provenance 一等对象（Phase 3 / PR-10，G-12）。
+
+    生产级 Evidence 应保留 claim 粒度溯源：一条事实来自一个或多个 SourceRef，
+    可通过 claim_id 在跨版本间稳定追踪（不随机 UUID，见 compute_claim_id）。
+    """
+
+    claim_id: str = Field(default="", description="稳定 claim_id；空则按 text 计算")
+    text: str = Field(description="事实陈述")
+    claim_type: str = Field(default="capability")
+    source_refs: list[SourceRef] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0, le=1)
+    effective_from: str | None = Field(default=None)
+    effective_to: str | None = Field(default=None)
+    status: str = Field(default="active")
+
+    def ensure_id(self, *, product_id: str = "", claim_type: str = "") -> str:
+        """补全稳定 claim_id（缺省时按语义内容确定性生成）。"""
+        if self.claim_id:
+            return self.claim_id
+        self.claim_id = compute_claim_id(
+            product_id=product_id or "",
+            claim_type=claim_type or self.claim_type,
+            semantic_key=self.text,
+        )
+        return self.claim_id
+
+
+def compute_claim_id(*, product_id: str, claim_type: str, semantic_key: str) -> str:
+    """稳定 Claim ID：sha256(normalized(product_id) + normalized(type) + normalized(key))。
+
+    不使用随机 UUID，保证同一事实跨版本/跨构建幂等（§6.1）。
+    """
+
+    def _norm(s: str) -> str:
+        return (s or "").strip().lower()
+
+    blob = "|".join([_norm(product_id), _norm(claim_type), _norm(semantic_key)])
+    return "claim_" + hashlib.sha256(blob.encode("utf-8")).hexdigest()[:24]
+
+
 class WikiPageMeta(BaseModel):
     """Wiki 页面 YAML frontmatter 元数据。"""
 
@@ -126,6 +167,7 @@ class WikiPageMeta(BaseModel):
     task_affinity: list[str] = Field(default_factory=list)
     relations: list[WikiRelation] = Field(default_factory=list)
     source_refs: list[SourceRef] = Field(default_factory=list)
+    claims: list[WikiClaim] = Field(default_factory=list)
     status: str = Field(default=STATUS_DRAFT)
     content_hash: str = Field(default="")
     updated_at: str = Field(default="")
@@ -183,6 +225,7 @@ class WikiPage(BaseModel):
                 }
                 for r in meta.source_refs
             ],
+            "claims": [c.model_dump() for c in meta.claims],
             "status": meta.status,
             "content_hash": meta.content_hash,
             "updated_at": meta.updated_at,

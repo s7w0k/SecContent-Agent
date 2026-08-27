@@ -35,6 +35,7 @@ class WikiPageIndex(BaseModel):
     relations: list[str] = Field(default_factory=list)
     source_ids: list[str] = Field(default_factory=list)
     content_hash: str = Field(default="")
+    search_terms: list[str] = Field(default_factory=list)
 
 
 class WikiIndexManifest(BaseModel):
@@ -82,6 +83,7 @@ def build_manifest(store: WikiStore, built_at: str = "") -> WikiIndexManifest:
                 relations=[f"{r.relation_type}->{r.target_page_id}" for r in meta.relations],
                 source_ids=[r.source_id for r in meta.source_refs],
                 content_hash=content_hash,
+                search_terms=build_search_terms(meta.title, meta.aliases, page.summary(300)),
             )
         )
 
@@ -97,6 +99,49 @@ def build_manifest(store: WikiStore, built_at: str = "") -> WikiIndexManifest:
 def _page_content_hash(page) -> str:
     blob = page.render_markdown()
     return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def build_search_terms(
+    title: str,
+    aliases: list[str],
+    summary: str = "",
+    ngram: int = 2,
+) -> list[str]:
+    """为页面构建检索词（含中文预处理，§9.4）。
+
+    中文 FTS unicode61 对自然语言粒度不足，这里预生成 search_terms：
+      - 英文/数字词条直接保留小写形式
+      - 连续 CJK 文本按 ngram 切分为 w={2} 窗口（覆盖"单点登录"→"单点/点登/登录"）
+      - 同时保留整段 CJK 短语与标题/别名
+    仅用于 `search_pages` 召回，不参与 wiki_version 计算，避免影响版本确定性。
+    """
+    terms: set[str] = set()
+    sources = [title, *aliases, summary]
+    for raw in sources:
+        text = (raw or "").strip().lower()
+        if not text:
+            continue
+        # 拉丁/数字词条按空白拆分
+        for part in text.split():
+            if _is_cjk(part):
+                terms.add(part)
+                _add_ngrams(terms, part, ngram)
+            else:
+                terms.add(part)
+    # 合并后的排序列表
+    return sorted(t for t in terms if t)
+
+
+def _is_cjk(text: str) -> bool:
+    return any("\u4e00" <= ch <= "\u9fff" for ch in text)
+
+
+def _add_ngrams(terms: set[str], text: str, n: int) -> None:
+    if len(text) < n:
+        terms.add(text)
+        return
+    for i in range(len(text) - n + 1):
+        terms.add(text[i : i + n])
 
 
 class WikiIndex:
@@ -167,10 +212,8 @@ class WikiIndex:
                 continue
             if task_affinity and task_affinity not in p.task_affinity:
                 continue
-            if kw and kw not in p.page_id.lower() and kw not in p.title.lower():
-                match = any(kw in a.lower() for a in p.aliases)
-                if not match:
-                    continue
+            if kw and not _matches_kw(p, kw):
+                continue
             out.append(p)
         return out[:limit]
 
@@ -200,6 +243,19 @@ def _dedupe_by_id(items: list[WikiPageIndex]) -> list[WikiPageIndex]:
         seen.add(p.page_id)
         out.append(p)
     return out
+
+
+def _matches_kw(p: WikiPageIndex, kw: str) -> bool:
+    """关键字匹配：page_id / title / aliases 子串，或命中预生成 search_terms。
+
+    中文检索优先走 search_terms（含 ngram），改善 unicode61 粒度不足问题（§9.4）。
+    """
+    if kw in p.page_id.lower() or kw in p.title.lower():
+        return True
+    if any(kw in a.lower() for a in p.aliases):
+        return True
+    # search_terms：命中（含 词条是查询子串 / 词条包含查询）→ 中文 ngram 召回
+    return any(kw == t or (t and (kw in t or t in kw)) for t in p.search_terms)
 
 
 class WikiIndexStore:

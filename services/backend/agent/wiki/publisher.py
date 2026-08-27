@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
-from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,6 +18,8 @@ from typing import Any
 
 from agent.wiki.contracts import STATUS_PUBLISHED, STATUS_STAGED
 from agent.wiki.index import WikiIndexStore, build_manifest
+from agent.wiki.locks import PublishLock
+from agent.wiki.manifest import ManifestStore, WikiVersionManifest, build_version_id
 from agent.wiki.store import WikiStore
 
 logger = logging.getLogger("backend.agent.wiki.publisher")
@@ -33,6 +34,7 @@ class PublicationResult:
 
     ok: bool = True
     wiki_version: str = ""
+    version_id: str = ""
     pages_published: int = 0
     errors: list[str] = field(default_factory=list)
 
@@ -55,6 +57,13 @@ class WikiPublisher:
         source_registry: Any | None = None,
         gates: list[Gate] | None = None,
         require_grounding: bool = True,
+        *,
+        compiler_version: str = "deterministic-1",
+        schema_version: int = 2,
+        lock_ttl_seconds: float = 120.0,
+        source_snapshot: Any | None = None,
+        parent_wiki_version: str = "",
+        strict_lint: bool = True,
     ):
         self.store = store
         self.linter = linter
@@ -63,6 +72,13 @@ class WikiPublisher:
         self.source_registry = source_registry
         self.gates = gates or []
         self.require_grounding = require_grounding
+        self.compiler_version = compiler_version
+        self.schema_version = schema_version
+        self.source_snapshot = source_snapshot
+        self.parent_wiki_version = parent_wiki_version
+        self.strict_lint = strict_lint
+        self._lock = PublishLock(self._lock_path(), ttl_seconds=lock_ttl_seconds)
+        self.manifest_store = ManifestStore(self.meta_dir / "versions")
 
     # ── 门卫缺省 ──────────────────────────────────────────
 
@@ -78,24 +94,19 @@ class WikiPublisher:
 
     def _acquire_lock(self) -> bool:
         self.meta_dir.mkdir(parents=True, exist_ok=True)
-        lock = self._lock_path()
-        if lock.exists():
-            return False
-        lock.write_text(datetime.now(UTC).isoformat(), encoding="utf-8")
-        return True
+        return self._lock.acquire()
 
     def _release_lock(self) -> None:
-        with suppress(FileNotFoundError):
-            self._lock_path().unlink()
+        self._lock.release()
 
     # ── 主发布流程 ────────────────────────────────────────
 
     def publish(self) -> PublicationResult:
         result = PublicationResult()
 
-        # 1. Linter
+        # 1. Linter（Production Gate：lint_errors == 0，§1269 Phase15）
         lint = self.linter.lint()
-        if not lint.ok:
+        if not lint.ok or (self.strict_lint and lint.errors):
             result.ok = False
             result.errors.extend(lint.errors)
             return result
@@ -147,17 +158,19 @@ class WikiPublisher:
                         result.errors.append(f"publish[{meta.page_id}] {exc}")
                         return result
 
-            # 5. 构建并发布索引 + build-manifest
+            # 5. 构建并发布索引 + build-manifest + 可选版本 manifest
             manifest = build_manifest(self.store)
             self.index_store.write(manifest)
             self._write_build_manifest(manifest.wiki_version, page_metas)
 
+            version_id = build_version_id(parent_version=self.parent_wiki_version)
+            self._publish_version_manifest(manifest, version_id)
+
             result.wiki_version = manifest.wiki_version
+            result.version_id = version_id
             result.pages_published = published or len(page_metas)
             result.ok = True
-            logger.info(
-                "Wiki 发布完成: version=%s pages=%d", manifest.wiki_version, len(page_metas)
-            )
+            logger.info("Wiki 发布完成: version=%s pages=%d", version_id, len(page_metas))
             return result
         finally:
             self._release_lock()
@@ -174,3 +187,67 @@ class WikiPublisher:
         tmp = target.with_suffix(".tmp")
         tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(target)
+
+    def _publish_version_manifest(self, manifest: Any, version_id: str) -> None:
+        """写入不可变版本 Manifest 并切换 Active Pointer（G-10/G-11）。"""
+        vm = WikiVersionManifest(
+            wiki_version=version_id,
+            schema_version=self.schema_version,
+            compiler_version=self.compiler_version,
+            source_snapshot_id=getattr(self.source_snapshot, "snapshot_id", ""),
+            source_snapshot_hash=getattr(self.source_snapshot, "snapshot_hash", ""),
+            page_tree_hash=manifest.wiki_version,
+            page_count=manifest.page_count,
+            created_at=datetime.now(UTC).isoformat(),
+            build_id="",
+            gate_report_hash="",
+            parent_version=self.parent_wiki_version,
+            status="published",
+        )
+        self.manifest_store.write(vm)
+        self.manifest_store.set_active(version_id)
+
+    # ── 回滚（§5.6 Rollback）────────────────────────────
+
+    def rollback(
+        self,
+        version_id: str,
+        *,
+        registry: Any | None = None,
+        snapshot: Any | None = None,
+    ) -> dict:
+        """回滚到指定已发布版本。
+
+        - 先校验 Manifest 存在、schema 可支持、tree hash 非空；
+        - 切换 Active Wiki Version Pointer；
+        - 若提供 registry + SourceSnapshot，则同时回滚 Active Registry Snapshot，
+          保证 Wiki + Registry 一致（§5.6 / §2.4 RelDoD）。
+        真正的版本化页面树恢复由 versioned store 负责（本接口为编排点）。
+        """
+        m = self.manifest_store.load(version_id)
+        errors = []
+        snap = m
+        if snap is not None:
+            errors = m.validate_self()
+            if self.schema_version_is_unsupported(m.schema_version):
+                errors.append("UNSUPPORTED_SCHEMA")
+        else:
+            errors.append("MANIFEST_NOT_FOUND")
+        if errors:
+            return {"ok": False, "active_version": "", "errors": errors}
+
+        self.manifest_store.set_active(version_id)
+        registry_ok = False
+        if registry is not None and snapshot is not None:
+            registry.commit_snapshot(snapshot)
+            registry_ok = True
+        return {
+            "ok": True,
+            "active_version": version_id,
+            "registry_rolled_back": registry_ok,
+            "errors": [],
+        }
+
+    @staticmethod
+    def schema_version_is_unsupported(schema_version: int) -> bool:
+        return schema_version < 1 or schema_version > 2

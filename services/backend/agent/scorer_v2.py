@@ -267,8 +267,14 @@ class ScoringAgentV2:
         best_product_id = ""
         event_impact = 0
         best_reason = ""
+        had_no_score = False
+        had_fallback = False
         for r in results:
+            if r.get("_no_score"):
+                had_no_score = True
+                continue
             if r.get("_fallback"):
+                had_fallback = True
                 continue
             product_scores.append(
                 {
@@ -286,6 +292,8 @@ class ScoringAgentV2:
                 event_impact = r["event_impact"]
 
         pr_total = max_relevance + event_impact
+        # 严格 Wiki：全部产品证据不足且无评分 → 显式 INSUFFICIENT_PRODUCT_EVIDENCE
+        all_no_score = bool(products) and had_no_score and not had_fallback and not product_scores
         return {
             "product_relevance": max_relevance,
             "event_impact": event_impact,
@@ -296,7 +304,9 @@ class ScoringAgentV2:
             "is_pr_candidate": pr_total >= threshold,
             "pr_threshold": threshold,
             "threshold_adjustment": threshold_adjustment,
-            "_fallback": len(product_scores) == 0,
+            "status": "INSUFFICIENT_PRODUCT_EVIDENCE" if all_no_score else "SCORED",
+            "_no_score": all_no_score,
+            "_fallback": len(product_scores) == 0 and not all_no_score,
         }
 
     async def _score_single_product(
@@ -313,19 +323,11 @@ class ScoringAgentV2:
     ) -> dict:
         """对单个产品评分。
 
-        KNOWLEDGE_BACKEND 决策（文档 8 / 17.1）：
+        KNOWLEDGE_BACKEND 决策（文档 8 / 17.1 / 15.1）：
           - legacy：走旧链路 `_build_system_prompt_for_product`（大段 knowledge_context）
-          - wiki：以 EvidenceBundle 为知识入口，构建增强提示词，评分只 judge
+          - wiki：以 EvidenceBundle 为知识入口，评分只 judge；证据不充分时**禁止隐式回退 legacy**，返回 NO_SCORE
           - shadow：旧结果返回给用户，后台同时跑 Wiki 并记录差异（_shadow_compare）
         """
-        legacy_prompt, legacy_meta = await self._build_system_prompt_for_product(
-            product_id,
-            product_name,
-            user_id=user_id,
-            article=article,
-            task_id=task_id,
-            trace_id=trace_id,
-        )
         user_prompt = self._build_user_prompt(article)
         provider_mode = self._provider_mode()
 
@@ -341,8 +343,21 @@ class ScoringAgentV2:
                 bundle, product_id=product_id, product_name=product_name
             )
 
+        # 严格 Wiki（§15.1）：证据不充分 → NO_SCORE，不允许用 legacy 常识补分
+        if provider_mode == "wiki" and not evidence_prompt:
+            return self._no_score_result(product_id, product_name, bundle=bundle)
+
+        legacy_prompt, legacy_meta = await self._build_system_prompt_for_product(
+            product_id,
+            product_name,
+            user_id=user_id,
+            article=article,
+            task_id=task_id,
+            trace_id=trace_id,
+        )
+
         # 主评分的系统提示词：wiki 用证据提示词；legacy/shadow 用旧提示词（用户结果不变）
-        if provider_mode == "wiki" and evidence_prompt:
+        if provider_mode == "wiki":
             system_prompt = evidence_prompt
             context_meta = self._evidence_meta(bundle, legacy_meta)
         else:
@@ -384,8 +399,29 @@ class ScoringAgentV2:
                 "evidence_count": len(bundle.evidence),
             }
 
-        if bundle is not None and provider_mode == "wiki" and evidence_prompt:
+        if bundle is not None and provider_mode == "wiki":
             result.update(self._evidence_meta(bundle, {}))
+        return result
+
+    @staticmethod
+    def _no_score_result(product_id: str, product_name: str, *, bundle: Any = None) -> dict:
+        """严格 Wiki 证据不充分时的 NO_SCORE（§15.1）。
+
+        relevance 为 None、status=INSUFFICIENT_PRODUCT_EVIDENCE；不调用 LLM，
+        不允许模型靠常识补分。
+        """
+        result: dict = {
+            "product_id": product_id,
+            "product_name": product_name,
+            "relevance": None,
+            "event_impact": None,
+            "status": "INSUFFICIENT_PRODUCT_EVIDENCE",
+            "reason": "缺少经过验证的产品能力证据",
+            "_no_score": True,
+            "_fallback": False,
+        }
+        if bundle is not None:
+            result.update(ScoringAgentV2._evidence_meta(bundle, {}))
         return result
 
     async def _invoke_judge(

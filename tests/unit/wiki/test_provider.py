@@ -41,6 +41,28 @@ def _build_wiki(store: WikiStore, registry):
     )
     page = build_wiki_page(draft, registry, status="published", updated_at="2026-01-01T00:00:00Z")
     store.write_page(page)
+
+    # 产品根页（规范 wiki 结构应有 product 首页；phase6 起不再依赖"product 命名空间全量兜底"）
+    prod_draft = PageCompiler().compile(
+        page_id="product.agent_identity",
+        page_type="product",
+        title="Agent 智能体身份",
+        product_id="agent_identity",
+        source_sections=[
+            SourceSection(
+                ref=SourceRef(
+                    source_id=entry.source_id,
+                    relative_path=entry.relative_path,
+                    content_hash=entry.sha256,
+                ),
+                text="- 面向 Agent 的身份认证统合能力\n",
+            )
+        ],
+    )
+    prod_page = build_wiki_page(
+        prod_draft, registry, status="published", updated_at="2026-01-01T00:00:00Z"
+    )
+    store.write_page(prod_page)
     return store
 
 

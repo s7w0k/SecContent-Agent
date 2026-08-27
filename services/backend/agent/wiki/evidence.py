@@ -25,9 +25,14 @@ class EvidenceItem(BaseModel):
 
     evidence_id: str = Field(description="稳定证据 ID（如 ev-1）")
     fact: str = Field(description="事实陈述")
+    claim_id: str = Field(default="", description="关联的结构化 Claim ID（Phase3，G-12）")
 
     page_id: str = Field(description="来源 Wiki 页面")
     page_title: str = Field(default="")
+
+    section_id: str = Field(default="", description="来源章节 ID（§12.2，Verifier V2 优先）")
+    requirement_ids: list[str] = Field(default_factory=list)
+    reason_code: str = Field(default="PENDING", description="Verifier V2 reason code（§12.5）")
 
     source_refs: list[SourceRef] = Field(default_factory=list)
 

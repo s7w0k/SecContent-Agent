@@ -103,6 +103,7 @@ ignore = [
 "services/backend/agent/harness/fault_harness.py" = ["N818"]  # FaultInjected 为阶段4 对外契约名
 "services/backend/agent/wiki/contracts.py" = ["N818"]  # WikiPageNotFound 等为对外契约异常名
 "services/backend/agent/wiki/source_registry.py" = ["T201"]  # CLI 差异报告输出
+"services/backend/agent/wiki/cli.py" = ["T201"]  # Wiki CLI 命令输出
 
 [tool.ruff.lint.isort]
 known-first-party = ["services", "mcp_wewe", "mcp_crawl"]
