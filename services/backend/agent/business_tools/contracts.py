@@ -137,9 +137,7 @@ class BusinessToolContract(BaseModel):
             tenant_boundary=self.tenant_boundary.value,
             cache_policy=self.cache_policy.model_dump(mode="json"),
             evidence_fields=self.evidence_fields,
-            compensating_action=(
-                self.compensation.action or self.compensation.irreversible_reason
-            ),
+            compensating_action=(self.compensation.action or self.compensation.irreversible_reason),
             registry_version=self.version,
         )
 
@@ -236,9 +234,7 @@ def detect_breaking_changes(
                     reason="result schema changed",
                 )
             )
-        if not set(old.get("required_scopes", [])).issuperset(
-            set(new.get("required_scopes", []))
-        ):
+        if not set(old.get("required_scopes", [])).issuperset(set(new.get("required_scopes", []))):
             changes.append(
                 BreakingContractChange(
                     tool_name=name,
@@ -289,18 +285,169 @@ def _contract(
 def build_business_tool_registry() -> BusinessToolRegistry:
     registry = BusinessToolRegistry()
     definitions = [
-        _contract("list_articles", "List tenant-visible article summaries", models.ListArticlesArgs, models.ListArticlesResult, scope="articles:read", evidence_fields=("items", "replay_ref"), cache_ttl=60),
-        _contract("get_article", "Load one tenant-visible article by reference", models.GetArticleArgs, models.GetArticleResult, scope="articles:read", evidence_fields=("article",), cache_ttl=300),
-        _contract("search_news", "Search local and web news as normalized candidates", models.SearchNewsArgs, models.SearchNewsResult, scope="news:search", evidence_fields=("items", "replay_ref"), timeout=45, cache_ttl=300),
-        _contract("crawl_news", "Queue an idempotent bounded news crawl", models.CrawlNewsArgs, models.CrawlNewsResult, scope="news:crawl", evidence_fields=("task_ref", "articles"), side_effect=SideEffectLevel.L2, risk=ToolRiskLevel.MEDIUM, timeout=30, attempts=3, idempotency_key="idempotency_key", compensation=CompensationPolicy(irreversible_reason="crawl writes are deduplicated; individual articles can be archived")),
-        _contract("classify_article", "Classify an immutable article reference", models.ClassifyArticleArgs, models.ClassifyArticleResult, scope="articles:classify", evidence_fields=("article", "model_version", "prompt_version"), timeout=60, cache_ttl=3600),
-        _contract("match_products", "Match only published and authorized products", models.MatchProductsArgs, models.MatchProductsResult, scope="products:read", evidence_fields=("article", "candidates", "catalog_hash"), cache_ttl=900),
-        _contract("score_article", "Score product relevance and event impact", models.ScoreArticleArgs, models.ScoreArticleResult, scope="articles:score", evidence_fields=("article", "product_relevance", "event_impact", "model_version", "prompt_version"), timeout=90, cache_ttl=3600),
-        _contract("generate_draft", "Generate a new traceable draft artifact version", models.GenerateDraftArgs, models.GenerateDraftResult, scope="drafts:write", evidence_fields=("artifact", "evidence_refs", "context_hash"), side_effect=SideEffectLevel.L2, risk=ToolRiskLevel.MEDIUM, timeout=180, attempts=2, idempotency_key="idempotency_key", compensation=CompensationPolicy(reversible=True, action="archive_generated_artifact", irreversible_reason="")),
-        _contract("review_draft", "Review an immutable draft content hash", models.ReviewDraftArgs, models.ReviewDraftResult, scope="drafts:review", evidence_fields=("artifact", "content_hash", "issues"), timeout=90, cache_ttl=3600),
-        _contract("revise_draft", "Create and re-review a new draft version", models.ReviseDraftArgs, models.ReviseDraftResult, scope="drafts:write", evidence_fields=("source_artifact", "artifact", "review"), side_effect=SideEffectLevel.L2, risk=ToolRiskLevel.MEDIUM, timeout=180, attempts=2, idempotency_key="idempotency_key", compensation=CompensationPolicy(reversible=True, action="archive_revised_artifact", irreversible_reason="")),
-        _contract("save_draft_version", "Optimistically save an autosave or confirmed business version", models.SaveDraftVersionArgs, models.SaveDraftVersionResult, scope="drafts:write", evidence_fields=("artifact",), side_effect=SideEffectLevel.L2, risk=ToolRiskLevel.MEDIUM, timeout=30, attempts=3, idempotency_key="idempotency_key", compensation=CompensationPolicy(reversible=True, action="archive_saved_version", irreversible_reason="")),
-        _contract("export_draft", "Export one immutable draft version using a safe filename", models.ExportDraftArgs, models.ExportDraftResult, scope="drafts:export", evidence_fields=("artifact", "export_ref", "content_hash"), side_effect=SideEffectLevel.L2, risk=ToolRiskLevel.MEDIUM, timeout=120, attempts=2, idempotency_key="idempotency_key", compensation=CompensationPolicy(reversible=True, action="delete_export_copy", irreversible_reason="")),
+        _contract(
+            "list_articles",
+            "List tenant-visible article summaries",
+            models.ListArticlesArgs,
+            models.ListArticlesResult,
+            scope="articles:read",
+            evidence_fields=("items", "replay_ref"),
+            cache_ttl=60,
+        ),
+        _contract(
+            "get_article",
+            "Load one tenant-visible article by reference",
+            models.GetArticleArgs,
+            models.GetArticleResult,
+            scope="articles:read",
+            evidence_fields=("article",),
+            cache_ttl=300,
+        ),
+        _contract(
+            "search_news",
+            "Search local and web news as normalized candidates",
+            models.SearchNewsArgs,
+            models.SearchNewsResult,
+            scope="news:search",
+            evidence_fields=("items", "replay_ref"),
+            timeout=45,
+            cache_ttl=300,
+        ),
+        _contract(
+            "crawl_news",
+            "Queue an idempotent bounded news crawl",
+            models.CrawlNewsArgs,
+            models.CrawlNewsResult,
+            scope="news:crawl",
+            evidence_fields=("task_ref", "articles"),
+            side_effect=SideEffectLevel.L2,
+            risk=ToolRiskLevel.MEDIUM,
+            timeout=30,
+            attempts=3,
+            idempotency_key="idempotency_key",
+            compensation=CompensationPolicy(
+                irreversible_reason="crawl writes are deduplicated; individual articles can be archived"
+            ),
+        ),
+        _contract(
+            "classify_article",
+            "Classify an immutable article reference",
+            models.ClassifyArticleArgs,
+            models.ClassifyArticleResult,
+            scope="articles:classify",
+            evidence_fields=("article", "model_version", "prompt_version"),
+            timeout=60,
+            cache_ttl=3600,
+        ),
+        _contract(
+            "match_products",
+            "Match only published and authorized products",
+            models.MatchProductsArgs,
+            models.MatchProductsResult,
+            scope="products:read",
+            evidence_fields=("article", "candidates", "catalog_hash"),
+            cache_ttl=900,
+        ),
+        _contract(
+            "collect_product_evidence",
+            "Collect verified product evidence from LLM Wiki via provider boundary",
+            models.CollectProductEvidenceArgs,
+            models.CollectProductEvidenceResult,
+            scope="evidence:read",
+            evidence_fields=("evidence_bundle_ref", "coverage", "confidence", "evidence_ids"),
+            timeout=60,
+            cache_ttl=0,
+        ),
+        _contract(
+            "score_article",
+            "Score product relevance and event impact",
+            models.ScoreArticleArgs,
+            models.ScoreArticleResult,
+            scope="articles:score",
+            evidence_fields=(
+                "article",
+                "product_relevance",
+                "event_impact",
+                "model_version",
+                "prompt_version",
+            ),
+            timeout=90,
+            cache_ttl=3600,
+        ),
+        _contract(
+            "generate_draft",
+            "Generate a new traceable draft artifact version",
+            models.GenerateDraftArgs,
+            models.GenerateDraftResult,
+            scope="drafts:write",
+            evidence_fields=("artifact", "evidence_refs", "context_hash"),
+            side_effect=SideEffectLevel.L2,
+            risk=ToolRiskLevel.MEDIUM,
+            timeout=180,
+            attempts=2,
+            idempotency_key="idempotency_key",
+            compensation=CompensationPolicy(
+                reversible=True, action="archive_generated_artifact", irreversible_reason=""
+            ),
+        ),
+        _contract(
+            "review_draft",
+            "Review an immutable draft content hash",
+            models.ReviewDraftArgs,
+            models.ReviewDraftResult,
+            scope="drafts:review",
+            evidence_fields=("artifact", "content_hash", "issues"),
+            timeout=90,
+            cache_ttl=3600,
+        ),
+        _contract(
+            "revise_draft",
+            "Create and re-review a new draft version",
+            models.ReviseDraftArgs,
+            models.ReviseDraftResult,
+            scope="drafts:write",
+            evidence_fields=("source_artifact", "artifact", "review"),
+            side_effect=SideEffectLevel.L2,
+            risk=ToolRiskLevel.MEDIUM,
+            timeout=180,
+            attempts=2,
+            idempotency_key="idempotency_key",
+            compensation=CompensationPolicy(
+                reversible=True, action="archive_revised_artifact", irreversible_reason=""
+            ),
+        ),
+        _contract(
+            "save_draft_version",
+            "Optimistically save an autosave or confirmed business version",
+            models.SaveDraftVersionArgs,
+            models.SaveDraftVersionResult,
+            scope="drafts:write",
+            evidence_fields=("artifact",),
+            side_effect=SideEffectLevel.L2,
+            risk=ToolRiskLevel.MEDIUM,
+            timeout=30,
+            attempts=3,
+            idempotency_key="idempotency_key",
+            compensation=CompensationPolicy(
+                reversible=True, action="archive_saved_version", irreversible_reason=""
+            ),
+        ),
+        _contract(
+            "export_draft",
+            "Export one immutable draft version using a safe filename",
+            models.ExportDraftArgs,
+            models.ExportDraftResult,
+            scope="drafts:export",
+            evidence_fields=("artifact", "export_ref", "content_hash"),
+            side_effect=SideEffectLevel.L2,
+            risk=ToolRiskLevel.MEDIUM,
+            timeout=120,
+            attempts=2,
+            idempotency_key="idempotency_key",
+            compensation=CompensationPolicy(
+                reversible=True, action="delete_export_copy", irreversible_reason=""
+            ),
+        ),
     ]
     for definition in definitions:
         registry.register(definition)

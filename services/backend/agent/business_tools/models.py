@@ -148,6 +148,29 @@ class ScoreArticleArgs(ToolModel):
     user_requested_draft: bool = False
 
 
+class CollectProductEvidenceArgs(ToolModel):
+    """计划 §17：Knowledge Tool - 通过 Provider 边界收集已验证产品证据。"""
+
+    query: str = Field(..., min_length=1, max_length=2000)
+    product_ids: list[str] = Field(..., min_length=1, max_length=5)
+    task_type: Literal["score", "draft", "chat"] = "score"
+
+
+class CollectProductEvidenceResult(ToolModel):
+    """计划 §17 结果：只回传 ref/元信息，不塞整个 EvidenceBundle 进上下文（§18）。"""
+
+    status: Literal["SUFFICIENT", "INSUFFICIENT_EVIDENCE", "CONFLICTED", "FAILED"] = (
+        "INSUFFICIENT_EVIDENCE"
+    )
+    evidence_bundle_ref: str = Field(..., min_length=1, max_length=200)
+    product_ids: list[str] = Field(default_factory=list, max_length=5)
+    coverage: float = Field(default=0.0, ge=0, le=1)
+    confidence: float = Field(default=0.0, ge=0, le=1)
+    evidence_ids: list[str] = Field(default_factory=list, max_length=200)
+    missing_requirements: list[str] = Field(default_factory=list, max_length=100)
+    wiki_version: str = Field(default="", max_length=100)
+
+
 class ScoreDimension(ToolModel):
     score: float = Field(..., ge=0, le=100)
     evidence: list[str] = Field(default_factory=list, max_length=20)
@@ -278,6 +301,7 @@ BusinessToolArgs = (
     | CrawlNewsArgs
     | ClassifyArticleArgs
     | MatchProductsArgs
+    | CollectProductEvidenceArgs
     | ScoreArticleArgs
     | GenerateDraftArgs
     | ReviewDraftArgs

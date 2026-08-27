@@ -56,6 +56,7 @@ ci: ## 本地 CI 模拟 — 快速（Lint + Test）
 	ruff format --check services/ tests/
 	python scripts/check_wiki_default.py  # CI Hard Gate 2：禁止生产默认 legacy
 	python scripts/check_wiki_scoring_isolation.py  # CI Hard Gate 3：Wiki 评分严格隔离 (PR-2)
+	python scripts/check_multiagent_architecture.py  # CI Hard Gate 4：Multi-Agent 分层架构不变量
 	pytest tests/ --cov=services --cov-report=term-missing -v --tb=short
 
 ci-all: lint test ## 本地 CI 模拟 — 全流程（Lint + Test + Security）

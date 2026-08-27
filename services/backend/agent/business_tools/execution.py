@@ -77,11 +77,23 @@ def _fake_result(contract: BusinessToolContract, args: dict[str, Any]) -> dict[s
             },
         ).model_dump()
     if name == "search_news":
-        return SearchNewsResult(items=[], total=0, replay_ref=_key(name, args), query=args.get("query", "")).model_dump()
+        return SearchNewsResult(
+            items=[], total=0, replay_ref=_key(name, args), query=args.get("query", "")
+        ).model_dump()
     if name == "crawl_news":
-        return CrawlNewsResult(task_ref="crawl-" + _key(name, args)[7:19], status="queued").model_dump()
+        return CrawlNewsResult(
+            task_ref="crawl-" + _key(name, args)[7:19], status="queued"
+        ).model_dump()
     if name == "classify_article":
-        return {"article": ref.model_dump(), "category": "unknown", "confidence": 0.0, "reason": "fake", "eligible": False, "model_version": "fake-v1", "prompt_version": "fake-v1"}
+        return {
+            "article": ref.model_dump(),
+            "category": "unknown",
+            "confidence": 0.0,
+            "reason": "fake",
+            "eligible": False,
+            "model_version": "fake-v1",
+            "prompt_version": "fake-v1",
+        }
     if name == "match_products":
         return {
             "article": ref.model_dump(),
@@ -96,21 +108,74 @@ def _fake_result(contract: BusinessToolContract, args: dict[str, Any]) -> dict[s
             "outcome": "matched",
             "catalog_hash": "sha256:fake-catalog",
         }
+    if name == "collect_product_evidence":
+        return {
+            "status": "SUFFICIENT",
+            "evidence_bundle_ref": "EvidenceBundleArtifact:eb-fake@1",
+            "product_ids": list(args.get("product_ids", [])),
+            "coverage": 0.8,
+            "confidence": 0.9,
+            "evidence_ids": ["ev-fake"],
+            "missing_requirements": [],
+            "wiki_version": "v1",
+        }
     if name == "score_article":
         dim = {"score": 0.0, "evidence": []}
-        return {"article": ref.model_dump(), "product_relevance": dim, "event_impact": dim, "total_score": 0.0, "confidence": 0.0, "anomalies": [], "worth_writing": False, "user_requested_draft": bool(args.get("user_requested_draft")), "model_version": "fake-v1", "prompt_version": "fake-v1"}
+        return {
+            "article": ref.model_dump(),
+            "product_relevance": dim,
+            "event_impact": dim,
+            "total_score": 0.0,
+            "confidence": 0.0,
+            "anomalies": [],
+            "worth_writing": False,
+            "user_requested_draft": bool(args.get("user_requested_draft")),
+            "model_version": "fake-v1",
+            "prompt_version": "fake-v1",
+        }
     artifact = DraftArtifact(artifact_id="artifact-fake", version=1, content_hash="sha256:fake")
     if name == "generate_draft":
-        return GenerateDraftResult(artifact=artifact, model_version="fake-v1", prompt_version="fake-v1", skill_version="fake-v1", context_hash="sha256:fake").model_dump()
+        return GenerateDraftResult(
+            artifact=artifact,
+            model_version="fake-v1",
+            prompt_version="fake-v1",
+            skill_version="fake-v1",
+            context_hash="sha256:fake",
+        ).model_dump()
     if name == "review_draft":
-        return ReviewDraftResult(artifact=artifact, content_hash=artifact.content_hash, passed=True, reviewer_version="fake-v1").model_dump()
+        return ReviewDraftResult(
+            artifact=artifact,
+            content_hash=artifact.content_hash,
+            passed=True,
+            reviewer_version="fake-v1",
+        ).model_dump()
     if name == "revise_draft":
-        review = ReviewDraftResult(artifact=artifact, content_hash=artifact.content_hash, passed=True, reviewer_version="fake-v1")
-        return {"source_artifact": artifact.model_dump(), "artifact": artifact.model_dump(), "changed_sections": [], "review": review.model_dump()}
+        review = ReviewDraftResult(
+            artifact=artifact,
+            content_hash=artifact.content_hash,
+            passed=True,
+            reviewer_version="fake-v1",
+        )
+        return {
+            "source_artifact": artifact.model_dump(),
+            "artifact": artifact.model_dump(),
+            "changed_sections": [],
+            "review": review.model_dump(),
+        }
     if name == "save_draft_version":
-        return {"artifact": artifact.model_dump(), "saved": True, "kind": args.get("kind", "autosave"), "duplicate": False}
+        return {
+            "artifact": artifact.model_dump(),
+            "saved": True,
+            "kind": args.get("kind", "autosave"),
+            "duplicate": False,
+        }
     if name == "export_draft":
-        return ExportDraftResult(artifact=artifact, export_ref="fake://export/" + artifact.artifact_id, format=args.get("format", "markdown"), content_hash=artifact.content_hash).model_dump()
+        return ExportDraftResult(
+            artifact=artifact,
+            export_ref="fake://export/" + artifact.artifact_id,
+            format=args.get("format", "markdown"),
+            content_hash=artifact.content_hash,
+        ).model_dump()
     raise KeyError(name)
 
 
@@ -200,7 +265,9 @@ class BusinessToolExecutor:
         try:
             return self.adapters[key]
         except KeyError:
-            raise BusinessToolExecutionError("adapter_unavailable", f"adapter unavailable: {key}") from None
+            raise BusinessToolExecutionError(
+                "adapter_unavailable", f"adapter unavailable: {key}"
+            ) from None
 
     async def invoke(
         self,
@@ -213,9 +280,13 @@ class BusinessToolExecutor:
         contract = self.registry.get(name)
         if not contract.required_scopes.issubset(context.scopes):
             missing = sorted(contract.required_scopes - context.scopes)
-            raise BusinessToolExecutionError("missing_scope", f"missing scopes: {', '.join(missing)}")
+            raise BusinessToolExecutionError(
+                "missing_scope", f"missing scopes: {', '.join(missing)}"
+            )
         if not context.tenant_id:
-            raise BusinessToolExecutionError("tenant_required", "tenant boundary requires tenant_id")
+            raise BusinessToolExecutionError(
+                "tenant_required", "tenant boundary requires tenant_id"
+            )
         try:
             parsed_args = contract.args_schema.model_validate(model_payload(args))
         except Exception as exc:
@@ -225,7 +296,9 @@ class BusinessToolExecutor:
         if contract.idempotency_policy.required:
             idem_key = str(payload.get(contract.idempotency_policy.key_field, ""))
             if not idem_key:
-                raise BusinessToolExecutionError("idempotency_required", "idempotency key is required")
+                raise BusinessToolExecutionError(
+                    "idempotency_required", "idempotency key is required"
+                )
             cache_key = (context.tenant_id, name, idem_key)
             if cache_key in self._idempotency:
                 return contract.result_schema.model_validate(self._idempotency[cache_key])
@@ -239,7 +312,9 @@ class BusinessToolExecutor:
                 )
                 result = contract.result_schema.model_validate(raw)
                 if idem_key:
-                    self._idempotency[(context.tenant_id, name, idem_key)] = result.model_dump(mode="python")
+                    self._idempotency[(context.tenant_id, name, idem_key)] = result.model_dump(
+                        mode="python"
+                    )
                 return result
             except TimeoutError as exc:
                 last = exc

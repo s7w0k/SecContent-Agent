@@ -132,7 +132,9 @@ class ProductionBusinessToolService:
             ]
         }
 
-    async def _find_article(self, article_id: str, context: ToolRequestContext) -> dict[str, Any] | None:
+    async def _find_article(
+        self, article_id: str, context: ToolRequestContext
+    ) -> dict[str, Any] | None:
         return await self.db["articles"].find_one(
             {"$and": [{"url_hash": article_id}, self._scope(context)]}
         )
@@ -163,7 +165,14 @@ class ProductionBusinessToolService:
         filters: list[dict[str, Any]] = [query]
         if args.get("query"):
             safe = re.escape(args["query"][:200])
-            filters.append({"$or": [{"title": {"$regex": safe, "$options": "i"}}, {"summary_cn": {"$regex": safe, "$options": "i"}}]})
+            filters.append(
+                {
+                    "$or": [
+                        {"title": {"$regex": safe, "$options": "i"}},
+                        {"summary_cn": {"$regex": safe, "$options": "i"}},
+                    ]
+                }
+            )
         if args.get("source"):
             filters.append({"source": args["source"]})
         if args.get("category"):
@@ -257,7 +266,8 @@ class ProductionBusinessToolService:
         skipped_raw = container.get("skipped", 0)
         failed_raw = container.get("failed", 0)
         return {
-            "task_ref": "crawl-" + hashlib.sha256(args["idempotency_key"].encode()).hexdigest()[:20],
+            "task_ref": "crawl-"
+            + hashlib.sha256(args["idempotency_key"].encode()).hexdigest()[:20],
             "status": "completed",
             "added": int(added_raw) if added_raw is not None else len(refs),
             "updated": int(updated_raw) if updated_raw is not None else 0,
@@ -274,7 +284,11 @@ class ProductionBusinessToolService:
         article = await self._find_article(ref["article_id"], context)
         if article is None:
             raise KeyError("article not found")
-        result = _plain(await self.classifier.classify_single(article, user_id=context.user_id, task_id=context.run_id))
+        result = _plain(
+            await self.classifier.classify_single(
+                article, user_id=context.user_id, task_id=context.run_id
+            )
+        )
         confidence = float(result.get("confidence", 0))
         if confidence > 1:
             confidence /= 100
@@ -312,12 +326,45 @@ class ProductionBusinessToolService:
         candidates = []
         if explicit:
             products = self.catalog.validate_product_ids(explicit, purpose="draft")
-            candidates = [{"product_id": p.product_id, "name": p.name, "confidence": 1.0, "evidence": ["explicit user selection"], "user_selected": True} for p in products]
+            candidates = [
+                {
+                    "product_id": p.product_id,
+                    "name": p.name,
+                    "confidence": 1.0,
+                    "evidence": ["explicit user selection"],
+                    "user_selected": True,
+                }
+                for p in products
+            ]
         else:
             matches = self.matcher.match_by_rules(article, top_n=args["max_candidates"])
-            candidates = [{"product_id": match.product_id, "name": match.product_name, "confidence": match.match_score / 100, "evidence": [match.match_reason]} for match in matches]
-        outcome = "no_related_product" if not candidates else ("ambiguous" if self.matcher.is_ambiguous(self.matcher.match_by_rules(article, top_n=args["max_candidates"])) and not explicit else "matched")
-        return {"article": ref, "candidates": candidates, "outcome": outcome, "catalog_hash": self.catalog.catalog_hash()}
+            candidates = [
+                {
+                    "product_id": match.product_id,
+                    "name": match.product_name,
+                    "confidence": match.match_score / 100,
+                    "evidence": [match.match_reason],
+                }
+                for match in matches
+            ]
+        outcome = (
+            "no_related_product"
+            if not candidates
+            else (
+                "ambiguous"
+                if self.matcher.is_ambiguous(
+                    self.matcher.match_by_rules(article, top_n=args["max_candidates"])
+                )
+                and not explicit
+                else "matched"
+            )
+        )
+        return {
+            "article": ref,
+            "candidates": candidates,
+            "outcome": outcome,
+            "catalog_hash": self.catalog.catalog_hash(),
+        }
 
     async def _score_article(self, args, context):
         if self.scorer is None:
@@ -327,14 +374,35 @@ class ProductionBusinessToolService:
         if article is None:
             raise KeyError("article not found")
         products = self.catalog.validate_product_ids(args["product_ids"], purpose="score")
-        raw = await self.scorer.score_single(article, products=[{"product_id": p.product_id, "product_name": p.name} for p in products], user_id=context.user_id, task_id=context.run_id)
+        raw = await self.scorer.score_single(
+            article,
+            products=[{"product_id": p.product_id, "product_name": p.name} for p in products],
+            user_id=context.user_id,
+            task_id=context.run_id,
+        )
         product = float(raw.get("product_relevance", raw.get("relevance", 0)))
         impact = float(raw.get("event_impact", 0))
         total = float(raw.get("pr_total_score", raw.get("total_score", product + impact)))
-        return {"article": ref, "product_relevance": {"score": product, "evidence": [str(raw.get("reason") or "")]}, "event_impact": {"score": impact, "evidence": [str(raw.get("impact_reason") or raw.get("reason") or "")]}, "total_score": total, "confidence": 0.0 if raw.get("_fallback") else 0.8, "anomalies": ["fallback"] if raw.get("_fallback") else [], "worth_writing": bool(raw.get("is_pr_candidate", total >= 80)), "user_requested_draft": args["user_requested_draft"], "model_version": str(raw.get("model_version") or "scorer-v2"), "prompt_version": str(raw.get("prompt_version") or args["skill_version"])}
+        return {
+            "article": ref,
+            "product_relevance": {"score": product, "evidence": [str(raw.get("reason") or "")]},
+            "event_impact": {
+                "score": impact,
+                "evidence": [str(raw.get("impact_reason") or raw.get("reason") or "")],
+            },
+            "total_score": total,
+            "confidence": 0.0 if raw.get("_fallback") else 0.8,
+            "anomalies": ["fallback"] if raw.get("_fallback") else [],
+            "worth_writing": bool(raw.get("is_pr_candidate", total >= 80)),
+            "user_requested_draft": args["user_requested_draft"],
+            "model_version": str(raw.get("model_version") or "scorer-v2"),
+            "prompt_version": str(raw.get("prompt_version") or args["skill_version"]),
+        }
 
     async def _artifact(self, artifact_id: str, context: ToolRequestContext) -> dict[str, Any]:
-        doc = await self.db[self.ARTIFACTS].find_one({"artifact_id": artifact_id, "tenant_id": context.tenant_id, "user_id": context.user_id})
+        doc = await self.db[self.ARTIFACTS].find_one(
+            {"artifact_id": artifact_id, "tenant_id": context.tenant_id, "user_id": context.user_id}
+        )
         if doc is None:
             raise KeyError("artifact not found")
         return doc
@@ -342,7 +410,9 @@ class ProductionBusinessToolService:
     async def _generate_draft(self, args, context):
         if self.draft_generator is None:
             raise RuntimeError("draft generator unavailable")
-        existing = await self.db[self.ARTIFACTS].find_one({"tenant_id": context.tenant_id, "tool_idempotency_key": args["idempotency_key"]})
+        existing = await self.db[self.ARTIFACTS].find_one(
+            {"tenant_id": context.tenant_id, "tool_idempotency_key": args["idempotency_key"]}
+        )
         if existing:
             return existing["tool_result"]
         ref = args["article"]
@@ -350,16 +420,55 @@ class ProductionBusinessToolService:
         if article is None:
             raise KeyError("article not found")
         self.catalog.validate_product_ids(args["product_ids"], purpose="draft")
-        generated = await self.draft_generator.generate(article, style_hints=args["tone"], user_business_prompt=args["angle"] or None, max_drafts=1)
+        generated = await self.draft_generator.generate(
+            article,
+            style_hints=args["tone"],
+            user_business_prompt=args["angle"] or None,
+            max_drafts=1,
+        )
         drafts = generated.get("drafts") or []
         content = str((drafts[0] if drafts else {}).get("content_md") or "").strip()
         if not content:
             raise ValueError("draft output is empty")
         artifact_id = "draft-" + uuid.uuid4().hex[:24]
         content_hash = _hash_text(content)
-        artifact = {"artifact_id": artifact_id, "version": 1, "content_hash": content_hash, "status": "draft"}
-        result = {"artifact": artifact, "summary": content[:300], "content": content, "evidence_refs": [ref["article_id"], *args["product_ids"]], "model_version": str(generated.get("model_version") or "draft-generator"), "prompt_version": str(generated.get("prompt_version") or args["template_key"]), "skill_version": "generate-draft.v1", "context_hash": _hash_text("|".join([ref["article_id"], *args["product_ids"], args["template_key"]]))}
-        await self.db[self.ARTIFACTS].insert_one({**artifact, "root_artifact_id": artifact_id, "parent_artifact_id": "", "tenant_id": context.tenant_id, "user_id": context.user_id, "article_id": ref["article_id"], "product_ids": args["product_ids"], "content_md": content, "created_by": "agent", "instruction": "", "source_ids": [ref["article_id"], *args["product_ids"]], "tool_idempotency_key": args["idempotency_key"], "tool_result": result, "created_at": _now(), "updated_at": _now()})
+        artifact = {
+            "artifact_id": artifact_id,
+            "version": 1,
+            "content_hash": content_hash,
+            "status": "draft",
+        }
+        result = {
+            "artifact": artifact,
+            "summary": content[:300],
+            "content": content,
+            "evidence_refs": [ref["article_id"], *args["product_ids"]],
+            "model_version": str(generated.get("model_version") or "draft-generator"),
+            "prompt_version": str(generated.get("prompt_version") or args["template_key"]),
+            "skill_version": "generate-draft.v1",
+            "context_hash": _hash_text(
+                "|".join([ref["article_id"], *args["product_ids"], args["template_key"]])
+            ),
+        }
+        await self.db[self.ARTIFACTS].insert_one(
+            {
+                **artifact,
+                "root_artifact_id": artifact_id,
+                "parent_artifact_id": "",
+                "tenant_id": context.tenant_id,
+                "user_id": context.user_id,
+                "article_id": ref["article_id"],
+                "product_ids": args["product_ids"],
+                "content_md": content,
+                "created_by": "agent",
+                "instruction": "",
+                "source_ids": [ref["article_id"], *args["product_ids"]],
+                "tool_idempotency_key": args["idempotency_key"],
+                "tool_result": result,
+                "created_at": _now(),
+                "updated_at": _now(),
+            }
+        )
         return result
 
     async def _review_document(self, doc, context):
@@ -388,17 +497,38 @@ class ProductionBusinessToolService:
                     "evidence_refs": list(value.get("evidence_refs") or []),
                 }
             )
-        artifact = {"artifact_id": doc["artifact_id"], "version": doc["version"], "content_hash": doc["content_hash"], "status": "reviewed" if not issues else "needs_review"}
-        return {"artifact": artifact, "content_hash": doc["content_hash"], "passed": not issues, "issues": issues, "reviewer_version": str(review.get("reviewer_version") or "draft-reviewer-v1")}
+        artifact = {
+            "artifact_id": doc["artifact_id"],
+            "version": doc["version"],
+            "content_hash": doc["content_hash"],
+            "status": "reviewed" if not issues else "needs_review",
+        }
+        return {
+            "artifact": artifact,
+            "content_hash": doc["content_hash"],
+            "passed": not issues,
+            "issues": issues,
+            "reviewer_version": str(review.get("reviewer_version") or "draft-reviewer-v1"),
+        }
 
     async def _review_draft(self, args, context):
         doc = await self._artifact(args["artifact"]["artifact_id"], context)
-        if doc["version"] != args["artifact"]["version"] or doc["content_hash"] != args["artifact"]["content_hash"]:
+        if (
+            doc["version"] != args["artifact"]["version"]
+            or doc["content_hash"] != args["artifact"]["content_hash"]
+        ):
             raise ValueError("artifact version or content hash conflict")
         review = await self._review_document(doc, context)
         await self.db[self.ARTIFACTS].update_one(
             {"artifact_id": doc["artifact_id"], "tenant_id": context.tenant_id},
-            {"$set": {"review": review, "review_status": "review_passed" if review["passed"] else "needs_user_review", "status": review["artifact"]["status"], "updated_at": _now()}},
+            {
+                "$set": {
+                    "review": review,
+                    "review_status": "review_passed" if review["passed"] else "needs_user_review",
+                    "status": review["artifact"]["status"],
+                    "updated_at": _now(),
+                }
+            },
         )
         return review
 
@@ -408,22 +538,46 @@ class ProductionBusinessToolService:
         source = await self._artifact(args["artifact"]["artifact_id"], context)
         if source["version"] != args["expected_version"]:
             raise ValueError("artifact version conflict")
-        existing = await self.db[self.ARTIFACTS].find_one({"tenant_id": context.tenant_id, "tool_idempotency_key": args["idempotency_key"]})
+        existing = await self.db[self.ARTIFACTS].find_one(
+            {"tenant_id": context.tenant_id, "tool_idempotency_key": args["idempotency_key"]}
+        )
         if existing:
             return existing["tool_result"]
         article = await self._find_article(source["article_id"], context)
-        revised = await self.draft_chat.revise(args["instruction"], article or {}, source, selected_text=args.get("selection") or None)
+        revised = await self.draft_chat.revise(
+            args["instruction"], article or {}, source, selected_text=args.get("selection") or None
+        )
         content = str(revised.get("revised_content_md") or "").strip()
         if not content:
             raise ValueError("revision output is empty")
-        doc = {**source, "_id": None, "artifact_id": "draft-" + uuid.uuid4().hex[:24], "root_artifact_id": source.get("root_artifact_id") or source["artifact_id"], "version": source["version"] + 1, "content_md": content, "content_hash": _hash_text(content), "status": "draft", "parent_artifact_id": source["artifact_id"], "created_by": context.user_id, "instruction": args["instruction"], "tool_idempotency_key": args["idempotency_key"], "created_at": _now(), "updated_at": _now()}
+        doc = {
+            **source,
+            "_id": None,
+            "artifact_id": "draft-" + uuid.uuid4().hex[:24],
+            "root_artifact_id": source.get("root_artifact_id") or source["artifact_id"],
+            "version": source["version"] + 1,
+            "content_md": content,
+            "content_hash": _hash_text(content),
+            "status": "draft",
+            "parent_artifact_id": source["artifact_id"],
+            "created_by": context.user_id,
+            "instruction": args["instruction"],
+            "tool_idempotency_key": args["idempotency_key"],
+            "created_at": _now(),
+            "updated_at": _now(),
+        }
         doc.pop("_id", None)
         review = await self._review_document(doc, context)
         doc["status"] = review["artifact"]["status"]
         doc["review"] = review
         doc["review_status"] = "review_passed" if review["passed"] else "needs_user_review"
         artifact = review["artifact"]
-        result = {"source_artifact": args["artifact"], "artifact": artifact, "changed_sections": list(revised.get("change_summary") or []), "review": review}
+        result = {
+            "source_artifact": args["artifact"],
+            "artifact": artifact,
+            "changed_sections": list(revised.get("change_summary") or []),
+            "review": review,
+        }
         doc["tool_result"] = result
         await self.db[self.ARTIFACTS].insert_one(doc)
         return result
@@ -433,20 +587,82 @@ class ProductionBusinessToolService:
         if doc["version"] != args["expected_version"]:
             raise ValueError("artifact version conflict")
         duplicate = doc.get("save_idempotency_key") == args["idempotency_key"]
-        result = await self.db[self.ARTIFACTS].update_one({"artifact_id": doc["artifact_id"], "tenant_id": context.tenant_id, "version": args["expected_version"]}, {"$set": {"save_kind": args["kind"], "confirmed_by_user": args["confirmed_by_user"], "save_idempotency_key": args["idempotency_key"], "updated_at": _now()}})
+        result = await self.db[self.ARTIFACTS].update_one(
+            {
+                "artifact_id": doc["artifact_id"],
+                "tenant_id": context.tenant_id,
+                "version": args["expected_version"],
+            },
+            {
+                "$set": {
+                    "save_kind": args["kind"],
+                    "confirmed_by_user": args["confirmed_by_user"],
+                    "save_idempotency_key": args["idempotency_key"],
+                    "updated_at": _now(),
+                }
+            },
+        )
         if args["kind"] == "business_version" and args["confirmed_by_user"]:
             root_id = doc.get("root_artifact_id") or doc["artifact_id"]
             await self.db[self.PRIMARY].update_one(
-                {"tenant_id": context.tenant_id, "user_id": context.user_id, "root_artifact_id": root_id},
-                {"$set": {"artifact_id": doc["artifact_id"], "artifact_version": doc["version"], "content_hash": doc["content_hash"], "idempotency_key": args["idempotency_key"], "updated_at": _now()}, "$setOnInsert": {"created_at": _now()}},
+                {
+                    "tenant_id": context.tenant_id,
+                    "user_id": context.user_id,
+                    "root_artifact_id": root_id,
+                },
+                {
+                    "$set": {
+                        "artifact_id": doc["artifact_id"],
+                        "artifact_version": doc["version"],
+                        "content_hash": doc["content_hash"],
+                        "idempotency_key": args["idempotency_key"],
+                        "updated_at": _now(),
+                    },
+                    "$setOnInsert": {"created_at": _now()},
+                },
                 upsert=True,
             )
-        return {"artifact": args["artifact"], "saved": result.matched_count == 1, "kind": args["kind"], "duplicate": duplicate}
+        return {
+            "artifact": args["artifact"],
+            "saved": result.matched_count == 1,
+            "kind": args["kind"],
+            "duplicate": duplicate,
+        }
 
     async def _export_draft(self, args, context):
         doc = await self._artifact(args["artifact"]["artifact_id"], context)
-        if doc["version"] != args["artifact"]["version"] or doc["content_hash"] != args["artifact"]["content_hash"]:
+        if (
+            doc["version"] != args["artifact"]["version"]
+            or doc["content_hash"] != args["artifact"]["content_hash"]
+        ):
             raise ValueError("export requires an immutable artifact version")
-        export_id = "export-" + hashlib.sha256(f"{context.tenant_id}:{args['idempotency_key']}".encode()).hexdigest()[:24]
-        await self.db[self.EXPORTS].update_one({"export_id": export_id, "tenant_id": context.tenant_id}, {"$setOnInsert": {"export_id": export_id, "tenant_id": context.tenant_id, "user_id": context.user_id, "artifact_id": doc["artifact_id"], "artifact_version": doc["version"], "content_hash": doc["content_hash"], "format": args["format"], "filename": args["filename"], "created_at": _now()}}, upsert=True)
-        return {"artifact": args["artifact"], "export_ref": f"agent-export://{export_id}/{args['filename']}.{args['format']}", "format": args["format"], "content_hash": doc["content_hash"], "immutable": True}
+        export_id = (
+            "export-"
+            + hashlib.sha256(f"{context.tenant_id}:{args['idempotency_key']}".encode()).hexdigest()[
+                :24
+            ]
+        )
+        await self.db[self.EXPORTS].update_one(
+            {"export_id": export_id, "tenant_id": context.tenant_id},
+            {
+                "$setOnInsert": {
+                    "export_id": export_id,
+                    "tenant_id": context.tenant_id,
+                    "user_id": context.user_id,
+                    "artifact_id": doc["artifact_id"],
+                    "artifact_version": doc["version"],
+                    "content_hash": doc["content_hash"],
+                    "format": args["format"],
+                    "filename": args["filename"],
+                    "created_at": _now(),
+                }
+            },
+            upsert=True,
+        )
+        return {
+            "artifact": args["artifact"],
+            "export_ref": f"agent-export://{export_id}/{args['filename']}.{args['format']}",
+            "format": args["format"],
+            "content_hash": doc["content_hash"],
+            "immutable": True,
+        }
