@@ -96,6 +96,7 @@ ignore = [
 "scripts/smoke_test_4_1.py" = ["T201"]  # CLI 冒烟脚本输出
 "scripts/validate_agent_skills.py" = ["T201", "N806"]  # CLI 脚本输出；WHITE/GRAY/BLACK 为 ANSI 颜色常量
 "scripts/check_wiki_default.py" = ["T201"]  # CLI 门禁脚本输出
+"scripts/check_wiki_scoring_isolation.py" = ["T201"]  # CLI 门禁脚本输出
 "tests/agent_evals/full_loop_journeys/validate_dataset.py" = ["T201"]
 "tests/agent_evals/knowledge_replay/*.py" = ["T201"]  # CLI 评测报告输出
 "tests/agent_evals/knowledge_retrieval/*.py" = ["T201"]  # CLI 数据集与评测报告输出

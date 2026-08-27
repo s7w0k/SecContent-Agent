@@ -67,9 +67,9 @@ async def startup(ctx: dict[str, Any]) -> None:
         max_tokens=settings.DEEPSEEK_MAX_TOKENS,
     )
     classifier_v2 = ClassifierV2(llm=llm, db=db)
-    scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge, db=db)
 
-    # Wiki Knowledge Runtime 统一装配（Hard Gate：GOAL B）
+    # Wiki Knowledge Runtime 统一装配（Hard Gate：GOAL B / Provider Contract）
+    # 先 build KnowledgeRuntime，再以 Constructor Injection 构建 ScoringAgentV2。
     # 一律通过统一 factory 装配，不再按 backend 分支隐式回退 legacy；
     # KNOWLEDGE_BACKEND 必须显式配置（default=wiki），缺失 Active Wiki 会 fail-fast。
     from agent.wiki.runtime_factory import (
@@ -85,7 +85,12 @@ async def startup(ctx: dict[str, Any]) -> None:
             exc,
         )
         raise
-    scorer_v2.knowledge_provider = knowledge_runtime.provider
+    scorer_v2 = ScoringAgentV2(
+        llm=llm,
+        knowledge=knowledge,
+        knowledge_provider=knowledge_runtime.provider,
+        db=db,
+    )
     logger.info(
         "Knowledge Runtime assembled: mode=%s active=%s",
         knowledge_runtime.mode,

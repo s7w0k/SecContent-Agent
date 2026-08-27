@@ -211,6 +211,7 @@ class KnowledgePreviewService:
             }
         """
         from agent.scorer_v2 import ScoringAgentV2
+        from agent.wiki.provider import LegacyKnowledgeProvider
         from config import get_settings
         from langchain_openai import ChatOpenAI
 
@@ -226,7 +227,12 @@ class KnowledgePreviewService:
         # Score with formal knowledge
         formal_loader = KnowledgeLoader(docs_dir=str(self.root_dir))
         await formal_loader.load(force=True)
-        formal_scorer = ScoringAgentV2(llm=llm, knowledge=formal_loader, db=None)
+        formal_scorer = ScoringAgentV2(
+            llm=llm,
+            knowledge=formal_loader,
+            db=None,
+            knowledge_provider=LegacyKnowledgeProvider(),
+        )
 
         old_score = None
         try:
@@ -244,7 +250,12 @@ class KnowledgePreviewService:
             )
             temp_loader = KnowledgeLoader(docs_dir=tmp_dir)
             await temp_loader.load(force=True)
-            temp_scorer = ScoringAgentV2(llm=llm, knowledge=temp_loader, db=None)
+            temp_scorer = ScoringAgentV2(
+                llm=llm,
+                knowledge=temp_loader,
+                db=None,
+                knowledge_provider=LegacyKnowledgeProvider(),
+            )
             new_score = await temp_scorer.score_single(article)
         except Exception as exc:
             logger.warning("Draft scoring failed: %s", exc)

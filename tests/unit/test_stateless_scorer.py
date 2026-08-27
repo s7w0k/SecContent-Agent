@@ -13,6 +13,8 @@ from langchain_core.messages import AIMessage
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "backend"))
 
+from agent.wiki.provider import LegacyKnowledgeProvider
+
 
 @pytest.mark.asyncio
 async def test_shared_scorer_keeps_concurrent_thresholds_isolated():
@@ -36,7 +38,9 @@ async def test_shared_scorer_keeps_concurrent_thresholds_isolated():
     llm.ainvoke = AsyncMock(side_effect=score_response)
     knowledge = MagicMock()
     knowledge.as_scoring_prompt.return_value = "knowledge"
-    scorer = ScoringAgentV2(llm=llm, knowledge=knowledge)
+    scorer = ScoringAgentV2(
+        llm=llm, knowledge=knowledge, knowledge_provider=LegacyKnowledgeProvider()
+    )
     article = {"title": "A", "source": "S", "category_v2": "爆点事件"}
 
     low_threshold, high_threshold = await asyncio.gather(
@@ -74,7 +78,9 @@ async def test_batch_propagates_explicit_threshold_metadata():
     )
     knowledge = MagicMock()
     knowledge.as_scoring_prompt.return_value = "knowledge"
-    scorer = ScoringAgentV2(llm=llm, knowledge=knowledge)
+    scorer = ScoringAgentV2(
+        llm=llm, knowledge=knowledge, knowledge_provider=LegacyKnowledgeProvider()
+    )
 
     results = await scorer.score_batch(
         [{"title": "A"}, {"title": "B"}],
@@ -96,7 +102,9 @@ async def test_fallback_preserves_task_threshold_metadata():
     llm.ainvoke = AsyncMock(side_effect=RuntimeError("unavailable"))
     knowledge = MagicMock()
     knowledge.as_scoring_prompt.return_value = "knowledge"
-    scorer = ScoringAgentV2(llm=llm, knowledge=knowledge)
+    scorer = ScoringAgentV2(
+        llm=llm, knowledge=knowledge, knowledge_provider=LegacyKnowledgeProvider()
+    )
 
     result = await scorer.score_single(
         {"title": "A"},

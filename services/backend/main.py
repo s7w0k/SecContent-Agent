@@ -187,9 +187,8 @@ async def lifespan(app: FastAPI):
         from agent.draft_reviewer import DraftReviewer
         from agent.scorer_v2 import ScoringAgentV2
 
-        scorer_v2 = ScoringAgentV2(llm=llm, knowledge=knowledge_loader, db=app.state.db)
-
-        # Wiki Knowledge Runtime 统一装配（Hard Gate：GOAL B）
+        # Wiki Knowledge Runtime 统一装配（Hard Gate：GOAL B / Provider Contract）
+        # 先 build KnowledgeRuntime，再以 Constructor Injection 构建 ScoringAgentV2。
         # 一律通过统一 factory 装配，不再按 backend 分支隐式回退 legacy；
         # KNOWLEDGE_BACKEND 必须显式配置（default=wiki），缺失 Active Wiki 会 fail-fast。
         from agent.wiki.runtime_factory import (
@@ -201,7 +200,6 @@ async def lifespan(app: FastAPI):
             knowledge_runtime = build_knowledge_runtime(
                 settings, llm=llm, db=app.state.db
             )
-            scorer_v2.knowledge_provider = knowledge_runtime.provider
             app.state.knowledge_runtime = knowledge_runtime
             _log(
                 "INFO",
@@ -216,6 +214,13 @@ async def lifespan(app: FastAPI):
                 "refusing to fall back to legacy. Explicit rollback required.",
             )
             raise
+
+        scorer_v2 = ScoringAgentV2(
+            llm=llm,
+            knowledge=knowledge_loader,
+            knowledge_provider=knowledge_runtime.provider,
+            db=app.state.db,
+        )
 
         draft_gen = DraftGenerator(
             llm=llm,
@@ -578,8 +583,8 @@ async def log_requests(request: Request, call_next):
 from api.a2a import router as a2a_router
 from api.accounts import router as accounts_router
 from api.activity import router as activity_router
-from api.auth import router as auth_router
 from api.agent_engine import router as agent_engine_router
+from api.auth import router as auth_router
 from api.autonomous import router as autonomous_router
 from api.crawl_config import router as crawl_config_router
 from api.dashboard import router as dashboard_router
@@ -589,6 +594,7 @@ from api.generation_preferences import router as generation_preferences_router
 from api.knowledge_admin import router as knowledge_admin_router
 from api.knowledge_catalog import router as knowledge_catalog_router
 from api.logs import router as logs_router
+from api.manuscripts import router as manuscripts_router
 from api.memory import router as memory_router
 from api.overseas_crawl import router as overseas_router
 from api.personalization import router as personalization_router
@@ -600,7 +606,6 @@ from api.profile import router as profile_router
 from api.profile_policy import router as profile_policy_router
 from api.reports import router as reports_router
 from api.upload import router as upload_router
-from api.manuscripts import router as manuscripts_router
 from api.user_knowledge import router as user_knowledge_router
 from api.user_prompts import router as user_prompts_router
 from api.web_search import router as web_search_router

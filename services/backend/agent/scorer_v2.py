@@ -24,7 +24,11 @@
     from agent.scorer_v2 import ScoringAgentV2
 
     llm = ChatOpenAI(model="deepseek-chat", ...)
-    scorer = ScoringAgentV2(llm=llm, knowledge=knowledge)
+    # Provider Contract（PR-1）：必须显式注入 KnowledgeProvider
+    from agent.wiki.provider import WikiKnowledgeProvider
+
+    provider = WikiKnowledgeProvider(navigator=..., verifier=...)
+    scorer = ScoringAgentV2(llm=llm, knowledge=knowledge, knowledge_provider=provider)
     scores = await scorer.score_batch(articles)
 """
 
@@ -163,16 +167,23 @@ class ScoringAgentV2:
         self,
         llm: BaseChatModel,
         knowledge: Any,  # ProductKnowledge or KnowledgeLoader
+        *,
+        knowledge_provider: Any,  # REQUIRED：explicit KnowledgeProvider（legacy/wiki/shadow）
         temperature: float = DEFAULT_TEMPERATURE,
         db: Any = None,
-        knowledge_provider: Any = None,
     ):
+        # Provider Contract（PR-1 / GOAL B）：None 不再代表 Legacy，必须显式注入。
+        # legacy 用 LegacyKnowledgeProvider，wiki 用 WikiKnowledgeProvider，shadow 用 ShadowKnowledgeProvider。
+        if knowledge_provider is None:
+            raise ValueError(
+                "ScoringAgentV2 requires an explicit KnowledgeProvider — "
+                "None 不再隐式等价 Legacy；请注入 LegacyKnowledgeProvider / "
+                "WikiKnowledgeProvider / ShadowKnowledgeProvider。"
+            )
         self.llm = llm
         self.llm.temperature = temperature
         self.knowledge = knowledge
         self.db = db
-        # Wiki Knowledge Provider（KNOWLEDGE_BACKEND 决定 legacy/wiki/shadow）
-        # 为 None 时保持旧链路行为（评分仍走大段 knowledge_context 注入）。
         self.knowledge_provider = knowledge_provider
         self.system_prompt = self._build_system_prompt()
         self.llm_wrapper = LLMWrapper(llm, db)
@@ -321,32 +332,96 @@ class ScoringAgentV2:
         trace_id: str = "",
         task_id: str = "",
     ) -> dict:
-        """对单个产品评分。
+        """对单个产品评分（PR-2 §8：按 provider.mode 分发，严格隔离）。
 
-        KNOWLEDGE_BACKEND 决策（文档 8 / 17.1 / 15.1）：
-          - legacy：走旧链路 `_build_system_prompt_for_product`（大段 knowledge_context）
-          - wiki：以 EvidenceBundle 为知识入口，评分只 judge；证据不充分时**禁止隐式回退 legacy**，返回 NO_SCORE
-          - shadow：旧结果返回给用户，后台同时跑 Wiki 并记录差异（_shadow_compare）
+        - wiki  → `_score_with_wiki`（只走 EvidenceBundle，绝不构建 Legacy Prompt）
+        - legacy → `_score_with_legacy`（显式 LegacyKnowledgeProvider 才可用）
+        - shadow → `_score_with_shadow`（legacy 结果给用户 + wiki 后台对比）
+
+        Mode 只来自 provider（Provider Contract §6），不允许其他推断。
+        """
+        mode = self._provider_mode()
+        if mode == "wiki":
+            return await self._score_with_wiki(
+                article,
+                product_id=product_id,
+                product_name=product_name,
+                user_id=user_id,
+                trace_id=trace_id,
+                task_id=task_id,
+            )
+        if mode == "legacy":
+            return await self._score_with_legacy(
+                article,
+                product_id=product_id,
+                product_name=product_name,
+                user_id=user_id,
+                trace_id=trace_id,
+                task_id=task_id,
+            )
+        if mode == "shadow":
+            return await self._score_with_shadow(
+                article,
+                product_id=product_id,
+                product_name=product_name,
+                user_id=user_id,
+                trace_id=trace_id,
+                task_id=task_id,
+            )
+        raise RuntimeError(f"unsupported provider mode: {mode}")
+
+    async def _score_with_wiki(
+        self,
+        article: dict,
+        *,
+        product_id: str,
+        product_name: str,
+        user_id: str = "",
+        trace_id: str = "",
+        task_id: str = "",
+    ) -> dict:
+        """严格 Wiki 评分（PR-2 §9）。
+
+        只包含 EvidenceBundle → Evidence Prompt → Judge；
+        禁止任何 Legacy Prompt / Context Slice / KnowledgeLoader 层回退。
+        证据不充分时返回 INSUFFICIENT_PRODUCT_EVIDENCE，不调用 LLM。
         """
         user_prompt = self._build_user_prompt(article)
-        provider_mode = self._provider_mode()
-
-        bundle = None
-        if provider_mode in ("wiki", "shadow"):
-            bundle = await self._collect_evidence_bundle(
-                article, product_id, product_name, user_id=user_id
-            )
-
-        evidence_prompt = None
-        if bundle is not None and bundle.verified() and bundle.is_sufficient():
-            evidence_prompt = self._build_scoring_prompt_from_bundle(
-                bundle, product_id=product_id, product_name=product_name
-            )
-
-        # 严格 Wiki（§15.1）：证据不充分 → NO_SCORE，不允许用 legacy 常识补分
-        if provider_mode == "wiki" and not evidence_prompt:
+        bundle = await self._collect_evidence_bundle(
+            article, product_id, product_name, user_id=user_id
+        )
+        if bundle is None or not (bundle.verified() and bundle.is_sufficient()):
             return self._no_score_result(product_id, product_name, bundle=bundle)
 
+        evidence_prompt = self._build_scoring_prompt_from_bundle(
+            bundle, product_id=product_id, product_name=product_name
+        )
+        result = await self._invoke_judge(
+            system_prompt=evidence_prompt,
+            user_prompt=user_prompt,
+            product_id=product_id,
+            product_name=product_name,
+            context_meta=self._evidence_meta(bundle, {}),
+            user_id=user_id,
+            trace_id=trace_id,
+            task_id=task_id,
+        )
+        # Wiki 结果附加证据元信息（保持旧行为：knowledge_backend/evidence_ids/grounded 等）
+        result.update(self._evidence_meta(bundle, {}))
+        return result
+
+    async def _score_with_legacy(
+        self,
+        article: dict,
+        *,
+        product_id: str,
+        product_name: str,
+        user_id: str = "",
+        trace_id: str = "",
+        task_id: str = "",
+    ) -> dict:
+        """显式 Legacy 评分（PR-2 §10）：旧链路，只允许 LegacyKnowledgeProvider 触发。"""
+        user_prompt = self._build_user_prompt(article)
         legacy_prompt, legacy_meta = await self._build_system_prompt_for_product(
             product_id,
             product_name,
@@ -355,42 +430,62 @@ class ScoringAgentV2:
             task_id=task_id,
             trace_id=trace_id,
         )
-
-        # 主评分的系统提示词：wiki 用证据提示词；legacy/shadow 用旧提示词（用户结果不变）
-        if provider_mode == "wiki":
-            system_prompt = evidence_prompt
-            context_meta = self._evidence_meta(bundle, legacy_meta)
-        else:
-            system_prompt = legacy_prompt
-            context_meta = legacy_meta
-
-        result = await self._invoke_judge(
-            system_prompt=system_prompt,
+        return await self._invoke_judge(
+            system_prompt=legacy_prompt,
             user_prompt=user_prompt,
             product_id=product_id,
             product_name=product_name,
-            context_meta=context_meta,
+            context_meta=legacy_meta,
             user_id=user_id,
             trace_id=trace_id,
             task_id=task_id,
         )
 
-        # shadow：后台再跑一次 Wiki 评分，对比差异但不影响用户可见结果
-        if provider_mode == "shadow" and evidence_prompt:
+    async def _score_with_shadow(
+        self,
+        article: dict,
+        *,
+        product_id: str,
+        product_name: str,
+        user_id: str = "",
+        trace_id: str = "",
+        task_id: str = "",
+    ) -> dict:
+        """显式 Shadow 双跑（PR-2 §11）：legacy 结果给用户 + wiki 后台对比。
+
+        Legacy KnowledgeProvider 故障不影响本方法（shadow 由 ShadowKnowledgeProvider 显式触发）。
+        """
+        user_prompt = self._build_user_prompt(article)
+        legacy_result = await self._score_with_legacy(
+            article,
+            product_id=product_id,
+            product_name=product_name,
+            user_id=user_id,
+            trace_id=trace_id,
+            task_id=task_id,
+        )
+        bundle = await self._collect_evidence_bundle(
+            article, product_id, product_name, user_id=user_id
+        )
+        if bundle is not None and bundle.verified() and bundle.is_sufficient():
+            evidence_prompt = self._build_scoring_prompt_from_bundle(
+                bundle, product_id=product_id, product_name=product_name
+            )
             wiki_result = await self._invoke_judge(
                 system_prompt=evidence_prompt,
                 user_prompt=user_prompt,
                 product_id=product_id,
                 product_name=product_name,
-                context_meta=self._evidence_meta(bundle, legacy_meta),
+                context_meta=self._evidence_meta(bundle, {}),
                 user_id=user_id,
                 trace_id=trace_id,
                 task_id=task_id,
             )
-            result["_shadow_compare"] = {
-                "legacy_score": result.get("relevance", 0),
+            legacy_result["_shadow_compare"] = {
+                "legacy_score": legacy_result.get("relevance", 0),
                 "wiki_score": wiki_result.get("relevance", 0),
-                "score_delta": wiki_result.get("relevance", 0) - result.get("relevance", 0),
+                "score_delta": wiki_result.get("relevance", 0)
+                - legacy_result.get("relevance", 0),
                 "wiki_status": bundle.status,
                 "wiki_coverage": bundle.coverage,
                 "wiki_grounded": bundle.confidence >= 0.8,
@@ -398,10 +493,7 @@ class ScoringAgentV2:
                 "wiki_pages_read": len(bundle.visited_pages),
                 "evidence_count": len(bundle.evidence),
             }
-
-        if bundle is not None and provider_mode == "wiki":
-            result.update(self._evidence_meta(bundle, {}))
-        return result
+        return legacy_result
 
     @staticmethod
     def _no_score_result(product_id: str, product_name: str, *, bundle: Any = None) -> dict:
@@ -482,16 +574,8 @@ class ScoringAgentV2:
     # ── Wiki 证据集成（PR-07）────────────────────────────────
 
     def _provider_mode(self) -> str:
-        # Hard Gate (GOAL B): 不允许隐式 legacy 默认值。
-        # 未装配 KnowledgeProvider 时直接 fail-fast，禁止闪回 legacy 常识打分。
-        if self.knowledge_provider is None:
-            from agent.wiki.runtime_factory import KnowledgeRuntimeError
-
-            raise KnowledgeRuntimeError(
-                "ScoringAgentV2.knowledge_provider is None — KNOWLEDGE_BACKEND "
-                "must be explicitly configured (default=wiki) and the runtime "
-                "assembled through the unified factory. Refusing legacy fallback."
-            )
+        # Provider Contract（PR-1 §6）：Mode 只来自 provider，禁止按 None/环境变量推断。
+        # __init__ 已保证 knowledge_provider 非 None。
         return self.knowledge_provider.mode
 
     async def _collect_evidence_bundle(

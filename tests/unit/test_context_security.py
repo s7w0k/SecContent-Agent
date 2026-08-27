@@ -24,6 +24,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "backend"))
 
+from agent.wiki.provider import LegacyKnowledgeProvider
 from config import Settings
 
 # ═══════════════════════════════════════════════════════════════
@@ -352,7 +353,9 @@ async def test_scorer_active_no_double_injection(tmp_path, monkeypatch):
     knowledge.as_scoring_prompt.return_value = "LEGACY_GLOBAL_KNOWLEDGE_SENTINEL"
 
     db = _make_db()
-    scorer = ScoringAgentV2(llm=llm, knowledge=knowledge, db=db)
+    scorer = ScoringAgentV2(
+        llm=llm, knowledge=knowledge, db=db, knowledge_provider=LegacyKnowledgeProvider()
+    )
     prompt, telemetry = await scorer._build_system_prompt_for_product(
         "prod-1", "星海外部攻击面管理平台", user_id="u-1"
     )

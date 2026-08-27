@@ -17,6 +17,7 @@ from langchain_core.messages import AIMessage
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "backend"))
 
+from agent.wiki.provider import LegacyKnowledgeProvider
 
 # ═══════════════════════════════════════════════════════════════
 # Fixtures
@@ -110,7 +111,11 @@ def scorer(mock_llm_high, knowledge):
     """测试用 ScoringAgentV2"""
     from agent.scorer_v2 import ScoringAgentV2
 
-    return ScoringAgentV2(llm=mock_llm_high, knowledge=knowledge)
+    return ScoringAgentV2(
+        llm=mock_llm_high,
+        knowledge=knowledge,
+        knowledge_provider=LegacyKnowledgeProvider(),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -275,7 +280,9 @@ class TestScoringFlow:
     async def test_score_single_below_threshold(self, mock_llm_low, knowledge, sample_article):
         from agent.scorer_v2 import ScoringAgentV2
 
-        scorer_low = ScoringAgentV2(llm=mock_llm_low, knowledge=knowledge)
+        scorer_low = ScoringAgentV2(
+            llm=mock_llm_low, knowledge=knowledge, knowledge_provider=LegacyKnowledgeProvider()
+        )
         result = await scorer_low.score_single(sample_article)
         assert result["is_pr_candidate"] is False
         assert result["pr_total_score"] == 55  # 25 + 30
@@ -286,7 +293,9 @@ class TestScoringFlow:
     ):
         from agent.scorer_v2 import ScoringAgentV2
 
-        scorer_low = ScoringAgentV2(llm=mock_llm_low, knowledge=knowledge)
+        scorer_low = ScoringAgentV2(
+            llm=mock_llm_low, knowledge=knowledge, knowledge_provider=LegacyKnowledgeProvider()
+        )
         result = await scorer_low.score_single(
             sample_article,
             threshold=50,
@@ -319,7 +328,9 @@ class TestScoringFlow:
         from agent.scorer_v2 import ScoringAgentV2
 
         mock_llm_high.ainvoke = AsyncMock(side_effect=Exception("API timeout"))
-        scorer_err = ScoringAgentV2(llm=mock_llm_high, knowledge=knowledge)
+        scorer_err = ScoringAgentV2(
+            llm=mock_llm_high, knowledge=knowledge, knowledge_provider=LegacyKnowledgeProvider()
+        )
         result = await scorer_err.score_single(sample_article)
         assert result["_fallback"] is True
         assert "API timeout" in result["score_reason"]
@@ -344,7 +355,9 @@ class TestScoringFlow:
                 ),
             ]
         )
-        scorer_retry = ScoringAgentV2(llm=mock_llm_high, knowledge=knowledge)
+        scorer_retry = ScoringAgentV2(
+            llm=mock_llm_high, knowledge=knowledge, knowledge_provider=LegacyKnowledgeProvider()
+        )
         result = await scorer_retry.score_single(sample_article)
         assert result["_fallback"] is False
         assert result["product_relevance"] == 88
@@ -547,7 +560,9 @@ class TestProductKnowledgeInjection:
         entries_col.find = MagicMock(side_effect=fake_find)
 
         db = {"user_products": user_products_col, "user_knowledge_entries": entries_col}
-        scorer = ScoringAgentV2(llm=llm, knowledge=knowledge, db=db)
+        scorer = ScoringAgentV2(
+            llm=llm, knowledge=knowledge, db=db, knowledge_provider=LegacyKnowledgeProvider()
+        )
 
         prompt, _context_meta = await scorer._build_system_prompt_for_product(
             "user-prod-1", "星海外部攻击面管理平台", user_id="u-1"
@@ -568,7 +583,9 @@ class TestProductKnowledgeInjection:
         llm.temperature = None
         knowledge = MagicMock()
         knowledge.as_scoring_prompt.return_value = "GLOBAL_KNOWLEDGE_PLACEHOLDER"
-        scorer = ScoringAgentV2(llm=llm, knowledge=knowledge, db=None)
+        scorer = ScoringAgentV2(
+            llm=llm, knowledge=knowledge, db=None, knowledge_provider=LegacyKnowledgeProvider()
+        )
 
         prompt, context_meta = await scorer._build_system_prompt_for_product(
             "user-prod-1", "星海外部攻击面管理平台", user_id="u-1"
@@ -594,7 +611,9 @@ class TestScoreConcurrentBestProduct:
         llm.temperature = None
         knowledge = MagicMock()
         knowledge.as_scoring_prompt.return_value = "GLOBAL_KNOWLEDGE_PLACEHOLDER"
-        scorer = ScoringAgentV2(llm=llm, knowledge=knowledge, db=None)
+        scorer = ScoringAgentV2(
+            llm=llm, knowledge=knowledge, db=None, knowledge_provider=LegacyKnowledgeProvider()
+        )
 
         relevances = {"ai-bom": 70, "agent-security": 90}
 
@@ -644,7 +663,9 @@ class TestScoreConcurrentBestProduct:
         llm.temperature = None
         knowledge = MagicMock()
         knowledge.as_scoring_prompt.return_value = "GLOBAL_KNOWLEDGE_PLACEHOLDER"
-        scorer = ScoringAgentV2(llm=llm, knowledge=knowledge, db=None)
+        scorer = ScoringAgentV2(
+            llm=llm, knowledge=knowledge, db=None, knowledge_provider=LegacyKnowledgeProvider()
+        )
 
         async def fake_score(
             article,

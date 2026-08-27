@@ -17,6 +17,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services", "backend"))
 
+from agent.wiki.provider import LegacyKnowledgeProvider
 
 # ═══════════════════════════════════════════════════════════════
 # Fixtures
@@ -227,7 +228,9 @@ class TestScoringAgentV2RefreshPrompt:
         )
 
         llm = MagicMock()
-        scorer = ScoringAgentV2(llm=llm, knowledge=knowledge, db=None)
+        scorer = ScoringAgentV2(
+            llm=llm, knowledge=knowledge, db=None, knowledge_provider=LegacyKnowledgeProvider()
+        )
 
         original_prompt = scorer.system_prompt
         assert "测试产品" in original_prompt
@@ -248,7 +251,9 @@ class TestScoringAgentV2RefreshPrompt:
         knowledge.as_scoring_prompt.return_value = "自定义评分Prompt内容"
 
         llm = MagicMock()
-        scorer = ScoringAgentV2(llm=llm, knowledge=knowledge, db=None)
+        scorer = ScoringAgentV2(
+            llm=llm, knowledge=knowledge, db=None, knowledge_provider=LegacyKnowledgeProvider()
+        )
 
         original_prompt = scorer.system_prompt
         assert "自定义评分Prompt内容" in original_prompt
