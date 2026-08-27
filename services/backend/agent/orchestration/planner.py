@@ -6,7 +6,6 @@ LLM 只提供一个受约束的 intent，服务端把白名单映射为 Skill St
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Collection
 
 from agent.orchestration.contracts import OrchestratorChoice, SkillPlan, SkillPlanStep
@@ -73,7 +72,9 @@ class OrchestratorPlanner:
             )
 
         return SkillPlan(
-            plan_id=f"plan-{uuid.uuid4().hex[:12]}",
+            # 确定性 plan_id（EPIC-A §9 / §38）：同一 run_id 重建得到同一 plan，
+            # 保证 retry/resume 的 idempotency_key（task+plan+step+snapshot）稳定，避免重复写副作用。
+            plan_id=f"plan-{run_id}",
             run_id=run_id,
             goal=goal or choice.desired_output or choice.intent,
             intent=choice.intent,

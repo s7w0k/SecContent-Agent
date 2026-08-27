@@ -341,11 +341,11 @@ class Settings(BaseSettings):
         default=3, ge=1, le=10, description="Worker 最大尝试次数"
     )
 
-    # ── 新架构生产接管（Cutover 计划 §27 / §49 / §118）────────────
+    # ── 新架构生产接管（Cutover 计划 §27 / §49 / §118；Final Closure §44）────
     # 唯一 authoritative rollout 配置。legacy=显式回滚；skill_planned=正式新主链。
-    # 过渡期默认 legacy 以保持既有行为；最终 Cutover 后切换为 skill_planned（PR-12）。
+    # Final Closure 后默认 skill_planned（§44/§46）：未配置走新主链，显式 legacy 才回滚。
     AGENT_EXECUTION_MODE: str = Field(
-        default="legacy",
+        default="skill_planned",
         pattern=r"^(legacy|skill_shadow|skill_canary|skill_planned)$",
         description="生产执行模式：legacy / skill_shadow / skill_canary / skill_planned",
     )

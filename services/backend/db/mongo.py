@@ -979,6 +979,27 @@ class MongoDB:
                     name="idx_lease_owner",
                 ),
             ],
+            # ── skill_planned Durable Resume（Final Closure EPIC-A §5 / §6）──
+            "agent_execution_runs": [
+                IndexModel(
+                    [("run_id", ASCENDING)],
+                    unique=True,
+                    name="uq_exec_run_id",
+                ),
+                IndexModel(
+                    [("task_id", ASCENDING)],
+                    unique=True,
+                    name="uq_exec_run_task",
+                ),
+                IndexModel(
+                    [("tenant_id", ASCENDING), ("created_at", DESCENDING)],
+                    name="idx_exec_run_tenant_created",
+                ),
+                IndexModel(
+                    [("status", ASCENDING), ("updated_at", DESCENDING)],
+                    name="idx_exec_run_status_updated",
+                ),
+            ],
             "event_outbox": [
                 IndexModel(
                     [("dedup_key", ASCENDING)],

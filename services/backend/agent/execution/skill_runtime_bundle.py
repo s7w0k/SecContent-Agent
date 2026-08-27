@@ -69,6 +69,9 @@ def build_skill_runtime_bundle(
     artifact_store: Any,
     default_adapter: str = "production",
     trace_emitter: Any | None = None,
+    # ── Final Closure（EPIC-A / EPIC-B）─────────────────
+    run_store: Any | None = None,
+    reviewer: Any | None = None,
 ) -> SkillRuntimeBundle:
     """完整装配新 Skill Runtime（§13）。
 
@@ -78,6 +81,8 @@ def build_skill_runtime_bundle(
         artifact_store: 产物存储（生产 MongoArtifactStore / 测试内存 ArtifactStore）。
         default_adapter: 默认 Tool adapter。shadow 模式用 production_readonly（§26）。
         trace_emitter: 可选 span 发射器。
+        run_store: 可选 ExecutionRunStore（EPIC-A durable resume，nil-safe）。
+        reviewer: 可选 DraftReviewPolicy（EPIC-B 主链审查，nil-safe）。
 
     Returns:
         完整可执行的 SkillRuntimeBundle。
@@ -87,6 +92,7 @@ def build_skill_runtime_bundle(
     for name in registry.names():
         scopes.update(registry.get_manifest(name).required_scopes)
     scopeset = frozenset(scopes)
+    skill_snapshot = registry.skill_snapshot_hash()
 
     skill_runtime = build_skill_runtime(
         registry=registry,
@@ -99,11 +105,16 @@ def build_skill_runtime_bundle(
         skill_runtime=skill_runtime,
         scopes=scopeset,
         trace_emitter=trace_emitter,
+        run_store=run_store,
+        skill_snapshot_hash=skill_snapshot,
+        wiki_version=str(getattr(artifact_store, "wiki_version", "") or ""),
+        reviewer=reviewer,
     )
     skill_executor = SkillPlannedExecutor(
         orchestration_runtime=orchestration_runtime,
         result_adapter=ExecutionResultAdapter(),
         shadow=default_adapter == "production_readonly",
+        run_store=run_store,
     )
     return SkillRuntimeBundle(
         business_registry=business_registry,

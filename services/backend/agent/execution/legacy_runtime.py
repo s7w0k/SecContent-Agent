@@ -1,7 +1,7 @@
 """LegacyRuntimeBundle - 旧链路显式回滚通道（OneShot Cutover 计划 §9 / §22 / §83）。
 
 本次不重写/不删除旧 PipelineManagerV2 与 old MultiAgentRuntime（§83），只把它们
-包进可回滚的 Legacy Runtime（§10 封装后退役）。默认 AGENT_EXECUTION_MODE=legacy 即为显式恢复旧链（§74）。
+包进可回滚的 Legacy Runtime（§10 封装后退役）。仅在显式 legacy 模式下作为回滚通道（Final Closure §46-47）。
 """
 
 from __future__ import annotations

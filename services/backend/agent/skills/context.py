@@ -166,6 +166,8 @@ class SkillExecutionContext:
             run_id=self.request.run_id,
             step_id=step_id,
             parent_ref=parent_ref,
+            tenant_id=self.request.tenant_id,
+            user_id=self.request.user_id,
         )
 
     def emit_trace(self, event_type: str, **fields: Any) -> None:

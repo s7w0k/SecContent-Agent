@@ -33,6 +33,7 @@ from agent.execution.legacy_runtime import build_legacy_runtime
 from agent.execution.metrics import ExecutionMetricsClient
 from agent.execution.rollout import LevelCanaryRollout, ShadowSampler
 from agent.execution.router import ExecutionRouter
+from agent.execution.run_store import ExecutionRunStore
 from agent.execution.shadow_executor import ShadowExecutor
 from agent.execution.skill_executor import SkillPlannedExecutor
 from agent.execution.skill_runtime_bundle import build_skill_runtime_bundle
@@ -89,6 +90,7 @@ def build_production_execution_runtime(
     legacy_executor: WorkflowExecutor | None = None,
     product_catalog: Any = None,
     product_matcher: Any = None,
+    review_policy: Any | None = None,
 ) -> ProductionExecutionRuntime:
     """装配生产 Execution 运行时。main 与 worker 统一调用（§20 / §21）。
 
@@ -101,6 +103,8 @@ def build_production_execution_runtime(
             依赖，用于构建 ProductionBusinessToolService（§14）。need_skill 时必须提供。
         legacy_executor: 由 worker 注入的旧链执行器（§9 / §122）；main 不注入。
         template_repository / product_catalog / product_matcher: 可选业务依赖。
+        review_policy: 可选 DraftReviewPolicy（EPIC-B）。skill_planned 模式传入后
+            Reviewer 进入 Draft 主链；None 时不接入（保持环境可运行）。
 
     Returns:
         满足对应模式装配矩阵（§8）的 ProductionExecutionRuntime。
@@ -146,7 +150,10 @@ def build_production_execution_runtime(
     orchestration_runtime: OrchestrationRuntime | None = None
     skill_snapshot = ""
     shadow_executor: ShadowExecutor | None = None
+    run_store: Any | None = None
     if need_skill and business_registry is not None and business_executor is not None and artifact_store is not None:
+        # Durable Resume（EPIC-A §5 / §8）：持久化执行步进，skill_planned 可幂等恢复。
+        run_store = ExecutionRunStore(db) if db is not None else None
         default_adapter = "production_readonly" if mode == "skill_shadow" else "production"
         skill_bundle = build_skill_runtime_bundle(
             business_registry=business_registry,
@@ -154,6 +161,8 @@ def build_production_execution_runtime(
             artifact_store=artifact_store,
             default_adapter=default_adapter,
             trace_emitter=None,
+            run_store=run_store,
+            reviewer=review_policy,
         )
         skill_executor = skill_bundle.skill_executor
         skill_runtime = skill_bundle.skill_runtime

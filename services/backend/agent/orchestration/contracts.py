@@ -26,6 +26,7 @@ OrchestratorStatus = Literal[
     "WAITING_APPROVAL",
     "COMPLETED",
     "FAILED",
+    "BLOCKED",
 ]
 
 

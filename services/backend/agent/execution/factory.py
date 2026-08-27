@@ -82,12 +82,23 @@ def build_orchestration_runtime(
     skill_runtime: SkillRuntime,
     scopes: frozenset[str] | None = None,
     trace_emitter: Any | None = None,
+    # Final Closure（EPIC-A / EPIC-B）
+    run_store: Any | None = None,
+    skill_snapshot_hash: str = "",
+    wiki_version: str = "",
+    task_id: str = "",
+    reviewer: Any | None = None,
 ) -> OrchestrationRuntime:
     return OrchestrationRuntime(
         skill_runtime=skill_runtime,
         scopes=scopes,
         trace_emitter=trace_emitter,
         default_intent="full_workflow",
+        run_store=run_store,
+        skill_snapshot_hash=skill_snapshot_hash,
+        wiki_version=wiki_version,
+        task_id=task_id,
+        reviewer=reviewer,
     )
 
 
@@ -109,7 +120,7 @@ def build_execution_runtime(
         legacy_executor: 由装配侧（worker）注入绑定了旧执行链的 LegacyPipelineExecutor。
         trace_emitter: 可选 span 发射器。
     """
-    mode = getattr(settings, "AGENT_EXECUTION_MODE", "legacy")
+    mode = settings.AGENT_EXECUTION_MODE
     business_snapshot = ""
     registry: ExecutableSkillRegistry | None = None
     skill_runtime: SkillRuntime | None = None
@@ -187,7 +198,7 @@ def build_execution_runtime(
             seed=getattr(settings, "AGENT_CANARY_HASH_SEED", "seccontent-agent-v1"),
         )
     else:
-        mode = getattr(settings, "AGENT_EXECUTION_MODE", "legacy")
+        mode = settings.AGENT_EXECUTION_MODE
         logger.warning("business_registry/executor 未提供，仅装配 legacy 执行（mode=%s）", mode)
 
     router = ExecutionRouter(

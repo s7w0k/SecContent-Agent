@@ -4,7 +4,7 @@
   - legacy 包装旧链（注入 runner）并映射统一 ExecutionResult，且本文件不依赖 api.pipeline
   - skill executor 经 OrchestrationRuntime.run 产出 ExecutionResult（engine=skill_planned）
   - result adapter 把 OrchestratorState 的 Artifact/status 映射为统一结果
-  - skill resume 显式抛 ResumeNotSupported（§66 幂等 replay 未落 checkpoint 前不支持）
+  - skill resume 在未装配 run_store 时显式抛 ResumeNotSupported（EPIC-A §14）
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ class _OrchStub:
     def __init__(self, state: OrchestratorState) -> None:
         self.state = state
         self.kwargs: dict = {}
+        self.run_store = None  # SkillPlannedExecutor 缺省读 runtime.run_store（EPIC-A §36）
 
     async def run(self, **kwargs) -> OrchestratorState:
         self.kwargs = kwargs
@@ -121,7 +122,8 @@ class TestSkillExecutor:
         result = await exec_.execute(_req())
         assert result.status == "FAILED"
 
-    async def test_resume_not_supported(self) -> None:
+    async def test_resume_without_run_store_raises(self) -> None:
+        """未装配 run_store 时 resume 显式抛 ResumeNotSupported（EPIC-A §14）。"""
         state = OrchestratorState(run_id="run-3", goal="g")
         exec_ = SkillPlannedExecutor(orchestration_runtime=_OrchStub(state))  # type: ignore[arg-type]
         with pytest.raises(ResumeNotSupported):

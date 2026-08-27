@@ -30,6 +30,12 @@ class OrchestrationRuntime:
         trace_emitter: Any | None = None,
         default_intent: Intent = "full_workflow",
         condition_checker: ConditionChecker | None = None,
+        # ── Final Closure（EPIC-A / EPIC-B）─────────────────
+        run_store: Any | None = None,
+        skill_snapshot_hash: str = "",
+        wiki_version: str = "",
+        task_id: str = "",
+        reviewer: Any | None = None,
     ) -> None:
         self.agent = OrchestratorAgent(
             skill_runtime=skill_runtime,
@@ -40,7 +46,17 @@ class OrchestrationRuntime:
             trace_emitter=trace_emitter,
             default_intent=default_intent,
             condition_checker=condition_checker,
+            run_store=run_store,
+            skill_snapshot_hash=skill_snapshot_hash,
+            wiki_version=wiki_version,
+            task_id=task_id,
+            reviewer=reviewer,
         )
+        self.run_store = run_store
+        self.skill_snapshot_hash = skill_snapshot_hash
+        self.wiki_version = wiki_version
+        self.task_id = task_id
+        self.reviewer = reviewer
 
     async def run(
         self,
@@ -49,9 +65,26 @@ class OrchestrationRuntime:
         user_id: str,
         tenant_id: str,
         trace_id: str = "",
+        task_id: str = "",
     ) -> OrchestratorState:
         return await self.agent.run(
             goal=goal,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            trace_id=trace_id,
+            task_id=task_id,
+        )
+
+    async def resume(
+        self,
+        *,
+        run_record: Any,
+        user_id: str,
+        tenant_id: str,
+        trace_id: str = "",
+    ) -> OrchestratorState:
+        return await self.agent.resume(
+            run_record=run_record,
             user_id=user_id,
             tenant_id=tenant_id,
             trace_id=trace_id,
