@@ -2,7 +2,6 @@
 
 智能体安全 PR 情报 Agent 系统 - 从**内容爬取 -> AI 分类 -> 双维度打分 -> PR 草稿生成 -> 内容与话术检查 -> 对话改稿 -> 用户反馈与风格学习**的端到端自动化系统。
 
-- **仓库**: https://gitee.com/s7w0k/pr-agent-demo
 - **部署**: Docker Compose 一键启动
 - **技术栈**: Python 3.12 / FastAPI / LangGraph / MongoDB / Redis + ARQ / React + Ant Design / DeepSeek
 
@@ -13,7 +12,6 @@
 ### 1. 克隆并配置
 
 ```bash
-git clone https://gitee.com/s7w0k/pr-agent-demo.git
 cd pr-agent-demo
 cp .env.example .env
 # 编辑 .env，填入 DEEPSEEK_API_KEY，并将 JWT_SECRET 替换为 32 字符以上随机强密钥
