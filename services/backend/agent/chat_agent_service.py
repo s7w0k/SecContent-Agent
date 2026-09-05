@@ -139,6 +139,9 @@ class ChatAgentService:
         self.explicit_plan_rollout_percent = int(
             getattr(_settings, "AGENT_EXPLICIT_PLAN_ROLLOUT_PERCENT", 100)
         )
+        # 运行预算护栏（P2）：单次 run 工具调用上限与总时长
+        self.max_tool_calls = int(getattr(_settings, "AGENT_RUN_MAX_TOOL_CALLS", 30))
+        self.timeout_seconds = int(getattr(_settings, "AGENT_RUN_TIMEOUT_SECONDS", 600))
         self._skill_registry_cache = None
         self._memory_retriever = None
         # 所有工具 role scope 并集，作为单次调用注入的 ToolRequestContext.scopes
@@ -591,6 +594,8 @@ class ChatAgentService:
                     if self._explicit_plan_allowed(run_context.user_id)
                     else None
                 ),
+                max_tool_calls=self.max_tool_calls,
+                timeout_seconds=self.timeout_seconds,
             )
             live.engine = engine
             if resumed:

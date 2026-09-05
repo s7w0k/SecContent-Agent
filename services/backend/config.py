@@ -537,6 +537,12 @@ class Settings(BaseSettings):
     AGENT_EXPLICIT_PLAN_ROLLOUT_PERCENT: int = Field(
         default=100, ge=0, le=100, description="显式 Plan 按用户灰度百分比（0=关闭，100=全量）"
     )
+    AGENT_RUN_MAX_TOOL_CALLS: int = Field(
+        default=30, ge=1, le=500, description="对话引擎单次 run 最大工具调用数（运行预算护栏）"
+    )
+    AGENT_RUN_TIMEOUT_SECONDS: int = Field(
+        default=600, ge=30, le=3600, description="对话引擎单次 run 最大执行时长（秒）"
+    )
     CAPACITY_SAFETY_FACTOR: float = Field(
         default=0.8, gt=0, le=1, description="容量模型安全系数（产出容量=理论值×系数）"
     )

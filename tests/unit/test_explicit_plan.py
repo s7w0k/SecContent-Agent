@@ -211,3 +211,35 @@ async def test_engine_skips_plan_when_resuming_from_snapshot():
     )
     planner.assert_not_awaited()
     assert all(event_type != "plan" for _, event_type, _ in events)
+
+
+# ── 运行预算护栏（P2） ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_engine_stops_when_tool_call_budget_exceeded():
+    """单次 run 超过 max_tool_calls 即停止为 budget_exceeded，不再进入下一轮。"""
+    engine, events = _engine(max_tool_calls=1)
+    engine._invoke = AsyncMock(  # type: ignore[assignment]
+        side_effect=[
+            AIMessage(
+                content="",
+                tool_calls=[{"id": "c1", "name": "generate_draft", "args": {}}],
+            ),
+            AIMessage(content="完成", tool_calls=[]),
+        ]
+    )
+    result = await engine.run(system_prompt="sys", history=[], user_message="生成 PR 稿")
+
+    assert result["status"] == "budget_exceeded"
+    assert result["final_text"] == ""
+    assert any(event_type == "budget_exceeded" for _, event_type, _ in events)
+
+
+@pytest.mark.asyncio
+async def test_engine_completes_without_budget_limit_by_default():
+    engine, events = _engine()
+    engine._invoke = AsyncMock(return_value=AIMessage(content="完成", tool_calls=[]))  # type: ignore[assignment]
+    result = await engine.run(system_prompt="sys", history=[], user_message="hi")
+    assert result["status"] == "completed"
+    assert all(event_type != "budget_exceeded" for _, event_type, _ in events)

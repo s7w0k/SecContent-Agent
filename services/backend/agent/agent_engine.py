@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable
 
@@ -249,6 +250,9 @@ class AgentEngine:
         # 显式 Plan（形态 A，改造计划 P1）：传入后每条消息执行前先产出步骤计划并推 SSE 'plan'。
         # 默认 None = 关闭，行为与旧版完全一致；initial_messages（断点续跑）不再重复出计划。
         explicit_planner: Callable[[str], Awaitable[Any]] | None = None,
+        # 运行预算护栏（P2）：None = 不限制（默认），与旧版行为一致。
+        max_tool_calls: int | None = None,
+        timeout_seconds: int | None = None,
     ):
         self.llm_wrapper = llm_wrapper
         self.executor = executor
@@ -272,6 +276,9 @@ class AgentEngine:
         self.explicit_planner = explicit_planner
         self._plan_order: list[str] = []
         self._plan_steps: dict[str, dict[str, Any]] = {}
+        # 运行预算护栏
+        self.max_tool_calls = max_tool_calls
+        self.timeout_seconds = timeout_seconds
 
     # ── 中断协作 ───────────────────────────────────────────
     def stop(self) -> None:
@@ -393,10 +400,35 @@ class AgentEngine:
         turn = 0
         interrupted = False
         plan_nudges = 0
+        started_at = time.monotonic()
+        tool_calls_done = 0
 
         while turn < self.max_rounds:
             if self._interruptible_point():
                 interrupted = True
+                break
+            # ── 运行预算护栏（P2）：工具调用数 / 总时长，防失控烧成本 ──
+            if self.max_tool_calls is not None and tool_calls_done >= self.max_tool_calls:
+                status = "budget_exceeded"
+                await self._emit(
+                    "budget_exceeded",
+                    {
+                        "run_id": self.run_context.run_id,
+                        "kind": "tool_calls",
+                        "limit": self.max_tool_calls,
+                    },
+                )
+                break
+            if self.timeout_seconds is not None and (time.monotonic() - started_at) > self.timeout_seconds:
+                status = "budget_timeout"
+                await self._emit(
+                    "budget_exceeded",
+                    {
+                        "run_id": self.run_context.run_id,
+                        "kind": "timeout",
+                        "limit": self.timeout_seconds,
+                    },
+                )
                 break
             turn += 1
             response: AIMessage = await self._invoke(bound_llm, messages, turn)
@@ -480,6 +512,7 @@ class AgentEngine:
                     "tool_call",
                     {"run_id": self.run_context.run_id, "id": call_id, "name": name, "args": args},
                 )
+                tool_calls_done += 1
                 trace.append({"type": "tool", "name": name})
 
                 # ── HITL 审批门：高风险/写操作在真正执行前先征求用户确认 ──
