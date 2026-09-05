@@ -50,9 +50,7 @@ export function MainLayout() {
   const [tab, setTab] = useState('agent-chat');
   const [templateDirty, setTemplateDirty] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
-  const [dashboardEntry] = useState<{ sourceType?: string; refreshKey: number }>(
-    { refreshKey: 0 },
-  );
+  const [dashboardEntry] = useState<{ sourceType?: string; refreshKey: number }>({ refreshKey: 0 });
   const { user } = useAuth();
   const menuItems = user?.is_developer
     ? [...baseMenuItems, { key: 'dev-logs', icon: <DatabaseOutlined />, label: '开发者日志' }]

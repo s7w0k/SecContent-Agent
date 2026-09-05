@@ -8,15 +8,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
-import {
-  Alert,
-  Avatar,
-  Button,
-  Input,
-  Select,
-  Typography,
-  message,
-} from 'antd';
+import { Alert, Avatar, Button, Input, Select, Typography, message } from 'antd';
 import {
   ApiOutlined,
   ArrowUpOutlined,
@@ -112,7 +104,11 @@ function toolMeta(name: string): { label: string; color: string; icon: ReactNode
     match_products: { label: '匹配关联产品', color: '#ec4899', icon: <ApiOutlined /> },
     score_article: { label: 'PR 价值评估', color: '#f59e0b', icon: <StarOutlined /> },
     generate_draft: { label: '生成 PR 初稿', color: '#6366f1', icon: <RocketOutlined /> },
-    review_draft: { label: '合规与质量检查', color: '#10b981', icon: <SafetyCertificateOutlined /> },
+    review_draft: {
+      label: '合规与质量检查',
+      color: '#10b981',
+      icon: <SafetyCertificateOutlined />,
+    },
     revise_draft: { label: '改写 / 润色稿件', color: '#0ea5e9', icon: <SyncOutlined /> },
     save_draft_version: { label: '保存历史版本', color: '#64748b', icon: <SaveOutlined /> },
     export_draft: { label: '导出稿件', color: '#334155', icon: <ExportOutlined /> },
@@ -179,7 +175,10 @@ function PlanCard({ steps }: { steps: PlanStep[] }) {
           const completed = s.status === 'completed';
           const tools = s.tools.map((name) => toolMeta(name).label);
           return (
-            <div key={s.step_id || `p-${i}`} style={{ display: 'flex', gap: 10, padding: '5px 2px', alignItems: 'flex-start' }}>
+            <div
+              key={s.step_id || `p-${i}`}
+              style={{ display: 'flex', gap: 10, padding: '5px 2px', alignItems: 'flex-start' }}
+            >
               <span
                 style={{
                   display: 'inline-flex',
@@ -274,7 +273,9 @@ function Summary({ result }: { result: Record<string, unknown> }) {
       (c) => items.push(chip(String(c.name ?? c.product_id), '#ec4899')),
     );
   } else if (kind === 'score') {
-    items.push(chip(`总分 ${Number(s.total_score).toFixed(1)}`, s.worth_writing ? '#10b981' : '#f59e0b'));
+    items.push(
+      chip(`总分 ${Number(s.total_score).toFixed(1)}`, s.worth_writing ? '#10b981' : '#f59e0b'),
+    );
     items.push(chip(`产品相关 ${Number(s.product_relevance).toFixed(0)}`, '#6366f1'));
     items.push(chip(`事件影响 ${Number(s.event_impact).toFixed(0)}`, '#f59e0b'));
   } else if (kind === 'draft') {
@@ -415,7 +416,10 @@ export default function AgentChatPage() {
 
   // 稿件库：可选为"当前附件"注入 Agent 上下文，用于对话改稿
   const [manuscripts, setManuscripts] = useState<Manuscript[]>([]);
-  const [currentManuscript, setCurrentManuscript] = useState<Pick<Manuscript, 'manuscript_id' | 'title'> | null>(null);
+  const [currentManuscript, setCurrentManuscript] = useState<Pick<
+    Manuscript,
+    'manuscript_id' | 'title'
+  > | null>(null);
   // 按保存日期筛选（YYYY-MM-DD，空串表示不过滤）
   const [msFilterDate, setMsFilterDate] = useState('');
 
@@ -615,7 +619,9 @@ export default function AgentChatPage() {
         break;
       case 'interrupted':
         setIsGenerating(false);
-        setResumeHint('任务已中断，进度已保留。输入“继续”即可从中断处续跑；直接发其他内容将开启新一轮对话。');
+        setResumeHint(
+          '任务已中断，进度已保留。输入“继续”即可从中断处续跑；直接发其他内容将开启新一轮对话。',
+        );
         break;
       case 'resumed':
         setResumeHint('');
@@ -661,27 +667,23 @@ export default function AgentChatPage() {
     }
 
     closeES();
-    const es = agentEngineApi.openEventSource(
-      thread.thread_id,
-      handleEvent,
-      async () => {
-        esRef.current = null;
-        setIsGenerating(false);
-        try {
-          const t = await agentEngineApi.getThread(thread.thread_id);
-          setActiveThread(t);
-          setEntries([]);
-          setThinking([]);
-          thinkingRef.current = [];
-          setThreads((prev) => {
-            const rest = prev.filter((x) => x.thread_id !== t.thread_id);
-            return [t, ...rest];
-          });
-        } catch {
-          /* ignore */
-        }
-      },
-    );
+    const es = agentEngineApi.openEventSource(thread.thread_id, handleEvent, async () => {
+      esRef.current = null;
+      setIsGenerating(false);
+      try {
+        const t = await agentEngineApi.getThread(thread.thread_id);
+        setActiveThread(t);
+        setEntries([]);
+        setThinking([]);
+        thinkingRef.current = [];
+        setThreads((prev) => {
+          const rest = prev.filter((x) => x.thread_id !== t.thread_id);
+          return [t, ...rest];
+        });
+      } catch {
+        /* ignore */
+      }
+    });
     esRef.current = es;
   };
 
@@ -794,9 +796,9 @@ export default function AgentChatPage() {
 
   const groupedThreads = useMemo(() => {
     const buckets: Record<string, AgentEngineThread[]> = {
-      '今天': [],
-      '昨天': [],
-      '更早': [],
+      今天: [],
+      昨天: [],
+      更早: [],
     };
     const now = new Date();
     const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -812,7 +814,14 @@ export default function AgentChatPage() {
   }, [filteredThreads]);
 
   return (
-    <div style={{ display: 'flex', height: 'calc(100vh - 64px)', background: SOFT_BG, overflow: 'hidden' }}>
+    <div
+      style={{
+        display: 'flex',
+        height: 'calc(100vh - 64px)',
+        background: SOFT_BG,
+        overflow: 'hidden',
+      }}
+    >
       <style>{`
         @keyframes pulse{
           0%,100%{opacity:1;transform:scale(1)}
@@ -868,7 +877,14 @@ export default function AgentChatPage() {
             block
             icon={<PlusOutlined />}
             onClick={onNewChat}
-            style={{ height: 40, borderRadius: 12, background: BRAND_GRADIENT, border: 'none', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', fontWeight: 600 }}
+            style={{
+              height: 40,
+              borderRadius: 12,
+              background: BRAND_GRADIENT,
+              border: 'none',
+              boxShadow: '0 4px 12px rgba(99,102,241,0.3)',
+              fontWeight: 600,
+            }}
           >
             开始新对话
           </Button>
@@ -883,7 +899,12 @@ export default function AgentChatPage() {
             onChange={(e) => setSidebarQuery(e.target.value)}
             allowClear
             variant="borderless"
-            style={{ background: CARD_BG, borderRadius: 12, border: `1px solid ${BORDER}`, boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}
+            style={{
+              background: CARD_BG,
+              borderRadius: 12,
+              border: `1px solid ${BORDER}`,
+              boxShadow: '0 1px 2px rgba(16,24,40,0.04)',
+            }}
           />
         </div>
 
@@ -897,66 +918,93 @@ export default function AgentChatPage() {
           ) : (
             groupedThreads.map((g) => (
               <div key={g.label}>
-                  <div style={{ padding: '12px 10px 4px', fontSize: 11.5, color: TEXT_WEAK, fontWeight: 600, letterSpacing: 0.5 }}>
-                    {g.label}
-                  </div>
-                  {g.items.map((t) => {
-                    const isActive = t.thread_id === activeId;
-                    return (
-                      <div
-                        key={t.thread_id}
-                        onClick={() => selectThread(t.thread_id)}
+                <div
+                  style={{
+                    padding: '12px 10px 4px',
+                    fontSize: 11.5,
+                    color: TEXT_WEAK,
+                    fontWeight: 600,
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  {g.label}
+                </div>
+                {g.items.map((t) => {
+                  const isActive = t.thread_id === activeId;
+                  return (
+                    <div
+                      key={t.thread_id}
+                      onClick={() => selectThread(t.thread_id)}
+                      style={{
+                        margin: '4px 0',
+                        cursor: 'pointer',
+                        border: `1px solid ${isActive ? 'rgba(99,102,241,0.35)' : BORDER}`,
+                        borderRadius: 12,
+                        padding: '10px 12px',
+                        background: isActive ? '#ffffff' : 'rgba(255,255,255,0.6)',
+                        boxShadow: isActive
+                          ? '0 3px 12px rgba(99,102,241,0.16)'
+                          : '0 1px 2px rgba(16,24,40,0.03)',
+                        transition: 'all .15s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                      }}
+                      onMouseEnter={(e) => {
+                        const el = e.currentTarget as HTMLElement;
+                        el.style.background = '#fff';
+                        el.style.borderColor = 'rgba(99,102,241,0.35)';
+                      }}
+                      onMouseLeave={(e) => {
+                        const el = e.currentTarget as HTMLElement;
+                        el.style.background = isActive ? '#ffffff' : 'rgba(255,255,255,0.6)';
+                        el.style.borderColor = isActive
+                          ? 'rgba(99,102,241,0.35)'
+                          : (BORDER as string);
+                      }}
+                    >
+                      <Avatar
+                        size={28}
                         style={{
-                          margin: '4px 0',
-                          cursor: 'pointer',
-                          border: `1px solid ${isActive ? 'rgba(99,102,241,0.35)' : BORDER}`,
-                          borderRadius: 12,
-                          padding: '10px 12px',
-                          background: isActive ? '#ffffff' : 'rgba(255,255,255,0.6)',
-                          boxShadow: isActive ? '0 3px 12px rgba(99,102,241,0.16)' : '0 1px 2px rgba(16,24,40,0.03)',
-                          transition: 'all .15s ease',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 10,
+                          background: isActive ? BRAND_GRADIENT : '#eef0f4',
+                          color: isActive ? '#fff' : '#6b7280',
+                          flex: 'none',
+                          fontSize: 13,
                         }}
-                        onMouseEnter={(e) => {
-                          const el = e.currentTarget as HTMLElement;
-                          el.style.background = '#fff';
-                          el.style.borderColor = 'rgba(99,102,241,0.35)';
-                        }}
-                        onMouseLeave={(e) => {
-                          const el = e.currentTarget as HTMLElement;
-                          el.style.background = isActive ? '#ffffff' : 'rgba(255,255,255,0.6)';
-                          el.style.borderColor = isActive ? 'rgba(99,102,241,0.35)' : (BORDER as string);
+                        icon={<RobotOutlined />}
+                      />
+                      <Text
+                        ellipsis
+                        style={{
+                          fontSize: 13,
+                          color: isActive ? '#4f46e5' : TEXT,
+                          fontWeight: isActive ? 600 : 400,
                         }}
                       >
-                        <Avatar
-                          size={28}
-                          style={{ background: isActive ? BRAND_GRADIENT : '#eef0f4', color: isActive ? '#fff' : '#6b7280', flex: 'none', fontSize: 13 }}
-                          icon={<RobotOutlined />}
-                        />
-                        <Text ellipsis style={{ fontSize: 13, color: isActive ? '#4f46e5' : TEXT, fontWeight: isActive ? 600 : 400 }}>
-                          {t.title || '新对话'}
-                        </Text>
-                      </div>
-                    );
-                  })}
-                </div>
+                        {t.title || '新对话'}
+                      </Text>
+                    </div>
+                  );
+                })}
+              </div>
             ))
           )}
         </div>
 
         {/* 底部 */}
         <div style={{ padding: '12px 8px', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Avatar size={28} style={{ background: '#eef0f4', color: TEXT_WEAK }} icon={<UserOutlined />} />
+          <Avatar
+            size={28}
+            style={{ background: '#eef0f4', color: TEXT_WEAK }}
+            icon={<UserOutlined />}
+          />
           <Text style={{ fontSize: 12, color: TEXT_WEAK }}>智能体安全 PR 工作台</Text>
         </div>
       </aside>
 
-        {/* 对话区 */}
+      {/* 对话区 */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-
-      {/* 顶栏 */}
+        {/* 顶栏 */}
         <div
           style={{
             display: 'flex',
@@ -968,7 +1016,18 @@ export default function AgentChatPage() {
             borderBottom: `1px solid ${BORDER}`,
           }}
         >
-          <Title level={5} style={{ margin: 0, fontWeight: 700, color: TEXT, flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Title
+            level={5}
+            style={{
+              margin: 0,
+              fontWeight: 700,
+              color: TEXT,
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {activeThread?.title || '新的 Agent 对话'}
             </span>
@@ -986,7 +1045,10 @@ export default function AgentChatPage() {
               background: isGenerating ? hexA('#8b5cf6', 0.1) : hexA('#10b981', 0.1),
             }}
           >
-            <span className="pulse-dot" style={{ background: isGenerating ? '#8b5cf6' : '#10b981' }} />
+            <span
+              className="pulse-dot"
+              style={{ background: isGenerating ? '#8b5cf6' : '#10b981' }}
+            />
             {isGenerating ? 'Agent 思考中' : '在线'}
           </div>
         </div>
@@ -1059,13 +1121,25 @@ export default function AgentChatPage() {
                       {thinking.map((s, i) => {
                         if (s.type === 'text') {
                           return (
-                            <div key={`lt-${i}`} style={{ fontSize: 13, lineHeight: 1.7, color: TEXT, padding: '6px 2px 2px', whiteSpace: 'pre-wrap' }}>
+                            <div
+                              key={`lt-${i}`}
+                              style={{
+                                fontSize: 13,
+                                lineHeight: 1.7,
+                                color: TEXT,
+                                padding: '6px 2px 2px',
+                                whiteSpace: 'pre-wrap',
+                              }}
+                            >
                               {s.text}
                             </div>
                           );
                         }
                         return (
-                          <div key={`lt-${i}`} style={{ marginTop: 6, fontSize: 12, color: '#7c3aed' }}>
+                          <div
+                            key={`lt-${i}`}
+                            style={{ marginTop: 6, fontSize: 12, color: '#7c3aed' }}
+                          >
                             ⚙ 调用工具：{s.name}
                           </div>
                         );
@@ -1074,7 +1148,9 @@ export default function AgentChatPage() {
                   </div>
                 )}
                 {isGenerating && (
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginTop: 14 }}>
+                  <div
+                    style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginTop: 14 }}
+                  >
                     <Avatar
                       size={34}
                       style={{ background: BRAND_GRADIENT, color: '#fff', flex: 'none' }}
@@ -1120,7 +1196,15 @@ export default function AgentChatPage() {
           {/* 稿件附件工具条：本地上传 / 从稿件库选择 -> 作为改稿上下文 */}
           <div style={{ maxWidth: 820, margin: '0 auto', width: '100%', paddingBottom: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 12.5, color: TEXT_WEAK, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <span
+                style={{
+                  fontSize: 12.5,
+                  color: TEXT_WEAK,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                }}
+              >
                 <PaperClipOutlined /> 稿件附件
               </span>
               {currentManuscript ? (
@@ -1138,7 +1222,9 @@ export default function AgentChatPage() {
                     maxWidth: 260,
                   }}
                 >
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span
+                    style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  >
                     {currentManuscript.title}
                   </span>
                   <CloseCircleFilled
@@ -1147,7 +1233,9 @@ export default function AgentChatPage() {
                   />
                 </span>
               ) : (
-                <span style={{ fontSize: 12, color: '#9aa0aa' }}>未添加（可用本地上传或从稿件库选择）</span>
+                <span style={{ fontSize: 12, color: '#9aa0aa' }}>
+                  未添加（可用本地上传或从稿件库选择）
+                </span>
               )}
               <div style={{ flex: 1 }} />
               <input
@@ -1187,7 +1275,9 @@ export default function AgentChatPage() {
                 onChange={(v) => onSelectManuscript(v as string)}
                 options={manuscriptOptions.map((m) => ({ label: m.title, value: m.manuscript_id }))}
                 filterOption={(input, option) =>
-                  String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  String(option?.label ?? '')
+                    .toLowerCase()
+                    .includes(input.toLowerCase())
                 }
                 notFoundContent="稿件库为空，可先保存或上传一份"
               />
@@ -1328,7 +1418,7 @@ export default function AgentChatPage() {
             </div>
           </div>
         </div>
-    </div>
+      </div>
     </div>
   );
 }
@@ -1361,7 +1451,16 @@ function Welcome({ onPick }: { onPick: (text: string) => void }) {
         告诉它的目标，它会自主规划、调用工具、验证结果并交付 PR 初稿
       </Paragraph>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 26, maxWidth: 520, marginInline: 'auto' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          marginTop: 26,
+          maxWidth: 520,
+          marginInline: 'auto',
+        }}
+      >
         {SUGGESTIONS.map((s) => (
           <button
             key={s.title}
@@ -1463,13 +1562,31 @@ function MessageRow({
           <ThinkingBlock
             steps={msg.thinking.map((s) =>
               s.type === 'tool'
-                ? { type: 'tool', id: `p-${s.name ?? ''}`, name: s.name ?? '', args: {}, status: 'ok' as const }
+                ? {
+                    type: 'tool',
+                    id: `p-${s.name ?? ''}`,
+                    name: s.name ?? '',
+                    args: {},
+                    status: 'ok' as const,
+                  }
                 : { type: 'text', text: s.text ?? '' },
             )}
           />
         ) : null}
         {msg.content && (
-          <div style={{ background: 'rgba(255,255,255,0.7)', padding: '11px 15px', borderRadius: 14, maxWidth: 720, whiteSpace: 'pre-wrap', fontSize: 14.5, lineHeight: 1.7, color: TEXT, marginTop: msg.thinking && msg.thinking.length > 0 ? 10 : 0 }}>
+          <div
+            style={{
+              background: 'rgba(255,255,255,0.7)',
+              padding: '11px 15px',
+              borderRadius: 14,
+              maxWidth: 720,
+              whiteSpace: 'pre-wrap',
+              fontSize: 14.5,
+              lineHeight: 1.7,
+              color: TEXT,
+              marginTop: msg.thinking && msg.thinking.length > 0 ? 10 : 0,
+            }}
+          >
             {msg.content}
           </div>
         )}
@@ -1513,10 +1630,23 @@ function DraftCard({ heading, content }: { heading: string; content: string }) {
         }}
         onClick={() => setOpen((v) => !v)}
       >
-        <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 9px', borderRadius: 999, background: '#b45309', color: '#fff', fontSize: 12, fontWeight: 600 }}>
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '1px 9px',
+            borderRadius: 999,
+            background: '#b45309',
+            color: '#fff',
+            fontSize: 12,
+            fontWeight: 600,
+          }}
+        >
           {heading}
         </span>
-        <span style={{ fontSize: 12.5, color: '#92600a', fontWeight: 500 }}>点击{open ? '收起' : '展开'}查看完整初稿</span>
+        <span style={{ fontSize: 12.5, color: '#92600a', fontWeight: 500 }}>
+          点击{open ? '收起' : '展开'}查看完整初稿
+        </span>
         <span style={{ flex: 1 }} />
         <span
           style={{
@@ -1644,7 +1774,16 @@ function ThinkingBlock({ steps }: { steps: ThinkingStep[] }) {
           {steps.map((s, i) => {
             if (s.type === 'text') {
               return (
-                <div key={`t-${i}`} style={{ fontSize: 13, lineHeight: 1.7, color: TEXT, padding: '8px 2px 2px', whiteSpace: 'pre-wrap' }}>
+                <div
+                  key={`t-${i}`}
+                  style={{
+                    fontSize: 13,
+                    lineHeight: 1.7,
+                    color: TEXT,
+                    padding: '8px 2px 2px',
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
                   {s.text}
                 </div>
               );
@@ -1698,7 +1837,10 @@ function renderEntry(
               padding: '13px 16px',
               borderRadius: 14,
               border: '1px solid rgba(99,102,241,0.22)',
-              background: entry.thinking && entry.thinking.length > 0 ? 'linear-gradient(180deg,#f4f5ff,#fff)' : 'rgba(255,255,255,0.7)',
+              background:
+                entry.thinking && entry.thinking.length > 0
+                  ? 'linear-gradient(180deg,#f4f5ff,#fff)'
+                  : 'rgba(255,255,255,0.7)',
               fontSize: 14.5,
               lineHeight: 1.7,
               color: TEXT,
@@ -1707,7 +1849,12 @@ function renderEntry(
           >
             <Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{entry.text}</Paragraph>
           </div>
-          <ManuscriptActions title="PR 稿件" content={entry.text} onSave={onSave} onDownload={onDownload} />
+          <ManuscriptActions
+            title="PR 稿件"
+            content={entry.text}
+            onSave={onSave}
+            onDownload={onDownload}
+          />
         </div>
       </div>
     );
@@ -1715,7 +1862,11 @@ function renderEntry(
   if (entry.kind === 'final') {
     return (
       <div key={`e-${idx}`} style={{ display: 'flex', gap: 12, margin: '14px 0' }}>
-        <Avatar size={34} style={{ background: BRAND_GRADIENT, color: '#fff', flex: 'none', marginTop: 2 }} icon={<RocketOutlined />} />
+        <Avatar
+          size={34}
+          style={{ background: BRAND_GRADIENT, color: '#fff', flex: 'none', marginTop: 2 }}
+          icon={<RocketOutlined />}
+        />
         <div
           style={{
             maxWidth: 780,
@@ -1729,13 +1880,27 @@ function renderEntry(
           }}
         >
           <Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{entry.text}</Paragraph>
-          <ManuscriptActions title="稿件" content={entry.text} onSave={onSave} onDownload={onDownload} inside />
+          <ManuscriptActions
+            title="稿件"
+            content={entry.text}
+            onSave={onSave}
+            onDownload={onDownload}
+            inside
+          />
         </div>
       </div>
     );
   }
   return (
-    <div key={`e-${idx}`} style={{ margin: '12px 0', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+    <div
+      key={`e-${idx}`}
+      style={{
+        margin: '12px 0',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+      }}
+    >
       <ToolCard entry={entry} />
     </div>
   );
@@ -1758,7 +1923,15 @@ function ManuscriptActions({
   if (!onSave && !onDownload) return null;
   if (!content?.trim()) return null;
   return (
-    <div style={{ display: 'flex', gap: 8, marginTop: inside ? 12 : 10, flexWrap: 'wrap', alignItems: 'center' }}>
+    <div
+      style={{
+        display: 'flex',
+        gap: 8,
+        marginTop: inside ? 12 : 10,
+        flexWrap: 'wrap',
+        alignItems: 'center',
+      }}
+    >
       <Button
         size="small"
         icon={<SaveOutlined />}

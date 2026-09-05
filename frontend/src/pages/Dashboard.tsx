@@ -450,7 +450,9 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
           <FilterBar
             value={filter}
             onChange={handleFilterChange}
-            categories={stats?.category_distribution ? Object.keys(stats.category_distribution) : []}
+            categories={
+              stats?.category_distribution ? Object.keys(stats.category_distribution) : []
+            }
           />
 
           <Row style={{ marginBottom: 16 }}>
@@ -507,7 +509,8 @@ export default function Dashboard({ initialSourceType, refreshKey }: DashboardPr
                 {
                   title: '保存时间',
                   width: 200,
-                  render: (_: unknown, record: Manuscript) => formatTime(record.created_at || record.updated_at),
+                  render: (_: unknown, record: Manuscript) =>
+                    formatTime(record.created_at || record.updated_at),
                 },
               ]}
             />
