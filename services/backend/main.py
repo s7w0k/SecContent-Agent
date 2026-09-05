@@ -601,6 +601,7 @@ from api.knowledge_catalog import router as knowledge_catalog_router
 from api.logs import router as logs_router
 from api.manuscripts import router as manuscripts_router
 from api.memory import router as memory_router
+from api.ops import router as ops_router
 from api.overseas_crawl import router as overseas_router
 from api.personalization import router as personalization_router
 from api.pipeline import llm_router
@@ -636,6 +637,7 @@ app.include_router(user_prompts_router)
 app.include_router(profile_policy_router)
 app.include_router(personalization_router)
 app.include_router(memory_router)
+app.include_router(ops_router)
 app.include_router(knowledge_catalog_router)
 app.include_router(knowledge_admin_router)
 app.include_router(web_search_router)
