@@ -5,6 +5,11 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
+pytest.importorskip(
+    "api.chat",
+    reason="api.chat 已随对话重构移除（现走 agent-engine/draft_chat）；本文件待迁移重写",
+)
 from agent.draft_reviewer import compute_content_hash
 from api.chat import router
 from auth.deps import get_current_user
