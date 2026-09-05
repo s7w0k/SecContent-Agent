@@ -318,6 +318,11 @@ async def approve_approval(
     request: Request,
     user_id: str = Depends(get_current_user),
 ) -> dict[str, Any]:
+    # 审批接线说明（改造计划 P3，如实留痕）：当前为单用户语义——run 由其 owner
+    # 创建，审批天然等于 owner 自我确认（ApprovalService 已做 params_hash/一次性/
+    # TTL 防绕过）。approval_rbac 的职责分离/L3 双人/审计规则已实现并有单测
+    # （test_stage3_controls），待引入多角色审批人（他人/管理员）产品语义后再挂接
+    # 本端点，避免单用户下「发起人不可自批」误伤合法流程。
     service = _get_service(request)
     state = await service.approve(approval_id, user_id)
     if state is None:
