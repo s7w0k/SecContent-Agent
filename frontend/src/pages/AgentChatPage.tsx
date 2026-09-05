@@ -38,6 +38,7 @@ import {
   UserOutlined,
   CloseCircleFilled,
   CheckCircleFilled,
+  BarsOutlined,
 } from '@ant-design/icons';
 import {
   agentEngineApi,
@@ -79,8 +80,16 @@ type ThinkingStep =
       status: 'running' | 'ok' | 'error';
     };
 
+type PlanStep = {
+  step_id: string;
+  title: string;
+  tools: string[];
+  expected_output?: string;
+  status: 'pending' | 'completed';
+};
+
 type Entry =
-  | { kind: 'assistant'; text: string; thinking?: ThinkingStep[] }
+  | { kind: 'assistant'; text: string; thinking?: ThinkingStep[]; plan?: PlanStep[] }
   | { kind: 'final'; text: string }
   | {
       kind: 'tool';
@@ -130,6 +139,95 @@ function chip(text: string, color: string, light = true): ReactNode {
     >
       {text}
     </span>
+  );
+}
+
+/* ---- 显式执行计划卡片（形态 A：先出计划、逐步勾选） ---- */
+function PlanCard({ steps }: { steps: PlanStep[] }) {
+  const done = steps.filter((s) => s.status === 'completed').length;
+  return (
+    <div
+      style={{
+        maxWidth: 760,
+        margin: '6px 0 0 46px',
+        border: '1px solid rgba(99,102,241,0.28)',
+        borderRadius: 12,
+        background: 'rgba(99,102,241,0.03)',
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '8px 12px',
+          borderBottom: `1px solid ${BORDER}`,
+          background: hexA('#6366f1', 0.06),
+        }}
+      >
+        <span style={{ color: '#6366f1', fontSize: 13, display: 'inline-flex' }}>
+          <BarsOutlined />
+        </span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: TEXT }}>执行计划</span>
+        <span style={{ marginLeft: 'auto', fontSize: 11.5, color: TEXT_WEAK }}>
+          {done}/{steps.length} 已完成
+        </span>
+      </div>
+      <div style={{ padding: '8px 12px 10px' }}>
+        {steps.map((s, i) => {
+          const completed = s.status === 'completed';
+          const tools = s.tools.map((name) => toolMeta(name).label);
+          return (
+            <div key={s.step_id || `p-${i}`} style={{ display: 'flex', gap: 10, padding: '5px 2px', alignItems: 'flex-start' }}>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 18,
+                  height: 18,
+                  borderRadius: 999,
+                  flex: 'none',
+                  marginTop: 1,
+                  fontSize: 11,
+                  color: completed ? '#10b981' : '#6366f1',
+                  background: completed ? hexA('#10b981', 0.12) : hexA('#6366f1', 0.1),
+                }}
+              >
+                {completed ? '✓' : i + 1}
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: completed ? TEXT_WEAK : TEXT, lineHeight: 1.6 }}>
+                  {s.title}
+                  {s.expected_output ? (
+                    <span style={{ color: TEXT_WEAK, fontSize: 12 }}> — {s.expected_output}</span>
+                  ) : null}
+                </div>
+                {tools.length > 0 ? (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 3 }}>
+                    {tools.map((label, ti) => (
+                      <span
+                        key={`${s.step_id}-${ti}`}
+                        style={{
+                          fontSize: 11,
+                          color: completed ? '#10b981' : '#7c6bf3',
+                          background: completed ? hexA('#10b981', 0.08) : hexA('#6366f1', 0.08),
+                          padding: '1px 8px',
+                          borderRadius: 999,
+                        }}
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -297,6 +395,8 @@ export default function AgentChatPage() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [thinking, setThinking] = useState<ThinkingStep[]>([]);
   const thinkingRef = useRef<ThinkingStep[]>([]);
+  const [livePlan, setLivePlan] = useState<PlanStep[]>([]);
+  const planRef = useRef<PlanStep[]>([]);
   const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState('');
@@ -406,6 +506,8 @@ export default function AgentChatPage() {
     setEntries([]);
     setThinking([]);
     thinkingRef.current = [];
+    planRef.current = [];
+    setLivePlan([]);
     setIsGenerating(false);
     const t = await ensureThread();
     if (t) {
@@ -425,12 +527,45 @@ export default function AgentChatPage() {
       setThinking([]);
     };
     switch (ev.event_type) {
+      case 'plan': {
+        const rawSteps = (Array.isArray(d.steps) ? d.steps : []) as Array<Record<string, unknown>>;
+        const steps: PlanStep[] = rawSteps.map((s) => ({
+          step_id: String(s.step_id ?? ''),
+          title: String(s.title ?? ''),
+          tools: Array.isArray(s.tools) ? s.tools.map(String) : [],
+          expected_output: String(s.expected_output ?? '') || undefined,
+          status: String(s.status ?? 'pending') === 'completed' ? 'completed' : 'pending',
+        }));
+        planRef.current = steps;
+        setLivePlan(steps);
+        break;
+      }
+      case 'plan_step': {
+        const sid = String(d.step_id ?? '');
+        const done = String(d.status ?? '') === 'completed';
+        const next = planRef.current.map((p) =>
+          p.step_id === sid && done ? { ...p, status: 'completed' as const } : p,
+        );
+        planRef.current = next;
+        setLivePlan(next);
+        break;
+      }
       case 'agent_message':
         updateThinking((prev) => [...prev, { type: 'text', text: String(d.content ?? '') }]);
         break;
       case 'final':
-        setEntries((prev) => [...prev, { kind: 'assistant', text: String(d.content ?? ''), thinking: thinkingRef.current }]);
+        setEntries((prev) => [
+          ...prev,
+          {
+            kind: 'assistant',
+            text: String(d.content ?? ''),
+            thinking: thinkingRef.current,
+            plan: planRef.current.length > 0 ? planRef.current : undefined,
+          },
+        ]);
         clearThinking();
+        planRef.current = [];
+        setLivePlan([]);
         break;
       case 'tool_call': {
         const id = String(d.id ?? Math.random());
@@ -502,6 +637,8 @@ export default function AgentChatPage() {
     setResumeHint('');
     setThinking([]);
     thinkingRef.current = [];
+    planRef.current = [];
+    setLivePlan([]);
     setIsGenerating(true);
 
     const thread = await ensureThread();
@@ -873,6 +1010,7 @@ export default function AgentChatPage() {
                 {entries.map((entry, idx) =>
                   renderEntry(entry, idx, saveManuscript, downloadTextAsMd),
                 )}
+                {isGenerating && livePlan.length > 0 && <PlanCard steps={livePlan} />}
                 {isGenerating && thinking.length > 0 && (
                   <div
                     style={{
@@ -1550,6 +1688,7 @@ function renderEntry(
           icon={<RobotOutlined />}
         />
         <div style={{ flex: 1, minWidth: 0 }}>
+          {entry.plan && entry.plan.length > 0 ? <PlanCard steps={entry.plan} /> : null}
           {entry.thinking && entry.thinking.length > 0 ? (
             <ThinkingBlock steps={entry.thinking} />
           ) : null}

@@ -15,7 +15,10 @@ from agent.business_tools.contracts import build_business_tool_registry
 from agent.plan_explicit import (
     PR_TOOL_ORDER,
     ExplicitPlan,
+    LlmPlanOutput,
+    LlmPlanStep,
     build_deterministic_plan,
+    build_llm_plan,
     sanitize_plan,
 )
 from langchain_core.messages import AIMessage
@@ -111,6 +114,56 @@ def test_plan_fingerprint_is_stable():
     one = build_deterministic_plan(allowed, run_id="r1")
     two = build_deterministic_plan(allowed, run_id="r2")
     assert one.fingerprint() == two.fingerprint()  # run_id 不影响计划指纹
+
+
+# ── LLM 驱动规划 ─────────────────────────────────────
+
+
+class _FakeLlmWrapper:
+    def __init__(self, result=None, error=None):
+        self.result = result
+        self.error = error
+
+    async def invoke_structured(self, *args, **kwargs):
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
+@pytest.mark.asyncio
+async def test_llm_plan_keeps_allowed_tools_and_caps_steps():
+    wrapper = _FakeLlmWrapper(
+        result=LlmPlanOutput(
+            steps=[
+                LlmPlanStep(title="读文", tools=["get_article"], expected_output="article"),
+                LlmPlanStep(title="坏工具", tools=["evil_tool", "score_article"], expected_output=""),
+                LlmPlanStep(title="写稿", tools=["generate_draft"]),
+            ]
+        )
+    )
+    steps = await build_llm_plan(
+        wrapper, goal="写稿", allowed_tools={"get_article", "score_article", "generate_draft"}, max_steps=2
+    )
+    assert steps is not None
+    assert len(steps) <= 2  # 超限截断
+    assert all(set(s["tools"]) <= {"get_article", "score_article", "generate_draft"} for s in steps)
+    assert all(s["tools"] for s in steps)  # 白名单外的坏工具步骤被丢弃
+
+
+@pytest.mark.asyncio
+async def test_llm_plan_returns_none_on_empty_or_error():
+    empty = await build_llm_plan(
+        _FakeLlmWrapper(result=LlmPlanOutput(steps=[])),
+        goal="hi",
+        allowed_tools={"get_article"},
+    )
+    assert empty is None
+    broken = await build_llm_plan(
+        _FakeLlmWrapper(error=RuntimeError("llm down")),
+        goal="hi",
+        allowed_tools={"get_article"},
+    )
+    assert broken is None
 
 
 # ── AgentEngine 事件集成 ───────────────────────────────

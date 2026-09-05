@@ -68,6 +68,33 @@ class ExplicitPlanStep(BaseModel):
     expected_output: str = Field(default="", max_length=300)
 
 
+class LlmPlanStep(BaseModel):
+    """LLM 规划输出的单步（工具名由调用侧再做白名单过滤）。"""
+
+    title: str = Field(default="", max_length=160)
+    tools: list[str] = Field(default_factory=list)
+    expected_output: str = Field(default="", max_length=300)
+
+
+class LlmPlanOutput(BaseModel):
+    """LLM 规划输出的完整步骤列表。"""
+
+    steps: list[LlmPlanStep] = Field(default_factory=list)
+
+
+PLAN_SYSTEM_PROMPT = """你是 PR 内容 Agent 的执行规划器。请把用户目标拆成可执行步骤，
+每个步骤只允许从「可用工具」中选择 1-2 个真正会用到的工具，并给出交付物描述。
+
+约束：
+1. 步骤数不要超过 {max_steps} 个；能一步完成就不要拆。
+2. tools 只能来自可用工具列表，不要自造工具名。
+3. 若用户只是在提问/闲聊（不需要调用任何工具），输出空 steps。
+4. 只输出 JSON（{{"steps": [{{"title": .., "tools": [..], "expected_output": ..}}]}}）。"""
+
+PLAN_USER_PROMPT = """可用工具：{tools}
+用户目标：{goal}"""
+
+
 class ExplicitPlan(BaseModel):
     """执行前产出的显式计划。"""
 
@@ -91,6 +118,54 @@ def _step_title_for(tools: list[str]) -> str:
     if first:
         return first
     return _GENERIC_TITLE
+
+
+async def build_llm_plan(
+    llm_wrapper: Any,
+    *,
+    goal: str,
+    allowed_tools: set[str],
+    max_steps: int = 6,
+    agent_type: str = "explicit_planner",
+    user_id: str = "",
+    trace_id: str = "",
+) -> list[dict[str, Any]] | None:
+    """LLM 驱动规划：读 goal + 白名单工具集产出步骤。
+
+    返回 None 表示不可用（异常/空计划/非法输出），由调用方回退确定性计划；
+    返回的 steps 已做 allowed_tools 白名单过滤与 max_steps 截断（双层防御）。
+    """
+    system_prompt = PLAN_SYSTEM_PROMPT.format(max_steps=max_steps)
+    user_prompt = PLAN_USER_PROMPT.format(tools=", ".join(sorted(allowed_tools)), goal=goal)
+    try:
+        output = await llm_wrapper.invoke_structured(
+            system_prompt,
+            user_prompt,
+            LlmPlanOutput,
+            agent_type=agent_type,
+            user_id=user_id,
+            trace_id=trace_id,
+        )
+    except Exception:
+        return None
+    raw_steps = output.steps if hasattr(output, "steps") else (output or {}).get("steps", [])
+    if not raw_steps:
+        return None
+    cleaned: list[dict[str, Any]] = []
+    for item in raw_steps:
+        tools = [str(t) for t in item.tools if str(t) in allowed_tools]
+        if not tools:
+            continue
+        cleaned.append(
+            {
+                "title": str(item.title or _step_title_for(tools))[:160],
+                "tools": tools,
+                "expected_output": str(item.expected_output or "")[:300],
+            }
+        )
+        if len(cleaned) >= max_steps:
+            break
+    return cleaned or None
 
 
 def sanitize_plan(

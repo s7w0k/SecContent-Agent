@@ -136,6 +136,9 @@ class ChatAgentService:
         # 显式 Plan（形态 A，改造计划 P1）：开启后每条消息执行前先产出步骤计划并推 SSE 'plan'
         self.explicit_plan_enabled = bool(getattr(_settings, "AGENT_EXPLICIT_PLAN_ENABLED", False))
         self.explicit_plan_max_steps = int(getattr(_settings, "AGENT_EXPLICIT_PLAN_MAX_STEPS", 6))
+        self.explicit_plan_rollout_percent = int(
+            getattr(_settings, "AGENT_EXPLICIT_PLAN_ROLLOUT_PERCENT", 100)
+        )
         self._skill_registry_cache = None
         self._memory_retriever = None
         # 所有工具 role scope 并集，作为单次调用注入的 ToolRequestContext.scopes
@@ -450,21 +453,45 @@ class ChatAgentService:
         except Exception:
             logger.debug("[chat] generation feedback record failed", exc_info=True)
 
-    def _explicit_plan_planner(self):
+    def _explicit_plan_allowed(self, user_id: str) -> bool:
+        """显式 Plan 对当前用户是否生效（总开关 + 按 user 灰度百分比）。"""
+        if not self.explicit_plan_enabled:
+            return False
+        if self.explicit_plan_rollout_percent >= 100:
+            return True
+        if self.explicit_plan_rollout_percent <= 0:
+            return False
+        from agent.context_bridge import user_in_rollout
+
+        return user_in_rollout(user_id, self.explicit_plan_rollout_percent)
+
+    def _explicit_plan_planner(self, run_context=None):
         """构造显式 Plan 工厂：输入 goal，输出经白名单约束的步骤列表。
 
-        当前 P1 切片为确定性计划（按 PR 生产惯例排布白名单工具）；
-        LLM 驱动的计划（读 goal + 工具集动态规划）作为后续切片接入。
+        规划顺序：LLM 结构化规划（读 goal + 工具集）→ 异常/空计划回退确定性计划。
+        两次输出的工具均会被 AgentEngine 的 sanitize_plan 二次白名单清洗。
         """
 
-        from agent.plan_explicit import build_deterministic_plan
+        from agent.plan_explicit import build_deterministic_plan, build_llm_plan
 
         allowed = set(self.registry.names())
         max_steps = self.explicit_plan_max_steps
+        user_id = str(getattr(run_context, "user_id", "") or "") if run_context else ""
+        trace_id = str(getattr(run_context, "run_id", "") or "") if run_context else ""
 
-        async def build(_goal: str) -> dict:
-            plan = build_deterministic_plan(allowed, max_steps=max_steps)
-            return {"steps": [step.model_dump(mode="json") for step in plan.steps]}
+        async def build(goal: str) -> dict:
+            steps = await build_llm_plan(
+                self.llm_wrapper,
+                goal=goal,
+                allowed_tools=allowed,
+                max_steps=max_steps,
+                user_id=user_id,
+                trace_id=trace_id,
+            )
+            if steps is None:
+                plan = build_deterministic_plan(allowed, max_steps=max_steps)
+                steps = [step.model_dump(mode="json") for step in plan.steps]
+            return {"steps": steps}
 
         return build
 
@@ -560,7 +587,9 @@ class ChatAgentService:
                 hitl_min_side_effect=self.hitl_min_side_effect,
                 history_tokens=self.history_tokens,
                 explicit_planner=(
-                    self._explicit_plan_planner() if self.explicit_plan_enabled else None
+                    self._explicit_plan_planner(run_context)
+                    if self._explicit_plan_allowed(run_context.user_id)
+                    else None
                 ),
             )
             live.engine = engine
