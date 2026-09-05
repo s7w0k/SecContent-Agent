@@ -133,6 +133,9 @@ class ChatAgentService:
         self.skill_enabled = bool(getattr(_settings, "CHAT_AGENT_SKILL_ENABLED", True))
         self.evolution_enabled = bool(getattr(_settings, "CHAT_AGENT_EVOLUTION_ENABLED", False))
         self.history_tokens = int(getattr(_settings, "CHAT_AGENT_HISTORY_TOKENS", 6000))
+        # 显式 Plan（形态 A，改造计划 P1）：开启后每条消息执行前先产出步骤计划并推 SSE 'plan'
+        self.explicit_plan_enabled = bool(getattr(_settings, "AGENT_EXPLICIT_PLAN_ENABLED", False))
+        self.explicit_plan_max_steps = int(getattr(_settings, "AGENT_EXPLICIT_PLAN_MAX_STEPS", 6))
         self._skill_registry_cache = None
         self._memory_retriever = None
         # 所有工具 role scope 并集，作为单次调用注入的 ToolRequestContext.scopes
@@ -447,6 +450,24 @@ class ChatAgentService:
         except Exception:
             logger.debug("[chat] generation feedback record failed", exc_info=True)
 
+    def _explicit_plan_planner(self):
+        """构造显式 Plan 工厂：输入 goal，输出经白名单约束的步骤列表。
+
+        当前 P1 切片为确定性计划（按 PR 生产惯例排布白名单工具）；
+        LLM 驱动的计划（读 goal + 工具集动态规划）作为后续切片接入。
+        """
+
+        from agent.plan_explicit import build_deterministic_plan
+
+        allowed = set(self.registry.names())
+        max_steps = self.explicit_plan_max_steps
+
+        async def build(_goal: str) -> dict:
+            plan = build_deterministic_plan(allowed, max_steps=max_steps)
+            return {"steps": [step.model_dump(mode="json") for step in plan.steps]}
+
+        return build
+
     async def _run_generation(
         self,
         *,
@@ -538,6 +559,9 @@ class ChatAgentService:
                 hitl_enabled=self.hitl_enabled,
                 hitl_min_side_effect=self.hitl_min_side_effect,
                 history_tokens=self.history_tokens,
+                explicit_planner=(
+                    self._explicit_plan_planner() if self.explicit_plan_enabled else None
+                ),
             )
             live.engine = engine
             if resumed:

@@ -46,6 +46,9 @@ MAX_HISTORY_TOKENS = 6000  # 对话历史 token 预算（超出时压缩为最�
 MAX_MESSAGE_CHARS = 4000
 DEFAULT_MAX_ROUNDS = 8
 
+# 显式 Plan：单次计划步骤上限（与服务端白名单/预算上限一致）
+_PLAN_MAX_STEPS = 6
+
 # 副作用等级排序，用于 HITL 审批门判定（等级越高的工具越需要人工确认）
 _SIDE_EFFECT_ORDER = {"L1": 1, "L2": 2, "L3": 3}
 
@@ -243,6 +246,9 @@ class AgentEngine:
         hitl_enabled: bool = True,
         hitl_min_side_effect: str = "L2",
         history_tokens: int = MAX_HISTORY_TOKENS,
+        # 显式 Plan（形态 A，改造计划 P1）：传入后每条消息执行前先产出步骤计划并推 SSE 'plan'。
+        # 默认 None = 关闭，行为与旧版完全一致；initial_messages（断点续跑）不再重复出计划。
+        explicit_planner: Callable[[str], Awaitable[Any]] | None = None,
     ):
         self.llm_wrapper = llm_wrapper
         self.executor = executor
@@ -262,6 +268,10 @@ class AgentEngine:
         self._seq = 0
         # 中断协作：外部可通过 stop() 置位；协程检查后优雅退出并保留现场
         self._cancelled = False
+        # 显式 Plan 状态
+        self.explicit_planner = explicit_planner
+        self._plan_order: list[str] = []
+        self._plan_steps: dict[str, dict[str, Any]] = {}
 
     # ── 中断协作 ───────────────────────────────────────────
     def stop(self) -> None:
@@ -278,6 +288,68 @@ class AgentEngine:
             await self.event_sink(self._seq, event_type, payload)
         except Exception:
             logger.exception("[agent_engine] event_sink failed")
+
+    # ── 显式 Plan（形态 A）────────────────────────────────
+    async def _emit_explicit_plan(self, goal: str) -> dict[str, Any] | None:
+        """执行前：调用显式 planner 产出步骤计划并推送 SSE 'plan' 事件。
+
+        planner 输出会经 sanitize_plan 清洗：仅保留 registry 白名单内的工具、
+        非空步骤、受 _PLAN_MAX_STEPS 约束 —— 上游（模型/调用方）不能注入任意步骤。
+        """
+        if self.explicit_planner is None:
+            return None
+        try:
+            raw = await self.explicit_planner(goal)
+        except Exception:
+            logger.exception("[agent_engine] explicit_planner failed; run without plan")
+            return None
+        from agent.plan_explicit import sanitize_plan
+
+        plan = sanitize_plan(
+            raw,
+            allowed_tools=set(self.registry.names()),
+            max_steps=_PLAN_MAX_STEPS,
+            run_id=self.run_context.run_id,
+        )
+        if plan is None:
+            return None
+        self._plan_order = [s.step_id for s in plan.steps]
+        self._plan_steps = {
+            s.step_id: {"tools": set(s.tools), "status": "pending"} for s in plan.steps
+        }
+        payload: dict[str, Any] = {
+            "run_id": self.run_context.run_id,
+            "steps": [
+                {
+                    "step_id": s.step_id,
+                    "title": s.title,
+                    "tools": s.tools,
+                    "expected_output": s.expected_output,
+                    "status": "pending",
+                }
+                for s in plan.steps
+            ],
+        }
+        await self._emit("plan", payload)
+        return payload
+
+    async def _mark_plan_progress(self, tool_name: str) -> None:
+        """某个工具成功后，把计划里第一个覆盖它的待办步骤标记为 completed。"""
+        for step_id in self._plan_order:
+            entry = self._plan_steps.get(step_id)
+            if entry is None or entry["status"] != "pending" or tool_name not in entry["tools"]:
+                continue
+            entry["status"] = "completed"
+            await self._emit(
+                "plan_step",
+                {
+                    "run_id": self.run_context.run_id,
+                    "step_id": step_id,
+                    "status": "completed",
+                    "tool": tool_name,
+                },
+            )
+            return
 
     # ── 对外入口 ─────────────────────────────────────────
     async def run(
@@ -308,6 +380,10 @@ class AgentEngine:
         messages.append(HumanMessage(content=user_message))
 
         await self._emit("run_started", {"run_id": self.run_context.run_id})
+
+        # 显式 Plan（形态 A）：非断点续跑时才在首次模型决策前产出用户可见计划
+        if not initial_messages:
+            await self._emit_explicit_plan(user_message)
 
         final_text = ""
         status = "completed"
@@ -459,6 +535,7 @@ class AgentEngine:
                     )
                     if name not in tools_used:
                         tools_used.append(name)
+                    await self._mark_plan_progress(name)
                 except Exception as exc:
                     await self._emit(
                         "tool_error",

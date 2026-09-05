@@ -527,6 +527,13 @@ class Settings(BaseSettings):
     FAULT_HARNESS_ENABLED: bool = Field(
         default=False, description="故障注入 Harness 总开关（默认关闭，仅演练时开启）"
     )
+    AGENT_EXPLICIT_PLAN_ENABLED: bool = Field(
+        default=False,
+        description="对话引擎显式 Plan 前置规划轮总开关（默认关闭；开启后每条消息先产出用户可见步骤计划再执行）",
+    )
+    AGENT_EXPLICIT_PLAN_MAX_STEPS: int = Field(
+        default=6, ge=1, le=12, description="显式 Plan 最大步骤数"
+    )
     CAPACITY_SAFETY_FACTOR: float = Field(
         default=0.8, gt=0, le=1, description="容量模型安全系数（产出容量=理论值×系数）"
     )
