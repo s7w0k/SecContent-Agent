@@ -112,7 +112,14 @@ class FakeTaskCollection:
         return deepcopy(document) if document else None
 
     async def count_documents(self, query: dict):
-        return sum(item.get("user_id") == query.get("user_id") for item in self.documents.values())
+        items = list(self.documents.values())
+        if query.get("user_id") is not None:
+            items = [item for item in items if item.get("user_id") == query.get("user_id")]
+        status = query.get("status")
+        if isinstance(status, dict) and "$in" in status:
+            allowed = set(status["$in"])
+            items = [item for item in items if item.get("status") in allowed]
+        return len(items)
 
     def find(self, query: dict):
         return FakeCursor(
@@ -677,3 +684,24 @@ async def test_resume_loses_cas_claim_returns_conflict():
     assert "其他恢复请求" in exc_info.value.detail["message"]
     assert tasks.claim_attempts == 2
     assert arq_pool.enqueue_job.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_user_active_run_limit_rejects_overflow():
+    """队前准入（P2）：单用户活跃任务数达上限时新任务被 429 拒绝。"""
+    tasks = FakeTaskCollection()
+    db = FakeDatabase(pipeline_tasks=tasks)
+    limit_override = SimpleNamespace(PIPELINE_USER_MAX_ACTIVE_RUNS=1)
+    with patch("api.pipeline.get_settings", return_value=limit_override):
+        await _create_pipeline_task(db, "user-a", "run-v2")
+        with pytest.raises(HTTPException) as exc_info:
+            await _create_pipeline_task(db, "user-a", "run-v2")
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.detail["code"] == "USER_ACTIVE_RUN_LIMIT"
+
+    # 完成任务释放名额后可再次提交
+    for doc in tasks.documents.values():
+        doc["status"] = "completed"
+    with patch("api.pipeline.get_settings", return_value=limit_override):
+        await _create_pipeline_task(db, "user-a", "run-v2")
+    assert len(tasks.documents) == 2

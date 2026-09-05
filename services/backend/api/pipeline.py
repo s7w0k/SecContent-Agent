@@ -271,6 +271,30 @@ async def _create_pipeline_task(
     metadata: dict[str, Any] | None = None,
 ) -> dict:
     """创建一小时后自动清理的流水线任务文档。"""
+    # 队前准入（P2，多用户并发）：限制单用户活跃后台任务数，防刷/控成本。
+    # 尽力而为：统计失败（如单元测试 MagicMock 库）时跳过准入，不阻断任务创建。
+    limit = int(getattr(get_settings(), "PIPELINE_USER_MAX_ACTIVE_RUNS", 3))
+    if limit > 0:
+        try:
+            active = await db["pipeline_tasks"].count_documents(
+                {
+                    "user_id": user_id,
+                    "status": {"$in": ["pending", "running", "resume_pending"]},
+                }
+            )
+        except Exception:
+            logger.debug("[pipeline] active-run admission skipped", exc_info=True)
+            active = 0
+        if active >= limit:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "code": "USER_ACTIVE_RUN_LIMIT",
+                    "message": "当前提交的任务过多，请等待部分任务完成后再试",
+                    "active": active,
+                    "limit": limit,
+                },
+            )
     task = PipelineTask(
         user_id=user_id,
         trace_id=trace_id or generate_trace_id(),

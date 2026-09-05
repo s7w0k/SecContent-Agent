@@ -543,6 +543,9 @@ class Settings(BaseSettings):
     AGENT_RUN_TIMEOUT_SECONDS: int = Field(
         default=600, ge=30, le=3600, description="对话引擎单次 run 最大执行时长（秒）"
     )
+    PIPELINE_USER_MAX_ACTIVE_RUNS: int = Field(
+        default=3, ge=0, le=100, description="每用户同时可提交的后台任务数（0=不限制，队前准入）"
+    )
     CAPACITY_SAFETY_FACTOR: float = Field(
         default=0.8, gt=0, le=1, description="容量模型安全系数（产出容量=理论值×系数）"
     )
