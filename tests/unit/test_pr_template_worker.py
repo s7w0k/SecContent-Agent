@@ -51,6 +51,14 @@ async def test_worker_startup_shares_template_repository_with_pipeline(
     monkeypatch.setattr("agent.pipeline.PipelineManager", MagicMock(return_value=MagicMock()))
     monkeypatch.setattr("agent.scorer.ScoringAgent", MagicMock(return_value=MagicMock()))
     monkeypatch.setattr("agent.reporter.ReportAgent", MagicMock(return_value=MagicMock()))
+    # 该用例断言的 legacy 装配路径不依赖 Wiki 工件与 skill_planned 运行时；
+    # 显式走 legacy 知识后端与 legacy 执行模式，隔离环境（CI 无本地 wiki 工件）。
+    from config import Settings as _Settings
+
+    monkeypatch.setattr(
+        "worker.settings",
+        _Settings(KNOWLEDGE_BACKEND="legacy", AGENT_EXECUTION_MODE="legacy"),
+    )
 
     context: dict = {}
     await worker.startup(context)

@@ -72,7 +72,7 @@ def _context(scopes: frozenset[str] | None = None) -> ToolRequestContext:
 
 def test_registry_has_complete_versioned_contracts():
     registry = build_business_tool_registry()
-    assert len(registry.names()) == 12
+    assert len(registry.names()) == 13  # 含 collect_product_evidence（LLM-Wiki 证据工具）
     assert registry.manifest_version.startswith("2.0:sha256:")
     for name in registry.names():
         contract = registry.get(name)
@@ -105,8 +105,8 @@ async def test_every_fake_and_sandbox_result_passes_the_same_result_schema():
 async def test_recorded_adapter_is_deterministic_and_schema_validated():
     registry = build_business_tool_registry()
     args = {"query": "recorded query"}
-    normalized_args = registry.get("search_news").args_schema.model_validate(args).model_dump(
-        mode="python"
+    normalized_args = (
+        registry.get("search_news").args_schema.model_validate(args).model_dump(mode="python")
     )
     result = {"query": "recorded query", "items": [], "total": 0, "replay_ref": "r-1"}
     executor = BusinessToolExecutor(

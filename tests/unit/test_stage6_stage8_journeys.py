@@ -44,18 +44,40 @@ def _runner(results=None) -> ProductionJourneyRunner:
     return ProductionJourneyRunner(executor, adapter=BusinessToolAdapterKind.FAKE)
 
 
+def _classify_ok() -> dict:
+    """生产运行时新增「分类关卡」：分类不相关/冲突会停下问用户。注入合规分类以继续旅程。"""
+    return {
+        "article": {"article_id": "article-123"},
+        "category": "爆点事件",
+        "security_domain": "AI安全",
+        "confidence": 0.9,
+        "reason": "fake eligible",
+        "eligible": True,
+        "conflict": "",
+        "model_version": "fake-v1",
+        "prompt_version": "fake-v1",
+    }
+
+
 async def test_known_article_one_turn_produces_reviewed_draft():
     task = _task(
         TaskIntent.GENERATE_DRAFT,
         selected_article_ids=["article-123"],
         product_ids=["agent-security"],
     )
-    state, result = await _runner().run(task)
+    state, result = await _runner({"classify_article": _classify_ok()}).run(task)
     assert state.status == RuntimeStatus.COMPLETED
     assert result.artifact["artifact_id"]
     assert result.review["passed"] is True
     assert result.score["user_requested_draft"] is True
-    assert set(result.completed_steps) == {"article", "classify", "products", "score", "draft", "review"}
+    assert set(result.completed_steps) == {
+        "article",
+        "classify",
+        "products",
+        "score",
+        "draft",
+        "review",
+    }
 
 
 async def test_search_zero_and_many_candidates_pause_with_machine_reason():
@@ -91,7 +113,9 @@ async def test_product_ambiguity_pauses_after_classification_without_writing_dra
         "catalog_hash": "sha256:catalog",
     }
     task = _task(TaskIntent.GENERATE_DRAFT, selected_article_ids=["article-123"])
-    state, result = await _runner({"match_products": ambiguous}).run(task)
+    state, result = await _runner(
+        {"classify_article": _classify_ok(), "match_products": ambiguous}
+    ).run(task)
     assert state.status == RuntimeStatus.WAITING_USER
     assert state.reason_code == "product_ambiguity"
     assert state.completed_steps == ["article", "classify", "products"]
@@ -137,32 +161,52 @@ async def test_draft_version_dag_branches_compare_and_rolls_back_pointer_without
         review_status=DraftReviewStatus.REVIEW_PASSED,
     )
     branch_a = await repo.create(
-        tenant_id="t1", user_id="u1", article_id="a1",
-        content="# Short\nOriginal", created_by="u1",
-        parent_artifact_id=root.artifact_id, instruction="shorter title",
+        tenant_id="t1",
+        user_id="u1",
+        article_id="a1",
+        content="# Short\nOriginal",
+        created_by="u1",
+        parent_artifact_id=root.artifact_id,
+        instruction="shorter title",
     )
     branch_b = await repo.create(
-        tenant_id="t1", user_id="u1", article_id="a1",
-        content="# Title\nExpanded body", created_by="u1",
-        parent_artifact_id=root.artifact_id, instruction="expand body",
+        tenant_id="t1",
+        user_id="u1",
+        article_id="a1",
+        content="# Title\nExpanded body",
+        created_by="u1",
+        parent_artifact_id=root.artifact_id,
+        instruction="expand body",
     )
     assert branch_a.parent_artifact_id == branch_b.parent_artifact_id == root.artifact_id
     assert len(await repo.lineage(branch_a.artifact_id, tenant_id="t1", user_id="u1")) == 2
-    comparison = await repo.compare(branch_a.artifact_id, branch_b.artifact_id, tenant_id="t1", user_id="u1")
+    comparison = await repo.compare(
+        branch_a.artifact_id, branch_b.artifact_id, tenant_id="t1", user_id="u1"
+    )
     assert comparison.added_lines and comparison.removed_lines
     pointer = await repo.set_primary(
-        branch_b.artifact_id, tenant_id="t1", user_id="u1", confirmed=True,
-        idempotency_key="primary-branch-b", expected_generation=0,
+        branch_b.artifact_id,
+        tenant_id="t1",
+        user_id="u1",
+        confirmed=True,
+        idempotency_key="primary-branch-b",
+        expected_generation=0,
     )
     rolled_back = await repo.rollback_primary(
-        root.artifact_id, tenant_id="t1", user_id="u1",
-        idempotency_key="rollback-root", expected_generation=pointer.generation,
+        root.artifact_id,
+        tenant_id="t1",
+        user_id="u1",
+        idempotency_key="rollback-root",
+        expected_generation=pointer.generation,
     )
     assert rolled_back.artifact_id == root.artifact_id
     assert len(await repo.list_versions(root.artifact_id, tenant_id="t1", user_id="u1")) == 3
     try:
         await repo.set_primary(
-            branch_a.artifact_id, tenant_id="t1", user_id="u1", confirmed=False,
+            branch_a.artifact_id,
+            tenant_id="t1",
+            user_id="u1",
+            confirmed=False,
             idempotency_key="not-confirmed",
         )
     except DraftVersionError as exc:

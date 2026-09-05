@@ -55,7 +55,9 @@ def test_all_nine_skill_v2_packages_are_published_and_linted():
         assert manifest.status == "published"
         assert manifest.required_tools
         assert manifest.preconditions and manifest.postconditions
-        dataset = ROOT / "agent-security-briefs" / "skills" / manifest.name / manifest.eval_datasets[0]
+        dataset = (
+            ROOT / "agent-security-briefs" / "skills" / manifest.name / manifest.eval_datasets[0]
+        )
         assert len(dataset.read_text(encoding="utf-8").splitlines()) >= 10
 
 
@@ -79,7 +81,9 @@ async def test_skill_release_pipeline_requires_eval_shadow_and_approval():
     with pytest.raises(SkillReleaseError):
         await service.publish(release.release_id, publisher="ops")
     release = await service.validate(release.release_id)
-    release = await service.record_offline_eval(release.release_id, report_ref="report://1", passed=True)
+    release = await service.record_offline_eval(
+        release.release_id, report_ref="report://1", passed=True
+    )
     release = await service.record_shadow(release.release_id, report_ref="shadow://1")
     release = await service.approve(release.release_id, approver="reviewer")
     release = await service.publish(release.release_id, publisher="ops")
@@ -105,12 +109,22 @@ async def test_rule_planner_builds_valid_minimal_known_article_plan():
         "review_draft",
     ]
     assert outcome.plan.direct_pipeline == "pipeline_v2.known_article_draft"
-    assert ProductionPlanValidator(registry).validate(
-        outcome.plan,
-        confirmed_slots={"intent", "goal", "acceptance_criteria", "selected_article_ids", "product_ids"},
-        expected_run_id="run-stage5",
-        expected_task_snapshot_hash=task.fingerprint(),
-    ).accepted
+    assert (
+        ProductionPlanValidator(registry)
+        .validate(
+            outcome.plan,
+            confirmed_slots={
+                "intent",
+                "goal",
+                "acceptance_criteria",
+                "selected_article_ids",
+                "product_ids",
+            },
+            expected_run_id="run-stage5",
+            expected_task_snapshot_hash=task.fingerprint(),
+        )
+        .accepted
+    )
 
 
 async def test_observation_normalizer_externalizes_large_payload_and_sanitizes_failure():
@@ -123,7 +137,9 @@ async def test_observation_normalizer_externalizes_large_payload_and_sanitizes_f
         "title": "x" * 500,
         "summary": "y" * 1500,
     }
-    result = contract.result_schema.model_validate({"items": [item], "total": 1, "replay_ref": "r1"})
+    result = contract.result_schema.model_validate(
+        {"items": [item], "total": 1, "replay_ref": "r1"}
+    )
     observation = await normalizer.success(contract, result)
     assert observation.ok and observation.artifact_ref in store.items
     failure = normalizer.failure(RuntimeError("api_key=super-secret raw failure"))
@@ -133,9 +149,26 @@ async def test_observation_normalizer_externalizes_large_payload_and_sanitizes_f
 
 async def test_fake_business_tools_complete_validated_draft_workflow():
     registry = build_business_tool_registry()
+    # 生产运行时新增「分类关卡」：分类不相关/冲突会停下问用户。
+    # 本用例验证合规分类下的完整写稿流程，故注入 eligible 的 classify 结果。
+    classify_ok = {
+        "article": {"article_id": "article-123"},
+        "category": "爆点事件",
+        "security_domain": "AI安全",
+        "confidence": 0.9,
+        "reason": "fake eligible",
+        "eligible": True,
+        "conflict": "",
+        "model_version": "fake-v1",
+        "prompt_version": "fake-v1",
+    }
     executor = BusinessToolExecutor(
         registry,
-        adapters={BusinessToolAdapterKind.FAKE: FakeBusinessToolAdapter()},
+        adapters={
+            BusinessToolAdapterKind.FAKE: FakeBusinessToolAdapter(
+                results={"classify_article": classify_ok}
+            )
+        },
     )
     from agent.production_runtime import ProductionActionPlanner, ProductionBusinessExecutor
     from agent.runtime_state import RuntimeState
@@ -158,7 +191,9 @@ async def test_fake_business_tools_complete_validated_draft_workflow():
             break
         result = await runner(state, action, {})
         assert result["ok"], result
-        state = state.model_copy(update={"completed_steps": [*state.completed_steps, action.step_id]})
+        state = state.model_copy(
+            update={"completed_steps": [*state.completed_steps, action.step_id]}
+        )
     decision = WorkflowGoalValidator().validate(planner.plan, planner.observations)
     assert decision.decision == WorkflowDecision.COMPLETE
     assert planner.observations["draft"].data["artifact"]["artifact_id"]

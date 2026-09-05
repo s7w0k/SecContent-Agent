@@ -344,6 +344,10 @@ class TestMongoDBIndexes:
             "pipeline_tasks",
             "pipeline_logs",
             "llm_call_logs",
+            "agent_artifacts",
+            "agent_draft_artifacts",
+            "agent_draft_exports",
+            "agent_execution_runs",
             "agent_run_events",
             "execution_runs",
             "execution_events",
@@ -356,8 +360,6 @@ class TestMongoDBIndexes:
             "runtime_approvals",
             "runtime_manifests",
             "conversation_tasks",
-            "agent_draft_artifacts",
-            "agent_draft_exports",
             "runtime_leases",
             "event_outbox",
             "event_outbox_dead_letter",
@@ -406,6 +408,8 @@ class TestMongoDBIndexes:
         assert len(result["conversation_tasks"]) == 4
         assert len(result["agent_draft_artifacts"]) == 3
         assert len(result["agent_draft_exports"]) == 2
+        assert len(result["agent_artifacts"]) == 5
+        assert len(result["agent_execution_runs"]) == 4
         assert len(result["runtime_leases"]) == 2
         assert len(result["event_outbox"]) == 3
         assert len(result["event_outbox_dead_letter"]) == 1
@@ -511,5 +515,5 @@ class TestMongoDBIndexes:
             second = await MongoDB.ensure_indexes()
 
         assert first == second
-        assert collection.create_indexes.await_count == 106
+        assert collection.create_indexes.await_count == 110
         assert collection.drop_index.await_count == 2
