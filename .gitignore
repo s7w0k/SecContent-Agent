@@ -106,3 +106,6 @@ agent-security-briefs/.git
 .workbuddy/
 _q.js
 reports/*.xlsx
+
+# Windows 保留设备名噪音（部分沙箱会话会在仓库根生成 NUL）
+NUL

@@ -29,6 +29,7 @@ BASE_PROMPT = "你是 PR 智能体，负责撰写公关稿件。\n请按流程�
 # T1 token 预算 & 上下文窗口推导
 # ═══════════════════════════════════════════════════════════════
 
+
 def test_derive_budget_from_window():
     """未显式配置上限时，从模型窗口推导输入预算（去掉输出/历史预留与基准提示词）。"""
     budget = derive_input_budget(
@@ -65,6 +66,7 @@ def test_build_context_base_always_present():
 # ═══════════════════════════════════════════════════════════════
 # T2 长期记忆注入 & 预算溢出丢弃
 # ═══════════════════════════════════════════════════════════════
+
 
 def test_memory_injected_within_budget():
     """记忆在预算内时被注入，并体现在 system_prompt。"""
@@ -114,6 +116,7 @@ def test_memory_empty_is_noop():
 # T4 Skill 指令编排与 token 度量
 # ═══════════════════════════════════════════════════════════════
 
+
 def test_skill_instructions_injected_and_counted():
     """命中 Skill 指令时注入其正文并记录 skill_names / skill_tokens。"""
     skills = [
@@ -143,6 +146,7 @@ def test_skill_empty_ok():
 # T3 历史 token 压缩（AgentEngine._build_history / _trim）
 # ═══════════════════════════════════════════════════════════════
 
+
 def _minimal_engine(history_tokens: int = 6000) -> AgentEngine:
     """用最少的字段构造 AgentEngine，仅用于测试 history 压缩（不触 LLM/工具）。"""
     engine = object.__new__(AgentEngine)
@@ -155,7 +159,10 @@ def test_build_history_bounded_by_tokens():
     engine = _minimal_engine(history_tokens=2000)
     # 造 20 条很长的历史（远超预算）
     history = [
-        {"role": "user" if i % 2 == 0 else "assistant", "content": f"第 {i} 轮内容" + ("填充" * 100)}
+        {
+            "role": "user" if i % 2 == 0 else "assistant",
+            "content": f"第 {i} 轮内容" + ("填充" * 100),
+        }
         for i in range(20)
     ]
     msgs = engine._build_history(history)
@@ -188,7 +195,7 @@ def test_trim_preserves_tool_pairing():
     recent_user = HumanMessage(content="请对这篇文章重新评分")
     tool_msg = AIMessage(content="", tool_calls=[{"id": "t1", "name": "score_article", "args": {}}])
     obs = ToolMessage(content="得分 88", tool_call_id="t1")
-    messages = [sys] + old + [recent_user, tool_msg, obs]
+    messages = [sys, *old, recent_user, tool_msg, obs]
 
     trimmed = engine._trim(messages)
     # system 保留
@@ -202,6 +209,7 @@ def test_trim_preserves_tool_pairing():
 # ═══════════════════════════════════════════════════════════════
 # T5 自进化闭环落库（_record_generation_feedback）
 # ═══════════════════════════════════════════════════════════════
+
 
 def test_generation_feedback_writes_run_and_memory_event():
     """进化开关开启时，把完成的 chat run 写入 generation_runs 并触发记忆事件。"""
@@ -240,7 +248,9 @@ def test_generation_feedback_writes_run_and_memory_event():
 
     asyncio.run(
         service._record_generation_feedback(
-            user_id="u1", run_id="r1", thread_id="t1",
+            user_id="u1",
+            run_id="r1",
+            thread_id="t1",
             tools_used=["score_article", "generate_draft"],
             final_ok=True,
             context_telemetry={"input_budget": 50000, "skill_names": ["scoring-knowledge"]},
@@ -271,8 +281,12 @@ def test_generation_feedback_skipped_when_disabled():
 
     asyncio.run(
         service._record_generation_feedback(
-            user_id="u1", run_id="r9", thread_id="t9",
-            tools_used=[], final_ok=True, context_telemetry={},
+            user_id="u1",
+            run_id="r9",
+            thread_id="t9",
+            tools_used=[],
+            final_ok=True,
+            context_telemetry={},
         )
     )
     # 不抛异常即为通过
