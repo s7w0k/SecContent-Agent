@@ -260,6 +260,40 @@ def _pipeline_timeout_error() -> HTTPException:
     )
 
 
+# ── 共享文章"计算一次"单飞（P2，多用户并发防重复 LLM 计费）────
+COMPUTE_LOCK_TTL_SECONDS = 300
+COMPUTE_WAIT_SECONDS = 30
+
+
+async def _claim_compute(db: Any, lock_key: str) -> bool:
+    """领取共享计算锁（true=获得计算权）。
+
+    锁存储不可用（DB 缺失/异常/测试 MagicMock）时视为无需去重直接放行，
+    最坏退化为重复计算但不阻断业务；仅在锁真实存在且被占用时返回 False。
+    """
+    try:
+        return await acquire_pipeline_lock(
+            db, lock_key, "system", ttl_seconds=COMPUTE_LOCK_TTL_SECONDS, lock_type="compute"
+        )
+    except Exception:
+        return True
+
+
+async def _release_compute(db: Any, lock_key: str, *, success: bool) -> None:
+    try:
+        await release_pipeline_lock(db, lock_key, success=success)
+    except Exception:
+        logger.debug("[compute] release failed: %s", lock_key, exc_info=True)
+
+
+async def _wait_compute(db: Any, lock_key: str) -> None:
+    """等待其他执行者完成同文章计算（复用结果），避免重复 LLM 调用。"""
+    try:
+        await wait_for_pipeline_lock(db, lock_key, timeout=COMPUTE_WAIT_SECONDS, poll_interval=1.0)
+    except Exception:
+        logger.debug("[compute] wait skipped: %s", lock_key, exc_info=True)
+
+
 async def _create_pipeline_task(
     db: Any,
     user_id: str,
@@ -1577,22 +1611,30 @@ async def _run_classify_v2_batch(
     semaphore = asyncio.Semaphore(V2_BATCH_CONCURRENCY)
 
     async def classify_one(article: dict[str, Any]) -> tuple[Any, bool]:
-        async with semaphore:
-            result = await classifier.classify_single(
-                article,
-                user_id=user_id,
-                trace_id=trace_id,
-                task_id=task_id,
-            )
+        url_hash = str(article.get("url_hash") or "")
+        lock_key = f"compute:classify_v2:{url_hash}"
+        # 单飞：同一文章只由一名执行者计算，其余等待复用结果（跨任务/跨用户去重）
+        if not await _claim_compute(db, lock_key):
+            await _wait_compute(db, lock_key)
+            return None, False
         try:
+            async with semaphore:
+                result = await classifier.classify_single(
+                    article,
+                    user_id=user_id,
+                    trace_id=trace_id,
+                    task_id=task_id,
+                )
             await db["articles"].update_one(
                 {"_id": article["_id"]},
                 {"$set": _classification_update_fields(result)},
             )
+            await _release_compute(db, lock_key, success=True)
             return result, True
         except Exception as exc:
-            log.warning("[classify-v2] DB update failed: %s", exc)
-            return result, False
+            await _release_compute(db, lock_key, success=False)
+            log.warning("[classify-v2] item failed: %s", exc)
+            return None, False
 
     classified = 0
     summary: dict[str, int] = {}
@@ -1600,7 +1642,8 @@ async def _run_classify_v2_batch(
     for completed, future in enumerate(asyncio.as_completed(futures), start=1):
         result, updated = await future
         classified += int(updated)
-        summary[result.category] = summary.get(result.category, 0) + 1
+        if result is not None:
+            summary[result.category] = summary.get(result.category, 0) + 1
         remaining = total - completed
         await _update_pipeline_task(
             db,
@@ -1654,29 +1697,41 @@ async def _run_score_v2_batch(
 
     semaphore = asyncio.Semaphore(V2_BATCH_CONCURRENCY)
 
-    async def score_one(article: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-        async with semaphore:
-            result = await scorer.score_single(
-                article,
-                user_id=user_id,
-                trace_id=trace_id,
-                task_id=task_id,
+    async def score_one(article: dict[str, Any]) -> tuple[dict[str, Any] | None, bool]:
+        url_hash = str(article.get("url_hash") or "")
+        lock_key = f"compute:score_v2:{url_hash}"
+        if not await _claim_compute(db, lock_key):
+            await _wait_compute(db, lock_key)
+            return None, False
+        try:
+            async with semaphore:
+                result = await scorer.score_single(
+                    article,
+                    user_id=user_id,
+                    trace_id=trace_id,
+                    task_id=task_id,
+                )
+            if result.get("_fallback", True):
+                await _release_compute(db, lock_key, success=False)
+                return result, False
+            await db["articles"].update_one(
+                {"_id": article["_id"]},
+                {
+                    "$set": {
+                        "product_relevance": result["product_relevance"],
+                        "event_impact": result["event_impact"],
+                        "pr_total_score": result["pr_total_score"],
+                        "score_reason": result.get("score_reason", ""),
+                        "product_scores": result.get("product_scores", []),
+                    }
+                },
             )
-        if result.get("_fallback", True):
-            return result, False
-        await db["articles"].update_one(
-            {"_id": article["_id"]},
-            {
-                "$set": {
-                    "product_relevance": result["product_relevance"],
-                    "event_impact": result["event_impact"],
-                    "pr_total_score": result["pr_total_score"],
-                    "score_reason": result.get("score_reason", ""),
-                    "product_scores": result.get("product_scores", []),
-                }
-            },
-        )
-        return result, True
+            await _release_compute(db, lock_key, success=True)
+            return result, True
+        except Exception as exc:
+            await _release_compute(db, lock_key, success=False)
+            log.warning("[score-v2] item failed: %s", exc)
+            return None, False
 
     scored = 0
     candidates = 0
@@ -1684,7 +1739,7 @@ async def _run_score_v2_batch(
     for completed, future in enumerate(asyncio.as_completed(futures), start=1):
         result, updated = await future
         scored += int(updated)
-        candidates += int(updated and result.get("is_pr_candidate", False))
+        candidates += int(updated and result is not None and result.get("is_pr_candidate", False))
         remaining = total - completed
         await _update_pipeline_task(
             db,

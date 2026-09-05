@@ -705,3 +705,69 @@ async def test_user_active_run_limit_rejects_overflow():
     with patch("api.pipeline.get_settings", return_value=limit_override):
         await _create_pipeline_task(db, "user-a", "run-v2")
     assert len(tasks.documents) == 2
+
+
+class FakeLockCollection:
+    """最小 pipeline_locks fake：唯一 lock_key、过期清理、删除/更新语义。"""
+
+    def __init__(self):
+        self.docs: dict[str, dict] = {}
+
+    async def insert_one(self, document: dict):
+        key = document["lock_key"]
+        if key in self.docs:
+            from pymongo.errors import DuplicateKeyError
+
+            raise DuplicateKeyError(f"dup key: {key}")
+        self.docs[key] = deepcopy(document)
+
+    async def find_one(self, query: dict):
+        doc = self.docs.get(query.get("lock_key", ""))
+        return deepcopy(doc) if doc else None
+
+    async def delete_one(self, query: dict):
+        key = query.get("lock_key")
+        rule = query.get("expires_at")
+        now = rule["$lte"] if rule else None
+        matches = [
+            k
+            for k, v in self.docs.items()
+            if (key is None or k == key) and (now is None or v.get("expires_at") <= now)
+        ]
+        for k in matches:
+            del self.docs[k]
+        return SimpleNamespace(deleted_count=len(matches))
+
+    async def update_one(self, query: dict, update: dict):
+        key = query.get("lock_key", "")
+        if key in self.docs:
+            self.docs[key].update(update["$set"])
+        return SimpleNamespace(modified_count=1)
+
+
+@pytest.mark.asyncio
+async def test_compute_lock_exclusive_and_persists_completed():
+    from api.pipeline import _claim_compute, _release_compute
+
+    locks = FakeLockCollection()
+    db = FakeDatabase(pipeline_locks=locks)
+    key = "compute:classify_v2:abc123"
+    assert await _claim_compute(db, key) is True
+    # 第二个执行者拿不到锁（单飞）
+    assert await _claim_compute(db, key) is False
+    await _release_compute(db, key, success=True)
+    # 完成后锁保留 → 后续领取仍为 False，直接复用已落库结果（防重复计费）
+    assert await _claim_compute(db, key) is False
+
+
+@pytest.mark.asyncio
+async def test_compute_lock_failure_release_allows_retry():
+    from api.pipeline import _claim_compute, _release_compute
+
+    locks = FakeLockCollection()
+    db = FakeDatabase(pipeline_locks=locks)
+    key = "compute:score_v2:def456"
+    assert await _claim_compute(db, key) is True
+    await _release_compute(db, key, success=False)
+    # 失败即释放，允许重试领取
+    assert await _claim_compute(db, key) is True
