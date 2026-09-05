@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services
 # 1. Settings / Config 测试
 # ═══════════════════════════════════════════════════════════
 
+
 class TestSettings:
     """配置管理测试"""
 
@@ -99,6 +100,7 @@ class TestSettings:
         monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
         # 清除 lru_cache 以强制重新加载
         from config import get_settings
+
         get_settings.cache_clear()
 
         logger = logging.getLogger("backend.config")
@@ -126,6 +128,7 @@ class TestSettings:
 # ═══════════════════════════════════════════════════════════
 # 2. MongoDB 连接管理测试
 # ═══════════════════════════════════════════════════════════
+
 
 class TestMongoDBConnection:
     """MongoDB 连接管理器测试"""
@@ -192,6 +195,7 @@ class TestMongoDBConnection:
 # ═══════════════════════════════════════════════════════════
 # 3. Article 模型测试
 # ═══════════════════════════════════════════════════════════
+
 
 class TestArticleModel:
     """Article 数据模型测试"""
@@ -305,6 +309,7 @@ class TestArticleModel:
 # 4. Report 模型测试
 # ═══════════════════════════════════════════════════════════
 
+
 class TestReportModel:
     """Report 数据模型测试"""
 
@@ -382,16 +387,19 @@ class TestReportModel:
 # 5. FastAPI 应用测试
 # ═══════════════════════════════════════════════════════════
 
+
 class TestFastAPIApp:
     """FastAPI 入口和端点测试"""
 
     def test_app_exists(self):
         import main
+
         assert main.app is not None
         assert main.app.title == "PR Agent Demo - Backend"
 
     def test_app_routes(self):
         import main
+
         # Collect routes, handling both Route and _IncludedRouter objects
         routes = set()
         for r in main.app.routes:

@@ -88,14 +88,18 @@ async def _run_candidate(inputs: list[str], runs: int, dataset: Path, output: Pa
         print("[replay] candidate 无输入", file=sys.stderr)
         return 2
     backend_a, backend_b = _candidate_backends()
-    result = await candidate_replay(inputs=inputs, backend_a=backend_a, backend_b=backend_b, n_runs=runs)
+    result = await candidate_replay(
+        inputs=inputs, backend_a=backend_a, backend_b=backend_b, n_runs=runs
+    )
     print(
         f"[replay] candidate: inputs={result.input_count} runs={result.n_runs} "
         f"match={result.match_count} ratio={result.match_ratio:.2%}"
     )
     for o in result.outputs[:10]:
-        print(f"  {'OK ' if o['matched'] else 'MIS'} {o['input'][:40]!r} "
-              f"A={o['backend_a_hash'][:8]} B={o['backend_b_hash'][:8]}")
+        print(
+            f"  {'OK ' if o['matched'] else 'MIS'} {o['input'][:40]!r} "
+            f"A={o['backend_a_hash'][:8]} B={o['backend_b_hash'][:8]}"
+        )
     payload = {
         "mode": "candidate",
         "input_count": result.input_count,
@@ -156,7 +160,11 @@ async def _run_recovery(state_file: Path, output: Path) -> int:
         "idempotency_missing": result.idempotency_missing,
     }
     _write_output(output, "replay-recovery", payload)
-    passed = result.executed and result.status in ("completed", "budget_exceeded") and not result.idempotency_missing
+    passed = (
+        result.executed
+        and result.status in ("completed", "budget_exceeded")
+        and not result.idempotency_missing
+    )
     return 0 if passed else 1
 
 

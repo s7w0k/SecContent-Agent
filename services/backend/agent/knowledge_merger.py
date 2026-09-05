@@ -69,10 +69,16 @@ class KnowledgeMerger:
         # 获取用户产品信息（用于标题展示）
         product_names: dict[str, str] = {}
         if product_ids:
-            user_product_docs = await self._db["user_products"].find({
-                "user_id": user_id,
-                "product_id": {"$in": product_ids},
-            }).to_list(length=50)
+            user_product_docs = (
+                await self._db["user_products"]
+                .find(
+                    {
+                        "user_id": user_id,
+                        "product_id": {"$in": product_ids},
+                    }
+                )
+                .to_list(length=50)
+            )
             for doc in user_product_docs:
                 doc.pop("_id", None)
                 product_names[doc["product_id"]] = doc.get("name", doc["product_id"])
@@ -99,9 +105,7 @@ class KnowledgeMerger:
                 content = entry.get("content", "")
                 if not content.strip():
                     continue
-                user_parts.append(
-                    f"### {product_name} - {title}（用户级·{doc_type}）\n\n{content}"
-                )
+                user_parts.append(f"### {product_name} - {title}（用户级·{doc_type}）\n\n{content}")
                 user_source_ids.append(f"user:{pid}:{entry.get('entry_id', '')}")
 
         user_content = "\n\n---\n\n".join(user_parts) if user_parts else ""
@@ -139,17 +143,25 @@ class KnowledgeMerger:
         Returns:
             产品列表，每项包含 product_id, name, aliases, keywords
         """
-        docs = await self._db["user_products"].find({
-            "user_id": user_id,
-            "enabled": True,
-        }).to_list(length=50)
+        docs = (
+            await self._db["user_products"]
+            .find(
+                {
+                    "user_id": user_id,
+                    "enabled": True,
+                }
+            )
+            .to_list(length=50)
+        )
         results = []
         for doc in docs:
             doc.pop("_id", None)
-            results.append({
-                "product_id": doc["product_id"],
-                "name": doc.get("name", ""),
-                "aliases": doc.get("aliases", []),
-                "keywords": doc.get("keywords", []),
-            })
+            results.append(
+                {
+                    "product_id": doc["product_id"],
+                    "name": doc.get("name", ""),
+                    "aliases": doc.get("aliases", []),
+                    "keywords": doc.get("keywords", []),
+                }
+            )
         return results

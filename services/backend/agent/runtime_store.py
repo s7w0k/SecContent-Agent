@@ -73,9 +73,7 @@ class RuntimeStateStore:
         doc = state.model_dump(mode="json")
         doc["run_id"] = state.run_id
         if expected_checkpoint_version is None:
-            await self.col.replace_one(
-                {"run_id": state.run_id}, doc, upsert=True
-            )
+            await self.col.replace_one({"run_id": state.run_id}, doc, upsert=True)
             return
         result = await self.col.replace_one(
             {"run_id": state.run_id, "checkpoint_version": expected_checkpoint_version},
@@ -104,7 +102,10 @@ class RuntimeStateStore:
         """取消流程第 1 步：API 将状态置为 cancel_requested（运行中的 run 可取消）。"""
         stamp = now or _utc_now()
         result = await self.col.update_one(
-            {"run_id": run_id, "status": {"$in": [RuntimeStatus.RUNNING.value, RuntimeStatus.PLANNING.value]}},
+            {
+                "run_id": run_id,
+                "status": {"$in": [RuntimeStatus.RUNNING.value, RuntimeStatus.PLANNING.value]},
+            },
             {
                 "$set": {
                     "status": "cancel_requested",

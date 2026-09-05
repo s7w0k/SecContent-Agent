@@ -191,7 +191,11 @@ class RuntimeMemoryExtractor:
             content = self._sanitize_content(sig.text)
             if not content:
                 continue
-            ttl_days = self.failure_ttl_days if kind == RuntimeMemoryKind.FAILURE else self.preference_ttl_days
+            ttl_days = (
+                self.failure_ttl_days
+                if kind == RuntimeMemoryKind.FAILURE
+                else self.preference_ttl_days
+            )
             records.append(
                 RuntimeMemoryRecord(
                     memory_id="mem-" + uuid.uuid4().hex[:12],
@@ -216,7 +220,8 @@ class RuntimeMemoryExtractor:
     def _classify(self, sig: MemorySignal) -> RuntimeMemoryKind | None:
         """按文本信号与执行结果分类（确定性规则）。"""
         if sig.outcome in ("failed", "skipped") or (
-            sig.outcome == "" and any(
+            sig.outcome == ""
+            and any(
                 w in sig.text.lower()
                 for w in ("失败", "报错", "error", "failed", "超时", "timeout")
             )
@@ -248,9 +253,9 @@ class RuntimeMemoryExtractor:
         lowered = text.lower()
         # 1. 敏感键：api_key= / token: / Bearer <...> 等赋值形式
         for key in SENSITIVE_KEYS:
-            if re.search(
-                rf"{re.escape(key)}\s*[=:：]\s*\S+", lowered
-            ) or re.search(rf"\b{re.escape(key)}\b", lowered):
+            if re.search(rf"{re.escape(key)}\s*[=:：]\s*\S+", lowered) or re.search(
+                rf"\b{re.escape(key)}\b", lowered
+            ):
                 return "sensitive_key"
         if re.search(r"bearer\s+[a-z0-9._-]{16,}", lowered):
             return "access_token"

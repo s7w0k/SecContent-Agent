@@ -1,4 +1,4 @@
-﻿"""Unit tests for article ingestion service and search import endpoint."""
+"""Unit tests for article ingestion service and search import endpoint."""
 
 from __future__ import annotations
 
@@ -362,10 +362,12 @@ class TestImportEndpoint:
         canonical = canonicalize_url("https://example.com/article1")
         url_hash = compute_url_hash(canonical)
         existing_article = {"url_hash": url_hash, "canonical_url": canonical}
-        db = FakeDatabase({
-            "search_sessions": [session],
-            "articles": [existing_article],
-        })
+        db = FakeDatabase(
+            {
+                "search_sessions": [session],
+                "articles": [existing_article],
+            }
+        )
         app, settings = _make_app(db)
 
         with patch("api.web_search.get_settings", return_value=settings):

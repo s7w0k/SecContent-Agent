@@ -175,7 +175,9 @@ async def test_search_503_retried_then_raises_connection_error():
 @pytest.mark.asyncio
 async def test_search_non_json_content_type():
     async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text="<html>not json</html>", headers={"content-type": "text/html"})
+        return httpx.Response(
+            200, text="<html>not json</html>", headers={"content-type": "text/html"}
+        )
 
     client = _client(handler)
     with pytest.raises(SearXNGBadResponseError):

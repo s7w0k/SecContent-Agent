@@ -110,9 +110,7 @@ class TestSessionIsolation:
             from services.backend.services.web_search_service import SearchSessionService
         svc = SearchSessionService(mock_db, ttl_minutes=30)
 
-        mock_db["search_sessions"].update_one = AsyncMock(
-            return_value=MagicMock(modified_count=0)
-        )
+        mock_db["search_sessions"].update_one = AsyncMock(return_value=MagicMock(modified_count=0))
 
         result = await svc.update_imported_status("srch_001", "user-B", "res_1", "hash123")
         assert result is False  # Not updated because user_id doesn't match
@@ -162,9 +160,7 @@ class TestImportIsolation:
             return_value=MagicMock(inserted_id="batch_id")
         )
 
-        with unittest.mock.patch(
-            "api.web_search.get_settings", return_value=mock_settings
-        ):
+        with unittest.mock.patch("api.web_search.get_settings", return_value=mock_settings):
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app),
                 base_url="http://test",

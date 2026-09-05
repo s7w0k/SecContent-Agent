@@ -151,7 +151,12 @@ def build_production_execution_runtime(
     skill_snapshot = ""
     shadow_executor: ShadowExecutor | None = None
     run_store: Any | None = None
-    if need_skill and business_registry is not None and business_executor is not None and artifact_store is not None:
+    if (
+        need_skill
+        and business_registry is not None
+        and business_executor is not None
+        and artifact_store is not None
+    ):
         # Durable Resume（EPIC-A §5 / §8）：持久化执行步进，skill_planned 可幂等恢复。
         run_store = ExecutionRunStore(db) if db is not None else None
         default_adapter = "production_readonly" if mode == "skill_shadow" else "production"
@@ -171,9 +176,7 @@ def build_production_execution_runtime(
 
         # Shadow（§25 / §26 / §29）：Shadow 使用只读 adapter，正式结果永远来自 Legacy
         if mode == "skill_shadow" and legacy_executor is not None:
-            shadow_sampler = ShadowSampler(
-                sample_percent=int(settings.AGENT_SHADOW_SAMPLE_PERCENT)
-            )
+            shadow_sampler = ShadowSampler(sample_percent=int(settings.AGENT_SHADOW_SAMPLE_PERCENT))
             shadow_comparator = ShadowComparator()
             shadow_executor = ShadowExecutor(
                 legacy=legacy_executor,

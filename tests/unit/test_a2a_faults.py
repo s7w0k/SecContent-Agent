@@ -82,9 +82,7 @@ class _AsyncNoSleep:
 
 def _make_client(handler, *, base_url=CARD_BASE, stream=False, resolver=None, **cfg_extra):
     transport = httpx.MockTransport(handler)
-    http = httpx.AsyncClient(
-        transport=transport, follow_redirects=False, trust_env=False
-    )
+    http = httpx.AsyncClient(transport=transport, follow_redirects=False, trust_env=False)
     cfg = RemoteAgentConfig(
         key="peer-1",
         base_url=base_url,
@@ -185,8 +183,11 @@ class TestStreamSendRecovery:
         from agent.a2a.models import AgentCard
 
         cfg = RemoteAgentConfig(
-            key="peer-1", base_url=CARD_BASE, enabled_skills=["pr_intel"],
-            require_https=False, retry_max=1,
+            key="peer-1",
+            base_url=CARD_BASE,
+            enabled_skills=["pr_intel"],
+            require_https=False,
+            retry_max=1,
         )
         client = A2AClient(
             allowlist={"peer-1": cfg},
@@ -311,8 +312,11 @@ class TestRetryNoDuplicateSideEffect:
             return A2AClient(
                 allowlist={
                     "peer-1": RemoteAgentConfig(
-                        key="peer-1", base_url=CARD_BASE,
-                        enabled_skills=["pr_intel"], require_https=False, retry_max=1,
+                        key="peer-1",
+                        base_url=CARD_BASE,
+                        enabled_skills=["pr_intel"],
+                        require_https=False,
+                        retry_max=1,
                     )
                 },
                 http_client=http,
@@ -341,7 +345,7 @@ class TestOutOfOrderAndDedup:
             _sse_frame({"event_id": "ev-5", "task_id": "t1", "status": "WORKING", "sequence": 5}),
             _sse_frame({"event_id": "ev-3", "task_id": "t1", "status": "WORKING", "sequence": 3}),
             _sse_frame({"event_id": "ev-7", "task_id": "t1", "status": "COMPLETED", "sequence": 7}),
-            b"event: done\ndata: {\"status\":\"completed\"}\n\n",
+            b'event: done\ndata: {"status":"completed"}\n\n',
         ]
 
         def handler(request):
@@ -356,7 +360,7 @@ class TestOutOfOrderAndDedup:
         assert [e.status.value for e in got] == ["WORKING", "WORKING", "COMPLETED"]
         # Last-Event-ID 头已携带游标（4B-5：事件 ID + 游标重连）
         seen = {"header": None}
-        frames2 = [b"event: done\ndata: {\"status\":\"completed\"}\n\n"]
+        frames2 = [b'event: done\ndata: {"status":"completed"}\n\n']
 
         def handler2(request):
             seen["header"] = request.headers.get("last-event-id")
@@ -395,9 +399,7 @@ class TestCircuitBreaker:
                 return httpx.Response(200, json=_card_json())
             return httpx.Response(404)
 
-        client = _make_client(
-            handler, breaker_fail_threshold=1, breaker_cooldown_seconds=10.0
-        )
+        client = _make_client(handler, breaker_fail_threshold=1, breaker_cooldown_seconds=10.0)
         cfg = client.allowlist["peer-1"]
         fake_time = {"t": 0.0}
         client._monotonic = lambda: fake_time["t"]

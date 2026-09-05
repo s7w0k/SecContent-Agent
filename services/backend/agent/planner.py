@@ -127,9 +127,7 @@ def build_plan_from_choice(
     style_hints = list(dict.fromkeys(choice.style_hints))
 
     steps: list[Any] = []
-    steps.append(
-        _step("s1_crawl", "crawl", [], {"crawl_days": 1}, timeout_s=900)
-    )
+    steps.append(_step("s1_crawl", "crawl", [], {"crawl_days": 1}, timeout_s=900))
     enrich_deps = ["s1_crawl"]
     if choice.needs_fulltext:
         steps.append(
@@ -172,7 +170,13 @@ def build_plan_from_choice(
         draft_inputs["style_hints"] = style_hints
     steps.append(_step("s6_draft", "draft", ["s5_score"], draft_inputs, timeout_s=1200))
     steps.append(
-        _step("s7_quality_check", "quality_check", ["s6_draft"], {"article_ids": articles}, timeout_s=300)
+        _step(
+            "s7_quality_check",
+            "quality_check",
+            ["s6_draft"],
+            {"article_ids": articles},
+            timeout_s=300,
+        )
     )
     steps.append(
         _step(
@@ -541,13 +545,19 @@ _SYSTEM_PROMPT = (
 
 
 def _build_user_prompt(planner_input: PlannerInput) -> str:
-    products = "\n".join(
-        f"- {p.get('id')}: {str(p.get('name', ''))[:200]}" for p in planner_input.products
-    ) or "- (无)"
-    articles = "\n".join(
-        f"- {a.id} | 状态={a.status} | {a.title[:120]} | 摘要={a.summary[:300]}"
-        for a in planner_input.articles
-    ) or "- (无)"
+    products = (
+        "\n".join(
+            f"- {p.get('id')}: {str(p.get('name', ''))[:200]}" for p in planner_input.products
+        )
+        or "- (无)"
+    )
+    articles = (
+        "\n".join(
+            f"- {a.id} | 状态={a.status} | {a.title[:120]} | 摘要={a.summary[:300]}"
+            for a in planner_input.articles
+        )
+        or "- (无)"
+    )
     styles = "\n".join(f"- {s}" for s in planner_input.style_hints) or "- (无)"
     return (
         f"用户: {planner_input.user_id or '(系统)'}\n"

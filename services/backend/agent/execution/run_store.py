@@ -131,7 +131,9 @@ class ExecutionRunStore:
     async def mark_step_failed(self, run_id: str, step_id: str) -> None:
         await self._mutate(
             run_id,
-            mutate=lambda r: (r.failed_steps.append(step_id) if step_id not in r.failed_steps else None),
+            mutate=lambda r: (
+                r.failed_steps.append(step_id) if step_id not in r.failed_steps else None
+            ),
         )
 
     async def mark_completed(self, run_id: str) -> None:
@@ -148,9 +150,7 @@ class ExecutionRunStore:
     async def _set_status(self, run_id: str, status: RunStatus) -> None:
         await self._mutate(run_id, mutate=lambda r: setattr(r, "status", status))
 
-    async def _mutate(
-        self, run_id: str, *, mutate: Any
-    ) -> None:
+    async def _mutate(self, run_id: str, *, mutate: Any) -> None:
         record = await self.get_by_run_id(run_id)
         if record is None:
             return

@@ -271,6 +271,7 @@ class TestViolationFallsBack:
     @pytest.mark.asyncio
     async def test_planner_rejected_choice_falls_back_to_default(self):
         """LLM 选择越权产品 → 白名单拒绝 → 100% 回退确定性默认计划。"""
+
         class RogueWrapper:
             async def invoke_structured(self, **kwargs):
                 return PlannerChoice(
@@ -329,7 +330,10 @@ class TestReviewGuard:
         for name in ("crawl", "score"):
             registry.register(_FakeAdapter(name, version="v1", concurrency_group="local"))
         # review 未注册 → 计划覆盖校验失败
-        assert registry.validate_plan_coverage([_step("s1", "crawl"), _step("s2", "review", ["s1"])]) is False
+        assert (
+            registry.validate_plan_coverage([_step("s1", "crawl"), _step("s2", "review", ["s1"])])
+            is False
+        )
 
 
 # ═══════════════════════════════════════════════════════════════

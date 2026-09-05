@@ -578,18 +578,14 @@ async def _resolve_article_draft_context(
         product_ids = list(snapshot.product_ids)
         routing_version = snapshot.routing_version
     except Exception as exc:
-        logger.warning(
-            "[draft] auto routing failed for %s: %s", article.get("url_hash"), exc
-        )
+        logger.warning("[draft] auto routing failed for %s: %s", article.get("url_hash"), exc)
 
     if not product_ids:
         best = article.get("best_product_id") or ""
         if best:
             product_ids = [best]
 
-    knowledge_slice, source_ids = await _build_product_knowledge_slice(
-        db, product_ids, user_id
-    )
+    knowledge_slice, source_ids = await _build_product_knowledge_slice(db, product_ids, user_id)
     routing_meta = {
         "mode": "auto",
         "resolved_products": product_ids,
@@ -638,8 +634,8 @@ async def draft_node(
         logged_categories: set[str] = set()
         for art in articles:
             # 阶段2 S2-4：按文章解析产品路由并构建知识切片
-            _product_ids, knowledge_slice, routing_meta = (
-                await _resolve_article_draft_context(db, art, state["user_id"])
+            _product_ids, knowledge_slice, routing_meta = await _resolve_article_draft_context(
+                db, art, state["user_id"]
             )
             v2_scores = {
                 "product_relevance": art.get("product_relevance", 0),
@@ -791,12 +787,8 @@ async def rewrite_node(
         product_ids = list(routing_meta.get("resolved_products") or [])
         if not product_ids:
             # 旧草稿无路由元数据时，按 auto 解析（可观测兼容策略）
-            product_ids, _, _ = await _resolve_article_draft_context(
-                db, article, state["user_id"]
-            )
-        knowledge_slice, _ = await _build_product_knowledge_slice(
-            db, product_ids, state["user_id"]
-        )
+            product_ids, _, _ = await _resolve_article_draft_context(db, article, state["user_id"])
+        knowledge_slice, _ = await _build_product_knowledge_slice(db, product_ids, state["user_id"])
         scores = {
             "product_relevance": article.get("product_relevance", 0),
             "event_impact": article.get("event_impact", 0),

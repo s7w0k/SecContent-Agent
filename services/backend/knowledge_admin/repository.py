@@ -45,10 +45,12 @@ class KnowledgeDraftRepository:
     ) -> KnowledgeDraftInDB:
         """创建新草稿。同一路径已有 editing 草稿时返回已有草稿。"""
         # Check for existing editing draft for the same path
-        existing = await self._collection.find_one({
-            "relative_path": relative_path,
-            "status": KnowledgeDraftStatus.EDITING,
-        })
+        existing = await self._collection.find_one(
+            {
+                "relative_path": relative_path,
+                "status": KnowledgeDraftStatus.EDITING,
+            }
+        )
         if existing:
             return KnowledgeDraftInDB(**existing)
 

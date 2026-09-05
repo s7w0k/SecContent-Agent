@@ -241,9 +241,7 @@ class WikiNavigator:
                     and snapshot.coverage <= prev_coverage + 1e-9
                     and prev_missing.issubset(cur_missing)
                 )
-                state.no_progress_rounds = (
-                    state.no_progress_rounds + 1 if no_progress else 0
-                )
+                state.no_progress_rounds = state.no_progress_rounds + 1 if no_progress else 0
                 prev_evidence = len(snapshot.evidence)
                 prev_coverage = snapshot.coverage
                 prev_missing = cur_missing
@@ -325,7 +323,9 @@ class WikiNavigator:
             }
 
             try:
-                state.missing_requirements = missing_requirements  # 刷新，供 validate_action STOP 守卫
+                state.missing_requirements = (
+                    missing_requirements  # 刷新，供 validate_action STOP 守卫
+                )
                 action = await decider.decide(NavigationDecisionContext(**context_kwargs))
             except Exception:
                 state.llm_failure_count += 1
@@ -386,7 +386,9 @@ class WikiNavigator:
             }
             for c in frontier
         ]
-        return deterministic_decision(candidates, missing_requirements=list(state.missing_requirements))
+        return deterministic_decision(
+            candidates, missing_requirements=list(state.missing_requirements)
+        )
 
     def _is_repeated(self, state: NavigationState, action) -> bool:
         key = f"{action.action}:{action.target}"
@@ -463,9 +465,7 @@ class WikiNavigator:
             state.frontier.append(child.page_id)
         return True
 
-    def _build_descriptors(
-        self, frontier: list[NavigationCandidate], requirements
-    ) -> list[dict]:
+    def _build_descriptors(self, frontier: list[NavigationCandidate], requirements) -> list[dict]:
         """把 frontier 压成 ≤8 个 PageDescriptor（§4.3）。"""
         page_type_affinity: dict[str, list[str]] = {}
         for r in requirements:

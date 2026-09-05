@@ -136,7 +136,9 @@ class MemoryRetriever:
             elif polarity == "avoid" and display not in avoid_patterns:
                 avoid_patterns.append(display)
             elif polarity == "prefer":
-                soft_prefs.append(SoftPreference(memory_id=mid, text=display, confidence=confidence))
+                soft_prefs.append(
+                    SoftPreference(memory_id=mid, text=display, confidence=confidence)
+                )
 
         # 7. 渲染有界文本
         rendered = self._render(hard_prefs, soft_prefs, avoid_patterns)
@@ -173,7 +175,11 @@ class MemoryRetriever:
 
         logger.info(
             "memory pack retrieved: user=%s scope=%s items=%d chars=%d pruned=%d",
-            user_id, scope_key, pack.item_count, pack.char_count, pack.pruned_count,
+            user_id,
+            scope_key,
+            pack.item_count,
+            pack.char_count,
+            pack.pruned_count,
         )
 
         return pack
@@ -248,9 +254,16 @@ class MemoryRetriever:
     def _dedupe_and_limit(self, scored: list[tuple[float, dict]], limit: int) -> list[dict]:
         """按维度去重和限额。"""
         max_per_dim = {
-            "required_pattern": 3, "avoid_pattern": 3, "tone": 1, "length": 1,
-            "template": 2, "perspective": 2, "revise_direction": 3, "structure": 2,
-            "title_style": 1, "content_order": 2,
+            "required_pattern": 3,
+            "avoid_pattern": 3,
+            "tone": 1,
+            "length": 1,
+            "template": 2,
+            "perspective": 2,
+            "revise_direction": 3,
+            "structure": 2,
+            "title_style": 1,
+            "content_order": 2,
         }
         dim_counts: dict[str, int] = {}
         result = []

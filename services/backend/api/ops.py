@@ -33,9 +33,7 @@ async def collect_metrics(db: Any) -> dict[str, Any]:
     for status in _STATUSES:
         task_by_status[status] = await count("pipeline_tasks", {"status": status})
 
-    active = sum(
-        (task_by_status.get(s) or 0) for s in ("pending", "running", "resume_pending")
-    )
+    active = sum((task_by_status.get(s) or 0) for s in ("pending", "running", "resume_pending"))
     return {
         "tasks": {
             "by_status": task_by_status,

@@ -87,9 +87,7 @@ class AssessmentService:
                 created_at=now,
                 updated_at=now,
             )
-            await self._db["user_article_assessments"].insert_one(
-                assessment.model_dump()
-            )
+            await self._db["user_article_assessments"].insert_one(assessment.model_dump())
             return assessment
 
         # 更新现有评估的分类部分
@@ -101,11 +99,7 @@ class AssessmentService:
                     "input_fingerprint": input_fingerprint,
                     "updated_at": now,
                     "version": existing.version + 1,
-                    **(
-                        {"prompt_refs": prompt_refs}
-                        if prompt_refs is not None
-                        else {}
-                    ),
+                    **({"prompt_refs": prompt_refs} if prompt_refs is not None else {}),
                 }
             },
         )
@@ -152,9 +146,7 @@ class AssessmentService:
                 created_at=now,
                 updated_at=now,
             )
-            await self._db["user_article_assessments"].insert_one(
-                assessment.model_dump()
-            )
+            await self._db["user_article_assessments"].insert_one(assessment.model_dump())
             return assessment
 
         await self._db["user_article_assessments"].update_one(

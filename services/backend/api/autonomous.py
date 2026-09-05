@@ -86,7 +86,15 @@ def _summarize(state) -> RunSummary:
     # Article content is intentionally excluded from the status payload.
     article_summary = {
         key: article.get(key)
-        for key in ("article_id", "source_ref", "content_hash", "title", "source", "published_at", "summary")
+        for key in (
+            "article_id",
+            "source_ref",
+            "content_hash",
+            "title",
+            "source",
+            "published_at",
+            "summary",
+        )
         if article.get(key) not in (None, "")
     }
     draft = observations.get("draft", {}).get("data", {})

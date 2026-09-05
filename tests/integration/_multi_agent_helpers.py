@@ -39,7 +39,16 @@ from agent.worker_registry import (
     WorkerSpec,
 )
 
-DEFAULT_WORKERS = ["crawl", "classify", "filter", "score", "draft", "quality_check", "rewrite", "review"]
+DEFAULT_WORKERS = [
+    "crawl",
+    "classify",
+    "filter",
+    "score",
+    "draft",
+    "quality_check",
+    "rewrite",
+    "review",
+]
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -213,23 +222,37 @@ class _FakeAdapter(WorkerAdapter):
         attempt = int(ctx.get("attempt", 1))
         if attempt < self._attempts_until_success:
             return WorkerResult(
-                step_id=ctx["step_id"], worker=self.name, status="failed",
-                error_type=self._error_type, error_message="retry me",
-                retryable=True, attempt=attempt, duration_ms=1,
+                step_id=ctx["step_id"],
+                worker=self.name,
+                status="failed",
+                error_type=self._error_type,
+                error_message="retry me",
+                retryable=True,
+                attempt=attempt,
+                duration_ms=1,
             )
         if self._status != "succeeded":
             return WorkerResult(
-                step_id=ctx["step_id"], worker=self.name, status="failed",
-                error_type=self._error_type, error_message="boom",
-                retryable=self._retryable, attempt=attempt, duration_ms=1,
+                step_id=ctx["step_id"],
+                worker=self.name,
+                status="failed",
+                error_type=self._error_type,
+                error_message="boom",
+                retryable=self._retryable,
+                attempt=attempt,
+                duration_ms=1,
             )
         resolved = self.resolve_input(state, ctx)
         input_hash = self.compute_input_hash(resolved)
         return WorkerResult(
-            step_id=ctx["step_id"], worker=self.name,
+            step_id=ctx["step_id"],
+            worker=self.name,
             idempotency_key=self.idempotency_key(ctx, input_hash),
-            input_hash=input_hash, result_hash="sha256:ok",
-            status="succeeded", attempt=attempt, duration_ms=1,
+            input_hash=input_hash,
+            result_hash="sha256:ok",
+            status="succeeded",
+            attempt=attempt,
+            duration_ms=1,
             output={"current_phase": ctx["step_id"]},
         )
 
@@ -272,7 +295,9 @@ class _FakeLLMWrapper:
         return self.choice if self.choice is not None else PlannerChoice()
 
 
-def make_planner(db=None, wrapper=None, *, enabled: bool = True, model: str = "test:planner") -> Planner:
+def make_planner(
+    db=None, wrapper=None, *, enabled: bool = True, model: str = "test:planner"
+) -> Planner:
     return Planner(
         llm_wrapper=wrapper,
         db=db,
@@ -288,7 +313,9 @@ def make_planner(db=None, wrapper=None, *, enabled: bool = True, model: str = "t
 # ═══════════════════════════════════════════════════════════════
 
 
-def make_execution_stack(db, registry, *, owner_id: str = "orch", lease_seconds: int = 120, max_attempts: int = 3):
+def make_execution_stack(
+    db, registry, *, owner_id: str = "orch", lease_seconds: int = 120, max_attempts: int = 3
+):
     """组装 validator/ledger/orchestrator（不含 planner）。"""
     validator = PlanValidator()
     ledger = ExecutionStepLedger(db, lease_seconds=lease_seconds)
@@ -310,7 +337,9 @@ def make_execution_stack(db, registry, *, owner_id: str = "orch", lease_seconds:
 # ═══════════════════════════════════════════════════════════════
 
 
-def default_plan(run_id: str = "run-1", *, article_ids: list[str] | None = None, needs_fulltext: bool = False) -> PipelinePlan:
+def default_plan(
+    run_id: str = "run-1", *, article_ids: list[str] | None = None, needs_fulltext: bool = False
+) -> PipelinePlan:
     """确定性默认计划（无全文 → 7 步：crawl/classify/filter/score/draft/quality_check/review）。"""
     articles = article_ids or ["a1"]
     snapshot = input_snapshot_hash(user_id="u1", article_ids=articles)

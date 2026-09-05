@@ -76,8 +76,18 @@ def _valid_steps() -> list[PlanStep]:
         _step("s1", "crawl", [], {"crawl_days": 1}),
         _step("s2", "classify", ["s1"], {"article_ids": ["art-1"]}),
         _step("s3", "filter", ["s2"], {"article_ids": ["art-1"]}),
-        _step("s4", "score", ["s3"], {"article_ids": ["art-1"], "product_ids": ["agent-identity-security"]}),
-        _step("s5", "draft", ["s4"], {"article_ids": ["art-1"], "product_ids": ["agent-identity-security"]}),
+        _step(
+            "s4",
+            "score",
+            ["s3"],
+            {"article_ids": ["art-1"], "product_ids": ["agent-identity-security"]},
+        ),
+        _step(
+            "s5",
+            "draft",
+            ["s4"],
+            {"article_ids": ["art-1"], "product_ids": ["agent-identity-security"]},
+        ),
         _step("s6", "quality_check", ["s5"], {"article_ids": ["art-1"]}),
         _step("s7", "review", ["s6"], {"article_ids": ["art-1"]}),
     ]
@@ -105,8 +115,15 @@ class TestPlanSchema:
         assert len(plan.steps) == 9  # 含 enrich
         workers = [s.worker for s in plan.steps]
         assert workers == [
-            "crawl", "enrich", "classify", "filter",
-            "score", "draft", "quality_check", "rewrite", "review",
+            "crawl",
+            "enrich",
+            "classify",
+            "filter",
+            "score",
+            "draft",
+            "quality_check",
+            "rewrite",
+            "review",
         ]
 
     def test_default_plan_without_fulltext(self):
@@ -130,8 +147,13 @@ class TestPlanSchema:
     def test_plan_step_self_dependency_rejected(self):
         with pytest.raises(ValueError):
             PlanStep(
-                step_id="s1", worker="crawl", depends_on=["s1"],
-                input_refs={}, policy="required", timeout_s=60, max_attempts=3,
+                step_id="s1",
+                worker="crawl",
+                depends_on=["s1"],
+                input_refs={},
+                policy="required",
+                timeout_s=60,
+                max_attempts=3,
             )
 
     def test_rationale_length_limited(self):
@@ -205,16 +227,25 @@ class TestValidatorWhitelist:
     def test_product_not_allowed(self):
         steps = _valid_steps()
         steps = [
-            PlanStep(**{**s.model_dump(), "input_refs": {**s.input_refs, "product_ids": ["evil-product"]}})
+            PlanStep(
+                **{
+                    **s.model_dump(),
+                    "input_refs": {**s.input_refs, "product_ids": ["evil-product"]},
+                }
+            )
             for s in steps
         ]
-        result = PlanValidator().validate(_make_plan(steps), allowed_products={"agent-identity-security"})
+        result = PlanValidator().validate(
+            _make_plan(steps), allowed_products={"agent-identity-security"}
+        )
         assert result.rejected and "product not allowed" in result.reason
 
     def test_article_not_allowed(self):
         steps = _valid_steps()
         steps = [
-            PlanStep(**{**s.model_dump(), "input_refs": {**s.input_refs, "article_ids": ["evil-art"]}})
+            PlanStep(
+                **{**s.model_dump(), "input_refs": {**s.input_refs, "article_ids": ["evil-art"]}}
+            )
             for s in steps
         ]
         result = PlanValidator().validate(_make_plan(steps), allowed_article_ids={"art-1"})

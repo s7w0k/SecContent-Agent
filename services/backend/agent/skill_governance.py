@@ -105,9 +105,7 @@ class SkillPublicationService:
         release = await self._require_stage(release_id, ReleaseStage.EVALUATED)
         if not report_ref:
             raise SkillReleaseError("shadow report is required")
-        return await self._transition(
-            release, ReleaseStage.SHADOW, shadow_report_ref=report_ref
-        )
+        return await self._transition(release, ReleaseStage.SHADOW, shadow_report_ref=report_ref)
 
     async def approve(self, release_id: str, *, approver: str) -> SkillRelease:
         release = await self._require_stage(release_id, ReleaseStage.SHADOW)

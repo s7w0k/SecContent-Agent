@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from agent.contracts.task import SlotStatus, TaskAssumption, TaskEnvelope, TaskIntent
 from pydantic import BaseModel, Field
-from typing import Any
 
 
 class ClarificationQuestion(BaseModel):
@@ -77,17 +78,36 @@ class ClarificationPolicy:
 
         if not self._available(envelope.goal):
             needed.append(("goal", "task objective is missing"))
-        if intent in {TaskIntent.SEARCH_AND_RANK, TaskIntent.SEARCH_AND_DRAFT, TaskIntent.CURATE_NEWS} and not self._available(envelope.news_query):
+        if intent in {
+            TaskIntent.SEARCH_AND_RANK,
+            TaskIntent.SEARCH_AND_DRAFT,
+            TaskIntent.CURATE_NEWS,
+        } and not self._available(envelope.news_query):
             needed.append(("news_query", "a search query is required"))
-        if intent in {TaskIntent.REVISE, TaskIntent.REVISE_DRAFT, TaskIntent.SAVE, TaskIntent.SAVE_DRAFT, TaskIntent.EXPORT_DRAFT} and not self._available(envelope.selected_article_ids):
+        if intent in {
+            TaskIntent.REVISE,
+            TaskIntent.REVISE_DRAFT,
+            TaskIntent.SAVE,
+            TaskIntent.SAVE_DRAFT,
+            TaskIntent.EXPORT_DRAFT,
+        } and not self._available(envelope.selected_article_ids):
             needed.append(("selected_article_ids", "the target article is ambiguous"))
-        if intent == TaskIntent.GENERATE_DRAFT and not self._available(envelope.selected_article_ids):
+        if (
+            intent == TaskIntent.GENERATE_DRAFT
+            and not self._available(envelope.selected_article_ids)
+            and not self._available(envelope.product_ids)
+        ):
             # 六分类由 classify 步骤对文章自识别产出，不再向用户追问 category
-            if not self._available(envelope.product_ids):
-                needed.append(("product_ids", "at least one target product is required"))
-        if candidate_count is not None and candidate_count > 1 and not self._available(envelope.selected_article_ids):
+            needed.append(("product_ids", "at least one target product is required"))
+        if (
+            candidate_count is not None
+            and candidate_count > 1
+            and not self._available(envelope.selected_article_ids)
+        ):
             needed.append(("selected_article_ids", "multiple similar candidates remain"))
-        if intent in {TaskIntent.REVISE, TaskIntent.REVISE_DRAFT} and not self._available(envelope.constraints):
+        if intent in {TaskIntent.REVISE, TaskIntent.REVISE_DRAFT} and not self._available(
+            envelope.constraints
+        ):
             needed.append(("constraints", "revision instructions are required"))
         if (
             intent in {TaskIntent.SAVE, TaskIntent.SAVE_DRAFT}

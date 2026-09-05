@@ -136,13 +136,18 @@ async def test_llm_plan_keeps_allowed_tools_and_caps_steps():
         result=LlmPlanOutput(
             steps=[
                 LlmPlanStep(title="读文", tools=["get_article"], expected_output="article"),
-                LlmPlanStep(title="坏工具", tools=["evil_tool", "score_article"], expected_output=""),
+                LlmPlanStep(
+                    title="坏工具", tools=["evil_tool", "score_article"], expected_output=""
+                ),
                 LlmPlanStep(title="写稿", tools=["generate_draft"]),
             ]
         )
     )
     steps = await build_llm_plan(
-        wrapper, goal="写稿", allowed_tools={"get_article", "score_article", "generate_draft"}, max_steps=2
+        wrapper,
+        goal="写稿",
+        allowed_tools={"get_article", "score_article", "generate_draft"},
+        max_steps=2,
     )
     assert steps is not None
     assert len(steps) <= 2  # 超限截断
@@ -172,7 +177,9 @@ async def test_llm_plan_returns_none_on_empty_or_error():
 @pytest.mark.asyncio
 async def test_engine_emits_plan_before_loop_when_planner_provided():
     engine, events = _engine(
-        explicit_planner=AsyncMock(return_value={"steps": [{"step_id": "s1", "tools": ["generate_draft"]}]})
+        explicit_planner=AsyncMock(
+            return_value={"steps": [{"step_id": "s1", "tools": ["generate_draft"]}]}
+        )
     )
     # 让引擎第一轮就给出最终文本（无工具调用）
     engine._invoke = AsyncMock(return_value=AIMessage(content="完成", tool_calls=[]))  # type: ignore[assignment]

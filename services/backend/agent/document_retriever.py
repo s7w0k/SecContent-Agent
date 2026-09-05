@@ -300,9 +300,7 @@ class DocumentRetriever:
             PURPOSE_DOC_TYPES.get(purpose, {}).get("optional", [])
         )
         filtered = [
-            d
-            for d in self._hard_filter(manifest.docs, request)
-            if d.doc_type in allowed_types
+            d for d in self._hard_filter(manifest.docs, request) if d.doc_type in allowed_types
         ]
         ranked = self._rank(filtered, request)
         return [
@@ -400,14 +398,10 @@ class DocumentRetriever:
         hybrid = self._hybrid_score(docs, query)
 
         # LLM 重排：候选超过阈值且配置了重排器时，只重排 Top-N（阶段八 11.1）
-        use_rerank = (
-            self._reranker is not None and len(docs) > LLM_RERANK_MIN_CANDIDATES
-        )
+        use_rerank = self._reranker is not None and len(docs) > LLM_RERANK_MIN_CANDIDATES
         if use_rerank:
             try:
-                ordered_ids = self._reranker(
-                    [d.doc_id for d in docs], request.query
-                )
+                ordered_ids = self._reranker([d.doc_id for d in docs], request.query)
                 by_id = {d.doc_id: d for d in docs}
                 reranked = [by_id[i] for i in ordered_ids if i in by_id]
                 # 重排后补充未命中的候选
@@ -416,10 +410,7 @@ class DocumentRetriever:
             except Exception as exc:
                 logger.warning("DocumentRetriever reranker failed: %s", exc)
 
-        scored = [
-            (hybrid.get(d.doc_id, 0.0), _stable_key(d, request.purpose), d)
-            for d in docs
-        ]
+        scored = [(hybrid.get(d.doc_id, 0.0), _stable_key(d, request.purpose), d) for d in docs]
         scored.sort(key=lambda x: (-x[0], x[1]))
         return [d for _, _, d in scored]
 
@@ -434,13 +425,9 @@ class DocumentRetriever:
                 qvectors = self._embedding_store.embed_texts([query])
                 if qvectors:
                     qv = qvectors[0]
-                    emb_scores = self._embedding_store.score_many(
-                        [d.doc_id for d in docs], qv
-                    )
+                    emb_scores = self._embedding_store.score_many([d.doc_id for d in docs], qv)
                     for doc_id, s in emb_scores.items():
-                        scores[doc_id] = scores.get(doc_id, 0.0) + (
-                            s * self._embedding_weight
-                        )
+                        scores[doc_id] = scores.get(doc_id, 0.0) + (s * self._embedding_weight)
             except Exception as exc:  # embedding 失败不影响关键词排序
                 logger.warning("DocumentRetriever hybrid embedding failed: %s", exc)
         return scores

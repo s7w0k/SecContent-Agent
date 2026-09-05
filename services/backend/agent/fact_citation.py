@@ -39,9 +39,7 @@ _FACT_PATTERNS: dict[str, re.Pattern] = {
 }
 
 # 高审查等级类别：缺证据时必须标记
-_HIGH_RISK_CATEGORIES: frozenset[str] = frozenset(
-    {"number", "version", "case", "deployment"}
-)
+_HIGH_RISK_CATEGORIES: frozenset[str] = frozenset({"number", "version", "case", "deployment"})
 
 
 @dataclass(frozen=True)
@@ -84,10 +82,7 @@ def render_citation(
 ) -> str:
     """渲染一个 [KNOWLEDGE_SOURCE ...] 引用块。"""
     flag = "true" if needs_confirmation else "false"
-    tag = (
-        f"[KNOWLEDGE_SOURCE doc_id={doc_id} section_id={section_id} "
-        f"needs_confirmation={flag}]"
-    )
+    tag = f"[KNOWLEDGE_SOURCE doc_id={doc_id} section_id={section_id} needs_confirmation={flag}]"
     if quote and quote.strip():
         return f"{tag}\n{quote.strip()}\n[/KNOWLEDGE_SOURCE]"
     return f"{tag}\n[/KNOWLEDGE_SOURCE]"
@@ -127,11 +122,7 @@ def classify_fact(text: str) -> list[str]:
 
 def _clauses(text: str) -> list[str]:
     """按中文/英文句子分隔符切分句。"""
-    return [
-        part.strip()
-        for part in re.split(r"(?<=[。！？!?；;])\s*|\n+", text)
-        if part.strip()
-    ]
+    return [part.strip() for part in re.split(r"(?<=[。！？!?；;])\s*|\n+", text) if part.strip()]
 
 
 def audit_fact_citations(
@@ -146,12 +137,8 @@ def audit_fact_citations(
         若其未被引用块覆盖则标记 missing_citation
     """
     content = draft_content or ""
-    citations = (
-        citations if citations is not None else parse_citations(content)
-    )
-    cited_ranges = [
-        (m.start(), m.end()) for m in _CITATION_BLOCK.finditer(content)
-    ]
+    citations = citations if citations is not None else parse_citations(content)
+    cited_ranges = [(m.start(), m.end()) for m in _CITATION_BLOCK.finditer(content)]
 
     def _is_cited(pos: int) -> bool:
         return any(cs <= pos <= ce for cs, ce in cited_ranges)

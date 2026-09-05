@@ -176,9 +176,7 @@ class LoopDetector:
 
         # 2. 参数轻微变化但结果 hash 不变
         if record.result_hash:
-            same_results = [
-                a for a in self.actions if a.result_hash == record.result_hash
-            ]
+            same_results = [a for a in self.actions if a.result_hash == record.result_hash]
             if len(same_results) >= self.same_result_window:
                 args_hashes = {a.args_hash for a in same_results}
                 hits.append(
@@ -195,9 +193,8 @@ class LoopDetector:
 
         # 3. 连续 N 步没有新增证据
         recent_evidence = self.evidence_counts[-self.max_no_progress_steps :]
-        if (
-            len(recent_evidence) >= self.max_no_progress_steps
-            and all(c == 0 for c in recent_evidence)
+        if len(recent_evidence) >= self.max_no_progress_steps and all(
+            c == 0 for c in recent_evidence
         ):
             hits.append(
                 (
@@ -210,9 +207,8 @@ class LoopDetector:
         # 4. 同一错误类别持续出现
         if record.error_code:
             recent_errors = [a.error_code for a in self.actions[-self.same_error_window :]]
-            if (
-                len(recent_errors) >= self.same_error_window
-                and all(e == record.error_code for e in recent_errors)
+            if len(recent_errors) >= self.same_error_window and all(
+                e == record.error_code for e in recent_errors
             ):
                 hits.append(
                     (

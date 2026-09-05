@@ -311,9 +311,7 @@ class TestDashboardAPI:
             [{"_id": "overseas_news", "count": 7}, {"_id": "wechat_mp", "count": 5}]
         )
         category_cursor = MagicMock()
-        category_cursor.__aiter__.return_value = iter(
-            [{"_id": "AI安全漏洞与攻击", "count": 8}]
-        )
+        category_cursor.__aiter__.return_value = iter([{"_id": "AI安全漏洞与攻击", "count": 8}])
         articles.aggregate.side_effect = [source_cursor, category_cursor]
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -372,9 +370,7 @@ class TestDashboardAPI:
         }
         assert pipeline[1]["$set"]["_hot_added_at"]["$convert"]["to"] == "date"
         assert pipeline[2] == {"$match": {"_hot_score": {"$gt": 0}}}
-        assert pipeline[3] == {
-            "$sort": {"_hot_score": -1, "_hot_added_at": -1, "url_hash": 1}
-        }
+        assert pipeline[3] == {"$sort": {"_hot_score": -1, "_hot_added_at": -1, "url_hash": 1}}
         assert pipeline[4] == {"$limit": 5}
         assert pipeline[5]["$project"]["_id"] == 0
         articles.aggregate.return_value.to_list.assert_awaited_with(length=5)

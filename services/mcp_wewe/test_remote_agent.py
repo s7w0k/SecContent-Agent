@@ -4,6 +4,7 @@ LangChain Agent —— 通过 HTTP 桥接测试远程 MCP 服务。
 远程桥接地址: http://49.232.145.182:8080
 本地运行此脚本即可验证远程 MCP 是否正常。
 """
+
 import asyncio
 import contextlib
 import os
@@ -24,6 +25,7 @@ BRIDGE_URL = "http://49.232.145.182:6060"
 
 # ── 先检查桥接是否可达 ──
 
+
 async def check_bridge() -> bool:
     """检测远程桥接服务是否在线。"""
     async with httpx.AsyncClient(timeout=5) as client:
@@ -35,6 +37,7 @@ async def check_bridge() -> bool:
 
 
 # ── 从 HTTP 桥接获取工具列表，动态创建 LangChain Tools ──
+
 
 async def fetch_bridge_tools() -> list:
     """从桥接服务获取可用工具，包装为 LangChain Tools。"""
@@ -60,6 +63,7 @@ async def fetch_bridge_tools() -> list:
                         json=kwargs if kwargs else {},
                     )
                     return resp.json()
+
             return _call
 
         tool_obj = StructuredTool.from_function(
@@ -73,6 +77,7 @@ async def fetch_bridge_tools() -> list:
 
 
 # ── 主流程 ──
+
 
 async def main():
 
@@ -119,7 +124,6 @@ async def main():
             messages.append({"role": "assistant", "content": answer})
         except TimeoutError:
             pass
-
 
 
 if __name__ == "__main__":

@@ -168,9 +168,11 @@ class KnowledgeSliceResolver:
             user_product_docs: list[dict] = []
 
             if user_id and self._db is not None:
-                user_product_docs = await self._db["user_products"].find(
-                    {"user_id": user_id, "product_id": {"$in": product_ids}, "enabled": True}
-                ).to_list(length=50)
+                user_product_docs = (
+                    await self._db["user_products"]
+                    .find({"user_id": user_id, "product_id": {"$in": product_ids}, "enabled": True})
+                    .to_list(length=50)
+                )
                 user_pids_set = {doc["product_id"] for doc in user_product_docs}
                 for pid in product_ids:
                     if pid in user_pids_set:
@@ -182,14 +184,10 @@ class KnowledgeSliceResolver:
 
             # 解析全局产品知识（required 文件缺失时记录 knowledge_missing）
             if global_product_ids:
-                validated = self._catalog.validate_product_ids(
-                    global_product_ids, purpose=purpose
-                )
+                validated = self._catalog.validate_product_ids(global_product_ids, purpose=purpose)
 
                 for product in validated:
-                    file_paths = self._catalog.get_purpose_files(
-                        product.product_id, purpose
-                    )
+                    file_paths = self._catalog.get_purpose_files(product.product_id, purpose)
                     required_files = self._required_files_for_purpose(purpose)
                     required_fname_set = set(required_files)
                     loaded_names = {fp.name for fp in file_paths}
@@ -244,17 +242,22 @@ class KnowledgeSliceResolver:
                 for doc in user_product_docs:
                     product_name_map[doc["product_id"]] = doc.get("name", doc["product_id"])
 
-                entries = await self._db["user_knowledge_entries"].find({
-                    "user_id": user_id,
-                    "product_id": {"$in": user_product_ids},
-                    "enabled": True,
-                }).sort("sort_order", 1).to_list(length=200)
+                entries = (
+                    await self._db["user_knowledge_entries"]
+                    .find(
+                        {
+                            "user_id": user_id,
+                            "product_id": {"$in": user_product_ids},
+                            "enabled": True,
+                        }
+                    )
+                    .sort("sort_order", 1)
+                    .to_list(length=200)
+                )
 
                 # 按产品分组，每组按 doc_type 分层 + 稳定排序
                 for pid in user_product_ids:
-                    pid_entries = [
-                        e for e in entries if e.get("product_id") == pid
-                    ]
+                    pid_entries = [e for e in entries if e.get("product_id") == pid]
                     missing = await self._resolve_user_product(
                         pid,
                         pid_entries,
@@ -291,12 +294,16 @@ class KnowledgeSliceResolver:
             if global_product_ids:
                 supplement_query["product_id"] = {"$in": global_product_ids}
 
-            supplement_entries = await self._db["user_knowledge_entries"].find(
-                supplement_query
-            ).sort("sort_order", 1).to_list(length=100)
+            supplement_entries = (
+                await self._db["user_knowledge_entries"]
+                .find(supplement_query)
+                .sort("sort_order", 1)
+                .to_list(length=100)
+            )
 
             supplement_parts: list[str] = []
             supplement_sources: list[str] = []
+
             # 稳定排序：sort_order → updated_at → entry_id
             def _sup_key(e: dict):
                 return (
@@ -314,7 +321,10 @@ class KnowledgeSliceResolver:
                 if len(entry_content) > MAX_FILE_CHARS:
                     entry_content = entry_content[:MAX_FILE_CHARS] + "\n\n... (truncated)"
                 part = f"### {title}（用户级补充·{doc_type}）\n\n{entry_content}"
-                if sum(len(p) for p in parts) + sum(len(p) for p in supplement_parts) + len(part) > budget:
+                if (
+                    sum(len(p) for p in parts) + sum(len(p) for p in supplement_parts) + len(part)
+                    > budget
+                ):
                     truncated = True
                     break
                 supplement_parts.append(part)
@@ -379,7 +389,11 @@ class KnowledgeSliceResolver:
             result: RetrievalResult = retriever.retrieve(request)
         except Exception as exc:
             logger.warning("DocumentRetriever retrieve failed: %s", exc)
-            return None, {"selected_document_ids": [], "expanded_section_ids": [], "truncated": False}
+            return None, {
+                "selected_document_ids": [],
+                "expanded_section_ids": [],
+                "truncated": False,
+            }
 
         trace = result.trace.model_dump() if result.trace else None
 
@@ -400,9 +414,7 @@ class KnowledgeSliceResolver:
         if expand_section_ids:
             expander = self._section_expander
             for doc in result.fallback_candidates:
-                doc_section_ids = [
-                    s for s in expand_section_ids if s.startswith(doc.doc_id + ":")
-                ]
+                doc_section_ids = [s for s in expand_section_ids if s.startswith(doc.doc_id + ":")]
                 if doc.doc_id not in expand_section_ids and not doc_section_ids:
                     continue
                 heading = f"### {doc.title}（原始文档候选·需确认）"
@@ -505,9 +517,7 @@ class KnowledgeSliceResolver:
         # required 缺失语义
         found = {dt for dt, _ in normed}
         missing = [
-            f"user_product:{pid}:missing:{req}"
-            for req in required_types
-            if req not in found
+            f"user_product:{pid}:missing:{req}" for req in required_types if req not in found
         ]
         return missing
 

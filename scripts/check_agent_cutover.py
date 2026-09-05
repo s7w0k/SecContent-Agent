@@ -105,7 +105,9 @@ def _check_worker() -> list[str]:
             "worker.py 未装配统一 Execution 运行时（LegacyPipelineExecutor + build_production_execution_runtime）"
         )
     if "legacy_executor" not in src or "validate_runtime" not in src:
-        violations.append("worker.py 未注入 legacy_executor 或未做 startup 矩阵校验（validate_runtime）")
+        violations.append(
+            "worker.py 未注入 legacy_executor 或未做 startup 矩阵校验（validate_runtime）"
+        )
     if "execution_router" not in src:
         violations.append("worker.py 未把 execution_router 注入 ctx / app.state")
     return violations
@@ -118,10 +120,14 @@ def _check_main() -> list[str]:
         return [f"缺失 {path.relative_to(ROOT)}"]
     src = _content(path)
     if "build_production_execution_runtime" not in src:
-        violations.append("main.py 未装配统一 Execution 运行时（build_production_execution_runtime）")
+        violations.append(
+            "main.py 未装配统一 Execution 运行时（build_production_execution_runtime）"
+        )
     # app.state.execution_runtime / execution_router 均由 execution_runtime 派生，此处不做字符串强约束
     if "execution_runtime" not in src or "validate_runtime" not in src:
-        violations.append("main.py 未接入 execution_runtime/startup 校验（app.state.execution_* + validate_runtime）")
+        violations.append(
+            "main.py 未接入 execution_runtime/startup 校验（app.state.execution_* + validate_runtime）"
+        )
     return violations
 
 

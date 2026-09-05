@@ -8,6 +8,7 @@
 
 数据源为项目根目录 reports/*.json，只读，不修改任何文件。
 """
+
 from __future__ import annotations
 
 import json

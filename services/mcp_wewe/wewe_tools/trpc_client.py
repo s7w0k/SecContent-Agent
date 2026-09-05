@@ -17,6 +17,7 @@ from .config import get_auth_code, get_wewe_url
 
 class TrpcError(RuntimeError):
     """tRPC 调用错误"""
+
     pass
 
 
@@ -59,9 +60,7 @@ def call(method: str, procedure: str, params=None) -> dict:
         with contextlib.suppress(Exception):
             body = json.loads(e.read().decode("utf-8"))
         err = body.get("error", {}) if body else {}
-        raise TrpcError(
-            f"[{procedure}] {err.get('message', e.reason)} (HTTP {e.code})"
-        )
+        raise TrpcError(f"[{procedure}] {err.get('message', e.reason)} (HTTP {e.code})")
     except urllib.error.URLError as e:
         raise TrpcError(f"[{procedure}] 连接失败: {e.reason}")
 

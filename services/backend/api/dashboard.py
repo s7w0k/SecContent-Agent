@@ -175,10 +175,16 @@ async def list_articles(
     url_hashes = [art.get("url_hash") for art in articles if art.get("url_hash")]
     user_scores_map: dict[str, dict] = {}
     if url_hashes:
-        score_docs = await db["user_article_scores"].find({
-            "user_id": user_id,
-            "url_hash": {"$in": url_hashes},
-        }).to_list(length=len(url_hashes))
+        score_docs = (
+            await db["user_article_scores"]
+            .find(
+                {
+                    "user_id": user_id,
+                    "url_hash": {"$in": url_hashes},
+                }
+            )
+            .to_list(length=len(url_hashes))
+        )
         user_scores_map = {d["url_hash"]: d for d in score_docs}
 
     # 后过滤（MongoDB 不支持动态计算字段筛选）
@@ -447,9 +453,7 @@ async def fetch_article_content(
                 if not any(
                     t in content_type for t in ("text/html", "text/plain", "application/xhtml")
                 ):
-                    raise HTTPException(
-                        status_code=422, detail=f"不支持的内容类型: {content_type}"
-                    )
+                    raise HTTPException(status_code=422, detail=f"不支持的内容类型: {content_type}")
 
                 from bs4 import BeautifulSoup
 
@@ -568,10 +572,12 @@ async def batch_fetch_content(
             if not url or not is_safe_url(url):
                 await db["articles"].update_one(
                     {"url_hash": article["url_hash"]},
-                    {"$set": {
-                        "content_fetch_status": "blocked",
-                        "content_fetch_error": "URL不安全",
-                    }},
+                    {
+                        "$set": {
+                            "content_fetch_status": "blocked",
+                            "content_fetch_error": "URL不安全",
+                        }
+                    },
                 )
                 continue
 
@@ -585,10 +591,12 @@ async def batch_fetch_content(
                 ):
                     await db["articles"].update_one(
                         {"url_hash": article["url_hash"]},
-                        {"$set": {
-                            "content_fetch_status": "blocked",
-                            "content_fetch_error": f"不支持的内容类型: {content_type}",
-                        }},
+                        {
+                            "$set": {
+                                "content_fetch_status": "blocked",
+                                "content_fetch_error": f"不支持的内容类型: {content_type}",
+                            }
+                        },
                     )
                     continue
 
@@ -601,20 +609,24 @@ async def batch_fetch_content(
 
             await db["articles"].update_one(
                 {"url_hash": article["url_hash"]},
-                {"$set": {
-                    "content_md": content[:50000],
-                    "content_fetch_status": "completed",
-                    "content_fetch_error": None,
-                }},
+                {
+                    "$set": {
+                        "content_md": content[:50000],
+                        "content_fetch_status": "completed",
+                        "content_fetch_error": None,
+                    }
+                },
             )
             updated += 1
         except Exception as e:
             await db["articles"].update_one(
                 {"url_hash": article["url_hash"]},
-                {"$set": {
-                    "content_fetch_status": "failed",
-                    "content_fetch_error": str(e)[:200],
-                }},
+                {
+                    "$set": {
+                        "content_fetch_status": "failed",
+                        "content_fetch_error": str(e)[:200],
+                    }
+                },
             )
 
     return {"ok": True, "data": {"total": len(articles), "updated": updated}}

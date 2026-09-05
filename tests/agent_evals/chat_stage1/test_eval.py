@@ -33,6 +33,7 @@ class TestDataset:
         """验证各类别数量符合 Step 10 规范。"""
         items = load_dataset()
         from collections import Counter
+
         counts = Counter(item["category"] for item in items)
         assert counts["no_tool"] >= 10
         assert counts["product_knowledge"] >= 10
@@ -129,20 +130,36 @@ class TestConvergenceCheck:
 
 class TestRunDeterministicChecks:
     def test_no_tool_item(self):
-        item = {"category": "no_tool", "expected_tool_calls": [], "expected_answer_contains": ["回答"]}
+        item = {
+            "category": "no_tool",
+            "expected_tool_calls": [],
+            "expected_answer_contains": ["回答"],
+        }
         result = {"answer": "这是回答", "tool_names_used": [], "rounds": 1}
         check = run_deterministic_checks(item, result)
         assert check["pass"]
 
     def test_tool_item_pass(self):
-        item = {"category": "product_knowledge", "expected_tool_calls": ["search_knowledge"], "expected_answer_contains": ["知识"]}
+        item = {
+            "category": "product_knowledge",
+            "expected_tool_calls": ["search_knowledge"],
+            "expected_answer_contains": ["知识"],
+        }
         result = {"answer": "基于知识库回答", "tool_names_used": ["search_knowledge"], "rounds": 2}
         check = run_deterministic_checks(item, result)
         assert check["pass"]
 
     def test_security_item_fail(self):
-        item = {"category": "security", "expected_tool_calls": [], "expected_answer_contains": ["失败"]}
-        result = {"answer": "这是产品知识内容", "tool_names_used": ["search_knowledge"], "rounds": 1}
+        item = {
+            "category": "security",
+            "expected_tool_calls": [],
+            "expected_answer_contains": ["失败"],
+        }
+        result = {
+            "answer": "这是产品知识内容",
+            "tool_names_used": ["search_knowledge"],
+            "rounds": 1,
+        }
         check = run_deterministic_checks(item, result)
         assert not check["pass"]
 
@@ -156,4 +173,6 @@ class TestEvaluatorRunAll:
     def test_mock_results_all_pass(self):
         """使用 mock 结果，所有用例应通过确定性检查。"""
         report = run_all()
-        assert report["failed"] == 0, f"Mock 检查有失败: {[r for r in report['results'] if not r['pass']]}"
+        assert report["failed"] == 0, (
+            f"Mock 检查有失败: {[r for r in report['results'] if not r['pass']]}"
+        )

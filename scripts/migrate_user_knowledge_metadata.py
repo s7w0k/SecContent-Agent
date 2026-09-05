@@ -91,9 +91,7 @@ async def main() -> None:
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE, help="批次游标大小")
     parser.add_argument(
         "--mongo-uri",
-        default=os.environ.get(
-            "MONGO_URI", "mongodb://admin:pr_agent_2024@mongodb:27017"
-        ),
+        default=os.environ.get("MONGO_URI", "mongodb://admin:pr_agent_2024@mongodb:27017"),
         help="MongoDB URI",
     )
     parser.add_argument("--mongo-db", default=os.environ.get("MONGO_DB", "pr_agent"))

@@ -50,10 +50,12 @@ async def migrate_draft_system(dry_run: bool = False) -> dict:
         user_id = doc["user_id"]
 
         # 检查是否已有 draft_generation_business
-        existing = await db["user_prompts"].find_one({
-            "user_id": user_id,
-            "prompt_key": "draft_generation_business",
-        })
+        existing = await db["user_prompts"].find_one(
+            {
+                "user_id": user_id,
+                "prompt_key": "draft_generation_business",
+            }
+        )
         if existing is not None:
             stats["skipped"] += 1
             continue
@@ -64,31 +66,36 @@ async def migrate_draft_system(dry_run: bool = False) -> dict:
 
         # 迁移
         now = datetime.now(UTC)
-        await db["user_prompts"].insert_one({
-            "user_id": user_id,
-            "prompt_key": "draft_generation_business",
-            "content": doc["content"],
-            "version": doc.get("version", 1),
-            "base_default_version": 1,
-            "content_hash": doc.get("content_hash", ""),
-            "enabled": doc.get("enabled", True),
-            "created_at": doc.get("created_at", now),
-            "updated_at": now,
-        })
+        await db["user_prompts"].insert_one(
+            {
+                "user_id": user_id,
+                "prompt_key": "draft_generation_business",
+                "content": doc["content"],
+                "version": doc.get("version", 1),
+                "base_default_version": 1,
+                "content_hash": doc.get("content_hash", ""),
+                "enabled": doc.get("enabled", True),
+                "created_at": doc.get("created_at", now),
+                "updated_at": now,
+            }
+        )
 
         # 写入历史版本
         from uuid import uuid4
-        await db["user_prompt_versions"].insert_one({
-            "version_id": f"promptv-{uuid4()}",
-            "user_id": user_id,
-            "prompt_key": "draft_generation_business",
-            "version": doc.get("version", 1),
-            "content": doc["content"],
-            "content_hash": doc.get("content_hash", ""),
-            "base_default_version": 1,
-            "change_type": "migrate_from_draft_system",
-            "created_at": now,
-        })
+
+        await db["user_prompt_versions"].insert_one(
+            {
+                "version_id": f"promptv-{uuid4()}",
+                "user_id": user_id,
+                "prompt_key": "draft_generation_business",
+                "version": doc.get("version", 1),
+                "content": doc["content"],
+                "content_hash": doc.get("content_hash", ""),
+                "base_default_version": 1,
+                "change_type": "migrate_from_draft_system",
+                "created_at": now,
+            }
+        )
 
         stats["migrated"] += 1
 

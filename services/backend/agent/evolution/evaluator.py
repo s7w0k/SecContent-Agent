@@ -30,9 +30,11 @@ class Evaluator:
         Returns:
             评测结果文档
         """
-        candidate = await self.db["personalization_candidates"].find_one({
-            "candidate_id": candidate_id,
-        })
+        candidate = await self.db["personalization_candidates"].find_one(
+            {
+                "candidate_id": candidate_id,
+            }
+        )
         if candidate is None:
             raise ValueError(f"Candidate not found: {candidate_id}")
 
@@ -63,8 +65,7 @@ class Evaluator:
             by_category.setdefault(cat, []).append(s)
 
         category_metrics = {
-            cat: self._compute_metrics(cat_samples)
-            for cat, cat_samples in by_category.items()
+            cat: self._compute_metrics(cat_samples) for cat, cat_samples in by_category.items()
         }
 
         # 计算适应度
@@ -83,17 +84,21 @@ class Evaluator:
 
         await self.db["personalization_candidates"].update_one(
             {"candidate_id": candidate_id},
-            {"$set": {
-                # Hard gates own the transition to ready_for_review.
-                "status": "evaluating",
-                "metrics": result,
-                "updated_at": datetime.now(UTC),
-            }},
+            {
+                "$set": {
+                    # Hard gates own the transition to ready_for_review.
+                    "status": "evaluating",
+                    "metrics": result,
+                    "updated_at": datetime.now(UTC),
+                }
+            },
         )
 
         logger.info(
             "candidate evaluated: id=%s fitness=%.4f holdout_fitness=%.4f",
-            candidate_id, fitness, holdout_fitness,
+            candidate_id,
+            fitness,
+            holdout_fitness,
         )
 
         return result
@@ -106,7 +111,9 @@ class Evaluator:
         total = len(samples)
         downloaded = sum(1 for s in samples if s.get("outcomes", {}).get("downloaded"))
         revision_applied = sum(1 for s in samples if s.get("outcomes", {}).get("revision_applied"))
-        revision_requested = sum(1 for s in samples if s.get("outcomes", {}).get("revision_requested"))
+        revision_requested = sum(
+            1 for s in samples if s.get("outcomes", {}).get("revision_requested")
+        )
         ratings = [
             s.get("outcomes", {}).get("feedback_rating", 0)
             for s in samples

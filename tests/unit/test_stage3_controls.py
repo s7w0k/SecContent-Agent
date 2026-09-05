@@ -501,7 +501,12 @@ class TestRecoveryPolicy:
 
 class TestCircuitBreaker:
     def _breaker(self, **kw) -> CircuitBreaker:
-        base = {"failure_threshold": 3, "timeout_threshold": 2, "window_size": 10, "cooldown_seconds": 3600}
+        base = {
+            "failure_threshold": 3,
+            "timeout_threshold": 2,
+            "window_size": 10,
+            "cooldown_seconds": 3600,
+        }
         base.update(kw)
         return CircuitBreaker("tool:test", CircuitConfig(**base))
 
@@ -729,7 +734,9 @@ class TestApprovalRbac:
 
     def test_audit_log_store(self):
         log = ApprovalAuditLog(_FakeDB())
-        asyncio.run(log.record(record=audit_record(approval_id="ap-1", actor="bob", action="rejected")))
+        asyncio.run(
+            log.record(record=audit_record(approval_id="ap-1", actor="bob", action="rejected"))
+        )
         entries = asyncio.run(log.list_for_approval("ap-1"))
         assert len(entries) == 1
         assert entries[0]["actor"] == "bob"
@@ -768,7 +775,9 @@ class TestRunLease:
     def test_renew_matches_owner_and_fencing(self):
         store = self._store()
         lease = asyncio.run(store.acquire("run-1", "w1", now=FIXED_NOW))
-        renewed = asyncio.run(store.renew("run-1", "w1", lease.fencing_token, now=FIXED_NOW + timedelta(seconds=60)))
+        renewed = asyncio.run(
+            store.renew("run-1", "w1", lease.fencing_token, now=FIXED_NOW + timedelta(seconds=60))
+        )
         assert renewed is not None
         assert renewed.expires_at > lease.expires_at
         # 错误 fencing token → 拒绝
@@ -788,9 +797,7 @@ class TestRunLease:
         asyncio.run(state_store.save(_state(status=RuntimeStatus.RUNNING)))
         asyncio.run(store.acquire("run-1", "dead-worker", now=FIXED_NOW))
         reaper = RunReaper(state_store, store)
-        reaped = asyncio.run(
-            reaper.scan_stale_running(now=FIXED_NOW + timedelta(seconds=300))
-        )
+        reaped = asyncio.run(reaper.scan_stale_running(now=FIXED_NOW + timedelta(seconds=300)))
         assert len(reaped) == 1
         assert reaped[0]["run_id"] == "run-1"
         loaded = asyncio.run(state_store.load("run-1"))
@@ -854,9 +861,7 @@ class TestReplay:
 
     def test_trace_violation_unknown_evidence_step(self):
         state = _state(
-            evidence=[
-                EvidenceRecord(evidence_id="ev-x", step_id="ghost-step", acceptance_index=0)
-            ]
+            evidence=[EvidenceRecord(evidence_id="ev-x", step_id="ghost-step", acceptance_index=0)]
         )
         result = trace_replay(state)
         assert not result.valid
@@ -875,7 +880,9 @@ class TestReplay:
         async def a(q):
             return "确定性答案A"
 
-        result = asyncio.run(candidate_replay(inputs=["q1", "q2"], backend_a=a, backend_b=a, n_runs=2))
+        result = asyncio.run(
+            candidate_replay(inputs=["q1", "q2"], backend_a=a, backend_b=a, n_runs=2)
+        )
         assert result.consistent
         assert result.match_ratio == 1.0
 
@@ -934,7 +941,9 @@ class TestReplay:
             planner=DemoPlanner(chain=["retrieve_articles", "classify_articles"]),
             executor=DemoExecutor(),
             policy=PolicyEngine(),
-            goal_validator=GoalValidator(required_artifact_keys=(), high_risk_requires_confirm=False),
+            goal_validator=GoalValidator(
+                required_artifact_keys=(), high_risk_requires_confirm=False
+            ),
             checkpointer=store.save,
             max_retries=2,
             backoff_jitter=0.0,
@@ -957,13 +966,17 @@ class TestReplay:
         store = _state_store_shim_runs(_FakeDB())
         state = _state(
             tool_results=[
-                ToolResultRecord(tool_id="t-write", ok=True, error_code="", idempotency_key="", created_at=FIXED_NOW)
+                ToolResultRecord(
+                    tool_id="t-write",
+                    ok=True,
+                    error_code="",
+                    idempotency_key="",
+                    created_at=FIXED_NOW,
+                )
             ]
         )
         asyncio.run(store.save(state))
-        result = asyncio.run(
-            recovery_replay(runtime=None, state_store=store, run_id="run-1")
-        )
+        result = asyncio.run(recovery_replay(runtime=None, state_store=store, run_id="run-1"))
         assert "t-write" in result.idempotency_missing
 
 
@@ -1048,7 +1061,9 @@ class TestDurableRunExecutor:
                 planner=bad_planner,
                 executor=None,
                 policy=PolicyEngine(),
-                goal_validator=GoalValidator(required_artifact_keys=(), high_risk_requires_confirm=False),
+                goal_validator=GoalValidator(
+                    required_artifact_keys=(), high_risk_requires_confirm=False
+                ),
                 checkpointer=checkpointer,
                 max_retries=0,
                 backoff_jitter=0.0,

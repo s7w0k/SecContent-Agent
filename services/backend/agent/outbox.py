@@ -88,7 +88,9 @@ class OutboxStore:
     def index_specs(self) -> dict[str, list[IndexModel]]:
         return {
             self.collection_name: [
-                IndexModel([("dedup_key", ASCENDING)], unique=True, sparse=True, name="uq_outbox_dedup"),
+                IndexModel(
+                    [("dedup_key", ASCENDING)], unique=True, sparse=True, name="uq_outbox_dedup"
+                ),
                 IndexModel(
                     [("status", ASCENDING), ("created_at", ASCENDING)],
                     name="idx_outbox_status_created",

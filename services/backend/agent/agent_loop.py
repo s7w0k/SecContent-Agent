@@ -446,7 +446,9 @@ class AgentLoop:
             if not tool_calls:
                 # VALIDATE：输出非空 + schema/criteria/validator
                 self._enter_phase(LoopPhase.VALIDATE)
-                answer = response.content if isinstance(response.content, str) else str(response.content)
+                answer = (
+                    response.content if isinstance(response.content, str) else str(response.content)
+                )
                 answer = answer.strip()
                 ok, reason = self._validate_output(
                     answer,
@@ -685,7 +687,9 @@ class AgentLoop:
             final_retries = final_retry_state.total_attempts
             if final_retries:
                 self.budget_manager.record_retry(tokens_used=0)
-            answer = response.content if isinstance(response.content, str) else str(response.content)
+            answer = (
+                response.content if isinstance(response.content, str) else str(response.content)
+            )
             answer = answer.strip()
             in_t, out_t, cached_t, estimated = self.llm_wrapper._resolve_usage(messages, response)
             self.budget_manager.settle_llm(
@@ -917,9 +921,7 @@ class AgentLoop:
         try:
             from agent.model_router import RouteRequest, TaskType
 
-            context_chars = sum(
-                len(str(getattr(m, "content", "")) or "") for m in messages
-            )
+            context_chars = sum(len(str(getattr(m, "content", "")) or "") for m in messages)
             remaining_input = max(
                 0, self.budget_plan.max_input_tokens - self.budget_manager.usage.input_tokens
             )
@@ -952,8 +954,14 @@ class AgentLoop:
 
     def _on_budget_event(self, event_type: str, payload: dict[str, Any]) -> None:
         """BudgetManager 事件回调 -> EventEnvelope（同步登记，统一 flush）。"""
-        if event_type not in ("budget_reserved", "budget_settled", "budget_released",
-                              "budget_warning", "budget_denied", "budget_exhausted"):
+        if event_type not in (
+            "budget_reserved",
+            "budget_settled",
+            "budget_released",
+            "budget_warning",
+            "budget_denied",
+            "budget_exhausted",
+        ):
             return
         self._pending_store.append(
             {

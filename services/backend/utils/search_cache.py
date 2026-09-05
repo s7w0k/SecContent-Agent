@@ -59,7 +59,9 @@ async def check_rate_limit(user_id: str) -> bool:
     if current > limit:
         logger.warning(
             "search rate limited: user=%s count=%d limit=%d",
-            user_id, current, limit,
+            user_id,
+            current,
+            limit,
         )
         return False
     return True

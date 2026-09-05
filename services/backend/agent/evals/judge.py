@@ -104,10 +104,7 @@ class Judge:
             )
             raw = await self.judge_fn(prompt)
             parsed = parse_judge_json(raw)
-            scores = {
-                dim: int(parsed.get(dim, 0))
-                for dim in self.rubric["dimensions"]
-            }
+            scores = {dim: int(parsed.get(dim, 0)) for dim in self.rubric["dimensions"]}
             scores["total"] = int(parsed.get("total", sum(scores.values())))
             scores["reason"] = str(parsed.get("reason", ""))
         return scores
@@ -154,9 +151,18 @@ class Judge:
         experience = base
         dims = self.rubric["dimensions"]
         scores = {
-            name: min(max_score, int({"accuracy": accuracy, "relevance": relevance,
-                                      "completeness": completeness, "safety": safety,
-                                      "experience": experience}[name]))
+            name: min(
+                max_score,
+                int(
+                    {
+                        "accuracy": accuracy,
+                        "relevance": relevance,
+                        "completeness": completeness,
+                        "safety": safety,
+                        "experience": experience,
+                    }[name]
+                ),
+            )
             for name, max_score in dims.items()
         }
         scores["total"] = sum(scores.values())

@@ -172,8 +172,8 @@ class LLMNavigationDecider:
         ]
         for c in context.candidate_pages[: self.max_candidates]:
             lines.append(
-                f"- {c.get('page_id')} | type={c.get('page_type','')} "
-                f"| title={c.get('title','')} | affinity={c.get('task_affinity', [])}"
+                f"- {c.get('page_id')} | type={c.get('page_type', '')} "
+                f"| title={c.get('title', '')} | affinity={c.get('task_affinity', [])}"
             )
         return "\n".join(lines)
 

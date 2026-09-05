@@ -132,9 +132,7 @@ class ContextCache:
         namespace = self._store.setdefault(key.user_id, {})
         # 简单容量上限：超出时清理最早条目
         if len(namespace) >= self._max_per_user:
-            oldest = min(
-                namespace, key=lambda k: namespace[k].created_at, default=None
-            )
+            oldest = min(namespace, key=lambda k: namespace[k].created_at, default=None)
             if oldest is not None:
                 del namespace[oldest]
         namespace[key.key_hash] = _Entry(

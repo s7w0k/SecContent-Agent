@@ -19,10 +19,9 @@ import logging
 from collections.abc import Callable
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
-
 from agent.production_runtime import ProductionActionPlanner
 from agent.runtime_state import RuntimeState
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger("backend.agent.llm_action_planner")
 
@@ -93,7 +92,7 @@ class LLMActionPlanner(ProductionActionPlanner):
                 self._wrapper = False
         return self._wrapper or None
 
-    async def _select_next_action(self, state: RuntimeState):  # noqa: ANN202 - 与父类签名一致
+    async def _select_next_action(self, state: RuntimeState):
         fallback = await super()._select_next_action(state)
         wrapper = self._wrapper_or_none()
         if wrapper is None:
@@ -217,10 +216,7 @@ class LLMActionPlanner(ProductionActionPlanner):
         )
         if step is None:
             return None
-        args = {
-            name: self._resolve(binding, state)
-            for name, binding in step.args_binding.items()
-        }
+        args = {name: self._resolve(binding, state) for name, binding in step.args_binding.items()}
         from agent.agent_runtime import PlannedAction
 
         return PlannedAction(step_id=step.step_id, tool_name=step.tool, args=args)

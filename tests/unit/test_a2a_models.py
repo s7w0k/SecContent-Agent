@@ -184,8 +184,14 @@ class TestProtocolModels:
     def test_eight_task_statuses(self):
         values = {s.value for s in TaskStatus}
         assert values == {
-            "SUBMITTED", "WORKING", "INPUT_REQUIRED", "AUTH_REQUIRED",
-            "COMPLETED", "FAILED", "CANCELED", "REJECTED",
+            "SUBMITTED",
+            "WORKING",
+            "INPUT_REQUIRED",
+            "AUTH_REQUIRED",
+            "COMPLETED",
+            "FAILED",
+            "CANCELED",
+            "REJECTED",
         }
 
     def test_terminal_task_statuses(self):
@@ -268,8 +274,12 @@ class TestStatusMapping:
 
     def test_round_trip_stable(self):
         for ts in (
-            TaskStatus.SUBMITTED, TaskStatus.WORKING, TaskStatus.INPUT_REQUIRED,
-            TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELED,
+            TaskStatus.SUBMITTED,
+            TaskStatus.WORKING,
+            TaskStatus.INPUT_REQUIRED,
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELED,
         ):
             assert map_runtime_to_task(map_task_to_runtime(ts)) == ts
 
@@ -294,10 +304,15 @@ class TestStatusMapping:
                 EvidenceRecord(evidence_id="ev-2", kind="", note="无 kind 跳过"),
             ],
             decision_summaries=[
-                DecisionSummary(step_id="st-1", phase="plan", action="规划检索方案", outcome="success"),
                 DecisionSummary(
-                    step_id="st-2", phase="execute", action="调用 retrieve_articles",
-                    outcome="success", reason="命中缓存",
+                    step_id="st-1", phase="plan", action="规划检索方案", outcome="success"
+                ),
+                DecisionSummary(
+                    step_id="st-2",
+                    phase="execute",
+                    action="调用 retrieve_articles",
+                    outcome="success",
+                    reason="命中缓存",
                 ),
             ],
             created_at=FIXED_NOW,
@@ -344,7 +359,8 @@ class TestStatusMapping:
 class TestInputValidation:
     def test_valid_message_passes(self):
         msg = Message(
-            message_id="m1", task_id="a2a-1",
+            message_id="m1",
+            task_id="a2a-1",
             parts=[Part(kind="text", text="hello world")],
         )
         validate_external_input(msg)  # 不抛错
@@ -463,9 +479,18 @@ class TestTaskStore:
     async def test_update_status_version_guard(self):
         store = _make_store()
         await store.create(_task("t1"), user_id="u1")
-        assert await store.update_status("t1", TaskStatus.WORKING, user_id="u1", expected_version=1) is True
-        assert await store.update_status("t1", TaskStatus.COMPLETED, user_id="u1", expected_version=1) is False
-        assert await store.update_status("t1", TaskStatus.COMPLETED, user_id="u1", expected_version=2) is True
+        assert (
+            await store.update_status("t1", TaskStatus.WORKING, user_id="u1", expected_version=1)
+            is True
+        )
+        assert (
+            await store.update_status("t1", TaskStatus.COMPLETED, user_id="u1", expected_version=1)
+            is False
+        )
+        assert (
+            await store.update_status("t1", TaskStatus.COMPLETED, user_id="u1", expected_version=2)
+            is True
+        )
 
     async def test_update_status_cross_user_rejected(self):
         store = _make_store()
@@ -485,7 +510,11 @@ class TestTaskStore:
         store = _make_store()
         await store.create(_task("a1", created_at=FIXED_NOW), user_id="u1")
         await store.create(
-            _task("a2", status=TaskStatus.WORKING, created_at=datetime(2026, 8, 10, 13, 0, 0, tzinfo=UTC)),
+            _task(
+                "a2",
+                status=TaskStatus.WORKING,
+                created_at=datetime(2026, 8, 10, 13, 0, 0, tzinfo=UTC),
+            ),
             user_id="u1",
         )
         await store.create(_task("a3", created_at=FIXED_NOW), user_id="u2")

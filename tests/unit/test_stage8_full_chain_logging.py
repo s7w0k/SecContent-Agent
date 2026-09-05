@@ -168,7 +168,9 @@ async def test_standalone_score_clears_old_score_and_stores_user_result() -> Non
             "event_impact": 40,
             "pr_total_score": 100,
             "score_reason": "重新打分",
-            "product_scores": [{"product_id": "p1", "product_name": "P1", "score": 60, "reason": ""}],
+            "product_scores": [
+                {"product_id": "p1", "product_name": "P1", "score": 60, "reason": ""}
+            ],
             "is_pr_candidate": True,
         }
     )

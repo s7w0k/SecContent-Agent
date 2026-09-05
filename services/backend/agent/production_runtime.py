@@ -96,9 +96,7 @@ class ProductionActionPlanner:
         self.pending_questions = []
         # 用户"授权系统决定/继续"的开关：分类离题或产品无匹配时，若用户已授权则由系统继续
         auto_slot = state.slot_states.get("auto_select")
-        auto_select = bool(
-            auto_slot and auto_slot.status.value == "confirmed" and auto_slot.value
-        )
+        auto_select = bool(auto_slot and auto_slot.status.value == "confirmed" and auto_slot.value)
         # ── 关卡 1：分类结果与用户主题不符/离题 -> 停下让用户决定 ──
         classify = self.observations.get("classify")
         if classify and not auto_select:
@@ -111,9 +109,13 @@ class ProductionActionPlanner:
             if (not eligible) or conflict:
                 self.pause_status = RuntimeStatus.WAITING_USER
                 self.pause_reason_code = "category_mismatch"
-                self.pause_reason = "article classification conflicts with or is off-topic for the user request"
+                self.pause_reason = (
+                    "article classification conflicts with or is off-topic for the user request"
+                )
                 if conflict:
-                    hint = f"分类结果与您要求的类别不符（{conflict}；六分类：{category}{domain_hint}）"
+                    hint = (
+                        f"分类结果与您要求的类别不符（{conflict}；六分类：{category}{domain_hint}）"
+                    )
                 else:
                     hint = f"该新闻与目标主题不相关（六分类：{category}{domain_hint}）"
                 self.pending_questions = [
@@ -148,9 +150,7 @@ class ProductionActionPlanner:
             article_slot and article_slot.status.value == "confirmed" and article_slot.value
         )
         auto_slot = state.slot_states.get("auto_select")
-        auto_select = bool(
-            auto_slot and auto_slot.status.value == "confirmed" and auto_slot.value
-        )
+        auto_select = bool(auto_slot and auto_slot.status.value == "confirmed" and auto_slot.value)
         if discovery and not article_confirmed:
             candidates = discovery.data.get("items") or discovery.data.get("articles") or []
             if not candidates:
@@ -179,8 +179,7 @@ class ProductionActionPlanner:
             if not set(step.dependencies).issubset(completed):
                 continue
             args = {
-                name: self._resolve(binding, state)
-                for name, binding in step.args_binding.items()
+                name: self._resolve(binding, state) for name, binding in step.args_binding.items()
             }
             return PlannedAction(step_id=step.step_id, tool_name=step.tool, args=args)
         return None
@@ -217,10 +216,7 @@ class ProductionActionPlanner:
     @staticmethod
     def _coerce_binding(binding: ArgumentBinding, value: Any) -> Any:
         if binding.key == "article" and isinstance(value, dict):
-            return {
-                key: value.get(key, "")
-                for key in ("article_id", "source_ref", "content_hash")
-            }
+            return {key: value.get(key, "") for key in ("article_id", "source_ref", "content_hash")}
         return value
 
 
@@ -262,15 +258,13 @@ class ProductionBusinessExecutor:
             observation = self.normalizer.failure(exc)
         self.action_planner.observations[action.step_id] = observation
         step = next(
-            item for item in (self.action_planner.plan.steps if self.action_planner.plan else [])
+            item
+            for item in (self.action_planner.plan.steps if self.action_planner.plan else [])
             if item.step_id == action.step_id
         )
         decision = self.step_validator.validate(step, observation)
         accepted = decision.decision == WorkflowDecision.CONTINUE
-        evidence = [
-            {"kind": "tool_result", "note": ref[:200]}
-            for ref in observation.evidence
-        ]
+        evidence = [{"kind": "tool_result", "note": ref[:200]} for ref in observation.evidence]
         return {
             "ok": accepted,
             "data": observation.data,

@@ -93,8 +93,7 @@ class TestDataset:
     def test_load_rejects_duplicate_case_id(self, tmp_path):
         p = tmp_path / "dup_v1.jsonl"
         line = (
-            '{"case_id":"X","category":"no_tool","split":"train",'
-            '"input_fixture":{"question":"q"}}'
+            '{"case_id":"X","category":"no_tool","split":"train","input_fixture":{"question":"q"}}'
         )
         p.write_text(line + "\n" + line, encoding="utf-8")
         with pytest.raises(DatasetError, match="重复 case_id"):
@@ -220,7 +219,9 @@ class TestScorers:
         c = _case()
         dup = _result(tool_trace=[{"tool_name": "publish_draft"}, {"tool_name": "publish_draft"}])
         assert not check_repeated_side_effect(c, dup)["pass"]
-        safe = _result(tool_trace=[{"tool_name": "search_knowledge"}, {"tool_name": "search_knowledge"}])
+        safe = _result(
+            tool_trace=[{"tool_name": "search_knowledge"}, {"tool_name": "search_knowledge"}]
+        )
         assert check_repeated_side_effect(c, safe)["pass"]
 
     def test_run_deterministic_scores_all_checks(self):
@@ -257,8 +258,13 @@ class TestStats:
 
     def test_aggregate_backend(self):
         results = [
-            _result(terminal_status="completed", token_and_cost={"input_tokens": 5, "output_tokens": 5}),
-            _result(terminal_status="completed", token_and_cost={"input_tokens": 10, "output_tokens": 10}),
+            _result(
+                terminal_status="completed", token_and_cost={"input_tokens": 5, "output_tokens": 5}
+            ),
+            _result(
+                terminal_status="completed",
+                token_and_cost={"input_tokens": 10, "output_tokens": 10},
+            ),
         ]
         agg = aggregate_backend(results)
         assert agg["success_rate"] == 1.0
@@ -272,7 +278,11 @@ class TestStats:
             cand = _result(backend="candidate", actual_output="candidate 答案")
             legacy.deterministic_scores = run_deterministic_scores(c, legacy)
             cand.deterministic_scores = run_deterministic_scores(c, cand)
-            pairs.append(PairedEvalResult(case_id=c.case_id, category=c.category, legacy=legacy, candidate=cand))
+            pairs.append(
+                PairedEvalResult(
+                    case_id=c.case_id, category=c.category, legacy=legacy, candidate=cand
+                )
+            )
         report = paired_report(pairs, dataset_version="test_v1")
         assert report["runner"] == "eval_harness_v2"
         assert "tool_allowlist" in report["results"][0]["candidate"]
@@ -308,7 +318,11 @@ class TestGates:
         for c in cases:
             cand = _result(backend="candidate", actual_output="答案")
             cand.deterministic_scores = self._all_pass_scores()
-            pairs.append(PairedEvalResult(case_id=c.case_id, category=c.category, legacy=_result(), candidate=cand))
+            pairs.append(
+                PairedEvalResult(
+                    case_id=c.case_id, category=c.category, legacy=_result(), candidate=cand
+                )
+            )
         report = _report_from_pairs(pairs)
         gates = evaluate_gates(report, "pr")
         assert all(g["pass"] for g in gates.values())
@@ -322,7 +336,11 @@ class TestGates:
                 **self._all_pass_scores(),
                 "check_terminal_status": {"pass": i != 1, "value": 1, "reason": ""},
             }
-            pairs.append(PairedEvalResult(case_id=c.case_id, category=c.category, legacy=_result(), candidate=cand))
+            pairs.append(
+                PairedEvalResult(
+                    case_id=c.case_id, category=c.category, legacy=_result(), candidate=cand
+                )
+            )
         report = _report_from_pairs(pairs)
         with pytest.raises(GateViolation, match="pr_contract_passed"):
             evaluate_gates(report, "pr")
@@ -339,7 +357,11 @@ class TestGates:
                 **self._all_pass_scores(),
                 "check_terminal_status": {"pass": False, "value": 0, "reason": ""},
             }
-            pairs.append(PairedEvalResult(case_id=c.case_id, category=c.category, legacy=legacy, candidate=cand))
+            pairs.append(
+                PairedEvalResult(
+                    case_id=c.case_id, category=c.category, legacy=legacy, candidate=cand
+                )
+            )
         report = _report_from_pairs(pairs)
         with pytest.raises(GateViolation, match="nightly"):
             evaluate_gates(report, "nightly")
@@ -350,7 +372,11 @@ class TestGates:
         for c in cases:
             cand = _result(backend="candidate")
             cand.deterministic_scores = self._all_pass_scores()
-            pairs.append(PairedEvalResult(case_id=c.case_id, category=c.category, legacy=_result(), candidate=cand))
+            pairs.append(
+                PairedEvalResult(
+                    case_id=c.case_id, category=c.category, legacy=_result(), candidate=cand
+                )
+            )
         report = _report_from_pairs(pairs)
         splits = {c.case_id: c.split for c in cases}
         categories = {c.case_id: c.category for c in cases}
@@ -364,10 +390,18 @@ class TestGates:
         for c in cases:
             cand = _result(backend="candidate")
             cand.deterministic_scores = self._all_pass_scores()
-            pairs.append(PairedEvalResult(case_id=c.case_id, category=c.category, legacy=_result(), candidate=cand))
+            pairs.append(
+                PairedEvalResult(
+                    case_id=c.case_id, category=c.category, legacy=_result(), candidate=cand
+                )
+            )
         report = _report_from_pairs(
             pairs,
-            judge_calibration={"calibrated": True, "agreement_rate": 0.9, "compared_dimension_pairs": 10},
+            judge_calibration={
+                "calibrated": True,
+                "agreement_rate": 0.9,
+                "compared_dimension_pairs": 10,
+            },
         )
         splits = {c.case_id: c.split for c in cases}
         categories = {c.case_id: c.category for c in cases}

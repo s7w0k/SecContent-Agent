@@ -12,7 +12,17 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PLAN_SCHEMA_VERSION = "2.0"
 SENSITIVE_PLAN_KEYS = frozenset(
-    {"user_id", "tenant_id", "api_key", "token", "password", "secret", "credential", "authorization", "cookie"}
+    {
+        "user_id",
+        "tenant_id",
+        "api_key",
+        "token",
+        "password",
+        "secret",
+        "credential",
+        "authorization",
+        "cookie",
+    }
 )
 
 
@@ -157,6 +167,7 @@ class ProductionPlanValidator:
                 reason=reason,
                 plan_hash=plan.fingerprint,
             )
+
         if plan.schema_version != PLAN_SCHEMA_VERSION:
             return reject("invalid_plan_schema", "unsupported plan schema")
         if expected_run_id and plan.run_id != expected_run_id:
@@ -195,15 +206,33 @@ class ProductionPlanValidator:
                 if dep not in by_id:
                     return reject("missing_dependency", f"missing dependency: {dep}")
             for arg, binding in step.args_binding.items():
-                if arg.lower() in SENSITIVE_PLAN_KEYS or _contains_sensitive(binding.value, key=arg):
-                    return reject("sensitive_plan_data", "plan cannot carry identity or credentials")
-                if binding.source == BindingSource.CONFIRMED_SLOT and binding.key not in confirmed_slots:
-                    return reject("unconfirmed_slot_binding", f"slot is not confirmed: {binding.key}")
+                if arg.lower() in SENSITIVE_PLAN_KEYS or _contains_sensitive(
+                    binding.value, key=arg
+                ):
+                    return reject(
+                        "sensitive_plan_data", "plan cannot carry identity or credentials"
+                    )
+                if (
+                    binding.source == BindingSource.CONFIRMED_SLOT
+                    and binding.key not in confirmed_slots
+                ):
+                    return reject(
+                        "unconfirmed_slot_binding", f"slot is not confirmed: {binding.key}"
+                    )
                 if binding.source == BindingSource.OBSERVATION:
-                    if binding.step_id not in by_id or order[binding.step_id] >= order[step.step_id]:
-                        return reject("invalid_observation_binding", "observation must come from an earlier step")
+                    if (
+                        binding.step_id not in by_id
+                        or order[binding.step_id] >= order[step.step_id]
+                    ):
+                        return reject(
+                            "invalid_observation_binding",
+                            "observation must come from an earlier step",
+                        )
                     if binding.step_id not in step.dependencies:
-                        return reject("undeclared_observation_dependency", "observation step must be a dependency")
+                        return reject(
+                            "undeclared_observation_dependency",
+                            "observation step must be a dependency",
+                        )
             total_cost += step.estimated_cost_units
             total_timeout += step.timeout_seconds
 

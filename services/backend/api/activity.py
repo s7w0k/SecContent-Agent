@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 router = APIRouter(prefix="/api/activities", tags=["Activity"])
 logger = logging.getLogger("backend.api.activity")
 
+
 class ActivityBatchCreate(BaseModel):
     """批量操作记录请求。"""
 
@@ -206,8 +207,7 @@ async def activity_stats(
             "by_action": by_action,
             "by_template": by_template,
             "daily_trend": [
-                {"date": date, "count": count}
-                for date, count in sorted(daily_counts.items())
+                {"date": date, "count": count} for date, count in sorted(daily_counts.items())
             ],
         },
     }

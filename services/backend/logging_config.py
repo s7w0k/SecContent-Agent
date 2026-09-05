@@ -67,17 +67,23 @@ def get_request_id() -> str | None:
 
 _SENSITIVE_PATTERNS: list[tuple[re.Pattern, str]] = [
     # password=xxx, "password": "xxx"
-    (re.compile(r'(?i)(password|passwd|pwd)(["\']?\s*[:=]\s*["\']?)([^"\'\s,}]+)'), r'\1\2***MASKED***'),
+    (
+        re.compile(r'(?i)(password|passwd|pwd)(["\']?\s*[:=]\s*["\']?)([^"\'\s,}]+)'),
+        r"\1\2***MASKED***",
+    ),
     # api_key=xxx, "api_key": "xxx"
-    (re.compile(r'(?i)(api[_-]?key)(["\']?\s*[:=]\s*["\']?)([^"\'\s,}]+)'), r'\1\2***MASKED***'),
+    (re.compile(r'(?i)(api[_-]?key)(["\']?\s*[:=]\s*["\']?)([^"\'\s,}]+)'), r"\1\2***MASKED***"),
     # token=xxx, "token": "xxx"
-    (re.compile(r'(?i)(token|jwt|secret)(["\']?\s*[:=]\s*["\']?)([^"\'\s,}]+)'), r'\1\2***MASKED***'),
+    (
+        re.compile(r'(?i)(token|jwt|secret)(["\']?\s*[:=]\s*["\']?)([^"\'\s,}]+)'),
+        r"\1\2***MASKED***",
+    ),
     # Authorization: Bearer xxx
-    (re.compile(r'(?i)(Bearer\s+)[A-Za-z0-9\-\.=_]+'), r'\1***MASKED***'),
+    (re.compile(r"(?i)(Bearer\s+)[A-Za-z0-9\-\.=_]+"), r"\1***MASKED***"),
     # mongodb://user:password@host
-    (re.compile(r'(mongodb(?:\+srv)?://)[^:]+:[^@]+(@)'), r'\1***:***\2'),
+    (re.compile(r"(mongodb(?:\+srv)?://)[^:]+:[^@]+(@)"), r"\1***:***\2"),
     # "Authorization": "xxx"
-    (re.compile(r'(?i)("authorization"\s*:\s*")[^"]+(")'), r'\1***MASKED***\2'),
+    (re.compile(r'(?i)("authorization"\s*:\s*")[^"]+(")'), r"\1***MASKED***\2"),
 ]
 
 
@@ -90,14 +96,13 @@ def mask_sensitive(text: str) -> str:
 
 # ── JSON 格式化器 ──────────────────────────────────────
 
+
 class JSONFormatter(logging.Formatter):
     """将日志记录格式化为 JSON 单行，便于 ELK/Loki 采集"""
 
     # 标准 ISO 8601 时间戳，带时区
     @override
-    def formatTime(
-        self, record: logging.LogRecord, datefmt: str | None = None
-    ) -> str:
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
         tz = timezone(timedelta(hours=8))
         dt = datetime.fromtimestamp(record.created, tz=tz)
         return dt.isoformat()
@@ -138,8 +143,18 @@ class JSONFormatter(logging.Formatter):
             }
 
         # 额外字段（通过 logger.info(msg, extra={...}) 传入）
-        for key in ("phase", "action", "duration_ms", "method", "path", "status",
-                     "client_ip", "task_id", "detail", "error_code"):
+        for key in (
+            "phase",
+            "action",
+            "duration_ms",
+            "method",
+            "path",
+            "status",
+            "client_ip",
+            "task_id",
+            "detail",
+            "error_code",
+        ):
             val = getattr(record, key, None)
             if val is not None:
                 log_entry[key] = val
@@ -159,18 +174,22 @@ class JSONFormatter(logging.Formatter):
 
 # ── 级别过滤器 ──────────────────────────────────────────
 
+
 class LevelFilter(logging.Filter):
     """按日志级别过滤"""
 
     def __init__(self, min_level: str, max_level: str | None = None):
         self.min_level = getattr(logging, min_level.upper(), logging.INFO)
-        self.max_level = getattr(logging, max_level.upper(), logging.CRITICAL) if max_level else logging.CRITICAL
+        self.max_level = (
+            getattr(logging, max_level.upper(), logging.CRITICAL) if max_level else logging.CRITICAL
+        )
 
     def filter(self, record: logging.LogRecord) -> bool:
         return self.min_level <= record.levelno <= self.max_level
 
 
 # ── 自定义审计 Logger ───────────────────────────────────
+
 
 class AuditLogger:
     """审计日志：记录用户关键操作（登录/流水线/改稿/反馈/注销等）"""
@@ -190,8 +209,14 @@ class AuditLogger:
                     cls._instance = cls(logger)
         return cls._instance
 
-    def log(self, user_id: str, action: str, resource: str = "",
-            detail: dict | None = None, level: str = "INFO"):
+    def log(
+        self,
+        user_id: str,
+        action: str,
+        resource: str = "",
+        detail: dict | None = None,
+        level: str = "INFO",
+    ):
         """记录审计日志
 
         Args:
@@ -212,6 +237,7 @@ class AuditLogger:
 
 # ── 归档压缩（轮转后自动 gzip）──────────────────────────
 
+
 def _compress_rotated_log(source_path: str, destination_path: str) -> None:
     """TimedRotatingFileHandler rotator：将当前日志压缩到轮转目标。"""
     if not os.path.exists(source_path):
@@ -226,6 +252,7 @@ def _compress_rotated_log(source_path: str, destination_path: str) -> None:
 
 
 # ── 核心配置入口 ────────────────────────────────────────
+
 
 def setup_logging(
     log_dir: str = "/app/logs",
@@ -266,9 +293,7 @@ def setup_logging(
         test_file.write_text("ok", encoding="utf-8")
         test_file.unlink()
     except (OSError, PermissionError):
-        logging.getLogger("backend").warning(
-            "日志目录 %s 不可写，仅输出到控制台", log_dir
-        )
+        logging.getLogger("backend").warning("日志目录 %s 不可写，仅输出到控制台", log_dir)
         return
 
     # ── 应用日志 handler（INFO+，按日期轮转）─────────────
@@ -365,6 +390,7 @@ def setup_logging(
 
 
 # ── 便捷函数 ────────────────────────────────────────────
+
 
 def get_audit_logger() -> AuditLogger:
     """获取审计日志单例"""

@@ -176,18 +176,18 @@ class LLMProductReranker:
     def _build_summary(self, article: dict[str, Any]) -> str:
         title = article.get("title") or ""
         summary = article.get("summary_cn") or article.get("summary") or ""
-        return (f"{title}\n{summary}")[: _MAX_SUMMARY_CHARS]
+        return (f"{title}\n{summary}")[:_MAX_SUMMARY_CHARS]
 
     def _build_prompt(self, summary: str, candidates: list[ProductMatch]) -> str:
         lines = [
             "请根据文章摘要，从候选产品中选择最相关的产品并按相关度排序。",
-            "严格只输出 JSON，格式：{\"ranked_product_ids\": [\"product_id\", ...]}",
+            '严格只输出 JSON，格式：{"ranked_product_ids": ["product_id", ...]}',
             "",
             f"文章摘要：\n{summary}",
             "",
             "候选产品（product_id | 名称 | 描述 | 命中关键词）：",
         ]
-        for m in candidates[: _MAX_CANDIDATES_FOR_LLM]:
+        for m in candidates[:_MAX_CANDIDATES_FOR_LLM]:
             entry = self._catalog.get_product(m.product_id)
             desc = entry.description if entry else ""
             lines.append(f"- {m.product_id} | {m.product_name} | {desc} | {m.match_reason}")

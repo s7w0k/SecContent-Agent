@@ -41,7 +41,11 @@ async def migrate_user(db, user_id: str, dry_run: bool = False) -> dict:
     created_memory_ids: list[str] = []
 
     # 简单解析 style_hints 中的行
-    lines = [line.strip() for line in style_hints.split("\n") if line.strip() and not line.startswith("#")]
+    lines = [
+        line.strip()
+        for line in style_hints.split("\n")
+        if line.strip() and not line.startswith("#")
+    ]
 
     for line in lines:
         # 尝试识别维度
@@ -69,10 +73,12 @@ async def migrate_user(db, user_id: str, dry_run: bool = False) -> dict:
         memory_id = f"mem-{uuid4().hex[:12]}"
 
         # 检查是否已存在（幂等）
-        existing = await db["user_memory_items"].find_one({
-            "user_id": user_id,
-            "normalized_key": normalized_key,
-        })
+        existing = await db["user_memory_items"].find_one(
+            {
+                "user_id": user_id,
+                "normalized_key": normalized_key,
+            }
+        )
         if existing:
             continue
 
@@ -84,7 +90,12 @@ async def migrate_user(db, user_id: str, dry_run: bool = False) -> dict:
             "normalized_key": normalized_key,
             "display_text": display_text[:500],
             "polarity": polarity,
-            "scope": {"category_v2": None, "template_id": None, "stage": "draft", "target_audience": None},
+            "scope": {
+                "category_v2": None,
+                "template_id": None,
+                "stage": "draft",
+                "target_audience": None,
+            },
             "confidence": 0.3,  # 迁移项低置信度
             "support_count": 0,
             "contradiction_count": 0,
@@ -119,7 +130,10 @@ async def migrate_user(db, user_id: str, dry_run: bool = False) -> dict:
 
     logger.info(
         "migrated user=%s created=%d warnings=%d dry_run=%s",
-        user_id, len(created_memory_ids), len(warnings), dry_run,
+        user_id,
+        len(created_memory_ids),
+        len(warnings),
+        dry_run,
     )
 
     return {
@@ -157,7 +171,9 @@ async def main(dry_run: bool = False, user_id: str | None = None):
     total_created = sum(len(r["created_memory_ids"]) for r in results)
     logger.info(
         "migration complete: users=%d memories_created=%d dry_run=%s",
-        len(results), total_created, dry_run,
+        len(results),
+        total_created,
+        dry_run,
     )
 
     await MongoDB.close()

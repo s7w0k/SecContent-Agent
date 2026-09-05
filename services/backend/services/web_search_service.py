@@ -15,10 +15,17 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 logger = logging.getLogger("backend.web_search")
 
-_TRACKING_PARAMS = frozenset({
-    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-    "fbclid", "gclid",
-})
+_TRACKING_PARAMS = frozenset(
+    {
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_term",
+        "utm_content",
+        "fbclid",
+        "gclid",
+    }
+)
 
 _CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\u200e\u200f\u202a-\u202e]")
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -69,9 +76,7 @@ class SearchSessionService:
         session["_id"] = str(session.get("_id", ""))
         return session
 
-    async def get_session(
-        self, search_id: str, user_id: str
-    ) -> dict[str, Any] | None:
+    async def get_session(self, search_id: str, user_id: str) -> dict[str, Any] | None:
         """Get a search session by ID, enforcing user ownership.
 
         Returns None if session doesn't exist, expired, or belongs to another user.
@@ -145,7 +150,8 @@ class SearchSessionService:
             netloc = f"{host}:{port}"
         path = parsed.path or "/"
         pairs = [
-            (k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+            (k, v)
+            for k, v in parse_qsl(parsed.query, keep_blank_values=True)
             if k.lower() not in _TRACKING_PARAMS
         ]
         pairs.sort()
@@ -237,11 +243,13 @@ class SearchSessionService:
         unresponsive = raw_response.get("unresponsive_engines") or []
         if unresponsive:
             count = len(unresponsive)
-            warnings.append({
-                "code": "ENGINE_UNAVAILABLE",
-                "message": "部分搜索引擎暂时不可用，结果可能不完整",
-                "count": count,
-            })
+            warnings.append(
+                {
+                    "code": "ENGINE_UNAVAILABLE",
+                    "message": "部分搜索引擎暂时不可用，结果可能不完整",
+                    "count": count,
+                }
+            )
         return warnings
 
     async def mark_imported_results(self, results: list[dict]) -> list[dict]:
@@ -251,10 +259,14 @@ class SearchSessionService:
         hashes = [r["canonical_url_hash"] for r in results if r.get("canonical_url_hash")]
         if not hashes:
             return results
-        existing = await self._db["articles"].find(
-            {"url_hash": {"$in": hashes}},
-            {"url_hash": 1, "_id": 0},
-        ).to_list(length=None)
+        existing = (
+            await self._db["articles"]
+            .find(
+                {"url_hash": {"$in": hashes}},
+                {"url_hash": 1, "_id": 0},
+            )
+            .to_list(length=None)
+        )
         existing_hashes = {doc["url_hash"] for doc in existing}
         for r in results:
             if r.get("canonical_url_hash") in existing_hashes:

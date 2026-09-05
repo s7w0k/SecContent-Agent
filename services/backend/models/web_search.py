@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class SearchCategory(str):
     """Search category constants."""
+
     GENERAL = "general"
     NEWS = "news"
 
@@ -22,6 +23,7 @@ class SearchTimeRange(StrEnum):
 
 class SearchWarning(BaseModel):
     """Warning for partial search results."""
+
     code: str
     message: str
     count: int = 0
@@ -29,6 +31,7 @@ class SearchWarning(BaseModel):
 
 class WebSearchRequest(BaseModel):
     """Search query request."""
+
     q: str = Field(..., min_length=2, max_length=200, description="搜索关键词")
     categories: list[str] = Field(default=["general"], description="搜索分类")
     language: str = Field(default="all", description="搜索语言")
@@ -62,6 +65,7 @@ class WebSearchRequest(BaseModel):
 
 class WebSearchResult(BaseModel):
     """Normalized search result item."""
+
     result_id: str
     title: str = Field(..., max_length=500)
     url: str
@@ -77,6 +81,7 @@ class WebSearchResult(BaseModel):
 
 class WebSearchResponse(BaseModel):
     """Search query response."""
+
     search_id: str
     query: dict[str, Any]
     results: list[WebSearchResult]
@@ -88,6 +93,7 @@ class WebSearchResponse(BaseModel):
 
 class SearchSessionResponse(BaseModel):
     """Get session response (excludes internal fields)."""
+
     search_id: str
     query: dict[str, Any]
     results: list[WebSearchResult]
@@ -99,6 +105,7 @@ class SearchSessionResponse(BaseModel):
 
 class SearchImportRequest(BaseModel):
     """Import selected results request."""
+
     search_id: str = Field(..., min_length=1)
     result_ids: list[str] = Field(..., min_length=1, max_length=20)
 
@@ -112,6 +119,7 @@ class SearchImportItemStatus(StrEnum):
 
 class SearchImportItem(BaseModel):
     """Single import result item."""
+
     result_id: str
     status: SearchImportItemStatus
     article_url_hash: str | None = None
@@ -120,6 +128,7 @@ class SearchImportItem(BaseModel):
 
 class SearchImportSummary(BaseModel):
     """Import batch summary."""
+
     requested: int
     imported: int = 0
     duplicate: int = 0
@@ -129,6 +138,7 @@ class SearchImportSummary(BaseModel):
 
 class SearchImportResponse(BaseModel):
     """Import batch response."""
+
     batch_id: str
     summary: SearchImportSummary
     items: list[SearchImportItem]
@@ -136,6 +146,7 @@ class SearchImportResponse(BaseModel):
 
 class SearchStatusResponse(BaseModel):
     """Search feature status."""
+
     enabled: bool
     available: bool
     allowed_categories: list[str]

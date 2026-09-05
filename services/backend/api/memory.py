@@ -30,7 +30,14 @@ def _get_db(request: Request):
 def _serialize(doc: dict) -> dict:
     result = dict(doc)
     result.pop("_id", None)
-    for key in ("created_at", "updated_at", "first_seen_at", "last_seen_at", "last_used_at", "expires_at"):
+    for key in (
+        "created_at",
+        "updated_at",
+        "first_seen_at",
+        "last_seen_at",
+        "last_used_at",
+        "expires_at",
+    ):
         val = result.get(key)
         if isinstance(val, datetime):
             result[key] = val.isoformat()
@@ -75,7 +82,7 @@ async def list_items(
         .skip((page - 1) * page_size)
         .limit(page_size)
     )
-    items = [ _serialize(doc) async for doc in cursor]
+    items = [_serialize(doc) async for doc in cursor]
 
     # 状态统计
     pipeline = [
@@ -127,12 +134,14 @@ async def approve_item(
     db = _get_db(request)
     result = await db["user_memory_items"].update_one(
         {"memory_id": memory_id, "user_id": user_id},
-        {"$set": {
-            "status": MemoryStatus.ACTIVE.value,
-            "confirmed_by_user": True,
-            "created_by": "user",
-            "updated_at": datetime.now(UTC),
-        }},
+        {
+            "$set": {
+                "status": MemoryStatus.ACTIVE.value,
+                "confirmed_by_user": True,
+                "created_by": "user",
+                "updated_at": datetime.now(UTC),
+            }
+        },
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Memory item not found")
@@ -148,10 +157,12 @@ async def reject_item(
     db = _get_db(request)
     result = await db["user_memory_items"].update_one(
         {"memory_id": memory_id, "user_id": user_id},
-        {"$set": {
-            "status": MemoryStatus.REJECTED.value,
-            "updated_at": datetime.now(UTC),
-        }},
+        {
+            "$set": {
+                "status": MemoryStatus.REJECTED.value,
+                "updated_at": datetime.now(UTC),
+            }
+        },
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Memory item not found")
@@ -167,10 +178,12 @@ async def suppress_item(
     db = _get_db(request)
     result = await db["user_memory_items"].update_one(
         {"memory_id": memory_id, "user_id": user_id},
-        {"$set": {
-            "status": MemoryStatus.SUPPRESSED.value,
-            "updated_at": datetime.now(UTC),
-        }},
+        {
+            "$set": {
+                "status": MemoryStatus.SUPPRESSED.value,
+                "updated_at": datetime.now(UTC),
+            }
+        },
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Memory item not found")
@@ -247,10 +260,12 @@ async def delete_item(
     db = _get_db(request)
     result = await db["user_memory_items"].update_one(
         {"memory_id": memory_id, "user_id": user_id},
-        {"$set": {
-            "status": MemoryStatus.REJECTED.value,
-            "updated_at": datetime.now(UTC),
-        }},
+        {
+            "$set": {
+                "status": MemoryStatus.REJECTED.value,
+                "updated_at": datetime.now(UTC),
+            }
+        },
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Memory item not found")

@@ -133,39 +133,47 @@ def run_deterministic_checks(
     checks: list[dict[str, Any]] = []
 
     # 1. 工具选择
-    checks.append({
-        "name": "tool_selection",
-        **check_tool_selection(
-            result.get("tool_names_used", []),
-            item.get("expected_tool_calls", []),
-        ),
-    })
+    checks.append(
+        {
+            "name": "tool_selection",
+            **check_tool_selection(
+                result.get("tool_names_used", []),
+                item.get("expected_tool_calls", []),
+            ),
+        }
+    )
 
     # 2. 回答内容
-    checks.append({
-        "name": "answer_content",
-        **check_answer_content(
-            result.get("answer", ""),
-            item.get("expected_answer_contains", []),
-        ),
-    })
+    checks.append(
+        {
+            "name": "answer_content",
+            **check_answer_content(
+                result.get("answer", ""),
+                item.get("expected_answer_contains", []),
+            ),
+        }
+    )
 
     # 3. 安全
-    checks.append({
-        "name": "security",
-        **check_security(
-            item.get("question", ""),
-            result.get("answer", ""),
-            result.get("tool_names_used", []),
-            item.get("category", ""),
-        ),
-    })
+    checks.append(
+        {
+            "name": "security",
+            **check_security(
+                item.get("question", ""),
+                result.get("answer", ""),
+                result.get("tool_names_used", []),
+                item.get("category", ""),
+            ),
+        }
+    )
 
     # 4. 收敛
-    checks.append({
-        "name": "convergence",
-        **check_convergence(result.get("rounds", 0), max_rounds),
-    })
+    checks.append(
+        {
+            "name": "convergence",
+            **check_convergence(result.get("rounds", 0), max_rounds),
+        }
+    )
 
     all_pass = all(c.get("pass", False) for c in checks)
     failed = [c["name"] for c in checks if not c.get("pass", False)]

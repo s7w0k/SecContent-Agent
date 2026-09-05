@@ -407,9 +407,7 @@ class ExecutionStepLedger:
             return_document=ReturnDocument.AFTER,
         )
         if doc is None:
-            raise LeaseConflictError(
-                f"step not skippable: run={run_id} step={step_id}"
-            )
+            raise LeaseConflictError(f"step not skippable: run={run_id} step={step_id}")
         return StepLedgerEntry.model_validate(doc)
 
     async def force_skip(
@@ -686,7 +684,11 @@ class ExecutionStepLedger:
                     )
 
         for entry in entries:
-            if entry.status == "succeeded" and checkpoint_ids and entry.step_id not in checkpoint_ids:
+            if (
+                entry.status == "succeeded"
+                and checkpoint_ids
+                and entry.step_id not in checkpoint_ids
+            ):
                 verified = True
                 if verify_artifact is not None:
                     verified = await verify_artifact(entry)

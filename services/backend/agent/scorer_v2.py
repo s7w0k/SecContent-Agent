@@ -484,8 +484,7 @@ class ScoringAgentV2:
             legacy_result["_shadow_compare"] = {
                 "legacy_score": legacy_result.get("relevance", 0),
                 "wiki_score": wiki_result.get("relevance", 0),
-                "score_delta": wiki_result.get("relevance", 0)
-                - legacy_result.get("relevance", 0),
+                "score_delta": wiki_result.get("relevance", 0) - legacy_result.get("relevance", 0),
                 "wiki_status": bundle.status,
                 "wiki_coverage": bundle.coverage,
                 "wiki_grounded": bundle.confidence >= 0.8,

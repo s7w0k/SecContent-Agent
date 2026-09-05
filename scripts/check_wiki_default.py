@@ -46,9 +46,7 @@ ALLOW_LEGACY_SUBSTR = [
 # 命中的两种模式：
 #  1) KNOWLEDGE_BACKEND=legacy
 #  2) KNOWLEDGE_BACKEND: ... = "legacy"
-_ASSIGN_RE = re.compile(
-    r"KNOWLEDGE_BACKEND\s*(?:[=:]\s*|\s*=\s*[\"'`])?(legacy)", re.IGNORECASE
-)
+_ASSIGN_RE = re.compile(r"KNOWLEDGE_BACKEND\s*(?:[=:]\s*|\s*=\s*[\"'`])?(legacy)", re.IGNORECASE)
 
 
 def _is_allowed(path: Path) -> bool:
@@ -83,9 +81,9 @@ def main() -> int:
                 "services/backend/config.py: 默认 KNOWLEDGE_BACKEND 必须显式为 'wiki'"
             )
         for lineno, line in enumerate(cfg_text.splitlines(), start=1):
-            if re.search(
-                r"KNOWLEDGE_BACKEND.*['\"]legacy['\"]\s*(#.*default)?", line
-            ) and ("default" in line.lower() or "=" in line):
+            if re.search(r"KNOWLEDGE_BACKEND.*['\"]legacy['\"]\s*(#.*default)?", line) and (
+                "default" in line.lower() or "=" in line
+            ):
                 violations.append(
                     f"services/backend/config.py:{lineno}: 默认值不得为 legacy: {line.strip()}"
                 )
@@ -109,7 +107,9 @@ def main() -> int:
         print("❌ CI Hard Gate 2 failed — 检测到隐式 / 生产默认 legacy：")
         for v in violations:
             print(f"  - {v}")
-        print("若确为 emergency rollback，请显式配置并在 docs/runbook/wiki-backend-rollback.md 说明。")
+        print(
+            "若确为 emergency rollback，请显式配置并在 docs/runbook/wiki-backend-rollback.md 说明。"
+        )
         return 1
 
     print("✅ CI Hard Gate 2 passed — no production/default legacy found.")

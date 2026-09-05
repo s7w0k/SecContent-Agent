@@ -34,6 +34,7 @@ MODES = ("legacy", "skill_shadow", "skill_canary", "skill_planned")
 
 # ── 桩依赖（默认无网络自包含 smoke）─────────────────────────────
 
+
 class _ModeSettings:
     def __init__(self, mode: str) -> None:
         self.mode = mode
@@ -138,9 +139,7 @@ async def _run_mode(mode: str) -> tuple[bool, list[str]]:
         results.append(f"execute OK status={status}")
         results.append("complete OK")
     elif engine == "skill_planned":
-        results.append(
-            "execute SKIP (skill_planned 真实任务需完整业务栈，见 §72 Docker smoke)"
-        )
+        results.append("execute SKIP (skill_planned 真实任务需完整业务栈，见 §72 Docker smoke)")
         results.append("complete OK")
     else:
         results.append(f"execute OK route={engine} (legacy primary)")

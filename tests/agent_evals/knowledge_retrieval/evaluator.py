@@ -173,20 +173,22 @@ def run_all(*, write_report: bool = False, dataset_version: str = "v1") -> dict[
             expansion_ok += 1 if check_map.get("expansion") else 0
 
         article = case.get("article", {})
-        results.append({
-            "case_id": case["case_id"],
-            "mode": mode,
-            "role": case.get("role", ""),
-            "tone": case.get("tone", ""),
-            "query": case.get("query", ""),
-            "title": article.get("title", ""),
-            "summary_cn": article.get("summary_cn", ""),
-            "expected": expected,
-            "predicted": predicted,
-            "predicted_matches": matches,
-            "requires_expansion": requires_expansion,
-            **eval_result,
-        })
+        results.append(
+            {
+                "case_id": case["case_id"],
+                "mode": mode,
+                "role": case.get("role", ""),
+                "tone": case.get("tone", ""),
+                "query": case.get("query", ""),
+                "title": article.get("title", ""),
+                "summary_cn": article.get("summary_cn", ""),
+                "expected": expected,
+                "predicted": predicted,
+                "predicted_matches": matches,
+                "requires_expansion": requires_expansion,
+                **eval_result,
+            }
+        )
 
     total = len(dataset)
     top1_acc = top1_ok / total_expected if total_expected else 0.0
@@ -198,9 +200,17 @@ def run_all(*, write_report: bool = False, dataset_version: str = "v1") -> dict[
     gates = {
         "top1_accuracy": {"pass": top1_acc >= 0.90, "value": top1_acc, "threshold": "≥90%"},
         "top2_recall": {"pass": top2_rec >= 0.97, "value": top2_rec, "threshold": "≥97%"},
-        "forbidden_isolation": {"pass": forbid_violation == 0.0, "value": forbid_violation, "threshold": "0%"},
+        "forbidden_isolation": {
+            "pass": forbid_violation == 0.0,
+            "value": forbid_violation,
+            "threshold": "0%",
+        },
         "no_hit_no_fabrication": {"pass": false_pos == 0.0, "value": false_pos, "threshold": "0%"},
-        "expansion_coverage": {"pass": expansion_cov == 1.0, "value": expansion_cov, "threshold": "100%"},
+        "expansion_coverage": {
+            "pass": expansion_cov == 1.0,
+            "value": expansion_cov,
+            "threshold": "100%",
+        },
     }
 
     report = {
@@ -253,7 +263,9 @@ def print_report(report: dict[str, Any]) -> None:
 
     for r in report["results"]:
         if not r["pass"]:
-            print(f"  FAIL [{r['case_id']}] [{r['mode']}] expected={r['expected']} predicted={r['predicted']}")
+            print(
+                f"  FAIL [{r['case_id']}] [{r['mode']}] expected={r['expected']} predicted={r['predicted']}"
+            )
             for check in r.get("checks", []):
                 if not check.get("pass"):
                     print(f"       {check['name']}: {check.get('reason', '')}")
@@ -261,9 +273,15 @@ def print_report(report: dict[str, Any]) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="阶段0 产品路由基线")
-    parser.add_argument("--report", action="store_true", help="写入 reports/knowledge-retrieval-baseline.json")
-    parser.add_argument("--dataset", choices=["v1", "v2", "query"], default="v1",
-                        help="评测集版本：v1 原始，v2 多角色真实用户输入，query 真实线上短句语料")
+    parser.add_argument(
+        "--report", action="store_true", help="写入 reports/knowledge-retrieval-baseline.json"
+    )
+    parser.add_argument(
+        "--dataset",
+        choices=["v1", "v2", "query"],
+        default="v1",
+        help="评测集版本：v1 原始，v2 多角色真实用户输入，query 真实线上短句语料",
+    )
     args = parser.parse_args()
     _report = run_all(write_report=args.report, dataset_version=args.dataset)
     print_report(_report)

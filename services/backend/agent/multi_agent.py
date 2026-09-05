@@ -242,7 +242,10 @@ class MultiAgentRuntime:
                 docs = await cursor.to_list(length=200)
                 for doc in docs:
                     products.append(
-                        {"id": str(doc.get("product_id") or ""), "name": str(doc.get("product_name") or "")}
+                        {
+                            "id": str(doc.get("product_id") or ""),
+                            "name": str(doc.get("product_name") or ""),
+                        }
                     )
             except Exception:
                 logger.exception("[multi_agent] load products failed")
@@ -422,9 +425,7 @@ class MultiAgentRuntime:
                 status=status,
             )
         except Exception:
-            logger.warning(
-                "[multi_agent] emit replayed failed (run=%s step=%s)", run_id, step_id
-            )
+            logger.warning("[multi_agent] emit replayed failed (run=%s step=%s)", run_id, step_id)
 
 
 # ═══════════════════════════════════════════════════════════════

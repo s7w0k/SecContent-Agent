@@ -50,9 +50,7 @@ class EvidenceCollector:
         items: list[EvidenceItem] = []
         for page_id, page in opened_pages.items():
             items.extend(
-                self.collect_page(
-                    query=query, page_id=page_id, page=page, task_type=task_type
-                )
+                self.collect_page(query=query, page_id=page_id, page=page, task_type=task_type)
             )
         return items
 
@@ -89,7 +87,9 @@ class EvidenceCollector:
                 items.append(
                     EvidenceItem(
                         evidence_id=stable_evidence_id(
-                            page_id=page_id, claim_id=claim_id, fact=fact,
+                            page_id=page_id,
+                            claim_id=claim_id,
+                            fact=fact,
                             source_refs=claim_sources,
                         ),
                         fact=fact,
@@ -128,7 +128,9 @@ class EvidenceCollector:
             items.append(
                 EvidenceItem(
                     evidence_id=stable_evidence_id(
-                        page_id=page_id, claim_id="", fact=fact,
+                        page_id=page_id,
+                        claim_id="",
+                        fact=fact,
                         source_refs=claim_sources,
                     ),
                     fact=fact,

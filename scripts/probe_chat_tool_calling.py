@@ -57,13 +57,16 @@ if not API_KEY or API_KEY.startswith("sk-your-"):
 
 # ── 测试用工具定义 ────────────────────────────────────────────
 
+
 @tool
 def search_knowledge(product_name: str) -> str:
     """搜索产品知识库，返回产品定位和核心功能摘要。当用户询问产品能力时使用。
     Args:
         product_name: 产品名称
     """
-    return f"[知识库] {product_name}: 智能体身份安全产品，核心能力包括身份认证、权限管控、意图识别。"
+    return (
+        f"[知识库] {product_name}: 智能体身份安全产品，核心能力包括身份认证、权限管控、意图识别。"
+    )
 
 
 @tool
@@ -88,6 +91,7 @@ ALL_TOOLS = [search_knowledge, get_article, retrieve_memory]
 
 
 # ── 辅助 ──────────────────────────────────────────────────────
+
 
 def _make_llm(**kwargs: Any) -> ChatOpenAI:
     """创建 ChatOpenAI 实例。"""
@@ -115,11 +119,16 @@ def _print_result(label: str, value: Any, ok: bool | None = None) -> None:
     elif ok is False:
         status = " [FAIL]"
     raw_repr = repr(value)
-    display = raw_repr if isinstance(value, (str, dict, list, type(None))) and len(raw_repr) > 100 else value
+    display = (
+        raw_repr
+        if isinstance(value, (str, dict, list, type(None))) and len(raw_repr) > 100
+        else value
+    )
     print(f"  {label}: {display}{status}")
 
 
 # ── 测试用例 ──────────────────────────────────────────────────
+
 
 async def test_1_basic_tool_call() -> dict:
     """测试 1: bind_tools().ainvoke() 与 AIMessage.tool_calls"""
@@ -140,7 +149,9 @@ async def test_1_basic_tool_call() -> dict:
 
         tool_calls = getattr(response, "tool_calls", None)
         has_tool_calls = isinstance(tool_calls, list) and len(tool_calls) > 0
-        _print_result("tool_calls 存在且非空", f"len={len(tool_calls) if tool_calls else 0}", has_tool_calls)
+        _print_result(
+            "tool_calls 存在且非空", f"len={len(tool_calls) if tool_calls else 0}", has_tool_calls
+        )
 
         if has_tool_calls:
             tc = tool_calls[0]
@@ -152,7 +163,11 @@ async def test_1_basic_tool_call() -> dict:
             _print_result("tool_call.args", tc.get("args", {}), has_args)
             _print_result("tool_call.type", tc.get("type", ""), True)
 
-        content_preview = (response.content or "")[:80] if isinstance(response.content, str) else str(response.content)[:80]
+        content_preview = (
+            (response.content or "")[:80]
+            if isinstance(response.content, str)
+            else str(response.content)[:80]
+        )
         _print_result("content 预览", content_preview)
 
         result["pass"] = is_ai_message and has_tool_calls and has_name and has_id and has_args
@@ -174,7 +189,9 @@ async def test_2_multiple_tool_calls() -> dict:
         bound = llm.bind_tools(ALL_TOOLS)
         messages = [
             SystemMessage(content="你是一个助手，需要同时查询多方面信息。"),
-            HumanMessage(content="请同时帮我查询智能体身份安全产品的知识库，以及文章 abc123 的内容。"),
+            HumanMessage(
+                content="请同时帮我查询智能体身份安全产品的知识库，以及文章 abc123 的内容。"
+            ),
         ]
         response = await bound.ainvoke(messages)
         tool_calls = getattr(response, "tool_calls", [])
@@ -224,7 +241,9 @@ async def test_3_streaming_tool_calls() -> dict:
         _print_result("tool_call_chunks 数量", len(tool_call_chunks), len(tool_call_chunks) > 0)
 
         if tool_call_chunks:
-            _print_result("首个 chunk 预览", {k: v for k, v in tool_call_chunks[0].items() if k != "args"})
+            _print_result(
+                "首个 chunk 预览", {k: v for k, v in tool_call_chunks[0].items() if k != "args"}
+            )
             # 检查拼接后是否能还原完整 tool call
             assembled_names = set()
             for tc_chunk in tool_call_chunks:
@@ -308,7 +327,9 @@ async def test_5_usage_metadata() -> dict:
         _print_result("usage_metadata", usage_meta, usage_meta is not None)
 
         response_meta = getattr(response, "response_metadata", None)
-        _print_result("response_metadata 存在", response_meta is not None, response_meta is not None)
+        _print_result(
+            "response_metadata 存在", response_meta is not None, response_meta is not None
+        )
         if response_meta:
             token_usage = response_meta.get("token_usage") or response_meta.get("usage")
             _print_result("token_usage", token_usage, token_usage is not None)
@@ -379,6 +400,7 @@ async def test_7_invalid_schema() -> dict:
 
 
 # ── 主流程 ────────────────────────────────────────────────────
+
 
 async def main() -> None:
     print("\nProvider 工具调用能力探针")

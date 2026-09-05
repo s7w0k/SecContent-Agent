@@ -198,8 +198,12 @@ def conversation_metrics(samples: list[ConversationSample]) -> dict[str, float]:
     true_positive = sum(len(item.expected_slots & item.predicted_slots) for item in samples)
     false_positive = sum(len(item.predicted_slots - item.expected_slots) for item in samples)
     false_negative = sum(len(item.expected_slots - item.predicted_slots) for item in samples)
-    precision = true_positive / (true_positive + false_positive) if true_positive + false_positive else 1.0
-    recall = true_positive / (true_positive + false_negative) if true_positive + false_negative else 1.0
+    precision = (
+        true_positive / (true_positive + false_positive) if true_positive + false_positive else 1.0
+    )
+    recall = (
+        true_positive / (true_positive + false_negative) if true_positive + false_negative else 1.0
+    )
     slot_f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
     required = [item for item in samples if item.clarification_required]
     unnecessary = [item for item in samples if not item.clarification_required]
@@ -208,10 +212,14 @@ def conversation_metrics(samples: list[ConversationSample]) -> dict[str, float]:
         "slot_f1": round(slot_f1, 4),
         "clarification_recall": round(
             sum(item.clarification_asked for item in required) / len(required), 4
-        ) if required else 1.0,
+        )
+        if required
+        else 1.0,
         "over_clarification_rate": round(
             sum(item.clarification_asked for item in unnecessary) / len(unnecessary), 4
-        ) if unnecessary else 0.0,
+        )
+        if unnecessary
+        else 0.0,
         "repeated_clarification_rate": round(
             sum(item.repeated_clarification for item in samples) / len(samples), 4
         ),

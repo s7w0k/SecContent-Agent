@@ -88,11 +88,7 @@ def _make_scorer(mode: str, bundle: EvidenceBundle):
 
     # Hard Gate (GOAL B): provider=None 不再等价于 legacy。
     # legacy 模式也必须显式注入 LegacyKnowledgeProvider。
-    provider = (
-        LegacyKnowledgeProvider()
-        if mode == "legacy"
-        else _FakeProvider(mode, bundle)
-    )
+    provider = LegacyKnowledgeProvider() if mode == "legacy" else _FakeProvider(mode, bundle)
     scorer = ScoringAgentV2(
         llm=_FakeLLM(),
         knowledge=_FakeKnowledge(),

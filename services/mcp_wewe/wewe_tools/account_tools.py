@@ -22,6 +22,7 @@ STATUS_LABEL = {
 #  账号查询
 # ---------------------------------------------------------------------------
 
+
 def check_accounts() -> dict:
     """
     查询所有账号状态。
@@ -51,13 +52,15 @@ def check_accounts() -> dict:
         status = acc["status"]
         is_blocked = acc_id in blocked_ids
 
-        result_accounts.append({
-            "id": acc_id,
-            "name": name,
-            "status": status,
-            "status_label": STATUS_LABEL.get(status, "未知"),
-            "is_blocked": is_blocked,
-        })
+        result_accounts.append(
+            {
+                "id": acc_id,
+                "name": name,
+                "status": status,
+                "status_label": STATUS_LABEL.get(status, "未知"),
+                "is_blocked": is_blocked,
+            }
+        )
 
         if status == 1 and not is_blocked:
             valid += 1
@@ -95,6 +98,7 @@ def has_usable_account() -> bool:
 #  登录流程（三步）
 # ---------------------------------------------------------------------------
 
+
 def create_login_qrcode() -> dict:
     """
     第一步：创建登录二维码。
@@ -115,6 +119,7 @@ def create_login_qrcode() -> dict:
     qr_base64 = ""
     try:
         import qrcode as qrlib
+
         qr = qrlib.QRCode(border=2)
         qr.add_data(scan_url)
         qr.make(fit=True)
@@ -188,12 +193,15 @@ def save_account(vid: str, token: str, name: str) -> dict:
         {"ok": false, "error": "..."}
     """
     try:
-        mutation("account.add", {
-            "id": vid,
-            "token": token,
-            "name": name,
-            "status": 1,
-        })
+        mutation(
+            "account.add",
+            {
+                "id": vid,
+                "token": token,
+                "name": name,
+                "status": 1,
+            },
+        )
         return {"ok": True, "id": vid}
     except TrpcError as e:
         return {"ok": False, "error": str(e)}

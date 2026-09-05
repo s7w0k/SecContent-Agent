@@ -100,9 +100,7 @@ class TestKnowledgeBaseline:
         for f in files:
             if f.name == "architecture-brief.md":
                 rel = str(f.relative_to(KB_DIR)).replace("\\", "/")
-                assert rel.startswith("shared/"), (
-                    f"非 shared 下的 architecture-brief 应排除: {rel}"
-                )
+                assert rel.startswith("shared/"), f"非 shared 下的 architecture-brief 应排除: {rel}"
 
     # ── b) 打分 Prompt 稳定性 ────────────────────────────────
 
@@ -173,7 +171,7 @@ class TestKnowledgeBaseline:
                 continue
             content = fp.read_text(encoding="utf-8")
             if len(content) > TRUNCATION_LIMIT:
-                beyond = content[TRUNCATION_LIMIT:TRUNCATION_LIMIT + 20]
+                beyond = content[TRUNCATION_LIMIT : TRUNCATION_LIMIT + 20]
                 if beyond.strip():
                     assert beyond not in prompt, f"文件 {rel_path} 未正确截断"
 

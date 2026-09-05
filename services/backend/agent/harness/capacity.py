@@ -148,8 +148,9 @@ class CapacityModel:
         sf = inputs.safety_factor
         sustained = inputs.sustainable_runs_per_second()
         max_concurrent = max(1, int(inputs.worker_concurrency * sf))
-        max_llm = _cap(sustained * inputs.llm_calls_per_run * sf,
-                       inputs.provider_llm_calls_per_second)
+        max_llm = _cap(
+            sustained * inputs.llm_calls_per_run * sf, inputs.provider_llm_calls_per_second
+        )
         input_tokens, _cached, output_tokens = inputs.tokens_per_run()
         tokens_per_min = max_llm * (input_tokens + output_tokens) * 60
         max_tokens = _cap(tokens_per_min, inputs.provider_tokens_per_minute)
@@ -185,10 +186,7 @@ def estimate_usd_per_day_by_rollout(
         daily_runs: 全天 Agent 触发总量（按 100% 口径）
     """
     usd_per_run = inputs.usd_per_run()
-    return {
-        f"{int(p * 100)}%": daily_runs * p * usd_per_run
-        for p in _ROLLOUT_TIERS
-    }
+    return {f"{int(p * 100)}%": daily_runs * p * usd_per_run for p in _ROLLOUT_TIERS}
 
 
 @dataclass(frozen=True)

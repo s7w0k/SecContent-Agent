@@ -9,6 +9,7 @@
     store = build_embedding_store(indexer)
     retriever = build_retriever_with_embedding(indexer, store, embedding_weight=0.3)
 """
+
 from __future__ import annotations
 
 import logging
@@ -115,9 +116,7 @@ def build_embedding_store(indexer: Any) -> Any:
     return store
 
 
-def build_retriever_with_embedding(
-    indexer: Any, store: Any, embedding_weight: float = 0.3
-) -> Any:
+def build_retriever_with_embedding(indexer: Any, store: Any, embedding_weight: float = 0.3) -> Any:
     """构建注入 embedding 的 DocumentRetriever（exact=1.0，embedding=weight）。"""
     from agent.document_retriever import DocumentRetriever
 
@@ -176,7 +175,7 @@ def build_reranker(
                 {
                     "role": "system",
                     "content": "你是文档检索重排器。根据检索查询，把候选文档按相关性从高到低排序。"
-                    "严格只输出 JSON：{\"ranked_doc_ids\": [\"doc_id\", ...]}。不得引入新 ID。",
+                    '严格只输出 JSON：{"ranked_doc_ids": ["doc_id", ...]}。不得引入新 ID。',
                 },
                 {"role": "user", "content": prompt},
             ],

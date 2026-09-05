@@ -94,12 +94,14 @@ async def search_knowledge(
         if direct_scoring_prompt is not None and is_direct != direct_scoring_prompt:
             continue
 
-        enriched.append({
-            **item,
-            "knowledge_role": file_role,
-            "direct_scoring_prompt": is_direct,
-            "document_id": classifier.get_document_id(rel_path),
-        })
+        enriched.append(
+            {
+                **item,
+                "knowledge_role": file_role,
+                "direct_scoring_prompt": is_direct,
+                "document_id": classifier.get_document_id(rel_path),
+            }
+        )
 
     return {"ok": True, "data": enriched}
 
@@ -152,6 +154,7 @@ def _get_loader_from_app():
     """从全局获取 KnowledgeLoader（API 进程中可用）。"""
     try:
         from main import app
+
         return getattr(app.state, "knowledge_loader", None)
     except (ImportError, AttributeError):
         return None

@@ -73,8 +73,13 @@ class MemorySummaryCompiler:
         # 维度限额
         dimension_counts: dict[str, int] = {}
         max_per_dimension = {
-            "required_pattern": 3, "avoid_pattern": 3, "tone": 1, "length": 1,
-            "template": 2, "perspective": 2, "revise_direction": 3,
+            "required_pattern": 3,
+            "avoid_pattern": 3,
+            "tone": 1,
+            "length": 1,
+            "template": 2,
+            "perspective": 2,
+            "revise_direction": 3,
         }
 
         for item in items:
@@ -96,11 +101,13 @@ class MemorySummaryCompiler:
             elif polarity == "avoid":
                 avoid_patterns.append(display_text)
             else:
-                soft_prefs.append(SoftPreference(
-                    memory_id=item["memory_id"],
-                    text=display_text,
-                    confidence=confidence,
-                ))
+                soft_prefs.append(
+                    SoftPreference(
+                        memory_id=item["memory_id"],
+                        text=display_text,
+                        confidence=confidence,
+                    )
+                )
 
         # 渲染文本
         rendered = self._render_text(hard_prefs, soft_prefs, avoid_patterns)
@@ -109,7 +116,12 @@ class MemorySummaryCompiler:
         # 如果超出预算，按完整条目裁剪
         if char_count > settings.MEMORY_MAX_PACK_CHARS:
             rendered, soft_prefs, memory_ids = self._prune_to_budget(
-                rendered, hard_prefs, soft_prefs, avoid_patterns, memory_ids, settings.MEMORY_MAX_PACK_CHARS
+                rendered,
+                hard_prefs,
+                soft_prefs,
+                avoid_patterns,
+                memory_ids,
+                settings.MEMORY_MAX_PACK_CHARS,
             )
             char_count = len(rendered)
 
@@ -147,7 +159,9 @@ class MemorySummaryCompiler:
 
         logger.info(
             "summary compiled: scope_key=%s items=%d chars=%d",
-            scope_key, len(memory_ids), char_count,
+            scope_key,
+            len(memory_ids),
+            char_count,
         )
         return summary_doc
 

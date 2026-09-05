@@ -23,7 +23,13 @@ class TestValidateUrlProtocol:
 
     @pytest.mark.parametrize(
         "url",
-        ["file:///etc/passwd", "javascript:alert(1)", "data:text/html,<script>", "ftp://example.com", ""],
+        [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "data:text/html,<script>",
+            "ftp://example.com",
+            "",
+        ],
     )
     def test_rejects_other_protocols(self, url):
         assert validate_url_protocol(url) is False

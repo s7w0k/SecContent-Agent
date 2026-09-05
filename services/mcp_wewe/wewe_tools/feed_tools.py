@@ -14,6 +14,7 @@ from .config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL, get_rss
 #  RSS 获取与筛选
 # ---------------------------------------------------------------------------
 
+
 def fetch_yesterday_articles(rss_url: str = "") -> dict:
     """
     获取昨日发布的所有文章。
@@ -44,11 +45,13 @@ def fetch_yesterday_articles(rss_url: str = "") -> dict:
             continue
         dt = datetime(*pub[:6], tzinfo=tz)
         if start <= dt <= end:
-            yest_entries.append({
-                "title": e.get("title", "无标题"),
-                "link": e.get("link", ""),
-                "published": dt.isoformat(),
-            })
+            yest_entries.append(
+                {
+                    "title": e.get("title", "无标题"),
+                    "link": e.get("link", ""),
+                    "published": dt.isoformat(),
+                }
+            )
 
     return {
         "ok": True,
@@ -61,6 +64,7 @@ def fetch_yesterday_articles(rss_url: str = "") -> dict:
 # ---------------------------------------------------------------------------
 #  全文抓取
 # ---------------------------------------------------------------------------
+
 
 def fetch_article_fulltext(link: str) -> dict:
     """
@@ -94,6 +98,7 @@ def fetch_article_fulltext(link: str) -> dict:
 # ---------------------------------------------------------------------------
 #  LLM 摘要
 # ---------------------------------------------------------------------------
+
 
 def analyze_articles_with_llm(
     articles: list,
@@ -159,11 +164,13 @@ def analyze_articles_with_llm(
             errors += 1
             summary = f"[分析失败: {ex}]"
 
-        results.append({
-            "title": title,
-            "link": link,
-            "summary": summary,
-        })
+        results.append(
+            {
+                "title": title,
+                "link": link,
+                "summary": summary,
+            }
+        )
 
     return {
         "ok": True,

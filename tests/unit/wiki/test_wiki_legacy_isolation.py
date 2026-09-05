@@ -67,9 +67,7 @@ def _make_bundle(status: str = "SUFFICIENT") -> EvidenceBundle:
                 page_id="capability.identity_auth",
                 page_title="身份认证",
                 source_refs=[
-                    SourceRef(
-                        source_id="s1", relative_path="1-产品/overview.md", content_hash="h1"
-                    )
+                    SourceRef(source_id="s1", relative_path="1-产品/overview.md", content_hash="h1")
                 ],
                 relevance=0.9,
                 confidence=0.9,

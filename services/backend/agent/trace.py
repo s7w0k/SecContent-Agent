@@ -208,7 +208,9 @@ def build_trace(
         reason_code=getattr(state, "reason_code", "") or "",
         reason=getattr(state, "reason", "") or "",
         # 无冻结清单时仍给出可读模式（默认 autonomous，与 RunManifest 默认一致）
-        execution_mode=manifest.execution_mode.value if manifest else ExecutionMode.AUTONOMOUS.value,
+        execution_mode=manifest.execution_mode.value
+        if manifest
+        else ExecutionMode.AUTONOMOUS.value,
         model_provider=manifest.model_provider if manifest else "",
         model_id=manifest.model_id if manifest else "",
         model_revision=manifest.model_revision if manifest else "",
@@ -223,8 +225,12 @@ def build_trace(
         manifest_fingerprint=manifest_fingerprint(manifest) if manifest else "",
         manifest_saved=manifest is not None,
         steps=steps,
-        allowed_count=sum(1 for d in state.decision_summaries if d.outcome in ("success", "approved")),
-        denied_count=sum(1 for d in state.decision_summaries if d.outcome in ("failed", "denied", "skipped")),
+        allowed_count=sum(
+            1 for d in state.decision_summaries if d.outcome in ("success", "approved")
+        ),
+        denied_count=sum(
+            1 for d in state.decision_summaries if d.outcome in ("failed", "denied", "skipped")
+        ),
         evidence=list(state.evidence),
         acceptance_criteria=list(state.acceptance_criteria),
         covered_acceptance=covered,

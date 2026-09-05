@@ -146,9 +146,7 @@ class RequirementEvaluator:
             )
 
         coverage = earned_weight / total_weight
-        all_required_met = all(
-            rs.status == "MET" for rs in results if rs.required
-        )
+        all_required_met = all(rs.status == "MET" for rs in results if rs.required)
         return RequirementEvaluation(
             results=results,
             coverage=round(coverage, 4),

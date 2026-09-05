@@ -279,8 +279,20 @@ class TestInputFingerprint:
         kwargs = {
             "user_id": "u-1",
             "article_url_hash": "md5:abc",
-            "prompt_refs": [{"prompt_key": "score_v2", "version": 1, "source": "user", "content_hash": "sha256:x"}],
-            "product_snapshot": {"mode": "selected", "requested_product_ids": ["a"], "resolved_products": [], "knowledge_hash": "sha256:k"},
+            "prompt_refs": [
+                {
+                    "prompt_key": "score_v2",
+                    "version": 1,
+                    "source": "user",
+                    "content_hash": "sha256:x",
+                }
+            ],
+            "product_snapshot": {
+                "mode": "selected",
+                "requested_product_ids": ["a"],
+                "resolved_products": [],
+                "knowledge_hash": "sha256:k",
+            },
             "knowledge_hash": "sha256:k",
         }
         h1 = compute_input_fingerprint(**kwargs)
@@ -294,7 +306,12 @@ class TestInputFingerprint:
             "user_id": "u-1",
             "article_url_hash": "md5:abc",
             "prompt_refs": [],
-            "product_snapshot": {"mode": "auto", "requested_product_ids": [], "resolved_products": [], "knowledge_hash": ""},
+            "product_snapshot": {
+                "mode": "auto",
+                "requested_product_ids": [],
+                "resolved_products": [],
+                "knowledge_hash": "",
+            },
             "knowledge_hash": "",
         }
         h1 = compute_input_fingerprint(**base)
@@ -307,14 +324,21 @@ class TestInputFingerprint:
             "user_id": "u-1",
             "article_url_hash": "md5:abc",
             "prompt_refs": [],
-            "product_snapshot": {"mode": "selected", "requested_product_ids": ["a"], "resolved_products": [], "knowledge_hash": "sha256:k"},
+            "product_snapshot": {
+                "mode": "selected",
+                "requested_product_ids": ["a"],
+                "resolved_products": [],
+                "knowledge_hash": "sha256:k",
+            },
             "knowledge_hash": "sha256:k",
         }
         h1 = compute_input_fingerprint(**base)
-        h2 = compute_input_fingerprint(**{
-            **base,
-            "product_snapshot": {**base["product_snapshot"], "requested_product_ids": ["b"]},
-        })
+        h2 = compute_input_fingerprint(
+            **{
+                **base,
+                "product_snapshot": {**base["product_snapshot"], "requested_product_ids": ["b"]},
+            }
+        )
         assert h1 != h2
 
 

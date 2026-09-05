@@ -29,30 +29,63 @@ logger = logging.getLogger("backend.product_matcher")
 # 每个产品的关键词（legacy 兜底；Catalog 已收敛 keywords，优先使用 catalog）
 _PRODUCT_KEYWORDS: dict[str, list[str]] = {
     "agent-identity-security": [
-        "智能体身份", "agent身份", "身份认证", "授权", "最小权限",
-        "agent identity", "权限边界", "身份治理",
+        "智能体身份",
+        "agent身份",
+        "身份认证",
+        "授权",
+        "最小权限",
+        "agent identity",
+        "权限边界",
+        "身份治理",
     ],
     "agent-security": [
-        "智能体安全", "agent安全", "agent防护", "智能体防护",
-        "agent runtime", "智能体运行时", "agent检测",
+        "智能体安全",
+        "agent安全",
+        "agent防护",
+        "智能体防护",
+        "agent runtime",
+        "智能体运行时",
+        "agent检测",
     ],
     "ai-bom": [
-        "AI-BOM", "AI物料清单", "AI资产", "供应链安全",
-        "AI组件", "模型供应链", "AI bill of materials",
+        "AI-BOM",
+        "AI物料清单",
+        "AI资产",
+        "供应链安全",
+        "AI组件",
+        "模型供应链",
+        "AI bill of materials",
     ],
     "agent-security-gateway": [
-        "安全网关", "API网关", "流量管控", "agent网关",
+        "安全网关",
+        "API网关",
+        "流量管控",
+        "agent网关",
     ],
     "ans": [
-        "ANS", "亚信安全网络服务", "网络安全服务",
+        "ANS",
+        "亚信安全网络服务",
+        "网络安全服务",
     ],
 }
 
 # 通用弱词：命中这些词不构成强产品信号，权重会被压低
-_WEAK_TERMS: frozenset[str] = frozenset({
-    "供应链安全", "安全", "防护", "检测", "治理", "风险",
-    "合规", "数据", "模型", "组件", "AI", "智能体",
-})
+_WEAK_TERMS: frozenset[str] = frozenset(
+    {
+        "供应链安全",
+        "安全",
+        "防护",
+        "检测",
+        "治理",
+        "风险",
+        "合规",
+        "数据",
+        "模型",
+        "组件",
+        "AI",
+        "智能体",
+    }
+)
 
 # 分字段权重：标题 > 摘要 > 正文
 _FIELD_WEIGHT = {"title": 30, "summary": 20, "content": 10}
@@ -161,12 +194,14 @@ class ProductMatcher:
 
         results: list[ProductMatch] = []
         for pid, pname, score, hits in filtered[:top_n]:
-            results.append(ProductMatch(
-                product_id=pid,
-                product_name=pname,
-                match_score=min(score, 100),
-                match_reason=f"匹配关键词: {', '.join(hits[:3])}",
-            ))
+            results.append(
+                ProductMatch(
+                    product_id=pid,
+                    product_name=pname,
+                    match_score=min(score, 100),
+                    match_reason=f"匹配关键词: {', '.join(hits[:3])}",
+                )
+            )
 
         return results
 
@@ -183,8 +218,7 @@ class ProductMatcher:
         if matches[0].match_score < CONFIDENCE_HIGH:
             return True
         return (
-            len(matches) >= 2
-            and (matches[0].match_score - matches[1].match_score) < AMBIGUITY_GAP
+            len(matches) >= 2 and (matches[0].match_score - matches[1].match_score) < AMBIGUITY_GAP
         )
 
     @staticmethod
@@ -247,7 +281,7 @@ class ProductMatcher:
         if isinstance(tags, list):
             extras.extend(str(t) for t in tags if t)
 
-        content = content[: _MAX_TEXT_LEN]
+        content = content[:_MAX_TEXT_LEN]
         if extras:
             content = content + " " + " ".join(extras)
 

@@ -103,9 +103,7 @@ def mock_llm():
 def mock_db():
     db = MagicMock()
     db.__getitem__ = MagicMock(return_value=MagicMock())
-    db["reports"].insert_one = AsyncMock(
-        return_value=MagicMock(inserted_id="test-report-id-123")
-    )
+    db["reports"].insert_one = AsyncMock(return_value=MagicMock(inserted_id="test-report-id-123"))
     db["articles"].update_one = AsyncMock()
     return db
 
@@ -246,10 +244,12 @@ class TestReportGeneration:
     async def test_retry_then_succeed(self, mock_llm, knowledge, article, scores):
         from agent.reporter import ReportAgent
 
-        mock_llm.ainvoke = AsyncMock(side_effect=[
-            Exception("Temp fail"),
-            AIMessage(content=SAMPLE_REPORT_MD),
-        ])
+        mock_llm.ainvoke = AsyncMock(
+            side_effect=[
+                Exception("Temp fail"),
+                AIMessage(content=SAMPLE_REPORT_MD),
+            ]
+        )
         reporter = ReportAgent(llm=mock_llm, knowledge=knowledge)
         result = await reporter.generate_report(article, scores)
         assert result["ok"] is True
@@ -314,7 +314,9 @@ class TestDatabaseOperations:
         mock_db["articles"].update_one.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_db_update_sets_report_fields(self, mock_llm, knowledge, article, scores, mock_db):
+    async def test_db_update_sets_report_fields(
+        self, mock_llm, knowledge, article, scores, mock_db
+    ):
         from agent.reporter import ReportAgent
 
         reporter = ReportAgent(llm=mock_llm, knowledge=knowledge, db=mock_db)

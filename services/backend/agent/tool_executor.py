@@ -64,7 +64,9 @@ class ToolExecutionResult:
     args_hash: str = ""
 
     @classmethod
-    def blocked(cls, *, tool_call_id: str, tool_name: str, error_code: str, message: str) -> ToolExecutionResult:
+    def blocked(
+        cls, *, tool_call_id: str, tool_name: str, error_code: str, message: str
+    ) -> ToolExecutionResult:
         return cls(
             tool_call_id=tool_call_id,
             tool_name=tool_name,
@@ -298,7 +300,10 @@ class ToolExecutor:
             ready = [
                 s
                 for s in remaining
-                if all(dep in {g.tool_name for grp in groups for g in grp} for dep in depends[s.tool_name])
+                if all(
+                    dep in {g.tool_name for grp in groups for g in grp}
+                    for dep in depends[s.tool_name]
+                )
             ]
             if not ready:
                 # 循环依赖兜底：剩余全部放入同一组
@@ -403,7 +408,11 @@ class ToolExecutor:
             duration = int((time.perf_counter() - started) * 1000)
             self._emit(
                 "tool_failed",
-                {"tool_name": spec.tool_name, "error_code": type(exc).__name__, "duration_ms": duration},
+                {
+                    "tool_name": spec.tool_name,
+                    "error_code": type(exc).__name__,
+                    "duration_ms": duration,
+                },
             )
             return ToolExecutionResult(
                 tool_call_id=spec.tool_call_id,
@@ -451,7 +460,11 @@ class ToolExecutor:
         else:
             self._emit(
                 "tool_failed",
-                {"tool_name": spec.tool_name, "error_code": error_code or "tool_error", "duration_ms": duration},
+                {
+                    "tool_name": spec.tool_name,
+                    "error_code": error_code or "tool_error",
+                    "duration_ms": duration,
+                },
             )
 
         # 同步观察动作到 LoopDetector（用于循环检测）

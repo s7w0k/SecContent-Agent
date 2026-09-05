@@ -92,7 +92,7 @@ class ChatThread(BaseModel):
 
 
 class _Live:
-    __slots__ = ("events", "running", "task", "engine")
+    __slots__ = ("engine", "events", "running", "task")
 
     def __init__(self) -> None:
         self.events: deque[ChatEvent] = deque(maxlen=2000)
@@ -145,7 +145,9 @@ class ChatAgentService:
         self._skill_registry_cache = None
         self._memory_retriever = None
         # 所有工具 role scope 并集，作为单次调用注入的 ToolRequestContext.scopes
-        self._scopes = frozenset().union(*[set(registry.get(n).required_scopes) for n in registry.names()])
+        self._scopes = frozenset().union(
+            *[set(registry.get(n).required_scopes) for n in registry.names()]
+        )
 
     # ── 线程 CRUD ─────────────────────────────────────────
     async def create_thread(self, user_id: str, tenant_id: str) -> ChatThread:
@@ -166,7 +168,7 @@ class ChatAgentService:
             for d in await cursor.to_list(length=limit):
                 docs.append(_thread_from_db(d))
         # 内存中尚未落库的活跃线程也并入
-        for tid, live in self._live.items():
+        for tid in self._live:
             if docs and any(d.thread_id == tid for d in docs):
                 continue
             live_thread = self._thread_memory(tid)
@@ -372,8 +374,7 @@ class ChatAgentService:
         if manuscript_text:
             attach = manuscript_text[:60000]  # 超大稿件截断，避免撑爆上下文
             ctx.system_prompt += (
-                "\n\n===== 用户提供的稿件（本次请基于这份稿件来回答/改稿） =====\n"
-                f"{attach}"
+                f"\n\n===== 用户提供的稿件（本次请基于这份稿件来回答/改稿） =====\n{attach}"
             )
             telemetry["manuscript_attached_chars"] = len(attach)
         return ctx.system_prompt, telemetry
@@ -421,9 +422,7 @@ class ChatAgentService:
                     "thread_id": thread_id,
                     "system_prompt_type": "chat_agent",
                     "tool_names": list(tools_used or []),
-                    "tool_hash": hashlib.sha256(
-                        third_party_text.encode("utf-8")
-                    ).hexdigest(),
+                    "tool_hash": hashlib.sha256(third_party_text.encode("utf-8")).hexdigest(),
                     "category_v2": "chat",
                     "status": "completed" if final_ok else "error",
                     "generation_status": "completed" if final_ok else "error",
@@ -549,7 +548,7 @@ class ChatAgentService:
             )
             try:
                 decision: bool = await asyncio.wait_for(future, timeout=600)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 decision = False
             finally:
                 self._pending_approvals.pop(approval_id, None)
@@ -599,7 +598,9 @@ class ChatAgentService:
             )
             live.engine = engine
             if resumed:
-                await sink(0, "resumed", {"run_id": run_context.run_id, "thread_id": thread.thread_id})
+                await sink(
+                    0, "resumed", {"run_id": run_context.run_id, "thread_id": thread.thread_id}
+                )
             result = await engine.run(
                 system_prompt=system_prompt,
                 history=history,
@@ -669,7 +670,9 @@ class ChatAgentService:
         return True
 
     # ── 事件读取（供 SSE 轮询） ────────────────────────────
-    def events(self, thread_id: str, user_id: str | None = None, last_sequence: int = 0) -> list[ChatEvent]:
+    def events(
+        self, thread_id: str, user_id: str | None = None, last_sequence: int = 0
+    ) -> list[ChatEvent]:
         live = self._live.get(thread_id)
         if live is None:
             return []

@@ -136,8 +136,9 @@ def test_scoring_strict_wiki_never_builds_legacy_prompt(tmp_path: Path) -> None:
                 wiki_version="v",
             )
 
-    scorer = ScoringAgentV2(llm=_FakeLLM(), knowledge=_FakeKnowledge(), db=None,
-                            knowledge_provider=_Provider())
+    scorer = ScoringAgentV2(
+        llm=_FakeLLM(), knowledge=_FakeKnowledge(), db=None, knowledge_provider=_Provider()
+    )
     scorer.llm_wrapper = _NoLegacyCall()
 
     result = asyncio.run(

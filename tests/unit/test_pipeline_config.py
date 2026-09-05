@@ -174,10 +174,13 @@ class TestDraftGeneratorKnowledgeSlice:
         generator = DraftGenerator(llm=mock_llm, knowledge=mock_knowledge)
 
         # 不传 knowledge_slice -> 使用全局知识
-        generator._build_system_prompt.__wrapped__ if hasattr(generator._build_system_prompt, '__wrapped__') else None
+        generator._build_system_prompt.__wrapped__ if hasattr(
+            generator._build_system_prompt, "__wrapped__"
+        ) else None
 
         # 直接测试方法
         from agent.pr_templates import PRTemplate
+
         template = PRTemplate(
             name="测试模板",
             category="爆点事件",
@@ -214,7 +217,8 @@ class TestDraftGeneratorKnowledgeSlice:
         )
 
         prompt = generator._build_system_prompt(
-            template, "角度",
+            template,
+            "角度",
             user_business_prompt="用户自定义业务说明",
         )
         assert "用户业务配置" in prompt

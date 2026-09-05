@@ -303,9 +303,7 @@ class TestEnrichNode:
             return_value={"https://example.com/1": "x" * 500}
         )
 
-        result = await enrich_node(
-            create_state_v2(user_id="user-a"), {}, db, crawl_client
-        )
+        result = await enrich_node(create_state_v2(user_id="user-a"), {}, db, crawl_client)
 
         assert result["enriched_count"] == 1
         assert result["enrich_failed_count"] == 1
@@ -359,9 +357,7 @@ class TestEnrichNode:
         crawl_client = MagicMock()
         crawl_client.fetch_fulltext_batch = AsyncMock(side_effect=RuntimeError("crawl down"))
 
-        result = await enrich_node(
-            create_state_v2(user_id="user-a"), {}, db, crawl_client
-        )
+        result = await enrich_node(create_state_v2(user_id="user-a"), {}, db, crawl_client)
 
         assert result["enrich_failed_count"] == 2
         assert any("enrich" in error for error in result["errors"])
@@ -585,9 +581,7 @@ class TestReviewNode:
         from agent.pipeline_v2 import create_state_v2, review_node
         from models.draft_review import DraftReview
 
-        drafts = [
-            {"title": f"Draft {index}", "content_md": f"正文 {index}"} for index in range(4)
-        ]
+        drafts = [{"title": f"Draft {index}", "content_md": f"正文 {index}"} for index in range(4)]
         drafts[0]["review"] = {
             "status": "completed",
             "content_hash": compute_content_hash(drafts[0]["content_md"]),
@@ -598,9 +592,7 @@ class TestReviewNode:
         )
         user_drafts.update_one = AsyncMock()
         articles = MagicMock()
-        articles.find_one = AsyncMock(
-            return_value={"title": "Source", "content_md": "原文内容"}
-        )
+        articles.find_one = AsyncMock(return_value={"title": "Source", "content_md": "原文内容"})
         pipeline_logs = MagicMock()
         pipeline_logs.insert_one = AsyncMock()
         db = {

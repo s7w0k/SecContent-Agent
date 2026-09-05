@@ -25,9 +25,7 @@ def _build_retrieval_kb(root) -> None:
     (p1 / "sales-brief.md").write_text(
         "# 销售简报\n\n杀手锏即 AI-BOM 兼容，修复错误码 E4001 E4002。", encoding="utf-8"
     )
-    (p1 / "architecture-brief.md").write_text(
-        "# 架构简报\n\n微服务 + 安全网关。", encoding="utf-8"
-    )
+    (p1 / "architecture-brief.md").write_text("# 架构简报\n\n微服务 + 安全网关。", encoding="utf-8")
     raw = p1 / "原始文档"
     raw.mkdir(parents=True)
     (raw / "error-handbook.md").write_text(
@@ -84,9 +82,7 @@ class TestHardFilter:
         _build_retrieval_kb(tmp_path)
         retriever = _make_retriever(tmp_path)
         result = retriever.retrieve(DRAFT)
-        all_docs = (
-            result.required_docs + result.optional_docs + result.fallback_candidates
-        )
+        all_docs = result.required_docs + result.optional_docs + result.fallback_candidates
         # 只允许请求产品（P1）或共享文档
         for d in all_docs:
             if d.product_id is not None:
@@ -103,9 +99,7 @@ class TestHardFilter:
                 query="概述",
             )
         )
-        all_docs = (
-            result.required_docs + result.optional_docs + result.fallback_candidates
-        )
+        all_docs = result.required_docs + result.optional_docs + result.fallback_candidates
         # 不返回 P4 的产品文档；最多允许全局 shared 文档
         assert not any(d.product_id == P4 for d in all_docs)
 
@@ -284,9 +278,7 @@ class TestUserCustomIsolation:
         _build_retrieval_kb(tmp_path)
         retriever = _make_retriever(tmp_path)
         result = retriever.retrieve(DRAFT)
-        all_docs = (
-            result.required_docs + result.optional_docs + result.fallback_candidates
-        )
+        all_docs = result.required_docs + result.optional_docs + result.fallback_candidates
         # 全局索引不含用户 custom 文档
         assert not any(d.doc_type == "custom" for d in all_docs)
 
@@ -306,9 +298,7 @@ class TestSliceIntegration:
         indexer = KnowledgeIndexer(tmp_path / "_index" / "kb-index.json")
         retriever = DocumentRetriever(indexer=indexer)
 
-        resolver = KnowledgeSliceResolver(
-            tmp_path, retriever=retriever, max_optional_docs=6
-        )
+        resolver = KnowledgeSliceResolver(tmp_path, retriever=retriever, max_optional_docs=6)
         result = await resolver.resolve(
             purpose="draft",
             product_ids=[P1],

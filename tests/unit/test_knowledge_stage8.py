@@ -30,9 +30,7 @@ def _build_retrieval_kb(root) -> None:
     (p1 / "sales-brief.md").write_text(
         "# 销售简报\n\n杀手锏即 AI-BOM 兼容，修复错误码 E4001 E4002。", encoding="utf-8"
     )
-    (p1 / "architecture-brief.md").write_text(
-        "# 架构简报\n\n微服务 + 安全网关。", encoding="utf-8"
-    )
+    (p1 / "architecture-brief.md").write_text("# 架构简报\n\n微服务 + 安全网关。", encoding="utf-8")
     raw = p1 / "原始文档"
     raw.mkdir(parents=True)
     (raw / "error-handbook.md").write_text(

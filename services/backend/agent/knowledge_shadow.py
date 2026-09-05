@@ -104,29 +104,37 @@ class RetrievalShadowDiff:
 
 def record_retrieval_shadow(diff: RetrievalShadowDiff) -> None:
     """记录一次 shadow 差异（结构化日志）。"""
-    extras = (
-        f" required_lost={diff.required_lost}"
-        if diff.required_lost
-        else ""
-    )
+    extras = f" required_lost={diff.required_lost}" if diff.required_lost else ""
     if diff.error:
         logger.warning(
             "retrieval shadow error purpose=%s user=%s err=%s"
             " old_chars=%d new_chars=%d delta=%+d ms=%.1f%s",
-            diff.purpose, diff.user_id, diff.error,
-            diff.old_char_count, diff.new_char_count, diff.char_delta,
-            diff.latency_ms, extras,
+            diff.purpose,
+            diff.user_id,
+            diff.error,
+            diff.old_char_count,
+            diff.new_char_count,
+            diff.char_delta,
+            diff.latency_ms,
+            extras,
         )
         return
     logger.info(
         "retrieval shadow purpose=%s user=%s index=%s"
         " old_chars=%d new_chars=%d delta=%+d old_docs=%d new_docs=%d"
         " required_old=%d required_new=%d ms=%.1f%s",
-        diff.purpose, diff.user_id, diff.index_version or "-",
-        diff.old_char_count, diff.new_char_count, diff.char_delta,
-        len(diff.old_source_docs), len(diff.new_source_docs),
-        len(diff.required_missing_old), len(diff.required_missing_new),
-        diff.latency_ms, extras,
+        diff.purpose,
+        diff.user_id,
+        diff.index_version or "-",
+        diff.old_char_count,
+        diff.new_char_count,
+        diff.char_delta,
+        len(diff.old_source_docs),
+        len(diff.new_source_docs),
+        len(diff.required_missing_old),
+        len(diff.required_missing_new),
+        diff.latency_ms,
+        extras,
     )
 
 
@@ -140,12 +148,12 @@ def evaluate_stop_conditions(diff: RetrievalShadowDiff) -> list[str]:
     """
     conditions: list[str] = []
     if diff.required_lost:
-        conditions.append(
-            f"required_docs_lost: {','.join(diff.required_lost)}"
-        )
+        conditions.append(f"required_docs_lost: {','.join(diff.required_lost)}")
     # 索引版本不一致：请求期望版本与生效版本都存在且不一致
-    if diff.index_version and diff.new_index_version and (
-        diff.index_version != diff.new_index_version
+    if (
+        diff.index_version
+        and diff.new_index_version
+        and (diff.index_version != diff.new_index_version)
     ):
         conditions.append(
             f"index_version_mismatch: expected={diff.index_version} actual={diff.new_index_version}"

@@ -139,19 +139,23 @@ class OverseasNewsIngestionService:
         # 4. 查询待补全文文章（恢复安全逻辑）
         pending_articles: list[dict] = []
         if returned_hashes:
-            cursor = self.db["articles"].find({
-                "url_hash": {"$in": returned_hashes},
-                "$or": [
-                    {"content_md": ""},
-                    {"content_md": {"$exists": False}},
-                ],
-                "content_fetch_status": {"$in": [None, "pending", "failed"]},
-            })
+            cursor = self.db["articles"].find(
+                {
+                    "url_hash": {"$in": returned_hashes},
+                    "$or": [
+                        {"content_md": ""},
+                        {"content_md": {"$exists": False}},
+                    ],
+                    "content_fetch_status": {"$in": [None, "pending", "failed"]},
+                }
+            )
             async for doc in cursor:
-                pending_articles.append({
-                    "url_hash": doc["url_hash"],
-                    "url": doc.get("url", ""),
-                })
+                pending_articles.append(
+                    {
+                        "url_hash": doc["url_hash"],
+                        "url": doc.get("url", ""),
+                    }
+                )
 
         # 5. 提交全文任务
         fulltext_queued = 0

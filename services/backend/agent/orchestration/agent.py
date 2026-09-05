@@ -224,7 +224,12 @@ class OrchestratorAgent:
                     # Reviewer 主链 Hook（EPIC-B §21 / §52）：Draft 步骤完成后进入审查。
                     if self.reviewer is not None:
                         await self._run_review(
-                            plan, state, step, user_id=user_id, tenant_id=tenant_id, trace_id=trace_id
+                            plan,
+                            state,
+                            step,
+                            user_id=user_id,
+                            tenant_id=tenant_id,
+                            trace_id=trace_id,
                         )
                         if state.status == "BLOCKED":
                             return "failed", "blocked_by_reviewer"
@@ -354,7 +359,9 @@ class OrchestratorAgent:
                 goal=state.goal,
             )
         except (UnsupportedIntentError, SkillNotAllowedError) as exc:
-            self._emit(goal=state.goal, run_id=state.run_id, event_type="plan_rejected", reason=str(exc))
+            self._emit(
+                goal=state.goal, run_id=state.run_id, event_type="plan_rejected", reason=str(exc)
+            )
             state.status = "FAILED"
             await self._persist_terminal(state)
             return state
@@ -481,7 +488,9 @@ class OrchestratorAgent:
                 budget=self.budget,
             )
         except Exception:
-            self._emit(goal=plan.goal, run_id=state.run_id, event_type="review_error", step=step.step_id)
+            self._emit(
+                goal=plan.goal, run_id=state.run_id, event_type="review_error", step=step.step_id
+            )
 
     def _emit(self, goal: str, run_id: str, event_type: str, **fields: Any) -> None:
         if self.trace_emitter is None:

@@ -59,9 +59,7 @@ class PromptResolver:
 
         # 任务指定版本：从历史版本集合中查找
         if version is not None:
-            return await self._resolve_by_version(
-                user_id, resolved_key, version, definition
-            )
+            return await self._resolve_by_version(user_id, resolved_key, version, definition)
 
         # 查找用户当前覆盖
         record_doc = await self._db["user_prompts"].find_one(
@@ -140,9 +138,7 @@ class PromptResolver:
             )
 
         # 从历史版本集合查找
-        return await self._resolve_by_version(
-            user_id, ref.prompt_key, ref.version, definition
-        )
+        return await self._resolve_by_version(user_id, ref.prompt_key, ref.version, definition)
 
     async def save(
         self,
@@ -166,9 +162,7 @@ class PromptResolver:
 
         # 校验必需占位符
         missing = [
-            name
-            for name in definition.required_placeholders
-            if f"{{{name}}}" not in content
+            name for name in definition.required_placeholders if f"{{{name}}}" not in content
         ]
         if missing:
             rendered = ", ".join(f"{{{name}}}" for name in missing)
@@ -295,9 +289,7 @@ class PromptResolver:
                 ).model_dump()
             )
 
-            await self._db["user_prompts"].delete_one(
-                {"user_id": user_id, "prompt_key": resolved}
-            )
+            await self._db["user_prompts"].delete_one({"user_id": user_id, "prompt_key": resolved})
 
             logger.info(
                 "Prompt reset: user=%s key=%s",
@@ -368,9 +360,7 @@ class PromptResolver:
         )
         expected = existing.get("version", 0) if existing else None
 
-        result = await self.save(
-            user_id, resolved, content, expected_version=expected
-        )
+        result = await self.save(user_id, resolved, content, expected_version=expected)
 
         # 标记为 restore
         await self._db["user_prompt_versions"].update_one(

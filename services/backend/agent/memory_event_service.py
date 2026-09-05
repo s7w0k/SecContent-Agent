@@ -59,7 +59,11 @@ async def create_memory_event(
         return None
 
     if idempotency_key is None:
-        idempotency_key = f"{source_type.value}:{source_id}" if source_id else f"{source_type.value}:{uuid4().hex[:12]}"
+        idempotency_key = (
+            f"{source_type.value}:{source_id}"
+            if source_id
+            else f"{source_type.value}:{uuid4().hex[:12]}"
+        )
 
     event_id = f"mevt-{uuid4().hex[:12]}"
     now = datetime.now(UTC)

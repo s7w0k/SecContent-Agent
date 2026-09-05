@@ -40,10 +40,7 @@ def _rate(rows: list[dict[str, Any]], key: str, backend: str) -> float:
 
 def _all_cases_passed(rows: list[dict[str, Any]]) -> bool:
     """全部确定性评分通过（含预期终态匹配），而非仅 completed。"""
-    return all(
-        row.get("candidate", {}).get("deterministic_pass_rate", 0.0) == 1.0
-        for row in rows
-    )
+    return all(row.get("candidate", {}).get("deterministic_pass_rate", 0.0) == 1.0 for row in rows)
 
 
 def _failed_case_ids(rows: list[dict[str, Any]]) -> list[str]:
@@ -101,8 +98,10 @@ def _g_nightly_quality_no_regression(report: dict, ctx: dict[str, Any]) -> tuple
     legacy_rate = report.get("legacy", {}).get("avg_deterministic_pass_rate", 0.0)
     cand_rate = report.get("candidate", {}).get("avg_deterministic_pass_rate", 0.0)
     ok = cand_rate >= legacy_rate - 0.05
-    return ok, {"legacy": legacy_rate, "candidate": cand_rate}, (
-        f"candidate {cand_rate:.2%} < legacy {legacy_rate:.2%} - 5%"
+    return (
+        ok,
+        {"legacy": legacy_rate, "candidate": cand_rate},
+        (f"candidate {cand_rate:.2%} < legacy {legacy_rate:.2%} - 5%"),
     )
 
 
@@ -139,7 +138,11 @@ def _g_release_holdout(report: dict, ctx: dict[str, Any]) -> tuple[bool, Any, st
     rows = [r for r in report.get("results", []) if r["case_id"] in holdout_ids]
     ok = _all_cases_passed(rows)
     failed = _failed_case_ids(rows)
-    return ok, failed, f"holdout 失败: {failed[:5]}" if failed else f"holdout 通过 ({len(holdout_ids)} 条)"
+    return (
+        ok,
+        failed,
+        f"holdout 失败: {failed[:5]}" if failed else f"holdout 通过 ({len(holdout_ids)} 条)",
+    )
 
 
 def _g_release_judge_calibration(report: dict, ctx: dict[str, Any]) -> tuple[bool, Any, str]:
@@ -227,7 +230,5 @@ def evaluate_gates(
         if hard and not passed:
             violated.append(name)
     if violated:
-        raise GateViolation(
-            f"[{level}] 硬门禁失败: {', '.join(violated)}"
-        )
+        raise GateViolation(f"[{level}] 硬门禁失败: {', '.join(violated)}")
     return results

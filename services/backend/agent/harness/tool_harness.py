@@ -29,7 +29,12 @@ DEFAULT_MAX_RESULT_BYTES = 1_048_576  # 1 MiB
 # 常见敏感信息模式（脱敏用，覆盖 AK/SK/密钥/邮箱/手机号/URL 内嵌凭据）
 _SENSITIVE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("ak", re.compile(r"AK[A-Z0-9]{16,}", re.IGNORECASE)),
-    ("sk", re.compile(r"(?i)\b(sk|secret|token|password|api[-_]?key)\b['\"]?\s*[:=]\s*['\"]?[A-Za-z0-9_\-]{8,}")),
+    (
+        "sk",
+        re.compile(
+            r"(?i)\b(sk|secret|token|password|api[-_]?key)\b['\"]?\s*[:=]\s*['\"]?[A-Za-z0-9_\-]{8,}"
+        ),
+    ),
     ("email", re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")),
     ("phone", re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")),
     ("url_credential", re.compile(r"(https?://)[^/@\s]+@")),
@@ -84,7 +89,11 @@ class ToolContract:
     compensating_action: str = ""
 
     def __post_init__(self) -> None:
-        if self.retryable and not self.idempotency_required and self.side_effect_level != SideEffectLevel.L1:
+        if (
+            self.retryable
+            and not self.idempotency_required
+            and self.side_effect_level != SideEffectLevel.L1
+        ):
             # 允许 L1 只读默认重试；L2/L3 必须显式声明幂等才可重试
             raise ValueError(
                 f"tool {self.name}: retryable=true 要求 L1 只读或 idempotency_required=true"
@@ -204,7 +213,9 @@ class RecordedToolAdapter:
     async def invoke(self, name: str, args: dict[str, Any]) -> str:
         outcome = self.log.lookup(args_hash=_hash_args(args))
         if outcome is None:
-            raise KeyError(f"recorded adapter: no recording for {name} args_hash={_hash_args(args)[:8]}")
+            raise KeyError(
+                f"recorded adapter: no recording for {name} args_hash={_hash_args(args)[:8]}"
+            )
         return outcome["result"]
 
 
@@ -425,9 +436,7 @@ class ProtectedToolCaller:
         outcome = await self._invoke_with_retry(name, args, contract, breaker)
         if self.telemetry is not None:
             self.telemetry.observe("tool_latency_ms", value=outcome.duration_ms, tool=name)
-            self.telemetry.inc(
-                "tool_calls", tool=name, status="ok" if outcome.ok else "error"
-            )
+            self.telemetry.inc("tool_calls", tool=name, status="ok" if outcome.ok else "error")
         if recorded is not None:
             recorded.record(
                 tool_name=name,

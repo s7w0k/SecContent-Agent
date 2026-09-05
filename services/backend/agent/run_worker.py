@@ -54,9 +54,7 @@ class RunWorkerResult:
 
 # runtime_factory 签名：Callable[[RuntimeState, checkpointer], AgentRuntime]
 #   checkpointer: Callable[[RuntimeState], Awaitable[None]] —— worker 注入的心跳版检查点
-RuntimeFactory = Callable[
-    [RuntimeState, Callable[[RuntimeState], Awaitable[None]]], Any
-]
+RuntimeFactory = Callable[[RuntimeState, Callable[[RuntimeState], Awaitable[None]]], Any]
 
 
 class DurableRunExecutor:
@@ -88,7 +86,9 @@ class DurableRunExecutor:
         owner = owner_id or self.owner_id
         state = await self.state_store.load(run_id)
         if state is None or state.user_id != user_id:
-            return RunWorkerResult(run_id=run_id, executed=False, reason="run not found or forbidden")
+            return RunWorkerResult(
+                run_id=run_id, executed=False, reason="run not found or forbidden"
+            )
         if state.is_terminal:
             return RunWorkerResult(
                 run_id=run_id,
@@ -103,7 +103,9 @@ class DurableRunExecutor:
             lease = await self.lease_store.acquire(run_id, owner, now=stamp)
         except LeaseConflictError:
             return RunWorkerResult(
-                run_id=run_id, executed=False, reason="lease held by another worker",
+                run_id=run_id,
+                executed=False,
+                reason="lease held by another worker",
                 lease_conflict=True,
             )
 
@@ -171,9 +173,7 @@ class DurableRunExecutor:
         from agent.run_lease import RunReaper
 
         reaper = RunReaper(self.state_store, self.lease_store)
-        return await reaper.scan_stale_running(
-            owner_id=owner_id or self.owner_id, now=now
-        )
+        return await reaper.scan_stale_running(owner_id=owner_id or self.owner_id, now=now)
 
 
 def enqueue_autonomous_run(arq_pool: Any, *, run_id: str, user_id: str) -> bool:

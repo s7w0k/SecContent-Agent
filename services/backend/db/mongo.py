@@ -281,11 +281,19 @@ class MongoDB:
                     name="uq_user_article_assessment",
                 ),
                 IndexModel(
-                    [("user_id", ASCENDING), ("scoring.candidate_score", DESCENDING), ("updated_at", DESCENDING)],
+                    [
+                        ("user_id", ASCENDING),
+                        ("scoring.candidate_score", DESCENDING),
+                        ("updated_at", DESCENDING),
+                    ],
                     name="idx_user_candidate_score",
                 ),
                 IndexModel(
-                    [("user_id", ASCENDING), ("classification.category_v2", ASCENDING), ("updated_at", DESCENDING)],
+                    [
+                        ("user_id", ASCENDING),
+                        ("classification.category_v2", ASCENDING),
+                        ("updated_at", DESCENDING),
+                    ],
                     name="idx_user_assessment_category",
                 ),
             ],
@@ -488,7 +496,11 @@ class MongoDB:
                     name="idx_memory_event_processing",
                 ),
                 IndexModel(
-                    [("user_id", ASCENDING), ("source_type", ASCENDING), ("created_at", DESCENDING)],
+                    [
+                        ("user_id", ASCENDING),
+                        ("source_type", ASCENDING),
+                        ("created_at", DESCENDING),
+                    ],
                     name="idx_memory_event_user_source",
                 ),
             ],
@@ -532,7 +544,11 @@ class MongoDB:
             "generation_runs": [
                 IndexModel([("generation_id", ASCENDING)], unique=True, name="uq_generation_id"),
                 IndexModel(
-                    [("user_id", ASCENDING), ("article_url_hash", ASCENDING), ("draft_index", ASCENDING)],
+                    [
+                        ("user_id", ASCENDING),
+                        ("article_url_hash", ASCENDING),
+                        ("draft_index", ASCENDING),
+                    ],
                     name="idx_generation_user_draft",
                 ),
                 IndexModel(

@@ -8,27 +8,33 @@ from pathlib import Path
 from agent.knowledge import _is_scoring_relevant
 
 # V2 打分直接拼接的 5 个核心文件（相对路径，正斜杠）
-DIRECT_SCORING_FILES: frozenset[str] = frozenset({
-    "1-智能体身份安全/overview.md",
-    "1-智能体身份安全/market-brief.md",
-    "3-AI-BOM/overview.md",
-    "3-AI-BOM/market-brief.md",
-    "shared/hot-event-playbook.md",
-})
+DIRECT_SCORING_FILES: frozenset[str] = frozenset(
+    {
+        "1-智能体身份安全/overview.md",
+        "1-智能体身份安全/market-brief.md",
+        "3-AI-BOM/overview.md",
+        "3-AI-BOM/market-brief.md",
+        "shared/hot-event-playbook.md",
+    }
+)
 
 # 第一版只读路径（不允许编辑）
-_READ_ONLY_DIRS: frozenset[str] = frozenset({
-    "_index",
-    "skills",
-    "原始文档",
-})
+_READ_ONLY_DIRS: frozenset[str] = frozenset(
+    {
+        "_index",
+        "skills",
+        "原始文档",
+    }
+)
 
-_READ_ONLY_FILES: frozenset[str] = frozenset({
-    "CLAUDE.md",
-    "AGENTS.md",
-    "qa-log.md",
-    "README.md",
-})
+_READ_ONLY_FILES: frozenset[str] = frozenset(
+    {
+        "CLAUDE.md",
+        "AGENTS.md",
+        "qa-log.md",
+        "README.md",
+    }
+)
 
 
 class UsageClassifier:
@@ -124,7 +130,7 @@ class UsageClassifier:
     ) -> dict:
         """返回文件的完整元数据。"""
         normalized = relative_path.replace("\\", "/").strip("/")
-        content_hash = f"sha256:{hashlib.sha256(content.encode("utf-8")).hexdigest()}"
+        content_hash = f"sha256:{hashlib.sha256(content.encode('utf-8')).hexdigest()}"
 
         return {
             "document_id": cls.get_document_id(normalized),
@@ -150,13 +156,25 @@ class UsageClassifier:
         return [
             {"role": "entry_router", "label": "入口路由", "description": "AI入口与身份路由"},
             {"role": "folder_router", "label": "目录路由", "description": "根据问题选择产品目录"},
-            {"role": "role_workflow", "label": "角色工作流", "description": "定义回答方式，非产品事实"},
+            {
+                "role": "role_workflow",
+                "label": "角色工作流",
+                "description": "定义回答方式，非产品事实",
+            },
             {"role": "product_map", "label": "产品全景", "description": "产品矩阵、关系和术语"},
             {"role": "product_fact", "label": "产品事实", "description": "产品定位和能力事实"},
             {"role": "market_brief", "label": "市场简报", "description": "热点和传播角度"},
             {"role": "sales_brief", "label": "销售简报", "description": "售前卖点和FAQ"},
-            {"role": "architecture_brief", "label": "架构简报", "description": "技术架构，当前评分排除"},
-            {"role": "task_status", "label": "任务状态", "description": "产品状态和计划，当前评分排除"},
+            {
+                "role": "architecture_brief",
+                "label": "架构简报",
+                "description": "技术架构，当前评分排除",
+            },
+            {
+                "role": "task_status",
+                "label": "任务状态",
+                "description": "产品状态和计划，当前评分排除",
+            },
             {"role": "shared_fact", "label": "共享知识", "description": "竞品、热点和技术总图"},
             {"role": "raw_source", "label": "原始文档", "description": "brief不足时兜底"},
             {"role": "overseas", "label": "海外版", "description": "海外版知识，当前评分排除"},

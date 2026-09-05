@@ -166,9 +166,7 @@ class FeedbackLedger:
         return [
             event
             for event in self._events.values()
-            if event.tenant_id == tenant_id
-            and event.user_id == user_id
-            and event.undone_at is None
+            if event.tenant_id == tenant_id and event.user_id == user_id and event.undone_at is None
         ]
 
 
@@ -236,9 +234,7 @@ class PairedEvalGate:
             raise ValueError("paired eval requires equal non-empty samples")
         deltas = [
             candidate - baseline
-            for baseline, candidate in zip(
-                baseline_quality, candidate_quality, strict=True
-            )
+            for baseline, candidate in zip(baseline_quality, candidate_quality, strict=True)
         ]
         mean = statistics.fmean(deltas)
         margin = 0.0

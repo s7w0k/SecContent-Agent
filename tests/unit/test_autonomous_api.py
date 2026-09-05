@@ -252,7 +252,10 @@ class TestAutonomousService:
         """L2 工具触发审批：approve → resume → 一次性授权消费后放行执行。"""
         service = _make_service(_FakeDB())
         state = await service.create_run(
-            user_id="u1", goal="审批演示", acceptance_criteria=["完成动作"], tool_chain=["send_message"]
+            user_id="u1",
+            goal="审批演示",
+            acceptance_criteria=["完成动作"],
+            tool_chain=["send_message"],
         )
         await service.start_run(state.run_id, "u1")
         waiting = await _wait_status(service, state.run_id, "u1", RuntimeStatus.WAITING_APPROVAL)
@@ -278,7 +281,10 @@ class TestAutonomousService:
         """审批拒绝：待审批项标记 rejected，拒绝后无法用该授权放行。"""
         service = _make_service(_FakeDB())
         state = await service.create_run(
-            user_id="u1", goal="审批演示", acceptance_criteria=["完成动作"], tool_chain=["send_message"]
+            user_id="u1",
+            goal="审批演示",
+            acceptance_criteria=["完成动作"],
+            tool_chain=["send_message"],
         )
         await service.start_run(state.run_id, "u1")
         waiting = await _wait_status(service, state.run_id, "u1", RuntimeStatus.WAITING_APPROVAL)
@@ -295,7 +301,9 @@ class TestAutonomousService:
         service = _make_service(_FakeDB())
         with pytest.raises(ValueError):
             await service.create_run(
-                user_id="u1", goal="目标", acceptance_criteria=["a"],
+                user_id="u1",
+                goal="目标",
+                acceptance_criteria=["a"],
                 tool_chain=["unknown_tool", "also_unknown"],
             )
 
@@ -457,7 +465,11 @@ class TestAutonomousAPI:
         async with await self._client(app) as client:
             resp = await client.post(
                 "/api/autonomous/runs",
-                json={"goal": "审批演示", "acceptance_criteria": ["完成动作"], "tool_chain": ["send_message"]},
+                json={
+                    "goal": "审批演示",
+                    "acceptance_criteria": ["完成动作"],
+                    "tool_chain": ["send_message"],
+                },
             )
             run_id = resp.json()["run_id"]
 
@@ -489,7 +501,11 @@ class TestAutonomousAPI:
         async with await self._client(app) as client:
             resp = await client.post(
                 "/api/autonomous/runs",
-                json={"goal": "审批演示", "acceptance_criteria": ["完成动作"], "tool_chain": ["send_message"]},
+                json={
+                    "goal": "审批演示",
+                    "acceptance_criteria": ["完成动作"],
+                    "tool_chain": ["send_message"],
+                },
             )
             run_id = resp.json()["run_id"]
 

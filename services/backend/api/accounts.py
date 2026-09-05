@@ -23,6 +23,7 @@ AUTH = "123567"
 async def _trpc(procedure: str, params=None, method: str = "GET", timeout: int = 15) -> dict:
     """Direct tRPC call to WeWe RSS."""
     import urllib.request as _req
+
     input_str = json.dumps(params if params is not None else {}, ensure_ascii=False)
     url = f"{WEWE_BASE}/trpc/{procedure}?input={quote(input_str)}"
     body = input_str.encode("utf-8") if method == "POST" else None
@@ -37,6 +38,7 @@ async def _trpc(procedure: str, params=None, method: str = "GET", timeout: int =
 
 # ---- Endpoints ----
 
+
 @router.get("/status")
 async def account_status(request: FastAPIRequest):
     try:
@@ -48,12 +50,15 @@ async def account_status(request: FastAPIRequest):
         accounts = []
         for a in items:
             s = a.get("status", 0)
-            accounts.append({
-                "id": a.get("id"), "name": a.get("name"),
-                "status": labels.get(s, "unknown"),
-                "status_label": zhongwen.get(s, "未知"),
-                "status_code": s,
-            })
+            accounts.append(
+                {
+                    "id": a.get("id"),
+                    "name": a.get("name"),
+                    "status": labels.get(s, "unknown"),
+                    "status_label": zhongwen.get(s, "未知"),
+                    "status_code": s,
+                }
+            )
         valid = sum(1 for a in items if a.get("status") == 1)
         return {"ok": True, "accounts": accounts, "total": len(items), "active_count": valid}
     except Exception as e:
@@ -69,6 +74,7 @@ async def create_qrcode(request: FastAPIRequest):
         qr_base64 = ""
         try:
             import qrcode
+
             qr = qrcode.QRCode(border=2)
             qr.add_data(scan_url)
             qr.make(fit=True)
@@ -91,11 +97,17 @@ async def create_qrcode(request: FastAPIRequest):
 async def poll_login(uuid: str, timeout_seconds: int = 10):
     """Poll for QR scan via platform.getLoginResult (QUERY, not mutation)."""
     try:
-        data = await _trpc("platform.getLoginResult", {"id": uuid}, "GET", timeout=timeout_seconds + 5)
+        data = await _trpc(
+            "platform.getLoginResult", {"id": uuid}, "GET", timeout=timeout_seconds + 5
+        )
         if data.get("vid"):
-            return {"ok": True, "status": "confirmed",
-                    "vid": str(data["vid"]), "token": data.get("token", str(data["vid"])),
-                    "name": data.get("username", data.get("name", str(data["vid"])))}
+            return {
+                "ok": True,
+                "status": "confirmed",
+                "vid": str(data["vid"]),
+                "token": data.get("token", str(data["vid"])),
+                "name": data.get("username", data.get("name", str(data["vid"]))),
+            }
         return {"ok": True, "status": "waiting"}
     except Exception:
         return {"ok": True, "status": "waiting"}
@@ -104,7 +116,9 @@ async def poll_login(uuid: str, timeout_seconds: int = 10):
 @router.post("/save")
 async def save_account(vid: str, token: str, name: str):
     try:
-        data = await _trpc("account.add", {"id": vid, "token": token, "name": name, "status": 1}, "POST")
+        data = await _trpc(
+            "account.add", {"id": vid, "token": token, "name": name, "status": 1}, "POST"
+        )
         return {"ok": True, "id": data.get("id")}
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
@@ -130,7 +144,11 @@ async def delete_account_route(account_id: str, request: FastAPIRequest):
 @router.post("/toggle")
 async def toggle_account(account_id: str, status: int):
     try:
-        data = await _trpc("account.add", {"id": account_id, "name": account_id, "token": account_id, "status": status}, "POST")
+        data = await _trpc(
+            "account.add",
+            {"id": account_id, "name": account_id, "token": account_id, "status": status},
+            "POST",
+        )
         return {"ok": True, "id": data.get("id"), "status": data.get("status")}
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))

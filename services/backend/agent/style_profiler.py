@@ -225,14 +225,8 @@ class StyleProfiler:
             template_key = str(source.get("template_key") or "").strip() or None
             return template_id or name, name, template_key, template_id or None
 
-        identities = {
-            identity
-            for item in feedbacks
-            if (identity := values(item)[0])
-        } | {
-            identity
-            for item in activities
-            if (identity := values(item, activity=True)[0])
+        identities = {identity for item in feedbacks if (identity := values(item)[0])} | {
+            identity for item in activities if (identity := values(item, activity=True)[0])
         }
         result: dict[str, dict] = {}
         for identity in identities:
@@ -244,9 +238,7 @@ class StyleProfiler:
                 (item, True) for item in matching_activities
             ]
             ratings = [
-                item["rating"]
-                for item in matching_feedbacks
-                if isinstance(item.get("rating"), int)
+                item["rating"] for item in matching_feedbacks if isinstance(item.get("rating"), int)
             ]
             actions = Counter(str(item.get("action", "")) for item in matching_activities)
             observed_names = list(
@@ -261,11 +253,7 @@ class StyleProfiler:
                 observed_names[-1] if observed_names else identity
             )
             template_key = catalog_item.get("template_key") or next(
-                (
-                    key
-                    for item, activity in signals
-                    if (key := values(item, activity=activity)[2])
-                ),
+                (key for item, activity in signals if (key := values(item, activity=activity)[2])),
                 None,
             )
             modern = any(values(item)[3] for item in matching_feedbacks) or any(
@@ -333,9 +321,7 @@ class StyleProfiler:
         ]
         ranked.sort(key=lambda item: (-item[1], item[0]))
         return [
-            str(metrics[name].get("display_name") or name)
-            for name, score in ranked
-            if score > 0
+            str(metrics[name].get("display_name") or name) for name, score in ranked if score > 0
         ][:2]
 
     async def _current_template_catalog(self, user_id: str) -> dict[str, dict[str, str]]:

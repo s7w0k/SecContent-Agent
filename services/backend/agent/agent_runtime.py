@@ -643,9 +643,7 @@ class AgentRuntime:
                 risk_level=policy_decision.risk_level,
                 trigger_rule=policy_decision.reason_code,
                 decision_summary_id="",
-                impact_scope=_impact_scope_for(
-                    action.tool_name, policy_decision.risk_level.value
-                ),
+                impact_scope=_impact_scope_for(action.tool_name, policy_decision.risk_level.value),
                 now=stamp,
             )
         else:
@@ -653,9 +651,7 @@ class AgentRuntime:
                 approval_id="ap-" + uuid.uuid4().hex[:12],
                 action=action.tool_name,
                 risk_level=policy_decision.risk_level.value,
-                impact_scope=_impact_scope_for(
-                    action.tool_name, policy_decision.risk_level.value
-                ),
+                impact_scope=_impact_scope_for(action.tool_name, policy_decision.risk_level.value),
                 params_hash=policy_decision.params_hash,
                 params_summary=policy_decision.params_summary,
                 trigger_rule=policy_decision.reason_code,

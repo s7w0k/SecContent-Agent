@@ -88,7 +88,7 @@ def compute_confidence(
     support_score = 1.0
     for ev in evidence_refs:
         w = _effective_weight(ev) * ind_factor
-        support_score *= (1.0 - w)
+        support_score *= 1.0 - w
     support_score = 1.0 - support_score
 
     # 冲突分数
@@ -97,7 +97,7 @@ def compute_confidence(
         conflict_prod = 1.0
         for ev in contradiction_refs:
             w = _effective_weight(ev)
-            conflict_prod *= (1.0 - w)
+            conflict_prod *= 1.0 - w
         conflict_score = 1.0 - conflict_prod
 
     # 用户确认加成
@@ -113,7 +113,11 @@ def compute_confidence(
 
     logger.debug(
         "confidence computed: support=%.4f conflict=%.4f confirm=%.2f repeat=%.2f -> %.4f",
-        support_score, conflict_score, confirmation_bonus, repeated_task_bonus, confidence,
+        support_score,
+        conflict_score,
+        confirmation_bonus,
+        repeated_task_bonus,
+        confidence,
     )
 
     return round(confidence, 4)

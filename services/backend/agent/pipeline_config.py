@@ -75,6 +75,7 @@ class PipelineConfigFreezer:
         """
         # 1. 获取用户偏好
         from api.generation_preferences import _get_preferences
+
         prefs = await _get_preferences(self._resolver._db, user_id)
 
         # 2. 合并选项
@@ -91,14 +92,10 @@ class PipelineConfigFreezer:
         routing = None
 
         if mode == ProductTargetMode.NONE:
-            routing = await self._routing_service.resolve(
-                article or {}, mode, [], user_id
-            )
+            routing = await self._routing_service.resolve(article or {}, mode, [], user_id)
             knowledge_hash = "sha256:none"
         elif mode == ProductTargetMode.SELECTED:
-            routing = await self._routing_service.resolve(
-                article or {}, mode, product_ids, user_id
-            )
+            routing = await self._routing_service.resolve(article or {}, mode, product_ids, user_id)
             resolved_products = [rp.model_dump() for rp in routing.resolved_products]
             knowledge_hash, knowledge_source_ids = await self._resolve_knowledge(
                 "score",
@@ -109,6 +106,7 @@ class PipelineConfigFreezer:
             user_products = None
             if self._db:
                 from agent.knowledge_merger import KnowledgeMerger
+
                 merger = KnowledgeMerger(self._db)
                 user_products = await merger.get_user_products_for_matching(user_id)
 

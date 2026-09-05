@@ -25,9 +25,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "services
 @pytest.fixture
 def mock_tools():
     """Mock MCP Tools — 返回空数据"""
+
     def _make_tool(return_value=None):
         tool = MagicMock()
-        tool.ainvoke = AsyncMock(return_value=return_value or {"ok": True, "data": {"articles": []}})
+        tool.ainvoke = AsyncMock(
+            return_value=return_value or {"ok": True, "data": {"articles": []}}
+        )
         return tool
 
     return {
@@ -46,26 +49,30 @@ def mock_tools():
 def mock_scorer():
     scorer = MagicMock()
     scorer.score_batch = AsyncMock(return_value=[])
-    scorer.score_single = AsyncMock(return_value={
-        "ai_relevance_score": 80,
-        "reportability_score": 70,
-        "total_score": 150,
-        "is_high_value": True,
-        "score_reason": "test",
-        "tags": ["test"],
-        "_fallback": False,
-    })
+    scorer.score_single = AsyncMock(
+        return_value={
+            "ai_relevance_score": 80,
+            "reportability_score": 70,
+            "total_score": 150,
+            "is_high_value": True,
+            "score_reason": "test",
+            "tags": ["test"],
+            "_fallback": False,
+        }
+    )
     return scorer
 
 
 @pytest.fixture
 def mock_reporter():
     reporter = MagicMock()
-    reporter.generate_report = AsyncMock(return_value={
-        "ok": True,
-        "report": {"title": "T", "content_md": "# Report", "article_url_hash": "h"},
-        "error": None,
-    })
+    reporter.generate_report = AsyncMock(
+        return_value={
+            "ok": True,
+            "report": {"title": "T", "content_md": "# Report", "article_url_hash": "h"},
+            "error": None,
+        }
+    )
     return reporter
 
 
@@ -257,22 +264,24 @@ class TestCrawlNode:
         from agent.pipeline import crawl_node, create_state
 
         # Mock crawl tool to return articles
-        mock_tools["crawl_overseas_news"].ainvoke = AsyncMock(return_value={
-            "ok": True,
-            "data": {
-                "articles": [
-                    {
-                        "title": "Test Article",
-                        "url": "https://x.com/a",
-                        "url_hash": "abc123",
-                        "source": "THN",
-                        "source_type": "overseas_news",
-                        "summary": "test",
-                    },
-                ],
-                "count": 1,
-            },
-        })
+        mock_tools["crawl_overseas_news"].ainvoke = AsyncMock(
+            return_value={
+                "ok": True,
+                "data": {
+                    "articles": [
+                        {
+                            "title": "Test Article",
+                            "url": "https://x.com/a",
+                            "url_hash": "abc123",
+                            "source": "THN",
+                            "source_type": "overseas_news",
+                            "summary": "test",
+                        },
+                    ],
+                    "count": 1,
+                },
+            }
+        )
 
         mock_db["articles"].find_one = AsyncMock(return_value=None)
         mock_db["articles"].insert_one = AsyncMock()
@@ -296,10 +305,12 @@ class TestCrawlNode:
     async def test_crawl_node_skips_duplicates(self, mock_tools, mock_db):
         from agent.pipeline import crawl_node, create_state
 
-        mock_tools["crawl_overseas_news"].ainvoke = AsyncMock(return_value={
-            "ok": True,
-            "data": {"articles": [{"title": "T", "url": "https://x.com", "url_hash": "dup"}]},
-        })
+        mock_tools["crawl_overseas_news"].ainvoke = AsyncMock(
+            return_value={
+                "ok": True,
+                "data": {"articles": [{"title": "T", "url": "https://x.com", "url_hash": "dup"}]},
+            }
+        )
         mock_db["articles"].find_one = AsyncMock(return_value={"_id": "exists"})
 
         state = create_state(crawl_days=1)
@@ -332,15 +343,31 @@ class TestScoreNode:
 
         # Mock classified articles in DB
         mock_cursor = MagicMock()
-        mock_cursor.to_list = AsyncMock(return_value=[
-            {"_id": "1", "title": "T", "is_ai_security": True},
-            {"_id": "2", "title": "T2", "is_ai_security": True},
-        ])
+        mock_cursor.to_list = AsyncMock(
+            return_value=[
+                {"_id": "1", "title": "T", "is_ai_security": True},
+                {"_id": "2", "title": "T2", "is_ai_security": True},
+            ]
+        )
         mock_db["articles"].find = MagicMock(return_value=mock_cursor)
-        mock_scorer.score_batch = AsyncMock(return_value=[
-            {"ai_relevance_score": 85, "reportability_score": 72, "score_reason": "ok", "tags": [], "_fallback": False},
-            {"ai_relevance_score": 30, "reportability_score": 20, "score_reason": "meh", "tags": [], "_fallback": False},
-        ])
+        mock_scorer.score_batch = AsyncMock(
+            return_value=[
+                {
+                    "ai_relevance_score": 85,
+                    "reportability_score": 72,
+                    "score_reason": "ok",
+                    "tags": [],
+                    "_fallback": False,
+                },
+                {
+                    "ai_relevance_score": 30,
+                    "reportability_score": 20,
+                    "score_reason": "meh",
+                    "tags": [],
+                    "_fallback": False,
+                },
+            ]
+        )
 
         state = create_state()
         result = await score_node(state, mock_tools, mock_scorer, mock_knowledge, mock_db)
@@ -359,7 +386,9 @@ class TestReportNode:
     """报道生成节点测试"""
 
     @pytest.mark.asyncio
-    async def test_report_node_no_high_value(self, mock_tools, mock_reporter, mock_knowledge, mock_db):
+    async def test_report_node_no_high_value(
+        self, mock_tools, mock_reporter, mock_knowledge, mock_db
+    ):
         from agent.pipeline import create_state, report_node
 
         # No scored articles
@@ -377,9 +406,11 @@ class TestReportNode:
 
         # One high-value scored article
         mock_cursor = MagicMock()
-        mock_cursor.to_list = AsyncMock(return_value=[
-            {"_id": "1", "title": "High", "ai_relevance_score": 85, "reportability_score": 75},
-        ])
+        mock_cursor.to_list = AsyncMock(
+            return_value=[
+                {"_id": "1", "title": "High", "ai_relevance_score": 85, "reportability_score": 75},
+            ]
+        )
         mock_db["articles"].find = MagicMock(return_value=mock_cursor)
 
         state = create_state()
@@ -429,14 +460,18 @@ class TestReportNode:
         assert "爆点A" in style_hints
 
     @pytest.mark.asyncio
-    async def test_report_node_below_threshold(self, mock_tools, mock_reporter, mock_knowledge, mock_db):
+    async def test_report_node_below_threshold(
+        self, mock_tools, mock_reporter, mock_knowledge, mock_db
+    ):
         from agent.pipeline import create_state, report_node
 
         # Low-value scored article
         mock_cursor = MagicMock()
-        mock_cursor.to_list = AsyncMock(return_value=[
-            {"_id": "1", "title": "Low", "ai_relevance_score": 30, "reportability_score": 20},
-        ])
+        mock_cursor.to_list = AsyncMock(
+            return_value=[
+                {"_id": "1", "title": "Low", "ai_relevance_score": 30, "reportability_score": 20},
+            ]
+        )
         mock_db["articles"].find = MagicMock(return_value=mock_cursor)
 
         state = create_state()
@@ -454,12 +489,12 @@ class TestErrorScenarios:
     """错误隔离与恢复"""
 
     @pytest.mark.asyncio
-    async def test_crawl_error_not_fatal(self, mock_tools, mock_scorer, mock_reporter, mock_knowledge, mock_db):
+    async def test_crawl_error_not_fatal(
+        self, mock_tools, mock_scorer, mock_reporter, mock_knowledge, mock_db
+    ):
         from agent.pipeline import PipelineManager
 
-        mock_tools["crawl_overseas_news"].ainvoke = AsyncMock(
-            side_effect=Exception("Crawl failed")
-        )
+        mock_tools["crawl_overseas_news"].ainvoke = AsyncMock(side_effect=Exception("Crawl failed"))
 
         manager = PipelineManager(mock_tools, mock_scorer, mock_reporter, mock_knowledge, mock_db)
         result = await manager.run_full()
@@ -498,39 +533,68 @@ class TestIntegrationScenarios:
         from agent.pipeline import PipelineManager
 
         # Setup: crawl returns articles → classify returns classified → score scores → report generates
-        mock_tools["crawl_overseas_news"].ainvoke = AsyncMock(return_value={
-            "ok": True,
-            "data": {"articles": [
-                {"title": "A", "url": "https://x.com/a", "url_hash": "h1", "source": "S", "source_type": "news", "summary": "s"},
-            ]},
-        })
+        mock_tools["crawl_overseas_news"].ainvoke = AsyncMock(
+            return_value={
+                "ok": True,
+                "data": {
+                    "articles": [
+                        {
+                            "title": "A",
+                            "url": "https://x.com/a",
+                            "url_hash": "h1",
+                            "source": "S",
+                            "source_type": "news",
+                            "summary": "s",
+                        },
+                    ]
+                },
+            }
+        )
 
         # find_one returns None (no duplicate)
         mock_db["articles"].find_one = AsyncMock(return_value=None)
 
         # find for classify returns the article
         classify_cursor = MagicMock()
-        classify_cursor.to_list = AsyncMock(return_value=[
-            {"_id": "1", "title": "A", "url": "https://x.com/a", "source": "S", "summary": "s"},
-        ])
+        classify_cursor.to_list = AsyncMock(
+            return_value=[
+                {"_id": "1", "title": "A", "url": "https://x.com/a", "source": "S", "summary": "s"},
+            ]
+        )
         # find for score returns classified articles
         score_cursor = MagicMock()
-        score_cursor.to_list = AsyncMock(return_value=[
-            {"_id": "1", "title": "A", "is_ai_security": True},
-        ])
-        mock_scorer.score_batch = AsyncMock(return_value=[
-            {"ai_relevance_score": 90, "reportability_score": 80, "score_reason": "ok", "tags": [], "_fallback": False},
-        ])
+        score_cursor.to_list = AsyncMock(
+            return_value=[
+                {"_id": "1", "title": "A", "is_ai_security": True},
+            ]
+        )
+        mock_scorer.score_batch = AsyncMock(
+            return_value=[
+                {
+                    "ai_relevance_score": 90,
+                    "reportability_score": 80,
+                    "score_reason": "ok",
+                    "tags": [],
+                    "_fallback": False,
+                },
+            ]
+        )
         # find for report returns scored
         report_cursor = MagicMock()
-        report_cursor.to_list = AsyncMock(return_value=[
-            {"_id": "1", "title": "A", "ai_relevance_score": 90, "reportability_score": 80},
-        ])
+        report_cursor.to_list = AsyncMock(
+            return_value=[
+                {"_id": "1", "title": "A", "ai_relevance_score": 90, "reportability_score": 80},
+            ]
+        )
 
         # 按顺序返回不同的 cursor
-        mock_db["articles"].find = MagicMock(side_effect=[
-            classify_cursor, score_cursor, report_cursor,
-        ])
+        mock_db["articles"].find = MagicMock(
+            side_effect=[
+                classify_cursor,
+                score_cursor,
+                report_cursor,
+            ]
+        )
 
         manager = PipelineManager(mock_tools, mock_scorer, mock_reporter, mock_knowledge, mock_db)
         result = await manager.run_full()
@@ -560,7 +624,9 @@ class TestIntegrationScenarios:
         assert r3["status"] == "completed"
 
     @pytest.mark.asyncio
-    async def test_pipeline_without_db(self, mock_tools, mock_scorer, mock_reporter, mock_knowledge):
+    async def test_pipeline_without_db(
+        self, mock_tools, mock_scorer, mock_reporter, mock_knowledge
+    ):
         """无数据库时不崩溃"""
         from agent.pipeline import PipelineManager
 

@@ -40,18 +40,13 @@ def check_facts(
         return {"pass": True, "reason": "无事实要求"}
     legacy_lower = legacy_text.lower()
     stage2_lower = stage2_text.lower()
-    missing_legacy = [
-        f for f in expected_facts if f.lower() not in legacy_lower
-    ]
-    missing_stage2 = [
-        f for f in expected_facts if f.lower() not in stage2_lower
-    ]
+    missing_legacy = [f for f in expected_facts if f.lower() not in legacy_lower]
+    missing_stage2 = [f for f in expected_facts if f.lower() not in stage2_lower]
     if missing_legacy or missing_stage2:
         return {
             "pass": False,
             "reason": (
-                f"legacy 缺失: {missing_legacy or '无'}; "
-                f"stage2 缺失: {missing_stage2 or '无'}"
+                f"legacy 缺失: {missing_legacy or '无'}; stage2 缺失: {missing_stage2 or '无'}"
             ),
         }
     return {"pass": True, "reason": "事实双方均覆盖"}
@@ -137,37 +132,47 @@ def run_pair_checks(
     stage2_text = stage2.get("answer", "")
     checks: list[dict[str, Any]] = []
 
-    checks.append({
-        "name": "facts",
-        **check_facts(legacy_text, stage2_text, item.get("expected_facts", [])),
-    })
-    checks.append({
-        "name": "reference",
-        **check_reference(stage2_text, item.get("expected_reference", "")),
-    })
-    checks.append({
-        "name": "red_line",
-        **check_red_line(
-            legacy_text,
-            stage2_text,
-            item.get("red_line_forbidden", []),
-            item.get("red_line_required", []),
-        ),
-    })
-    checks.append({
-        "name": "token",
-        **check_token_reduction(
-            legacy.get("context_tokens", 0),
-            stage2.get("context_tokens", 0),
-        ),
-    })
-    checks.append({
-        "name": "latency",
-        **check_latency(
-            legacy.get("latency_ms", 0),
-            stage2.get("latency_ms", 0),
-        ),
-    })
+    checks.append(
+        {
+            "name": "facts",
+            **check_facts(legacy_text, stage2_text, item.get("expected_facts", [])),
+        }
+    )
+    checks.append(
+        {
+            "name": "reference",
+            **check_reference(stage2_text, item.get("expected_reference", "")),
+        }
+    )
+    checks.append(
+        {
+            "name": "red_line",
+            **check_red_line(
+                legacy_text,
+                stage2_text,
+                item.get("red_line_forbidden", []),
+                item.get("red_line_required", []),
+            ),
+        }
+    )
+    checks.append(
+        {
+            "name": "token",
+            **check_token_reduction(
+                legacy.get("context_tokens", 0),
+                stage2.get("context_tokens", 0),
+            ),
+        }
+    )
+    checks.append(
+        {
+            "name": "latency",
+            **check_latency(
+                legacy.get("latency_ms", 0),
+                stage2.get("latency_ms", 0),
+            ),
+        }
+    )
 
     all_pass = all(c.get("pass", False) for c in checks)
     failed = [c["name"] for c in checks if not c.get("pass", False)]

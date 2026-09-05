@@ -94,9 +94,7 @@ async def test_hot_ranking_response_and_compatibility_pipeline(hot_app):
         }
     }
     assert pipeline[1] == {"$match": {"_hot_score": {"$gt": 0}}}
-    assert pipeline[2] == {
-        "$sort": {"_hot_score": -1, "_hot_added_at": -1, "url_hash": 1}
-    }
+    assert pipeline[2] == {"$sort": {"_hot_score": -1, "_hot_added_at": -1, "url_hash": 1}}
     assert pipeline[3] == {"$limit": 10}
     assert pipeline[4]["$project"]["pr_total_score"] == "$_hot_score"
     assert pipeline[4]["$project"]["added_at"] == "$_hot_added_at"
@@ -129,9 +127,7 @@ async def test_hot_ranking_filters_category_before_compatibility_fields(hot_app)
     pipeline = collection.aggregate.call_args.args[0]
     assert pipeline[0] == {"$match": {"category_v2": "爆点事件"}}
     assert "$set" in pipeline[1]
-    assert pipeline[3] == {
-        "$sort": {"_hot_score": -1, "_hot_added_at": -1, "url_hash": 1}
-    }
+    assert pipeline[3] == {"$sort": {"_hot_score": -1, "_hot_added_at": -1, "url_hash": 1}}
     assert pipeline[4] == {"$limit": 20}
 
 

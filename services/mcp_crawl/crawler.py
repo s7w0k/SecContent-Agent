@@ -280,17 +280,18 @@ class NewsCrawler:
                         if content and len(content) >= 100:
                             results[art.url_hash] = content
                             success_count += 1
-                            logger.info("[fulltext] OK: %s (%d chars)",
-                                        art.title[:40], len(content))
+                            logger.info(
+                                "[fulltext] OK: %s (%d chars)", art.title[:40], len(content)
+                            )
                             return
                     except Exception as e:
-                        logger.warning("[fulltext] attempt %d failed: %s - %s",
-                                       attempt + 1, art.url[:50], e)
+                        logger.warning(
+                            "[fulltext] attempt %d failed: %s - %s", attempt + 1, art.url[:50], e
+                        )
 
                     if attempt < max_retries:
-                        backoff = 2 ** attempt + random.uniform(0, 1)
-                        logger.info("[fulltext] retry in %.1fs: %s",
-                                    backoff, art.url[:50])
+                        backoff = 2**attempt + random.uniform(0, 1)
+                        logger.info("[fulltext] retry in %.1fs: %s", backoff, art.url[:50])
                         await asyncio.sleep(backoff)
 
                 fail_count += 1
@@ -299,8 +300,12 @@ class NewsCrawler:
         tasks = [_fetch_one(art) for art in articles]
         await asyncio.gather(*tasks, return_exceptions=True)
 
-        logger.info("[fulltext] Batch done: %d/%d success, %d failed",
-                    success_count, len(articles), fail_count)
+        logger.info(
+            "[fulltext] Batch done: %d/%d success, %d failed",
+            success_count,
+            len(articles),
+            fail_count,
+        )
         return results
 
     async def fetch_fulltext(self, url: str) -> str:
@@ -314,6 +319,7 @@ class NewsCrawler:
         try:
             # 用线程池执行同步 HTTP 请求，避免阻塞事件循环
             import asyncio as _aio
+
             resp = await _aio.to_thread(
                 requests.get,
                 url,
@@ -329,15 +335,24 @@ class NewsCrawler:
         soup = BeautifulSoup(resp.text, "html.parser")
 
         # 移除无用标签
-        for tag in soup(["script", "style", "nav", "footer", "header", "aside", "form", "noscript"]):
+        for tag in soup(
+            ["script", "style", "nav", "footer", "header", "aside", "form", "noscript"]
+        ):
             tag.decompose()
 
         # 定位正文容器：优先专用选择器，article 标签可能匹配到广告区域需过滤
         selectors = [
-            "div.post-body", "div#articlebody", "div.article-body",
-            "div.article-content", "div.post-content", "div.entry-content",
-            "div.body-post", "div.story-body", "div.article-text",
-            "div.content-body", "main article",
+            "div.post-body",
+            "div#articlebody",
+            "div.article-body",
+            "div.article-content",
+            "div.post-content",
+            "div.entry-content",
+            "div.body-post",
+            "div.story-body",
+            "div.article-text",
+            "div.content-body",
+            "main article",
             "article",  # article 标签放最后，可能匹配到广告
         ]
         article = None

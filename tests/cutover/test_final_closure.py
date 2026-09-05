@@ -75,9 +75,7 @@ class _StubSkill:
 
     async def execute(self, request: Any, context: Any) -> SkillResult:
         self.calls.append(request.skill_name)
-        self.received_keys.append(
-            (request.skill_name, request.params.get("idempotency_key"))
-        )
+        self.received_keys.append((request.skill_name, request.params.get("idempotency_key")))
         if self.crash:
             raise RuntimeError(f"{self.name} crashed")
         if self.status == "FAILED":
@@ -149,9 +147,7 @@ class _RevisionStub(_StubSkill):
 
     async def execute(self, request: Any, context: Any) -> SkillResult:
         self.calls.append(request.skill_name)
-        self.received_keys.append(
-            (request.skill_name, request.params.get("idempotency_key"))
-        )
+        self.received_keys.append((request.skill_name, request.params.get("idempotency_key")))
         self.instructions.append(str(request.params.get("instruction", "")))
         self.expected_versions.append(int(request.params.get("expected_version", 1)))
         self.parent_refs.append(str(request.input_refs.get("parent_artifact_ref", "")))
@@ -186,7 +182,9 @@ class _MemoryCollection:
                 return d
         return None
 
-    async def replace_one(self, query: dict[str, Any], replacement: dict[str, Any], **_: Any) -> None:
+    async def replace_one(
+        self, query: dict[str, Any], replacement: dict[str, Any], **_: Any
+    ) -> None:
         for d in self._docs:
             if self._match(d, query):
                 d.clear()
@@ -266,7 +264,9 @@ async def _run_cut(s: _Shared, *, cut_after: int, task_id: str) -> None:
     assert state.status == "FAILED"
 
 
-async def _resume(s: _Shared, task_id: str, tenant_id: str = "ten") -> tuple[OrchestratorAgent, Any]:
+async def _resume(
+    s: _Shared, task_id: str, tenant_id: str = "ten"
+) -> tuple[OrchestratorAgent, Any]:
     a2 = s.agent(task_id=task_id)
     record = await s.run_store.get_by_task(task_id)
     assert record is not None, "resume 前必须有持久化的 ExecutionRunRecord"
@@ -491,9 +491,7 @@ def _make_review_decision(status: str, *, revision_instructions: list[str] | Non
     )
 
 
-async def _run_full(
-    s: _Shared, policy: DraftReviewPolicy, task_id: str
-) -> Any:
+async def _run_full(s: _Shared, policy: DraftReviewPolicy, task_id: str) -> Any:
     a1 = s.agent(task_id=task_id, reviewer=policy)
     return await a1.run(goal="分析并写稿", user_id="u", tenant_id="ten", task_id=task_id)
 
@@ -629,9 +627,7 @@ async def test_unsupported_claim_blocks():
         # 所有产品声明无证据支撑（grounded_ratio=0.0, unsupported=1）→ BLOCK
         return {"grounded_ratio": 0.0, "unsupported": 1}
 
-    reviewer_agent = ReviewerAgent(
-        review_service=_passing_service, claim_audit=_unsupported_audit
-    )
+    reviewer_agent = ReviewerAgent(review_service=_passing_service, claim_audit=_unsupported_audit)
     policy = DraftReviewPolicy(reviewer_agent=reviewer_agent, artifact_store=s.artifact_store)
 
     state = await _run_full(s, policy, "t-rv-unsupported")

@@ -56,9 +56,11 @@ class Publisher:
         Returns:
             更新后的候选文档
         """
-        candidate = await self.db["personalization_candidates"].find_one({
-            "candidate_id": candidate_id,
-        })
+        candidate = await self.db["personalization_candidates"].find_one(
+            {
+                "candidate_id": candidate_id,
+            }
+        )
         if candidate is None:
             raise ValueError(f"Candidate not found: {candidate_id}")
 
@@ -66,15 +68,11 @@ class Publisher:
 
         # 检查合法转换
         if target_status not in TRANSITIONS.get(current, set()):
-            raise ValueError(
-                f"Invalid transition: {current} -> {target_status}"
-            )
+            raise ValueError(f"Invalid transition: {current} -> {target_status}")
 
         # 检查审批
         if target_status in APPROVAL_REQUIRED and not approved_by:
-            raise ValueError(
-                f"Approval required for transition to {target_status}"
-            )
+            raise ValueError(f"Approval required for transition to {target_status}")
 
         update: dict[str, Any] = {
             "status": target_status,
@@ -90,7 +88,10 @@ class Publisher:
 
         logger.info(
             "candidate transitioned: id=%s %s -> %s approved_by=%s",
-            candidate_id, current, target_status, approved_by or "N/A",
+            candidate_id,
+            current,
+            target_status,
+            approved_by or "N/A",
         )
 
         candidate.update(update)
@@ -103,7 +104,9 @@ class Publisher:
 
     async def get_active(self, target_type: str) -> dict | None:
         """获取当前 Active 的候选。"""
-        return await self.db["personalization_candidates"].find_one({
-            "target_type": target_type,
-            "status": "active",
-        })
+        return await self.db["personalization_candidates"].find_one(
+            {
+                "target_type": target_type,
+                "status": "active",
+            }
+        )

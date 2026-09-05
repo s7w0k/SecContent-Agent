@@ -156,9 +156,7 @@ class DraftGenerator:
         self.knowledge = knowledge
         self.max_output_tokens = max(256, int(max_output_tokens))
         self._draft_llm = (
-            llm.bind(max_tokens=self.max_output_tokens)
-            if isinstance(llm, BaseChatModel)
-            else llm
+            llm.bind(max_tokens=self.max_output_tokens) if isinstance(llm, BaseChatModel) else llm
         )
 
     # ── 公开接口 ──────────────────────────────────────────────
@@ -313,14 +311,10 @@ class DraftGenerator:
             "retry_count": sum(int(call.get("retry_count", 0)) for call in calls),
             "input_tokens": sum(int(call.get("input_tokens", 0)) for call in calls),
             "output_tokens": sum(int(call.get("output_tokens", 0)) for call in calls),
-            "cached_input_tokens": sum(
-                int(call.get("cached_input_tokens", 0)) for call in calls
-            ),
+            "cached_input_tokens": sum(int(call.get("cached_input_tokens", 0)) for call in calls),
             "usage_estimated": any(bool(call.get("usage_estimated")) for call in calls),
             "duration_ms": duration_ms,
-            "llm_duration_ms_total": sum(
-                int(call.get("duration_ms", 0)) for call in calls
-            ),
+            "llm_duration_ms_total": sum(int(call.get("duration_ms", 0)) for call in calls),
             "max_output_tokens_per_call": self.max_output_tokens,
         }
 
@@ -344,7 +338,11 @@ class DraftGenerator:
         """生成单篇草稿（含重试）。"""
         # 如果有 Memory Pack，用其渲染文本替代 style_hints
         effective_style_hints = style_hints
-        if memory_pack is not None and hasattr(memory_pack, "rendered_text") and memory_pack.rendered_text:
+        if (
+            memory_pack is not None
+            and hasattr(memory_pack, "rendered_text")
+            and memory_pack.rendered_text
+        ):
             pack_text = memory_pack.rendered_text
             if style_hints and style_hints.strip():
                 effective_style_hints = style_hints + "\n\n" + pack_text
@@ -375,8 +373,8 @@ class DraftGenerator:
 
                 from agent.llm_wrapper import LLMWrapper
 
-                input_tokens, output_tokens, cached_tokens, estimated = (
-                    LLMWrapper._resolve_usage(messages, response)
+                input_tokens, output_tokens, cached_tokens, estimated = LLMWrapper._resolve_usage(
+                    messages, response
                 )
 
                 return {
@@ -404,13 +402,10 @@ class DraftGenerator:
                         index,
                         e,
                     )
-                    fallback = self._fallback_draft(
-                        article, template, perspective, index, str(e)
-                    )
+                    fallback = self._fallback_draft(article, template, perspective, index, str(e))
                     estimated_input = max(
                         1,
-                        sum(len(str(getattr(message, "content", ""))) for message in messages)
-                        // 4,
+                        sum(len(str(getattr(message, "content", ""))) for message in messages) // 4,
                     )
                     fallback["_generation_metrics"] = {
                         "llm_calls": attempt + 1,

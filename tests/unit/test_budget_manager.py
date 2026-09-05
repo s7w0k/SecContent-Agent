@@ -107,7 +107,9 @@ class TestWaterLevel:
 
     def test_warning_emits_event(self):
         events: list[str] = []
-        manager = BudgetManager(plan=_plan(max_input_tokens=1000), on_event=lambda t, p: events.append(t))
+        manager = BudgetManager(
+            plan=_plan(max_input_tokens=1000), on_event=lambda t, p: events.append(t)
+        )
         manager.usage.input_tokens = 900
         assert manager.status() == BudgetStatus.COMPRESS
         # 水位事件由 reserve/settle 触发（此处验证回调注册不抛异常）

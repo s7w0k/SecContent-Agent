@@ -25,7 +25,9 @@ from tests.agent_evals.chat_stage1.deterministic_checks import (
 )
 
 
-def evaluate_result(item: dict[str, Any], mock_result: dict[str, Any] | None = None) -> dict[str, Any]:
+def evaluate_result(
+    item: dict[str, Any], mock_result: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """评估单条用例。
 
     在实际运行中，mock_result 会被替换为真实的 Agent Loop 返回。
@@ -125,12 +127,14 @@ def run_all() -> dict[str, Any]:
 
     for item in dataset:
         eval_result = evaluate_result(item)
-        results.append({
-            "id": item.get("id", ""),
-            "category": item.get("category", ""),
-            "question": item.get("question", "")[:50],
-            **eval_result,
-        })
+        results.append(
+            {
+                "id": item.get("id", ""),
+                "category": item.get("category", ""),
+                "question": item.get("question", "")[:50],
+                **eval_result,
+            }
+        )
         if eval_result["pass"]:
             passed += 1
         else:

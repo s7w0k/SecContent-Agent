@@ -37,9 +37,11 @@ class DatasetBuilder:
             {"dataset_id": str, "total": int, "splits": dict}
         """
         cutoff = datetime.now(UTC).timestamp() - days * 86400
-        cursor = self.db["generation_runs"].find({
-            "generation_status": "completed",
-        })
+        cursor = self.db["generation_runs"].find(
+            {
+                "generation_status": "completed",
+            }
+        )
         all_runs = await cursor.to_list(length=10000)
 
         # 按 (user_id, article_url_hash) 分组修订链
@@ -95,8 +97,11 @@ class DatasetBuilder:
 
         logger.info(
             "dataset built: id=%s total=%d train=%d val=%d holdout=%d",
-            dataset_id, dataset_doc["total_samples"],
-            len(splits["train"]), len(splits["val"]), len(splits["holdout"]),
+            dataset_id,
+            dataset_doc["total_samples"],
+            len(splits["train"]),
+            len(splits["val"]),
+            len(splits["holdout"]),
         )
 
         return {

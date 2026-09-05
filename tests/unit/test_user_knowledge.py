@@ -419,26 +419,40 @@ async def test_resolver_reads_user_product_entries():
     user_product_id = "up-test-1"
     user_entries = [
         {
-            "entry_id": "entry-1", "user_id": "u-1",
-            "product_id": user_product_id, "product_scope": "user",
-            "doc_type": "overview", "title": "产品概述",
-            "content": "这是用户产品的概述内容", "enabled": True,
-            "sort_order": 100, "content_hash": "sha256:abc",
-            "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
+            "entry_id": "entry-1",
+            "user_id": "u-1",
+            "product_id": user_product_id,
+            "product_scope": "user",
+            "doc_type": "overview",
+            "title": "产品概述",
+            "content": "这是用户产品的概述内容",
+            "enabled": True,
+            "sort_order": 100,
+            "content_hash": "sha256:abc",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
         },
     ]
     user_products = [
         {
-            "product_id": user_product_id, "user_id": "u-1",
-            "name": "测试产品", "description": "", "aliases": [],
-            "keywords": ["测试关键词"], "sort_order": 200, "enabled": True,
-            "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
+            "product_id": user_product_id,
+            "user_id": "u-1",
+            "name": "测试产品",
+            "description": "",
+            "aliases": [],
+            "keywords": ["测试关键词"],
+            "sort_order": 200,
+            "enabled": True,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
         },
     ]
-    db = SliceMockDb({
-        "user_products": user_products,
-        "user_knowledge_entries": user_entries,
-    })
+    db = SliceMockDb(
+        {
+            "user_products": user_products,
+            "user_knowledge_entries": user_entries,
+        }
+    )
 
     resolver = KnowledgeSliceResolver(db=db)
     result = await resolver.resolve(
@@ -460,18 +474,26 @@ async def test_resolver_reads_global_product_supplements():
     # 用户为全局产品 ai-bom 创建了补充知识
     supplement_entries = [
         {
-            "entry_id": "sup-1", "user_id": "u-1",
-            "product_id": "ai-bom", "product_scope": "global",
-            "doc_type": "custom", "title": "AI-BOM 补充",
-            "content": "AI-BOM 的补充知识内容", "enabled": True,
-            "sort_order": 100, "content_hash": "sha256:abc",
-            "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
+            "entry_id": "sup-1",
+            "user_id": "u-1",
+            "product_id": "ai-bom",
+            "product_scope": "global",
+            "doc_type": "custom",
+            "title": "AI-BOM 补充",
+            "content": "AI-BOM 的补充知识内容",
+            "enabled": True,
+            "sort_order": 100,
+            "content_hash": "sha256:abc",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
         },
     ]
-    db = SliceMockDb({
-        "user_products": [],
-        "user_knowledge_entries": supplement_entries,
-    })
+    db = SliceMockDb(
+        {
+            "user_products": [],
+            "user_knowledge_entries": supplement_entries,
+        }
+    )
 
     resolver = KnowledgeSliceResolver(db=db)
     result = await resolver.resolve(
@@ -532,27 +554,41 @@ async def test_merger_filters_by_product_ids():
 
     entries = [
         {
-            "entry_id": "e-1", "user_id": "u-1",
-            "product_id": "product-a", "product_scope": "user",
-            "doc_type": "overview", "title": "产品A概述",
-            "content": "产品A的内容", "enabled": True,
-            "sort_order": 100, "content_hash": "sha256:a",
-            "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
+            "entry_id": "e-1",
+            "user_id": "u-1",
+            "product_id": "product-a",
+            "product_scope": "user",
+            "doc_type": "overview",
+            "title": "产品A概述",
+            "content": "产品A的内容",
+            "enabled": True,
+            "sort_order": 100,
+            "content_hash": "sha256:a",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
         },
         {
-            "entry_id": "e-2", "user_id": "u-1",
-            "product_id": "product-b", "product_scope": "user",
-            "doc_type": "overview", "title": "产品B概述",
-            "content": "产品B的内容", "enabled": True,
-            "sort_order": 100, "content_hash": "sha256:b",
-            "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
+            "entry_id": "e-2",
+            "user_id": "u-1",
+            "product_id": "product-b",
+            "product_scope": "user",
+            "doc_type": "overview",
+            "title": "产品B概述",
+            "content": "产品B的内容",
+            "enabled": True,
+            "sort_order": 100,
+            "content_hash": "sha256:b",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
         },
     ]
 
-    db = SliceMockDb({
-        "user_knowledge_entries": entries,
-        "user_products": [],
-    })
+    db = SliceMockDb(
+        {
+            "user_knowledge_entries": entries,
+            "user_products": [],
+        }
+    )
 
     merger = KnowledgeMerger(db)
     result = await merger.merge_for_user("u-1", ["product-a"], "全局知识", ["f.md"])
@@ -568,12 +604,18 @@ async def test_merger_filters_by_product_ids():
 
 def _entry(entry_id: str, doc_type: str, title: str, content: str, sort_order: int = 100):
     return {
-        "entry_id": entry_id, "user_id": "u-1",
-        "product_id": "up-prod-1", "product_scope": "user",
-        "doc_type": doc_type, "title": title,
-        "content": content, "enabled": True,
-        "sort_order": sort_order, "content_hash": "sha256:abc",
-        "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
+        "entry_id": entry_id,
+        "user_id": "u-1",
+        "product_id": "up-prod-1",
+        "product_scope": "user",
+        "doc_type": doc_type,
+        "title": title,
+        "content": content,
+        "enabled": True,
+        "sort_order": sort_order,
+        "content_hash": "sha256:abc",
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
     }
 
 
@@ -591,15 +633,15 @@ async def test_score_purpose_required_doc_types_only():
     user_products = [
         {"product_id": "up-prod-1", "user_id": "u-1", "name": "测试产品", "enabled": True}
     ]
-    db = SliceMockDb({
-        "user_products": user_products,
-        "user_knowledge_entries": entries,
-    })
+    db = SliceMockDb(
+        {
+            "user_products": user_products,
+            "user_knowledge_entries": entries,
+        }
+    )
 
     resolver = KnowledgeSliceResolver(db=db)
-    result = await resolver.resolve(
-        purpose="score", product_ids=["up-prod-1"], user_id="u-1"
-    )
+    result = await resolver.resolve(purpose="score", product_ids=["up-prod-1"], user_id="u-1")
 
     assert "概述内容" in result.content
     assert "市场内容" in result.content
@@ -619,15 +661,15 @@ async def test_draft_purpose_includes_optional():
     user_products = [
         {"product_id": "up-prod-1", "user_id": "u-1", "name": "测试产品", "enabled": True}
     ]
-    db = SliceMockDb({
-        "user_products": user_products,
-        "user_knowledge_entries": entries,
-    })
+    db = SliceMockDb(
+        {
+            "user_products": user_products,
+            "user_knowledge_entries": entries,
+        }
+    )
 
     resolver = KnowledgeSliceResolver(db=db)
-    result = await resolver.resolve(
-        purpose="draft", product_ids=["up-prod-1"], user_id="u-1"
-    )
+    result = await resolver.resolve(purpose="draft", product_ids=["up-prod-1"], user_id="u-1")
 
     assert "售前内容" in result.content
     assert "自定义内容" in result.content
@@ -645,15 +687,15 @@ async def test_required_missing_recorded_not_inferred():
     user_products = [
         {"product_id": "up-prod-1", "user_id": "u-1", "name": "测试产品", "enabled": True}
     ]
-    db = SliceMockDb({
-        "user_products": user_products,
-        "user_knowledge_entries": entries,
-    })
+    db = SliceMockDb(
+        {
+            "user_products": user_products,
+            "user_knowledge_entries": entries,
+        }
+    )
 
     resolver = KnowledgeSliceResolver(db=db)
-    result = await resolver.resolve(
-        purpose="score", product_ids=["up-prod-1"], user_id="u-1"
-    )
+    result = await resolver.resolve(purpose="score", product_ids=["up-prod-1"], user_id="u-1")
 
     assert "市场内容" in result.content
     assert any("missing:overview" in m for m in result.knowledge_missing)
@@ -672,15 +714,15 @@ async def test_invalid_doc_type_mapped_to_custom():
     user_products = [
         {"product_id": "up-prod-1", "user_id": "u-1", "name": "测试产品", "enabled": True}
     ]
-    db = SliceMockDb({
-        "user_products": user_products,
-        "user_knowledge_entries": entries,
-    })
+    db = SliceMockDb(
+        {
+            "user_products": user_products,
+            "user_knowledge_entries": entries,
+        }
+    )
 
     resolver = KnowledgeSliceResolver(db=db)
-    result = await resolver.resolve(
-        purpose="draft", product_ids=["up-prod-1"], user_id="u-1"
-    )
+    result = await resolver.resolve(purpose="draft", product_ids=["up-prod-1"], user_id="u-1")
 
     assert "非法类型内容" in result.content
     assert "未知内容" in result.content
@@ -699,15 +741,15 @@ async def test_stable_order_required_before_optional():
     user_products = [
         {"product_id": "up-prod-1", "user_id": "u-1", "name": "测试产品", "enabled": True}
     ]
-    db = SliceMockDb({
-        "user_products": user_products,
-        "user_knowledge_entries": entries,
-    })
+    db = SliceMockDb(
+        {
+            "user_products": user_products,
+            "user_knowledge_entries": entries,
+        }
+    )
 
     resolver = KnowledgeSliceResolver(db=db)
-    result = await resolver.resolve(
-        purpose="draft", product_ids=["up-prod-1"], user_id="u-1"
-    )
+    result = await resolver.resolve(purpose="draft", product_ids=["up-prod-1"], user_id="u-1")
 
     idx_overview = result.content.index("概述内容")
     idx_custom = result.content.index("自定义内容")
@@ -727,10 +769,12 @@ async def test_budget_checked_before_append():
     user_products = [
         {"product_id": "up-prod-1", "user_id": "u-1", "name": "测试产品", "enabled": True}
     ]
-    db = SliceMockDb({
-        "user_products": user_products,
-        "user_knowledge_entries": entries,
-    })
+    db = SliceMockDb(
+        {
+            "user_products": user_products,
+            "user_knowledge_entries": entries,
+        }
+    )
 
     resolver = KnowledgeSliceResolver(db=db, max_chars=800)
     result = await resolver.resolve(
@@ -756,15 +800,15 @@ async def test_user_scope_isolation():
     user_products = [
         {"product_id": "up-prod-1", "user_id": "u-1", "name": "测试产品", "enabled": True}
     ]
-    db = SliceMockDb({
-        "user_products": user_products,
-        "user_knowledge_entries": entries,
-    })
+    db = SliceMockDb(
+        {
+            "user_products": user_products,
+            "user_knowledge_entries": entries,
+        }
+    )
 
     resolver = KnowledgeSliceResolver(db=db)
-    result = await resolver.resolve(
-        purpose="draft", product_ids=["up-prod-1"], user_id="u-1"
-    )
+    result = await resolver.resolve(purpose="draft", product_ids=["up-prod-1"], user_id="u-1")
 
     assert "本用户内容" in result.content
     assert "其他用户内容" not in result.content

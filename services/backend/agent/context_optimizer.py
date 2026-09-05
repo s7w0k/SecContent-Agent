@@ -138,7 +138,9 @@ class ToolResultCache:
         prefix = cls._prefix(tenant_id=tenant_id, user_id=user_id)
         raw = json.dumps(
             {"tool": tool_name, "args": args},
-            sort_keys=True, ensure_ascii=False, separators=(",", ":"),
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
         )
         return prefix + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
@@ -191,7 +193,9 @@ class ContextCompressor:
         ids = list(source_ids or [])
         original_chars = len(content)
         if result_hash and self.has_seen(result_hash):
-            ref = f"[已获取: 结果来源 {' '.join(ids) if ids else '同前'}] (内容与之前相同，不再重复)"
+            ref = (
+                f"[已获取: 结果来源 {' '.join(ids) if ids else '同前'}] (内容与之前相同，不再重复)"
+            )
             return ToolResultSummary(
                 content=ref,
                 truncated=True,
@@ -228,7 +232,7 @@ class ContextCompressor:
         """
         if not history:
             return ""
-        recent = history[-max(1, keep_recent):]
+        recent = history[-max(1, keep_recent) :]
         parts: list[str] = []
         for msg in recent:
             role = msg.get("role", "user")

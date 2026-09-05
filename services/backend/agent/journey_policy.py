@@ -22,9 +22,13 @@ class JourneyBranch(BaseModel):
     message: str
 
 
-def decide_low_score(*, intent: str, worth_writing: bool, user_requested_draft: bool) -> JourneyBranch:
+def decide_low_score(
+    *, intent: str, worth_writing: bool, user_requested_draft: bool
+) -> JourneyBranch:
     if worth_writing:
-        return JourneyBranch(action=JourneyAction.CONTINUE, reason_code="score_passed", message="评分达到写稿门槛。")
+        return JourneyBranch(
+            action=JourneyAction.CONTINUE, reason_code="score_passed", message="评分达到写稿门槛。"
+        )
     explicit = user_requested_draft or intent in {
         TaskIntent.GENERATE_DRAFT.value,
         TaskIntent.SEARCH_AND_DRAFT.value,
@@ -52,7 +56,9 @@ class RankedCandidate(BaseModel):
 
 
 class StableCandidateRanker:
-    def rank(self, candidates: list[dict[str, Any]], *, top_n: int = 3, max_candidates: int = 20) -> list[RankedCandidate]:
+    def rank(
+        self, candidates: list[dict[str, Any]], *, top_n: int = 3, max_candidates: int = 20
+    ) -> list[RankedCandidate]:
         if top_n < 1 or top_n > 10:
             raise ValueError("top_n must be between 1 and 10")
         bounded = candidates[:max_candidates]
@@ -90,9 +96,17 @@ class BoundedReviewRepairPolicy:
     def decide(self, issues: list[dict[str, Any]], *, repair_count: int) -> ReviewRepairDecision:
         severe = any(str(item.get("severity")) in {"error", "critical", "high"} for item in issues)
         if severe:
-            return ReviewRepairDecision(action="ask_user", status="needs_user_review", reason_code="high_risk_review_issue")
+            return ReviewRepairDecision(
+                action="ask_user", status="needs_user_review", reason_code="high_risk_review_issue"
+            )
         if not issues:
-            return ReviewRepairDecision(action="complete", status="review_passed", reason_code="review_passed")
+            return ReviewRepairDecision(
+                action="complete", status="review_passed", reason_code="review_passed"
+            )
         if repair_count < self.max_auto_repairs:
-            return ReviewRepairDecision(action="auto_repair", status="needs_user_review", reason_code="bounded_auto_repair")
-        return ReviewRepairDecision(action="stop", status="review_failed", reason_code="auto_repair_budget_exhausted")
+            return ReviewRepairDecision(
+                action="auto_repair", status="needs_user_review", reason_code="bounded_auto_repair"
+            )
+        return ReviewRepairDecision(
+            action="stop", status="review_failed", reason_code="auto_repair_budget_exhausted"
+        )

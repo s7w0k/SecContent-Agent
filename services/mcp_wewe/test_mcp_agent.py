@@ -80,7 +80,6 @@ async def main():
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(ai_msg)
 
-
     # MCP 连接会在进程退出时自动关闭
 
 

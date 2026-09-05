@@ -87,9 +87,7 @@ async def run_eval_pipeline(
             "total": jp["candidate"].get("total", 0),
             "max_total": sum(judge_obj.rubric["dimensions"].values()),
         }
-        cand_pass = all(
-            c["pass"] for c in pair.candidate.deterministic_scores.values()
-        )
+        cand_pass = all(c["pass"] for c in pair.candidate.deterministic_scores.values())
         deterministic_by_case[pair.case_id] = {"pass": cand_pass}
 
     disagreements = flag_disagreements(judge_scores_by_case, deterministic_by_case)

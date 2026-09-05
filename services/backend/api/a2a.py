@@ -61,25 +61,42 @@ async def _check_protocol_version(
     if a2a_version != PROTOCOL_VERSION:
         raise HTTPException(
             status_code=400,
-            detail={"error": {"code": "version_error", "message": f"{VERSION_HEADER} must be {PROTOCOL_VERSION}"}},
+            detail={
+                "error": {
+                    "code": "version_error",
+                    "message": f"{VERSION_HEADER} must be {PROTOCOL_VERSION}",
+                }
+            },
         )
 
 
 def _get_server(request: Request) -> A2AServer:
     server = getattr(request.app.state, "a2a_server", None)
     if server is None:
-        raise HTTPException(status_code=503, detail={"error": {"code": "not_initialized", "message": "A2A service not initialized"}})
+        raise HTTPException(
+            status_code=503,
+            detail={"error": {"code": "not_initialized", "message": "A2A service not initialized"}},
+        )
     return server
 
 
 def _translate(exc: A2AError) -> HTTPException:
     if isinstance(exc, MethodNotImplementedError):
-        return HTTPException(status_code=501, detail={"error": {"code": "method_not_implemented", "message": str(exc)}})
+        return HTTPException(
+            status_code=501,
+            detail={"error": {"code": "method_not_implemented", "message": str(exc)}},
+        )
     if isinstance(exc, ProtocolError):
-        return HTTPException(status_code=400, detail={"error": {"code": "protocol_error", "message": str(exc)}})
+        return HTTPException(
+            status_code=400, detail={"error": {"code": "protocol_error", "message": str(exc)}}
+        )
     if isinstance(exc, InvalidInputError):
-        return HTTPException(status_code=400, detail={"error": {"code": "invalid_input", "message": str(exc)}})
-    return HTTPException(status_code=409, detail={"error": {"code": "conflict", "message": str(exc)}})
+        return HTTPException(
+            status_code=400, detail={"error": {"code": "invalid_input", "message": str(exc)}}
+        )
+    return HTTPException(
+        status_code=409, detail={"error": {"code": "conflict", "message": str(exc)}}
+    )
 
 
 def _sse_events(events) -> Any:
@@ -211,7 +228,9 @@ async def tasks_get(
     server = _get_server(request)
     task = await server.get_task(task_id, principal=server.principal(user_id))
     if task is None:
-        raise HTTPException(status_code=404, detail={"error": {"code": "not_found", "message": "task not found"}})
+        raise HTTPException(
+            status_code=404, detail={"error": {"code": "not_found", "message": "task not found"}}
+        )
     return task
 
 
@@ -225,7 +244,10 @@ async def tasks_cancel(
     server = _get_server(request)
     task = await server.cancel(task_id, principal=server.principal(user_id))
     if task is None:
-        raise HTTPException(status_code=404, detail={"error": {"code": "not_found", "message": "task not found or not cancelable"}})
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "not_found", "message": "task not found or not cancelable"}},
+        )
     return task
 
 
@@ -242,7 +264,9 @@ async def tasks_resubscribe(
     # 预检（subscribe 是懒生成器，未知任务需在此显式 404，避免流式阶段才抛错）
     task = await server.get_task(task_id, principal=principal)
     if task is None or not task.internal_run_id:
-        raise HTTPException(status_code=404, detail={"error": {"code": "not_found", "message": "task not found"}})
+        raise HTTPException(
+            status_code=404, detail={"error": {"code": "not_found", "message": "task not found"}}
+        )
     try:
         events = server.subscribe(task_id, principal=principal, last_event_id=last_event_id or "")
     except A2AError as exc:

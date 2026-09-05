@@ -168,10 +168,14 @@ class ReportAgent:
 
         for attempt in range(MAX_RETRIES + 1):
             try:
-                response = await self.llm.ainvoke([
-                    SystemMessage(content=self._build_system_prompt(style_hints, knowledge_context)),
-                    HumanMessage(content=user_prompt),
-                ])
+                response = await self.llm.ainvoke(
+                    [
+                        SystemMessage(
+                            content=self._build_system_prompt(style_hints, knowledge_context)
+                        ),
+                        HumanMessage(content=user_prompt),
+                    ]
+                )
                 raw_text = response.content if hasattr(response, "content") else str(response)
                 report_md = self._clean_report(raw_text, art.get("title", ""))
 
@@ -187,7 +191,9 @@ class ReportAgent:
             except Exception as e:
                 logger.warning(
                     "Report generation attempt %d/%d failed: %s",
-                    attempt + 1, MAX_RETRIES + 1, e,
+                    attempt + 1,
+                    MAX_RETRIES + 1,
+                    e,
                 )
                 if attempt == MAX_RETRIES:
                     return {
@@ -311,10 +317,10 @@ class ReportAgent:
 
         # 移除常见结尾废话
         cut_patterns = [
-            r"\n*---+\n*.*$",            # 水平线后内容
-            r"\n*以上是[^#]*$",           # "以上是..."
-            r"\n*希望这篇[^#]*$",         # "希望这篇..."
-            r"\n*备注[：:][^#]*$",        # "备注：..."
+            r"\n*---+\n*.*$",  # 水平线后内容
+            r"\n*以上是[^#]*$",  # "以上是..."
+            r"\n*希望这篇[^#]*$",  # "希望这篇..."
+            r"\n*备注[：:][^#]*$",  # "备注：..."
         ]
         for pattern in cut_patterns:
             text = re.sub(pattern, "", text)
@@ -366,15 +372,19 @@ class ReportAgent:
             url_hash = report["article_url_hash"]
             await articles_col.update_one(
                 {"url_hash": url_hash},
-                {"$set": {
-                    "has_report": True,
-                    "report_id": report_id,
-                }},
+                {
+                    "$set": {
+                        "has_report": True,
+                        "report_id": report_id,
+                    }
+                },
             )
 
             logger.info(
                 "Report saved: %s → article=%s report=%s",
-                report["title"][:40], url_hash[:12], report_id,
+                report["title"][:40],
+                url_hash[:12],
+                report_id,
             )
         except Exception as e:
             logger.error("Failed to save report to MongoDB: %s", e)

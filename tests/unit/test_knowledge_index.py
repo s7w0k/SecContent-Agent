@@ -41,7 +41,9 @@ def _make_product_dirs(root, product_dir: str, briefs: list[str] | None = None):
 def _build_knowledge_base(root) -> None:
     """构造一个接近真实目录结构的模拟知识库。"""
     # 已发布产品
-    _make_product_dirs(root, "1-智能体身份安全", ["overview.md", "market-brief.md", "sales-brief.md"])
+    _make_product_dirs(
+        root, "1-智能体身份安全", ["overview.md", "market-brief.md", "sales-brief.md"]
+    )
     _make_product_dirs(root, "2-智能体安全", ["overview.md", "market-brief.md"])
     _make_product_dirs(root, "3-AI-BOM", ["overview.md", "market-brief.md"])
     # 未发布产品
@@ -152,8 +154,7 @@ class TestDiscover:
         builder = KnowledgeIndexBuilder(tmp_path)
         manifest = builder.build_manifest()
         overview = next(
-            d for d in manifest.docs
-            if d.relative_path == "1-智能体身份安全/overview.md"
+            d for d in manifest.docs if d.relative_path == "1-智能体身份安全/overview.md"
         )
         assert overview.doc_type == "overview"
         assert overview.tier == "required"
@@ -165,8 +166,7 @@ class TestDiscover:
         builder = KnowledgeIndexBuilder(tmp_path)
         manifest = builder.build_manifest()
         gateway = next(
-            d for d in manifest.docs
-            if d.relative_path == "4-智能体安全网关/overview.md"
+            d for d in manifest.docs if d.relative_path == "4-智能体安全网关/overview.md"
         )
         assert gateway.published is False
 
@@ -175,7 +175,8 @@ class TestDiscover:
         builder = KnowledgeIndexBuilder(tmp_path)
         manifest = builder.build_manifest()
         shared = [
-            d for d in manifest.docs
+            d
+            for d in manifest.docs
             if d.relative_path in ("shared/competitor-brief.md", "0-产品全景/overview.md")
         ]
         assert len(shared) == 2
@@ -219,12 +220,8 @@ class TestIncrementalBuild:
         builder = KnowledgeIndexBuilder(tmp_path)
         first = builder.build_manifest()
         changed_rel = "1-智能体身份安全/overview.md"
-        changed_doc_id = next(
-            d.doc_id for d in first.docs if d.relative_path == changed_rel
-        )
-        first_updated = {
-            d.relative_path: d.updated_at for d in first.docs
-        }
+        changed_doc_id = next(d.doc_id for d in first.docs if d.relative_path == changed_rel)
+        first_updated = {d.relative_path: d.updated_at for d in first.docs}
 
         # 修改一个文档
         (tmp_path / changed_rel).write_text("# 产品新标题\n全新内容", encoding="utf-8")
@@ -375,8 +372,7 @@ class TestKnowledgeIndexer:
         assert loaded.index_version == manifest.index_version
         assert len(indexer.for_product("agent-identity-security")) >= 1
         doc = next(
-            d for d in indexer.for_product("agent-identity-security")
-            if d.doc_type == "overview"
+            d for d in indexer.for_product("agent-identity-security") if d.doc_type == "overview"
         )
         assert indexer.get(doc.doc_id) is not None
 
@@ -465,8 +461,13 @@ class TestPublicationIndexIntegration:
         )
         return (
             KnowledgePublicationService(db, str(tmp_path)),
-            {"locks": locks, "drafts": drafts, "publications": publications,
-             "revisions": revisions, "audit_logs": audit_logs},
+            {
+                "locks": locks,
+                "drafts": drafts,
+                "publications": publications,
+                "revisions": revisions,
+                "audit_logs": audit_logs,
+            },
         )
 
     @pytest.mark.asyncio
@@ -532,13 +533,17 @@ class TestPublicationIndexIntegration:
         service, mocks = self._make_service_and_db(tmp_path)
         mocks["drafts"].find_one = drafts.find_one
 
-        with patch(
-            "knowledge_admin.publication.KnowledgeLoader",
-            return_value=_make_mock_loader("fake-hash"),
-        ), patch(
-            "knowledge_admin.publication.KnowledgeIndexBuilder.build_manifest",
-            side_effect=RuntimeError("磁盘异常"),
-        ), pytest.raises(RuntimeError, match="磁盘异常"):
+        with (
+            patch(
+                "knowledge_admin.publication.KnowledgeLoader",
+                return_value=_make_mock_loader("fake-hash"),
+            ),
+            patch(
+                "knowledge_admin.publication.KnowledgeIndexBuilder.build_manifest",
+                side_effect=RuntimeError("磁盘异常"),
+            ),
+            pytest.raises(RuntimeError, match="磁盘异常"),
+        ):
             await service.publish(
                 draft_ids=["kbd-s4-001"],
                 version_name="v1.0",

@@ -55,17 +55,19 @@ class ProductKnowledge:
     target_industries: list[str] = field(default_factory=list)
 
     # 关键术语（用于打分时的关键词匹配）
-    key_terms: list[str] = field(default_factory=lambda: [
-        "智能体安全",
-        "Agent安全",
-        "MCP协议",
-        "身份认证",
-        "权限管控",
-        "意图识别",
-        "提示注入",
-        "模型攻击",
-        "供应链安全",
-    ])
+    key_terms: list[str] = field(
+        default_factory=lambda: [
+            "智能体安全",
+            "Agent安全",
+            "MCP协议",
+            "身份认证",
+            "权限管控",
+            "意图识别",
+            "提示注入",
+            "模型攻击",
+            "供应链安全",
+        ]
+    )
 
     # 元信息（V2: source_files 替代 source_file）
     source_files: list[str] = field(default_factory=list)
@@ -240,11 +242,25 @@ class MarkdownKnowledgeParser:
     def _extract_key_terms(content: str) -> list[str]:
         """从正文中自动提取安全领域关键术语"""
         security_terms = [
-            "MCP协议", "A2A协议", "Agent安全", "智能体安全",
-            "身份认证", "权限管控", "意图识别", "提示注入",
-            "模型攻击", "供应链安全", "数据隐私", "零信任",
-            "API安全", "工具调用安全", "自主行为风险",
-            "CUA", "OpenClaw", "Physical AI", "具身智能",
+            "MCP协议",
+            "A2A协议",
+            "Agent安全",
+            "智能体安全",
+            "身份认证",
+            "权限管控",
+            "意图识别",
+            "提示注入",
+            "模型攻击",
+            "供应链安全",
+            "数据隐私",
+            "零信任",
+            "API安全",
+            "工具调用安全",
+            "自主行为风险",
+            "CUA",
+            "OpenClaw",
+            "Physical AI",
+            "具身智能",
         ]
         return [t for t in security_terms if t.lower() in content.lower()]
 
@@ -272,10 +288,10 @@ class MarkdownKnowledgeParser:
     @staticmethod
     def _extract_summary(text: str) -> str:
         """提取文本摘要（取非空非标题的有效段落）"""
-        lines = [line.strip() for line in text.split("\n")
-                 if line.strip() and not line.startswith("#")]
-        meaningful = [line for line in lines
-                      if len(line) > 10 and not line.startswith("![")]
+        lines = [
+            line.strip() for line in text.split("\n") if line.strip() and not line.startswith("#")
+        ]
+        meaningful = [line for line in lines if len(line) > 10 and not line.startswith("![")]
         return " ".join(meaningful[:5])
 
     @staticmethod
@@ -298,8 +314,17 @@ class MarkdownKnowledgeParser:
     def _extract_industry_keywords(text: str) -> list[str]:
         """从文本中提取行业关键词"""
         industry_keywords = [
-            "运营商", "金融", "政务", "能源", "制造", "医疗",
-            "教育", "互联网", "交通", "电力", "电信",
+            "运营商",
+            "金融",
+            "政务",
+            "能源",
+            "制造",
+            "医疗",
+            "教育",
+            "互联网",
+            "交通",
+            "电力",
+            "电信",
         ]
         return [kw for kw in industry_keywords if kw in text]
 
@@ -330,9 +355,21 @@ def _is_scoring_relevant(root_dir: Path, filepath: Path) -> bool:
             return True
     rel = str(filepath.relative_to(root_dir)).replace("\\", "/")
     return not any(
-        p in rel for p in ("原始文档", "海外版", "_wiki", "tasks.md", "architecture-brief.md",
-                           "CLAUDE.md", "AGENTS.md", "README.md", "qa-log.md",
-                           ".git", "项目核心逻辑.md", "工作日报.md")
+        p in rel
+        for p in (
+            "原始文档",
+            "海外版",
+            "_wiki",
+            "tasks.md",
+            "architecture-brief.md",
+            "CLAUDE.md",
+            "AGENTS.md",
+            "README.md",
+            "qa-log.md",
+            ".git",
+            "项目核心逻辑.md",
+            "工作日报.md",
+        )
     )
 
 
@@ -399,8 +436,12 @@ class KnowledgeLoader:
         all_files = sorted(self.docs_dir.rglob("*.md"))
         files = [f for f in all_files if _is_scoring_relevant(self.docs_dir, f)]
         skipped = len(all_files) - len(files)
-        logger.info("Discovered %d .md files (%d scoring-relevant, %d skipped)",
-                     len(all_files), len(files), skipped)
+        logger.info(
+            "Discovered %d .md files (%d scoring-relevant, %d skipped)",
+            len(all_files),
+            len(files),
+            skipped,
+        )
         return files
 
     # ── 文件读取与哈希 ────────────────────────────────────────
@@ -450,8 +491,12 @@ class KnowledgeLoader:
 
         # 列表字段：合并去重
         list_fields = [
-            "core_features", "tech_barriers", "control_points",
-            "customer_cases", "competitors", "target_industries",
+            "core_features",
+            "tech_barriers",
+            "control_points",
+            "customer_cases",
+            "competitors",
+            "target_industries",
         ]
         for field_name in list_fields:
             base_list = getattr(base, field_name)

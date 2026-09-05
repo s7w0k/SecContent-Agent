@@ -237,9 +237,7 @@ class TestS1_5RoutingService:
 
     async def test_selected_does_not_call_automatic(self, service):
         """selected 模式严格按用户选择，不调用自动匹配。"""
-        snap = await service.resolve(
-            {}, ProductTargetMode.SELECTED.value, ["ai-bom"], "u-1"
-        )
+        snap = await service.resolve({}, ProductTargetMode.SELECTED.value, ["ai-bom"], "u-1")
         assert snap.mode == "selected"
         assert snap.product_ids == ["ai-bom"]
         assert snap.resolved_products[0].match_source == "user_selected"
@@ -283,8 +281,5 @@ class TestS1_5RoutingService:
         ids = [m.product_id for m in matcher.match_by_rules(article)]
         assert "up-data-security" not in ids
         # 传入 user_products：出现用户产品
-        ids2 = [
-            m.product_id
-            for m in matcher.match_by_rules(article, user_products=user_products)
-        ]
+        ids2 = [m.product_id for m in matcher.match_by_rules(article, user_products=user_products)]
         assert "up-data-security" in ids2

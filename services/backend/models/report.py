@@ -14,16 +14,19 @@ from pydantic import BaseModel, Field
 # 报道模板枚举
 # ═══════════════════════════════════════════════════════════
 
+
 class ReportTemplate(str):
     """PR 报道模板类型"""
-    STANDARD = "standard_pr"       # 标准 PR 情报模板
-    BRIEF = "brief"                # 简报（短格式）
-    DEEP_DIVE = "deep_dive"        # 深度分析
+
+    STANDARD = "standard_pr"  # 标准 PR 情报模板
+    BRIEF = "brief"  # 简报（短格式）
+    DEEP_DIVE = "deep_dive"  # 深度分析
 
 
 # ═══════════════════════════════════════════════════════════
 # Report 模型
 # ═══════════════════════════════════════════════════════════
+
 
 class ReportBase(BaseModel):
     """PR 报道基础模型"""

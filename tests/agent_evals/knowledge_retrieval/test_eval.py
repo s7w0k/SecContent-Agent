@@ -136,7 +136,13 @@ class TestEvaluatorRunAll:
 
     def test_gate_keys(self):
         report = run_all()
-        for name in ("top1_accuracy", "top2_recall", "forbidden_isolation", "no_hit_no_fabrication", "expansion_coverage"):
+        for name in (
+            "top1_accuracy",
+            "top2_recall",
+            "forbidden_isolation",
+            "no_hit_no_fabrication",
+            "expansion_coverage",
+        ):
             assert name in report["gates"], f"缺少门禁 {name}"
 
 
@@ -230,8 +236,15 @@ class TestQueryDataset:
         assert expansion >= 10, f"章节展开用例应 ≥10，当前 {expansion}"
         # 竞品隔离：存在显式 forbidden 且非默认的用例
         nondefault_forbid = sum(
-            1 for c in samples
-            if c["forbidden_product_ids"] and c["forbidden_product_ids"] != [p for p in ("agent-identity-security", "agent-security", "ai-bom") if p not in c["expected_product_ids"]]
+            1
+            for c in samples
+            if c["forbidden_product_ids"]
+            and c["forbidden_product_ids"]
+            != [
+                p
+                for p in ("agent-identity-security", "agent-security", "ai-bom")
+                if p not in c["expected_product_ids"]
+            ]
         )
         assert nondefault_forbid >= 3, f"竞品隔离用例应 ≥3，当前 {nondefault_forbid}"
 

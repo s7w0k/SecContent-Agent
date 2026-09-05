@@ -148,9 +148,7 @@ class NavigationEvidenceSession:
     def _evaluate(self) -> NavigationEvidenceSnapshot:
         evidence = self._accumulator.values()
         conflicts = detect_conflicts(evidence)
-        evaluation = self._evaluator.evaluate(
-            self._requirements, evidence, conflicts=conflicts
-        )
+        evaluation = self._evaluator.evaluate(self._requirements, evidence, conflicts=conflicts)
         sufficient = evaluation.is_sufficient(
             min_coverage=self._min_coverage,
             confidence_threshold=self._confidence_threshold,

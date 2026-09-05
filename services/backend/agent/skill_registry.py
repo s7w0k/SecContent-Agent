@@ -60,10 +60,37 @@ _CHAT_TRIGGER_KEYWORDS: dict[str, tuple[str, ...]] = {
 }
 
 INTENT_SKILLS: dict[str, tuple[str, ...]] = {
-    "generate_draft": ("article-classification", "product-matching", "scoring-knowledge", "draft-writing", "compliance-review"),
-    "search_and_draft": ("news-discovery", "article-selection", "article-classification", "product-matching", "scoring-knowledge", "draft-writing", "compliance-review", "full-draft-workflow"),
-    "curate_news": ("news-discovery", "article-selection", "article-classification", "product-matching", "scoring-knowledge"),
-    "search_and_rank": ("news-discovery", "article-selection", "article-classification", "product-matching", "scoring-knowledge"),
+    "generate_draft": (
+        "article-classification",
+        "product-matching",
+        "scoring-knowledge",
+        "draft-writing",
+        "compliance-review",
+    ),
+    "search_and_draft": (
+        "news-discovery",
+        "article-selection",
+        "article-classification",
+        "product-matching",
+        "scoring-knowledge",
+        "draft-writing",
+        "compliance-review",
+        "full-draft-workflow",
+    ),
+    "curate_news": (
+        "news-discovery",
+        "article-selection",
+        "article-classification",
+        "product-matching",
+        "scoring-knowledge",
+    ),
+    "search_and_rank": (
+        "news-discovery",
+        "article-selection",
+        "article-classification",
+        "product-matching",
+        "scoring-knowledge",
+    ),
     "review_draft": ("compliance-review",),
     "revise_draft": ("draft-revision", "compliance-review"),
     "revise": ("draft-revision", "compliance-review"),
@@ -260,9 +287,7 @@ def _scan_skill_dir(
         try:
             reference_hashes[rel] = _sha256(fp.read_text(encoding="utf-8"))
         except Exception as exc:
-            raise SkillResolutionError(
-                f"Skill '{name}' 引用文件读取失败: {rel}: {exc}"
-            ) from exc
+            raise SkillResolutionError(f"Skill '{name}' 引用文件读取失败: {rel}: {exc}") from exc
 
     manifest_path = skill_dir / "manifest.json"
     manifest_data: dict[str, Any] = {}
@@ -280,9 +305,15 @@ def _scan_skill_dir(
                 f"Skill '{name}' schema_version 必须是 {MANIFEST_SCHEMA_VERSION}"
             )
         for field_name in (
-            "purpose", "triggers", "required_tools", "required_context",
-            "preconditions", "postconditions", "prohibited_actions",
-            "output_expectations", "eval_datasets",
+            "purpose",
+            "triggers",
+            "required_tools",
+            "required_context",
+            "preconditions",
+            "postconditions",
+            "prohibited_actions",
+            "output_expectations",
+            "eval_datasets",
         ):
             if not manifest_data.get(field_name):
                 raise SkillResolutionError(f"Skill '{name}' manifest 缺少 {field_name}")
@@ -294,9 +325,7 @@ def _scan_skill_dir(
     if known_tools is not None:
         unknown = set(required_tools) - known_tools
         if unknown:
-            raise SkillResolutionError(
-                f"Skill '{name}' 引用未知 Tool: {sorted(unknown)}"
-            )
+            raise SkillResolutionError(f"Skill '{name}' 引用未知 Tool: {sorted(unknown)}")
     eval_datasets = _string_tuple(manifest_data.get("eval_datasets"))
     for rel in eval_datasets:
         fp = _safe_resolve(skill_dir, rel)
@@ -406,9 +435,7 @@ class SkillRegistry:
                 continue
             if not _NAME_RE.match(skill_dir.name):
                 raise SkillResolutionError(f"Skill 目录名非法: {skill_dir.name}")
-            manifest = _scan_skill_dir(
-                skill_dir, required_names, known_tools=self._known_tools
-            )
+            manifest = _scan_skill_dir(skill_dir, required_names, known_tools=self._known_tools)
             if manifest.status == "published":
                 manifests[manifest.name] = manifest
 
@@ -432,9 +459,7 @@ class SkillRegistry:
         """必需 Skill 已全部解析且快照可用。"""
         if self._snapshot is None:
             return False
-        required = frozenset(
-            name for names in _REQUIRED_FOR_PURPOSE.values() for name in names
-        )
+        required = frozenset(name for names in _REQUIRED_FOR_PURPOSE.values() for name in names)
         return required.issubset(self._snapshot.skills)
 
     @property
@@ -554,9 +579,7 @@ class SkillRegistry:
                 )
             total_tokens += manifest.token_estimate
             if total_tokens > token_budget:
-                raise SkillResolutionError(
-                    f"Skill token 预算超限: {total_tokens}>{token_budget}"
-                )
+                raise SkillResolutionError(f"Skill token 预算超限: {total_tokens}>{token_budget}")
             selected.append(manifest)
 
         payload = {
@@ -596,9 +619,7 @@ class SkillRegistry:
         try:
             return fp.read_text(encoding="utf-8")
         except Exception as exc:
-            raise SkillError(
-                f"Skill '{name}' 引用文件读取失败: {relative_path}: {exc}"
-            ) from exc
+            raise SkillError(f"Skill '{name}' 引用文件读取失败: {relative_path}: {exc}") from exc
 
     def _manifest_or_raise(self, name: str) -> SkillManifest:
         if self._snapshot is None:

@@ -260,9 +260,7 @@ def build_deterministic_plan(
             )
     if reserve_leftovers and len(steps) >= max_steps:
         # 预算已满：把兜底工具并入最后一个步骤，保证不超出上限
-        steps[-1] = steps[-1].model_copy(
-            update={"tools": steps[-1].tools + leftovers}
-        )
+        steps[-1] = steps[-1].model_copy(update={"tools": steps[-1].tools + leftovers})
         leftovers = []
     elif leftovers:
         steps.append(

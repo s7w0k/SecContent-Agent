@@ -51,8 +51,17 @@ _PRODUCTS: list[ProductEntry] = [
         knowledge_root="1-智能体身份安全",
         aliases=("智能体身份", "Agent Identity Security", "1-智能体身份安全"),
         keywords=(
-            "身份认证", "身份治理", "授权", "最小权限", "权限边界",
-            "凭证", "密钥", "单点登录", "委托授权", "反冒用", "SSO",
+            "身份认证",
+            "身份治理",
+            "授权",
+            "最小权限",
+            "权限边界",
+            "凭证",
+            "密钥",
+            "单点登录",
+            "委托授权",
+            "反冒用",
+            "SSO",
         ),
         allowed_purposes=("score", "draft", "chat"),
         published=True,
@@ -65,11 +74,27 @@ _PRODUCTS: list[ProductEntry] = [
         knowledge_root="2-智能体安全",
         aliases=("智能体安全", "Agent Security", "2-智能体安全"),
         keywords=(
-            "agent安全", "agent防护", "智能体防护", "智能体运行时",
-            "agent runtime", "agent检测", "智能体检测", "运行时防护",
-            "沙箱", "提示词注入", "数据泄露", "态势感知", "行为分析",
-            "异常检测", "多智能体", "安全隔离", "智能体供应链",
-            "智能体平台", "威胁检测", "威胁情报", "进程隔离",
+            "agent安全",
+            "agent防护",
+            "智能体防护",
+            "智能体运行时",
+            "agent runtime",
+            "agent检测",
+            "智能体检测",
+            "运行时防护",
+            "沙箱",
+            "提示词注入",
+            "数据泄露",
+            "态势感知",
+            "行为分析",
+            "异常检测",
+            "多智能体",
+            "安全隔离",
+            "智能体供应链",
+            "智能体平台",
+            "威胁检测",
+            "威胁情报",
+            "进程隔离",
         ),
         allowed_purposes=("score", "draft", "chat"),
         published=True,
@@ -82,9 +107,18 @@ _PRODUCTS: list[ProductEntry] = [
         knowledge_root="3-AI-BOM",
         aliases=("AI-BOM", "AI物料清单", "3-AI-BOM"),
         keywords=(
-            "AI资产", "AI组件", "模型供应链", "AI供应链", "物料清单",
-            "SBOM", "模型商店", "模型来源", "数据血缘", "资产台账",
-            "依赖图谱", "供应链安全",
+            "AI资产",
+            "AI组件",
+            "模型供应链",
+            "AI供应链",
+            "物料清单",
+            "SBOM",
+            "模型商店",
+            "模型来源",
+            "数据血缘",
+            "资产台账",
+            "依赖图谱",
+            "供应链安全",
         ),
         allowed_purposes=("score", "draft", "chat"),
         published=True,
@@ -135,15 +169,17 @@ _PURPOSE_FILES: dict[Purpose, tuple[str, ...]] = {
 }
 
 # 全局排除的文件/目录
-_EXCLUDED_PATHS = frozenset({
-    "原始文档",
-    "tasks.md",
-    "qa-log.md",
-    "CLAUDE.md",
-    "AGENTS.md",
-    "README.md",
-    ".git",
-})
+_EXCLUDED_PATHS = frozenset(
+    {
+        "原始文档",
+        "tasks.md",
+        "qa-log.md",
+        "CLAUDE.md",
+        "AGENTS.md",
+        "README.md",
+        ".git",
+    }
+)
 
 # 0-产品全景 中的全局参考文件
 _SHARED_FILES = (
@@ -209,9 +245,7 @@ class ProductCatalogService:
         if not product.published:
             raise ValueError(f"PRODUCT_UNAVAILABLE: 产品未发布: {product_id}")
         if purpose is not None and purpose not in product.allowed_purposes:
-            raise ValueError(
-                f"PRODUCT_UNAVAILABLE: 产品 {product_id} 不支持用途: {purpose}"
-            )
+            raise ValueError(f"PRODUCT_UNAVAILABLE: 产品 {product_id} 不支持用途: {purpose}")
         return product
 
     def validate_product_ids(
@@ -223,14 +257,10 @@ class ProductCatalogService:
     ) -> list[ProductEntry]:
         """批量校验产品 ID。"""
         if len(product_ids) > max_count:
-            raise ValueError(
-                f"INVALID_PRODUCT_SELECTION: 最多选择 {max_count} 个产品"
-            )
+            raise ValueError(f"INVALID_PRODUCT_SELECTION: 最多选择 {max_count} 个产品")
         if not product_ids:
             raise ValueError("INVALID_PRODUCT_SELECTION: 未选择产品")
-        return [
-            self.validate_product_id(pid, purpose=purpose) for pid in product_ids
-        ]
+        return [self.validate_product_id(pid, purpose=purpose) for pid in product_ids]
 
     def get_knowledge_path(self, product_id: str) -> Path:
         """获取产品知识库根目录的绝对路径。"""

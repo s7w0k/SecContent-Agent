@@ -107,12 +107,8 @@ class SectionIndex(BaseModel):
     heading_level: int = Field(ge=0, le=6, description="标题层级，0 表示文档前言")
     char_offset: int = Field(ge=0, description="章节起始字符偏移")
     char_count: int = Field(ge=0, description="章节字符数")
-    line_offset: int = Field(
-        default=0, ge=0, description="章节起始行号（0 起，阶段六 S6-1）"
-    )
-    occurrence: int = Field(
-        default=1, ge=1, description="同名标题出现序号（阶段六 S6-1 消歧）"
-    )
+    line_offset: int = Field(default=0, ge=0, description="章节起始行号（0 起，阶段六 S6-1）")
+    occurrence: int = Field(default=1, ge=1, description="同名标题出现序号（阶段六 S6-1 消歧）")
     summary: str = Field(default="", description="章节摘要")
 
 
@@ -382,11 +378,14 @@ class SummaryGenerator:
             and len(content) >= LONG_DOC_CHARS
         ):
             try:
-                result = self._llm(
-                    content=content,
-                    title=title,
-                    section_titles=[s.title for s in sections],
-                ) or {}
+                result = (
+                    self._llm(
+                        content=content,
+                        title=title,
+                        section_titles=[s.title for s in sections],
+                    )
+                    or {}
+                )
                 description = str(result.get("description", "")).strip()
                 summary = str(result.get("summary", "")).strip() or description
                 sections_out = result.get("sections") or {}
@@ -557,9 +556,7 @@ class KnowledgeIndexBuilder:
                 logger.warning("读取失败，跳过文档: %s (%s)", d.relative_path, exc)
                 continue
 
-            content_hash = (
-                "sha256:" + hashlib.sha256(content.encode("utf-8")).hexdigest()
-            )
+            content_hash = "sha256:" + hashlib.sha256(content.encode("utf-8")).hexdigest()
             doc_id = "doc:" + hashlib.sha256(d.relative_path.encode("utf-8")).hexdigest()[:16]
 
             prev = prev_by_id.get(doc_id)
@@ -669,9 +666,7 @@ class KnowledgeIndexBuilder:
         payload = manifest.model_dump()
         blob = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
 
-        fd, tmp_path = tempfile.mkstemp(
-            dir=str(target_dir), prefix=".kb-index.", suffix=".tmp"
-        )
+        fd, tmp_path = tempfile.mkstemp(dir=str(target_dir), prefix=".kb-index.", suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(blob)

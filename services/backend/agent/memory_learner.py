@@ -87,9 +87,7 @@ class MemoryLearner:
         self.llm = llm
         # 启用 JSON 模式，强制 DeepSeek 返回合法 JSON
         self.json_llm = (
-            llm.bind(response_format={"type": "json_object"})
-            if hasattr(llm, "bind")
-            else llm
+            llm.bind(response_format={"type": "json_object"}) if hasattr(llm, "bind") else llm
         )
         self.db = db
 
@@ -113,10 +111,12 @@ class MemoryLearner:
             return ExtractionResult(skipped=True, skip_reason="no extractable content")
 
         try:
-            response = await self.json_llm.ainvoke([
-                SystemMessage(content=SYSTEM_PROMPT),
-                HumanMessage(content=user_prompt),
-            ])
+            response = await self.json_llm.ainvoke(
+                [
+                    SystemMessage(content=SYSTEM_PROMPT),
+                    HumanMessage(content=user_prompt),
+                ]
+            )
             raw = response.content if hasattr(response, "content") else str(response)
             candidates = self._parse_candidates(raw, category_v2, stage)
 
@@ -293,33 +293,35 @@ class MemoryLearner:
         memory_id = f"mem-{uuid4().hex[:12]}"
 
         # 尝试查找已有记忆
-        existing = await db["user_memory_items"].find_one({
-            "user_id": user_id,
-            "normalized_key": normalized_key,
-            "scope.category_v2": candidate.scope_category_v2,
-            "scope.template_id": None,
-            "scope.stage": candidate.scope_stage,
-            "polarity": candidate.polarity.value,
-        })
+        existing = await db["user_memory_items"].find_one(
+            {
+                "user_id": user_id,
+                "normalized_key": normalized_key,
+                "scope.category_v2": candidate.scope_category_v2,
+                "scope.template_id": None,
+                "scope.stage": candidate.scope_stage,
+                "polarity": candidate.polarity.value,
+            }
+        )
 
         if existing:
             # 更新已有记忆
             evidence_refs = existing.get("evidence_refs", [])
-            evidence_refs.append({
-                "event_id": evidence.event_id,
-                "source_type": evidence.source_type.value,
-                "weight": evidence.weight,
-                "observed_at": evidence.observed_at,
-            })
+            evidence_refs.append(
+                {
+                    "event_id": evidence.event_id,
+                    "source_type": evidence.source_type.value,
+                    "weight": evidence.weight,
+                    "observed_at": evidence.observed_at,
+                }
+            )
             # 限制证据数量
             settings = get_settings()
             if len(evidence_refs) > settings.MEMORY_EVIDENCE_LIMIT:
                 evidence_refs = evidence_refs[-settings.MEMORY_EVIDENCE_LIMIT :]
 
             support_count = existing.get("support_count", 0) + 1
-            independent_task_count = min(
-                existing.get("independent_task_count", 0) + 1, 100
-            )
+            independent_task_count = min(existing.get("independent_task_count", 0) + 1, 100)
 
             # 重新计算置信度
             all_evidence = [
@@ -354,8 +356,12 @@ class MemoryLearner:
                     }
                 },
             )
-            logger.info("memory item updated: memory_id=%s confidence=%.4f status=%s",
-                        existing["memory_id"], confidence, status.value)
+            logger.info(
+                "memory item updated: memory_id=%s confidence=%.4f status=%s",
+                existing["memory_id"],
+                confidence,
+                status.value,
+            )
             return existing["memory_id"]
         else:
             # 创建新记忆
@@ -406,7 +412,10 @@ class MemoryLearner:
                 await db["user_memory_items"].insert_one(item_doc)
                 logger.info(
                     "memory item created: memory_id=%s dimension=%s confidence=%.4f status=%s",
-                    memory_id, candidate.dimension.value, confidence, status.value,
+                    memory_id,
+                    candidate.dimension.value,
+                    confidence,
+                    status.value,
                 )
                 return memory_id
             except Exception as exc:
@@ -424,10 +433,12 @@ class MemoryLearner:
         # 标记为处理中
         await db["user_memory_events"].update_one(
             {"event_id": event["event_id"]},
-            {"$set": {
-                "status": MemoryEventStatus.PROCESSING.value,
-                "attempts": event.get("attempts", 0) + 1,
-            }},
+            {
+                "$set": {
+                    "status": MemoryEventStatus.PROCESSING.value,
+                    "attempts": event.get("attempts", 0) + 1,
+                }
+            },
         )
 
         result = await self.extract_candidates(event)
@@ -435,11 +446,13 @@ class MemoryLearner:
         if result.skipped:
             await db["user_memory_events"].update_one(
                 {"event_id": event["event_id"]},
-                {"$set": {
-                    "status": MemoryEventStatus.SKIPPED.value,
-                    "error": result.skip_reason,
-                    "processed_at": datetime.now(UTC),
-                }},
+                {
+                    "$set": {
+                        "status": MemoryEventStatus.SKIPPED.value,
+                        "error": result.skip_reason,
+                        "processed_at": datetime.now(UTC),
+                    }
+                },
             )
             return {"ok": True, "candidates": 0, "memory_ids": [], "skipped": True}
 
@@ -454,16 +467,20 @@ class MemoryLearner:
         # 标记为完成
         await db["user_memory_events"].update_one(
             {"event_id": event["event_id"]},
-            {"$set": {
-                "status": MemoryEventStatus.COMPLETED.value,
-                "candidate_memory_ids": memory_ids,
-                "processed_at": datetime.now(UTC),
-            }},
+            {
+                "$set": {
+                    "status": MemoryEventStatus.COMPLETED.value,
+                    "candidate_memory_ids": memory_ids,
+                    "processed_at": datetime.now(UTC),
+                }
+            },
         )
 
         logger.info(
             "memory event processed: event_id=%s candidates=%d created=%d",
-            event["event_id"], len(result.candidates), len(memory_ids),
+            event["event_id"],
+            len(result.candidates),
+            len(memory_ids),
         )
 
         return {"ok": True, "candidates": len(result.candidates), "memory_ids": memory_ids}

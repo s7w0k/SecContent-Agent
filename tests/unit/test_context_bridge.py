@@ -472,12 +472,8 @@ async def test_resolve_plan_hash_stable_for_same_input(tmp_path):
         },
         db=_make_db(),
     )
-    _, t1 = await bridge.resolve_knowledge(
-        purpose="score", user_id="u-1", products=["prod-1"]
-    )
-    _, t2 = await bridge.resolve_knowledge(
-        purpose="score", user_id="u-1", products=["prod-1"]
-    )
+    _, t1 = await bridge.resolve_knowledge(purpose="score", user_id="u-1", products=["prod-1"])
+    _, t2 = await bridge.resolve_knowledge(purpose="score", user_id="u-1", products=["prod-1"])
     assert t1["context_plan_hash"] == t2["context_plan_hash"]
 
 

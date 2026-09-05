@@ -13,6 +13,7 @@
     cd pr-agent-demo-v2
     python -m tests.agent_evals.knowledge_retrieval.ranking_eval --report
 """
+
 from __future__ import annotations
 
 import argparse
@@ -81,20 +82,22 @@ def _keyword_query(doc: Any) -> str:
 def _build_ranking_queries(indexer: Any) -> list[dict[str, Any]]:
     """构造文档级真值评测集：query → 相关 doc_id。"""
     queries: list[dict[str, Any]] = []
-    for doc in (indexer.manifest.docs or []):
+    for doc in indexer.manifest.docs or []:
         if doc.product_id not in PUBLISHED:
             continue
         if not doc.published:
             continue
         if doc.doc_type not in RANKED_DOC_TYPES:
             continue
-        queries.append({
-            "query": _keyword_query(doc),
-            "relevant_doc_id": doc.doc_id,
-            "product_id": doc.product_id,
-            "doc_type": doc.doc_type,
-            "title": doc.title,
-        })
+        queries.append(
+            {
+                "query": _keyword_query(doc),
+                "relevant_doc_id": doc.doc_id,
+                "product_id": doc.product_id,
+                "doc_type": doc.doc_type,
+                "title": doc.title,
+            }
+        )
     return queries
 
 
@@ -127,17 +130,20 @@ def run_all(*, write_report: bool = False) -> dict[str, Any]:
         ranked = _rank_for_query(retriever, q["query"])
         relevant = {q["relevant_doc_id"]}
         metrics = per_query_metrics(ranked, relevant, KS)
-        per_query_rows.append({
-            "query": q["query"],
-            "relevant_doc_id": q["relevant_doc_id"],
-            "product_id": q["product_id"],
-            "doc_type": q["doc_type"],
-            "title": q["title"],
-            "rank": (ranked.index(q["relevant_doc_id"]) + 1)
-            if q["relevant_doc_id"] in ranked else 0,
-            "ranked_docs": ranked[:5],
-            "metrics": metrics,
-        })
+        per_query_rows.append(
+            {
+                "query": q["query"],
+                "relevant_doc_id": q["relevant_doc_id"],
+                "product_id": q["product_id"],
+                "doc_type": q["doc_type"],
+                "title": q["title"],
+                "rank": (ranked.index(q["relevant_doc_id"]) + 1)
+                if q["relevant_doc_id"] in ranked
+                else 0,
+                "ranked_docs": ranked[:5],
+                "metrics": metrics,
+            }
+        )
 
     agg = aggregate([r["metrics"] for r in per_query_rows], KS)
 
@@ -145,10 +151,22 @@ def run_all(*, write_report: bool = False) -> dict[str, Any]:
     in_top5 = sum(1 for r in per_query_rows if 0 < r["rank"] <= 5) / len(per_query_rows)
 
     gates = {
-        "recall@3": {"pass": agg["recall"]["@3"] >= 0.5, "value": agg["recall"]["@3"], "threshold": "≥50%"},
+        "recall@3": {
+            "pass": agg["recall"]["@3"] >= 0.5,
+            "value": agg["recall"]["@3"],
+            "threshold": "≥50%",
+        },
         "mrr": {"pass": agg["mrr"] >= 0.5, "value": agg["mrr"], "threshold": "≥0.5"},
-        "ndcg@3": {"pass": agg["ndcg"]["@3"] >= 0.5, "value": agg["ndcg"]["@3"], "threshold": "≥50%"},
-        "hit@3": {"pass": agg["hit_rate"]["@3"] >= 0.6, "value": agg["hit_rate"]["@3"], "threshold": "≥60%"},
+        "ndcg@3": {
+            "pass": agg["ndcg"]["@3"] >= 0.5,
+            "value": agg["ndcg"]["@3"],
+            "threshold": "≥50%",
+        },
+        "hit@3": {
+            "pass": agg["hit_rate"]["@3"] >= 0.6,
+            "value": agg["hit_rate"]["@3"],
+            "threshold": "≥60%",
+        },
     }
 
     report = {
@@ -196,13 +214,16 @@ def print_report(report: dict[str, Any]) -> None:
     print("  未进入排名(rank=0)的用例:")
     for r in report["results"]:
         if r["rank"] == 0:
-            print(f"    {r['title'][:30]} | {r['product_id']}/{r['doc_type']} | query='{r['query'][:40]}'")
+            print(
+                f"    {r['title'][:30]} | {r['product_id']}/{r['doc_type']} | query='{r['query'][:40]}'"
+            )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="文档检索排序指标评测")
-    parser.add_argument("--report", action="store_true",
-                        help="写入 reports/knowledge-retrieval-ranking.json")
+    parser.add_argument(
+        "--report", action="store_true", help="写入 reports/knowledge-retrieval-ranking.json"
+    )
     args = parser.parse_args()
     _report = run_all(write_report=args.report)
     print_report(_report)

@@ -40,7 +40,9 @@ class StepValidator:
     def validate(self, step: PlanStep, observation: NormalizedObservation) -> ValidationDecision:
         if observation.status == ObservationStatus.FAILED:
             return ValidationDecision(
-                decision=WorkflowDecision.REPLAN if observation.retryable else WorkflowDecision.STOP,
+                decision=WorkflowDecision.REPLAN
+                if observation.retryable
+                else WorkflowDecision.STOP,
                 reason_code=observation.reason_code or "tool_failed",
                 reason="tool observation failed",
             )

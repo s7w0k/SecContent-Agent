@@ -78,8 +78,7 @@ class ModelProviderAdapter(Protocol):
         model_id: str,
         messages: list[dict[str, Any]],
         tool_schemas: list[dict[str, Any]] | None = None,
-    ) -> tuple[str, UsageSnapshot]:
-        ...
+    ) -> tuple[str, UsageSnapshot]: ...
 
 
 class FakeModelAdapter:
@@ -132,7 +131,9 @@ class RecordedModelAdapter:
     def __init__(self, recordings: dict[str, dict[str, Any]] | None = None):
         self.recordings: dict[str, dict[str, Any]] = dict(recordings or {})
 
-    def add(self, *, messages: list[dict[str, Any]], content: str, usage: UsageSnapshot | None = None):
+    def add(
+        self, *, messages: list[dict[str, Any]], content: str, usage: UsageSnapshot | None = None
+    ):
         self.recordings[_messages_hash(messages)] = {
             "content": content,
             "usage": usage,
@@ -287,7 +288,9 @@ class ModelHarness:
             return [forced_model]
         if self.router is not None:
             try:
-                decision = self.router.route(self.router.RouteRequest(task_type="chat", sensitivity="L0"))
+                decision = self.router.route(
+                    self.router.RouteRequest(task_type="chat", sensitivity="L0")
+                )
                 return [decision.model]
             except Exception:
                 pass
@@ -306,8 +309,10 @@ class ModelHarness:
         candidates = self._candidates(model_id)
         if not candidates:
             return ModelCallResult(
-                ok=False, model_id=model_id or self.default_model,
-                error_kind=ModelErrorKind.AUTH.value, reason_code="not_in_allowlist",
+                ok=False,
+                model_id=model_id or self.default_model,
+                error_kind=ModelErrorKind.AUTH.value,
+                reason_code="not_in_allowlist",
             )
         last: ModelCallResult | None = None
         for idx, candidate in enumerate(candidates):
@@ -319,15 +324,19 @@ class ModelHarness:
                 )
                 if not allowed:
                     last = ModelCallResult(
-                        ok=False, model_id=candidate,
-                        error_kind=ModelErrorKind.RATE_LIMIT.value, reason_code="rate_limited",
+                        ok=False,
+                        model_id=candidate,
+                        error_kind=ModelErrorKind.RATE_LIMIT.value,
+                        reason_code="rate_limited",
                     )
                     continue
             breaker = self._breaker(candidate)
             if breaker is not None and not breaker.allow_request():
                 last = ModelCallResult(
-                    ok=False, model_id=candidate,
-                    error_kind=ModelErrorKind.UNKNOWN.value, reason_code="breaker_open",
+                    ok=False,
+                    model_id=candidate,
+                    error_kind=ModelErrorKind.UNKNOWN.value,
+                    reason_code="breaker_open",
                     breaker_open=True,
                 )
                 continue
@@ -360,7 +369,9 @@ class ModelHarness:
                 if not allow_fallback:
                     return last
         return last or ModelCallResult(
-            ok=False, model_id=self.default_model, error_kind=ModelErrorKind.UNKNOWN.value,
+            ok=False,
+            model_id=self.default_model,
+            error_kind=ModelErrorKind.UNKNOWN.value,
             reason_code="no_candidate",
         )
 
@@ -371,6 +382,8 @@ class ModelHarness:
             return
         self.telemetry.inc("model_calls", model=model_id, status="ok" if ok else "error")
         if usage is not None:
-            self.telemetry.inc("model_tokens", amount=usage.input_tokens + usage.output_tokens, model=model_id)
+            self.telemetry.inc(
+                "model_tokens", amount=usage.input_tokens + usage.output_tokens, model=model_id
+            )
         if not ok:
             self.telemetry.inc("model_errors", model=model_id, reason=reason)

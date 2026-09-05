@@ -803,20 +803,20 @@ async def _build_products_for_scoring(
         return []
     from agent.product_catalog import _PRODUCTS
 
-    global_products = {
-        p.product_id: p.name
-        for p in _PRODUCTS
-        if p.product_id in product_ids
-    }
+    global_products = {p.product_id: p.name for p in _PRODUCTS if p.product_id in product_ids}
     user_map: dict[str, str] = {}
     try:
-        docs = await db["user_products"].find(
-            {
-                "user_id": user_id,
-                "product_id": {"$in": product_ids},
-                "enabled": True,
-            }
-        ).to_list(length=100)
+        docs = (
+            await db["user_products"]
+            .find(
+                {
+                    "user_id": user_id,
+                    "product_id": {"$in": product_ids},
+                    "enabled": True,
+                }
+            )
+            .to_list(length=100)
+        )
         user_map = {str(d.get("product_id") or ""): str(d.get("name") or "") for d in docs}
     except Exception:
         logger.warning("[pipeline] load user products for scoring failed")
@@ -872,7 +872,11 @@ async def get_run_plan(
     plan_doc = await db["planner_plans"].find_one({"run_id": run_id})
     ledger_col = db["execution_step_ledger"]
     cursor = ledger_col.find({"run_id": run_id})
-    steps = [doc async for doc in cursor] if not hasattr(cursor, "to_list") else await cursor.to_list(length=100)
+    steps = (
+        [doc async for doc in cursor]
+        if not hasattr(cursor, "to_list")
+        else await cursor.to_list(length=100)
+    )
 
     return {
         "ok": True,
@@ -901,7 +905,11 @@ async def get_run_steps(
         raise HTTPException(status_code=403, detail="Cannot access another user's run")
     ledger_col = db["execution_step_ledger"]
     cursor = ledger_col.find({"run_id": run_id})
-    docs = [doc async for doc in cursor] if not hasattr(cursor, "to_list") else await cursor.to_list(length=100)
+    docs = (
+        [doc async for doc in cursor]
+        if not hasattr(cursor, "to_list")
+        else await cursor.to_list(length=100)
+    )
     for doc in docs:
         if doc.get("error_message"):
             doc["error_message"] = str(doc["error_message"])[:500]
@@ -927,7 +935,11 @@ async def cancel_run(
     canceled = 0
     try:
         cursor = db["execution_step_ledger"].find({"run_id": run_id})
-        docs = [doc async for doc in cursor] if not hasattr(cursor, "to_list") else await cursor.to_list(length=100)
+        docs = (
+            [doc async for doc in cursor]
+            if not hasattr(cursor, "to_list")
+            else await cursor.to_list(length=100)
+        )
     except Exception:
         docs = []
     if docs:
@@ -981,7 +993,10 @@ async def replay_step(
     if entry.status not in ("failed", "dead_lettered"):
         raise HTTPException(
             status_code=409,
-            detail={"code": "NOT_REPLAYABLE", "message": f"仅 failed/dead_lettered 步骤可重放，当前 {entry.status}"},
+            detail={
+                "code": "NOT_REPLAYABLE",
+                "message": f"仅 failed/dead_lettered 步骤可重放，当前 {entry.status}",
+            },
         )
 
     async def verify_latest_input(ledger_entry) -> bool:
@@ -1000,7 +1015,9 @@ async def replay_step(
             verify_latest_input=verify_latest_input,
         )
     except MultiAgentReplayError as exc:
-        raise HTTPException(status_code=409, detail={"code": exc.code, "message": str(exc)}) from exc
+        raise HTTPException(
+            status_code=409, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     return {"ok": True, "data": outcome.model_dump(mode="json")}
 
 
@@ -1026,7 +1043,11 @@ async def get_run_events(
     if event_type:
         query["event_type"] = event_type
     cursor = db["pipeline_events"].find(query).sort("created_at", 1).limit(limit)
-    docs = [doc async for doc in cursor] if not hasattr(cursor, "to_list") else await cursor.to_list(length=limit)
+    docs = (
+        [doc async for doc in cursor]
+        if not hasattr(cursor, "to_list")
+        else await cursor.to_list(length=limit)
+    )
     for doc in docs:
         doc.pop("_id", None)
     return {"ok": True, "data": {"run_id": run_id, "events": jsonable_encoder(docs)}}
@@ -2238,9 +2259,7 @@ async def _run_v2_single_workflow(
         from models.generation_config import ProductTargetMode
 
         task_doc_for_routing = (
-            await db["pipeline_tasks"].find_one({"task_id": task_id})
-            if task_id
-            else None
+            await db["pipeline_tasks"].find_one({"task_id": task_id}) if task_id else None
         )
         gen_opts = (task_doc_for_routing or {}).get("generation_options", {})
         raw_mode = gen_opts.get("product_target_mode") or "auto"
@@ -2254,9 +2273,9 @@ async def _run_v2_single_workflow(
             try:
                 from agent.knowledge_merger import KnowledgeMerger
 
-                user_products_for_routing = (
-                    await KnowledgeMerger(db).get_user_products_for_matching(user_id)
-                )
+                user_products_for_routing = await KnowledgeMerger(
+                    db
+                ).get_user_products_for_matching(user_id)
             except Exception as exc:
                 log.warning("[run-v2-single] load user products failed: %s", exc)
         routing_snapshot = await ProductRoutingService().resolve(
@@ -2438,7 +2457,10 @@ async def _run_v2_single_workflow(
                     # 检索 Memory Pack（Feature Flag 控制）
                     memory_pack = None
                     settings = get_settings()
-                    if settings.MEMORY_FEATURE_ENABLED and settings.MEMORY_READ_MODE in ("memory", "fallback"):
+                    if settings.MEMORY_FEATURE_ENABLED and settings.MEMORY_READ_MODE in (
+                        "memory",
+                        "fallback",
+                    ):
                         try:
                             from agent.memory_retriever import MemoryRetriever
 
@@ -2836,12 +2858,14 @@ async def score_v2_single(
     # 单篇打分按钮：清除旧分数，强制重新打分
     await db["articles"].update_one(
         {"url_hash": url_hash},
-        {"$set": {
-            "pr_total_score": None,
-            "product_relevance": None,
-            "event_impact": None,
-            "product_scores": [],
-        }},
+        {
+            "$set": {
+                "pr_total_score": None,
+                "product_relevance": None,
+                "event_impact": None,
+                "product_scores": [],
+            }
+        },
     )
     article["pr_total_score"] = None
 
@@ -2870,25 +2894,29 @@ async def score_v2_single(
             from agent.product_catalog import _PRODUCTS
 
             global_products = {
-                p.product_id: p.name
-                for p in _PRODUCTS
-                if p.product_id in selected_product_ids
+                p.product_id: p.name for p in _PRODUCTS if p.product_id in selected_product_ids
             }
-            user_docs = await db["user_products"].find({
-                "user_id": user_id,
-                "product_id": {"$in": selected_product_ids},
-                "enabled": True,
-            }).to_list(length=100)
-            user_products = {
-                d["product_id"]: d["name"] for d in user_docs
-            }
+            user_docs = (
+                await db["user_products"]
+                .find(
+                    {
+                        "user_id": user_id,
+                        "product_id": {"$in": selected_product_ids},
+                        "enabled": True,
+                    }
+                )
+                .to_list(length=100)
+            )
+            user_products = {d["product_id"]: d["name"] for d in user_docs}
             all_products = {**global_products, **user_products}
             for pid in selected_product_ids:
                 if pid in all_products:
-                    products_for_scoring.append({
-                        "product_id": pid,
-                        "product_name": all_products[pid],
-                    })
+                    products_for_scoring.append(
+                        {
+                            "product_id": pid,
+                            "product_name": all_products[pid],
+                        }
+                    )
 
         scores = await scorer.score_single(
             dict(article),
@@ -2911,12 +2939,14 @@ async def score_v2_single(
         now = datetime.now(UTC)
         await db["user_article_scores"].update_one(
             {"user_id": user_id, "url_hash": url_hash},
-            {"$set": {
-                "user_id": user_id,
-                "url_hash": url_hash,
-                **scored,
-                "scored_at": now,
-            }},
+            {
+                "$set": {
+                    "user_id": user_id,
+                    "url_hash": url_hash,
+                    **scored,
+                    "scored_at": now,
+                }
+            },
             upsert=True,
         )
 
@@ -2962,7 +2992,9 @@ def _serialize_pipeline_task(document: dict, *, now: datetime | None = None) -> 
         "cancelled",
         "interrupted",
     }
-    end_utc = updated_utc if terminal and updated_utc is not None else _as_utc(now or datetime.now(UTC))
+    end_utc = (
+        updated_utc if terminal and updated_utc is not None else _as_utc(now or datetime.now(UTC))
+    )
     result["elapsed_seconds"] = (
         max(0, int((end_utc - created_utc).total_seconds())) if created_utc is not None else 0
     )

@@ -6,6 +6,7 @@
 
 K 默认取 [1,3,5]；MRR 与 HitRate 为全局标量。
 """
+
 from __future__ import annotations
 
 DEFAULT_KS = (1, 3, 5)
@@ -77,7 +78,11 @@ def aggregate(per_query: list[dict], ks: tuple[int, ...] = DEFAULT_KS) -> dict:
     """对多 query 指标做宏平均。"""
     n = len(per_query) or 1
     agg: dict = {
-        "recall": {}, "precision": {}, "ndcg": {}, "hit_rate": {}, "mrr": 0.0,
+        "recall": {},
+        "precision": {},
+        "ndcg": {},
+        "hit_rate": {},
+        "mrr": 0.0,
     }
     for k in ks:
         agg["recall"][f"@{k}"] = sum(q["recall"][f"@{k}"] for q in per_query) / n

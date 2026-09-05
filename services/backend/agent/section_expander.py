@@ -40,8 +40,21 @@ _TERM_SPLIT = re.compile(r"[\s，。；、,.!?；：:（）()\[\]【】“”\"'
 # 确定性展开触发：query 命中这些"需细节"意图词时倾向展开
 _EXPAND_HINT_TERMS = frozenset(
     {
-        "参数", "指标", "版本", "部署", "上线", "案例", "客户", "竞品",
-        "规格", "配置", "阈值", "错误码", "接口", "步骤", "方案",
+        "参数",
+        "指标",
+        "版本",
+        "部署",
+        "上线",
+        "案例",
+        "客户",
+        "竞品",
+        "规格",
+        "配置",
+        "阈值",
+        "错误码",
+        "接口",
+        "步骤",
+        "方案",
     }
 )
 
@@ -127,9 +140,9 @@ def select_sections_for_expansion(
         key=lambda s: (-_section_score(terms, s), s.char_offset),
     )
     if hits:
-        return hits[: max_expanded]
+        return hits[:max_expanded]
     if _has_expand_hint(query):
-        return sorted(doc.sections, key=lambda s: s.char_offset)[: max_expanded]
+        return sorted(doc.sections, key=lambda s: s.char_offset)[:max_expanded]
     return []
 
 
@@ -255,9 +268,7 @@ class SectionExpander:
             logger.warning("SectionExpander body not found: %s:%s", doc_id, section_id)
             return None
 
-        title = next(
-            (s.title for s in doc.sections if s.section_id == section_id), section_id
-        )
+        title = next((s.title for s in doc.sections if s.section_id == section_id), section_id)
         if len(body) > self._section_body_chars:
             body = body[: self._section_body_chars].rstrip() + "…"
 

@@ -105,9 +105,13 @@ class DraftVersionRepository:
             if parent.article_id != article_id:
                 raise DraftVersionError("parent belongs to a different source article")
         digest = content_hash(content)
-        siblings = await self.list_versions(
-            (parent.root_artifact_id if parent else ""), tenant_id=tenant_id, user_id=user_id
-        ) if parent else []
+        siblings = (
+            await self.list_versions(
+                (parent.root_artifact_id if parent else ""), tenant_id=tenant_id, user_id=user_id
+            )
+            if parent
+            else []
+        )
         for node in siblings:
             if node.parent_artifact_id == parent_artifact_id and node.content_hash == digest:
                 return node
@@ -166,7 +170,8 @@ class DraftVersionRepository:
         self, root_artifact_id: str, *, tenant_id: str, user_id: str
     ) -> list[DraftVersionNode]:
         nodes = [
-            node for node in self._nodes.values()
+            node
+            for node in self._nodes.values()
             if node.tenant_id == tenant_id
             and node.user_id == user_id
             and (not root_artifact_id or node.root_artifact_id == root_artifact_id)
@@ -179,9 +184,11 @@ class DraftVersionRepository:
             for doc in docs:
                 await self.get(str(doc["artifact_id"]), tenant_id=tenant_id, user_id=user_id)
             nodes = [
-                node for node in self._nodes.values()
+                node
+                for node in self._nodes.values()
                 if node.root_artifact_id == root_artifact_id
-                and node.tenant_id == tenant_id and node.user_id == user_id
+                and node.tenant_id == tenant_id
+                and node.user_id == user_id
             ]
         return sorted(nodes, key=lambda item: (item.created_at, item.artifact_id))
 
@@ -198,7 +205,8 @@ class DraftVersionRepository:
             result.append(current)
             current = (
                 await self.get(current.parent_artifact_id, tenant_id=tenant_id, user_id=user_id)
-                if current.parent_artifact_id else None
+                if current.parent_artifact_id
+                else None
             )
         return result
 
@@ -242,7 +250,10 @@ class DraftVersionRepository:
         current = self._pointers.get(key)
         if current and current.idempotency_key == idempotency_key:
             return current
-        if expected_generation is not None and (current.generation if current else 0) != expected_generation:
+        if (
+            expected_generation is not None
+            and (current.generation if current else 0) != expected_generation
+        ):
             raise DraftVersionError("primary pointer generation conflict")
         pointer = DraftPrimaryPointer(
             artifact_id=artifact_id,
@@ -255,7 +266,11 @@ class DraftVersionRepository:
         self._pointers[key] = pointer
         if self.db is not None:
             await self.db[self.POINTER_COLLECTION].replace_one(
-                {"tenant_id": tenant_id, "user_id": user_id, "root_artifact_id": node.root_artifact_id},
+                {
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                    "root_artifact_id": node.root_artifact_id,
+                },
                 pointer.model_dump(mode="python"),
                 upsert=True,
             )

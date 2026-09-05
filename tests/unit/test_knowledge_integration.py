@@ -30,28 +30,35 @@ def _create_test_kb(tmpdir: Path) -> Path:
     # 创建核心打分文件
     (kb_root / "1-智能体身份安全").mkdir()
     (kb_root / "1-智能体身份安全" / "overview.md").write_text(
-        "# 智能体身份安全\n\n## 产品定位\n\n提供身份治理能力。\n", encoding="utf-8",
+        "# 智能体身份安全\n\n## 产品定位\n\n提供身份治理能力。\n",
+        encoding="utf-8",
     )
     (kb_root / "1-智能体身份安全" / "market-brief.md").write_text(
-        "# 市场简报\n\n## 热点传播\n\nMCP安全是热点。\n", encoding="utf-8",
+        "# 市场简报\n\n## 热点传播\n\nMCP安全是热点。\n",
+        encoding="utf-8",
     )
 
     (kb_root / "3-AI-BOM").mkdir()
     (kb_root / "3-AI-BOM" / "overview.md").write_text(
-        "# AI-BOM\n\n## 产品定位\n\nAI物料清单。\n", encoding="utf-8",
+        "# AI-BOM\n\n## 产品定位\n\nAI物料清单。\n",
+        encoding="utf-8",
     )
     (kb_root / "3-AI-BOM" / "market-brief.md").write_text(
-        "# AI-BOM 市场简报\n\n## 热点\n\n供应链安全。\n", encoding="utf-8",
+        "# AI-BOM 市场简报\n\n## 热点\n\n供应链安全。\n",
+        encoding="utf-8",
     )
 
     (kb_root / "shared").mkdir()
     (kb_root / "shared" / "hot-event-playbook.md").write_text(
-        "# 热点匹配规则\n\n## 匹配策略\n\n按关键词匹配。\n", encoding="utf-8",
+        "# 热点匹配规则\n\n## 匹配策略\n\n按关键词匹配。\n",
+        encoding="utf-8",
     )
 
     # 创建其他文件
     (kb_root / "0-产品全景").mkdir()
-    (kb_root / "0-产品全景" / "matrix.md").write_text("# 产品矩阵\n\n## 概述\n\n产品关系图。\n", encoding="utf-8")
+    (kb_root / "0-产品全景" / "matrix.md").write_text(
+        "# 产品矩阵\n\n## 概述\n\n产品关系图。\n", encoding="utf-8"
+    )
 
     (kb_root / "CLAUDE.md").write_text("# CLAUDE\n\n入口文件。\n", encoding="utf-8")
 
@@ -197,11 +204,13 @@ class TestPublicationLockIntegration:
 
         # Second insert fails (duplicate key)
         locks_collection.insert_one = AsyncMock(side_effect=Exception("duplicate key"))
-        locks_collection.find_one = AsyncMock(return_value={
-            "lock_key": LOCK_KEY,
-            "publication_id": "pub-1",
-            "expires_at": datetime.now(UTC).replace(year=2099),
-        })
+        locks_collection.find_one = AsyncMock(
+            return_value={
+                "lock_key": LOCK_KEY,
+                "publication_id": "pub-1",
+                "expires_at": datetime.now(UTC).replace(year=2099),
+            }
+        )
         acquired = await service.acquire_lock("user-2", "pub-2")
         assert acquired is False
 

@@ -109,8 +109,14 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "vid": {"type": "string", "description": "微信读书用户 vid（来自 poll_login_result）"},
-                "token": {"type": "string", "description": "微信读书 token（来自 poll_login_result）"},
+                "vid": {
+                    "type": "string",
+                    "description": "微信读书用户 vid（来自 poll_login_result）",
+                },
+                "token": {
+                    "type": "string",
+                    "description": "微信读书 token（来自 poll_login_result）",
+                },
                 "name": {"type": "string", "description": "用户昵称（来自 poll_login_result）"},
             },
             "required": ["vid", "token", "name"],
@@ -179,6 +185,7 @@ TOOLS = [
 #  JSON-RPC 消息处理
 # ---------------------------------------------------------------------------
 
+
 def log(msg: str):
     """输出到 stderr（MCP 日志通道）"""
 
@@ -209,6 +216,7 @@ def make_error(req_id: Any, code: int, message: str) -> dict:
 # ---------------------------------------------------------------------------
 #  工具调用分发
 # ---------------------------------------------------------------------------
+
 
 def call_tool(name: str, arguments: dict) -> str:
     """调用具体工具，返回 JSON 字符串"""
@@ -256,7 +264,11 @@ def call_tool(name: str, arguments: dict) -> str:
         # 先抓全文
         fulltext = fetch_article_fulltext(link)
         if not fulltext["ok"]:
-            return json.dumps({"ok": False, "error": f"抓取文章失败: {fulltext.get('error')}"}, ensure_ascii=False, indent=2)
+            return json.dumps(
+                {"ok": False, "error": f"抓取文章失败: {fulltext.get('error')}"},
+                ensure_ascii=False,
+                indent=2,
+            )
 
         article = {
             "title": title or "未知标题",
@@ -273,6 +285,7 @@ def call_tool(name: str, arguments: dict) -> str:
 #  主循环
 # ---------------------------------------------------------------------------
 
+
 def handle_message(msg: dict) -> dict | None:
     """处理单条 JSON-RPC 消息，返回响应或 None"""
     method = msg.get("method", "")
@@ -283,16 +296,19 @@ def handle_message(msg: dict) -> dict | None:
 
     # --- 初始化 ---
     if method == "initialize":
-        return make_response(req_id, {
-            "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": {
-                "tools": {},
+        return make_response(
+            req_id,
+            {
+                "protocolVersion": PROTOCOL_VERSION,
+                "capabilities": {
+                    "tools": {},
+                },
+                "serverInfo": {
+                    "name": SERVER_NAME,
+                    "version": SERVER_VERSION,
+                },
             },
-            "serverInfo": {
-                "name": SERVER_NAME,
-                "version": SERVER_VERSION,
-            },
-        })
+        )
 
     # --- 工具列表 ---
     if method == "tools/list":
@@ -304,22 +320,34 @@ def handle_message(msg: dict) -> dict | None:
         arguments = params.get("arguments", {})
         try:
             text = call_tool(tool_name, arguments)
-            return make_response(req_id, {
-                "content": [
-                    {"type": "text", "text": text},
-                ],
-            })
+            return make_response(
+                req_id,
+                {
+                    "content": [
+                        {"type": "text", "text": text},
+                    ],
+                },
+            )
         except Exception as e:
             log(f"工具调用异常: {traceback.format_exc()}")
-            return make_response(req_id, {
-                "content": [
-                    {"type": "text", "text": json.dumps({
-                        "ok": False,
-                        "error": str(e),
-                    }, ensure_ascii=False)},
-                ],
-                "isError": True,
-            })
+            return make_response(
+                req_id,
+                {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(
+                                {
+                                    "ok": False,
+                                    "error": str(e),
+                                },
+                                ensure_ascii=False,
+                            ),
+                        },
+                    ],
+                    "isError": True,
+                },
+            )
 
     # --- 通知（无需响应） ---
     if method.startswith("notifications/"):

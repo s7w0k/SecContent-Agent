@@ -68,10 +68,12 @@ class TemplateRanker:
         stats: dict[str, dict] = {}
 
         # 从 user_drafts 查询历史草稿
-        cursor = self.db["user_drafts"].find({
-            "user_id": user_id,
-            "category_v2": category_v2,
-        })
+        cursor = self.db["user_drafts"].find(
+            {
+                "user_id": user_id,
+                "category_v2": category_v2,
+            }
+        )
         drafts = await cursor.to_list(length=200)
 
         for draft in drafts:
@@ -80,9 +82,13 @@ class TemplateRanker:
                 continue
             if tpl_id not in stats:
                 stats[tpl_id] = {
-                    "total": 0, "ratings": [], "applied": 0,
-                    "downloaded": 0, "negative_feedback": 0,
-                    "revisions": 0, "independent_tasks": set(),
+                    "total": 0,
+                    "ratings": [],
+                    "applied": 0,
+                    "downloaded": 0,
+                    "negative_feedback": 0,
+                    "revisions": 0,
+                    "independent_tasks": set(),
                 }
             s = stats[tpl_id]
             s["total"] += 1

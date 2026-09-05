@@ -65,7 +65,9 @@ class ObservationNormalizer:
         self, contract: BusinessToolContract, result: BaseModel | dict[str, Any]
     ) -> NormalizedObservation:
         payload = result.model_dump(mode="json") if isinstance(result, BaseModel) else dict(result)
-        raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
+        raw = json.dumps(
+            payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str
+        )
         result_hash = "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
         evidence: list[str] = []
         for field in contract.evidence_fields:
@@ -86,7 +88,10 @@ class ObservationNormalizer:
         data = payload
         if len(raw) > self.inline_limit:
             artifact_ref = await self.artifact_store.put(content=raw, content_hash=result_hash)
-            data = {"summary": f"{contract.name} result stored as artifact", "field_count": len(payload)}
+            data = {
+                "summary": f"{contract.name} result stored as artifact",
+                "field_count": len(payload),
+            }
             warnings.append("result_truncated_to_artifact")
         return NormalizedObservation(
             status=ObservationStatus.PARTIAL if partial else ObservationStatus.OK,

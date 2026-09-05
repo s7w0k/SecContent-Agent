@@ -173,18 +173,21 @@ class TestSearch:
 class TestUsageClassifier:
     """文件用途分类。"""
 
-    @pytest.mark.parametrize("path,expected", [
-        ("CLAUDE.md", "entry_router"),
-        ("AGENTS.md", "entry_router"),
-        ("_index/folder-routing.md", "folder_router"),
-        ("skills/common-rules.md", "role_workflow"),
-        ("0-产品全景/matrix.md", "product_map"),
-        ("1-智能体身份安全/overview.md", "product_fact"),
-        ("1-智能体身份安全/market-brief.md", "market_brief"),
-        ("1-智能体身份安全/sales-brief.md", "sales_brief"),
-        ("shared/hot-event-playbook.md", "shared_fact"),
-        ("qa-log.md", "maintenance_log"),
-    ])
+    @pytest.mark.parametrize(
+        "path,expected",
+        [
+            ("CLAUDE.md", "entry_router"),
+            ("AGENTS.md", "entry_router"),
+            ("_index/folder-routing.md", "folder_router"),
+            ("skills/common-rules.md", "role_workflow"),
+            ("0-产品全景/matrix.md", "product_map"),
+            ("1-智能体身份安全/overview.md", "product_fact"),
+            ("1-智能体身份安全/market-brief.md", "market_brief"),
+            ("1-智能体身份安全/sales-brief.md", "sales_brief"),
+            ("shared/hot-event-playbook.md", "shared_fact"),
+            ("qa-log.md", "maintenance_log"),
+        ],
+    )
     def test_classify(self, path, expected):
         assert UsageClassifier.classify(path) == expected
 

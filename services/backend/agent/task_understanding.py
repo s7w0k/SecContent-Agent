@@ -53,7 +53,9 @@ class TaskEnvelopePatch(BaseModel):
         return self
 
     def slot_values(self) -> dict[str, Any]:
-        payload = self.model_dump(exclude_none=True, exclude={"explicit_slots", "confidence", "assumptions"})
+        payload = self.model_dump(
+            exclude_none=True, exclude={"explicit_slots", "confidence", "assumptions"}
+        )
         if isinstance(payload.get("intent"), TaskIntent):
             payload["intent"] = payload["intent"].value
         return payload
@@ -146,7 +148,9 @@ class TaskUnderstandingService:
                 deterministic = self._merge_model_patch(deterministic, model_patch)
                 used_model = True
             except Exception as exc:
-                warnings.append(f"model output rejected; deterministic fallback used: {type(exc).__name__}")
+                warnings.append(
+                    f"model output rejected; deterministic fallback used: {type(exc).__name__}"
+                )
         return TaskUnderstandingResult(
             patch=deterministic,
             parser="deterministic+model" if used_model else "deterministic",
@@ -208,8 +212,14 @@ class TaskUnderstandingService:
             # 归一后落入 category 槽，供 classify 步骤做域级比对
             lowered_text = lowered
             for domain, keywords in (
-                ("agent安全", ("agent安全", "智能体安全", "agent 安全", "智能体 安全", "agentic security")),
-                ("AI安全", ("ai安全", "ai 安全", "人工智能安全", "大模型安全", "llm安全", "模型安全")),
+                (
+                    "agent安全",
+                    ("agent安全", "智能体安全", "agent 安全", "智能体 安全", "agentic security"),
+                ),
+                (
+                    "AI安全",
+                    ("ai安全", "ai 安全", "人工智能安全", "大模型安全", "llm安全", "模型安全"),
+                ),
                 ("传统安全", ("传统安全", "传统 安全")),
             ):
                 if any(keyword in lowered_text for keyword in keywords):
@@ -275,7 +285,11 @@ class TaskUnderstandingService:
             explicit.add("news_query")
         if any(marker in text for marker in ("你决定", "你来定", "随便", "都可以")):
             values["assumptions"] = [
-                TaskAssumption(text="你已授权我来定细节，未指定的选项我会按默认处理，结果随时可改", source=SlotSource.USER, confidence=1.0)
+                TaskAssumption(
+                    text="你已授权我来定细节，未指定的选项我会按默认处理，结果随时可改",
+                    source=SlotSource.USER,
+                    confidence=1.0,
+                )
             ]
         values["explicit_slots"] = frozenset(explicit)
         return TaskEnvelopePatch(**values)

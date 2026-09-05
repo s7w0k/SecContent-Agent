@@ -16,6 +16,7 @@
     cd pr-agent-demo-v2
     python -m tests.agent_evals.knowledge_retrieval.ranking_eval_query --report
 """
+
 from __future__ import annotations
 
 import argparse
@@ -61,9 +62,7 @@ def _load_index() -> Any:
     return indexer
 
 
-def _build_retriever(
-    embedding_weight: float = 0.0, use_rerank: bool = False
-) -> Any:
+def _build_retriever(embedding_weight: float = 0.0, use_rerank: bool = False) -> Any:
     from agent.document_retriever import DocumentRetriever
 
     reranker = _build_reranker() if use_rerank else None
@@ -97,7 +96,7 @@ def _build_reranker() -> Any:
 def _product_doc_ids(indexer: Any) -> dict[str, list[str]]:
     """已发布产品 → 该产品下可检索 core 文档 doc_id 列表。"""
     mapping: dict[str, list[str]] = {p: [] for p in PUBLISHED}
-    for doc in (indexer.manifest.docs or []):
+    for doc in indexer.manifest.docs or []:
         if doc.product_id not in PUBLISHED:
             continue
         if not doc.published:
@@ -130,11 +129,7 @@ def _rank_for_query(retriever: Any, query: str) -> list[str]:
     )
     # 只保留 core 可检索文档参与排序：raw/shared 正文庞大、得分虚高，
     # 会抢占前排把真正相关的 core 文档挤出 Top5；且相关集合只含这些 core 类型。
-    return [
-        d.doc_id
-        for d in retriever.retrieve_ranked(request)
-        if d.doc_type in RANKED_DOC_TYPES
-    ]
+    return [d.doc_id for d in retriever.retrieve_ranked(request) if d.doc_type in RANKED_DOC_TYPES]
 
 
 def run_all(
@@ -150,7 +145,7 @@ def run_all(
 
     rows: list[dict[str, Any]] = []
     ranked_samples = []  # 有相关文档的指标样本
-    no_hit_rows = []     # 无命中样本（单独统计误召回）
+    no_hit_rows = []  # 无命中样本（单独统计误召回）
 
     for case in cases:
         query = case.get("query", "")
@@ -162,40 +157,58 @@ def run_all(
 
         if not relevant:
             # 无命中：检索器不应把任何产品文档排在前面
-            hit_any = any(d in ranked for d in
-                          set().union(*(product_docs.values())))
-            no_hit_rows.append({
-                "case_id": case["case_id"],
-                "query": query,
-                "expected": expected,
-                "ranked_docs": ranked[:5],
-                "false_recall": hit_any,
-            })
+            hit_any = any(d in ranked for d in set().union(*(product_docs.values())))
+            no_hit_rows.append(
+                {
+                    "case_id": case["case_id"],
+                    "query": query,
+                    "expected": expected,
+                    "ranked_docs": ranked[:5],
+                    "false_recall": hit_any,
+                }
+            )
             continue
 
         metrics = per_query_metrics(ranked, relevant, KS)
-        rows.append({
-            "case_id": case["case_id"],
-            "query": query,
-            "expected": expected,
-            "relevant_doc_ids": sorted(relevant),
-            "rank": (ranked.index(sorted(relevant)[0]) + 1),
-            "ranked_docs": ranked[:5],
-            "metrics": metrics,
-        })
+        rows.append(
+            {
+                "case_id": case["case_id"],
+                "query": query,
+                "expected": expected,
+                "relevant_doc_ids": sorted(relevant),
+                "rank": (ranked.index(sorted(relevant)[0]) + 1),
+                "ranked_docs": ranked[:5],
+                "metrics": metrics,
+            }
+        )
         ranked_samples.append(metrics)
 
     agg = aggregate(ranked_samples, KS)
     total_with_rel = len(ranked_samples)
     in_top5 = sum(1 for r in rows if 0 < r["rank"] <= 5) / total_with_rel if total_with_rel else 0.0
-    false_recall_rate = (sum(1 for r in no_hit_rows if r["false_recall"]) /
-                         len(no_hit_rows)) if no_hit_rows else 0.0
+    false_recall_rate = (
+        (sum(1 for r in no_hit_rows if r["false_recall"]) / len(no_hit_rows))
+        if no_hit_rows
+        else 0.0
+    )
 
     gates = {
-        "recall@3": {"pass": agg["recall"]["@3"] >= 0.5, "value": agg["recall"]["@3"], "threshold": "≥50%"},
+        "recall@3": {
+            "pass": agg["recall"]["@3"] >= 0.5,
+            "value": agg["recall"]["@3"],
+            "threshold": "≥50%",
+        },
         "mrr": {"pass": agg["mrr"] >= 0.5, "value": agg["mrr"], "threshold": "≥0.5"},
-        "ndcg@3": {"pass": agg["ndcg"]["@3"] >= 0.5, "value": agg["ndcg"]["@3"], "threshold": "≥50%"},
-        "hit@3": {"pass": agg["hit_rate"]["@3"] >= 0.6, "value": agg["hit_rate"]["@3"], "threshold": "≥60%"},
+        "ndcg@3": {
+            "pass": agg["ndcg"]["@3"] >= 0.5,
+            "value": agg["ndcg"]["@3"],
+            "threshold": "≥50%",
+        },
+        "hit@3": {
+            "pass": agg["hit_rate"]["@3"] >= 0.6,
+            "value": agg["hit_rate"]["@3"],
+            "threshold": "≥60%",
+        },
     }
 
     report = {
@@ -233,10 +246,14 @@ def print_report(report: dict[str, Any]) -> None:
     print(f"\n{'=' * 68}")
     print("  真实线上用户 Query 检索排序指标评测 (Recall@K/Precision@K/MRR/NDCG@K/HitRate)")
     print(f"{'=' * 68}")
-    print(f"  语料: {report['corpus']}  总样本: {report['total']}  "
-          f"有相关文档: {report['with_relevant']}  无命中: {report['no_hit']}")
-    print(f"  目标文档进入 Top5: {report['target_in_top5'] * 100:.1f}%  "
-          f"无命中误召回率: {report['false_recall_rate'] * 100:.1f}%")
+    print(
+        f"  语料: {report['corpus']}  总样本: {report['total']}  "
+        f"有相关文档: {report['with_relevant']}  无命中: {report['no_hit']}"
+    )
+    print(
+        f"  目标文档进入 Top5: {report['target_in_top5'] * 100:.1f}%  "
+        f"无命中误召回率: {report['false_recall_rate'] * 100:.1f}%"
+    )
     print("-" * 56)
     for k in report["ks"]:
         print(f"  Recall@{k}:    {m['recall'][f'@{k}'] * 100:6.1f}%")
@@ -253,8 +270,10 @@ def print_report(report: dict[str, Any]) -> None:
     print("  有相关文档但目标未在 Top5 的用例:")
     for r in report["results"]:
         if not (0 < r["rank"] <= 5):
-            print(f"    {r['case_id']} | {r['query'][:30]} | expected={r['expected']} | "
-                  f"top5={r['ranked_docs']}")
+            print(
+                f"    {r['case_id']} | {r['query'][:30]} | expected={r['expected']} | "
+                f"top5={r['ranked_docs']}"
+            )
     print("  无命中但误召回的用例:")
     for r in report.get("no_hit_results", []):
         if r["false_recall"]:
@@ -263,12 +282,16 @@ def print_report(report: dict[str, Any]) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="真实用户 query 检索排序指标评测")
-    parser.add_argument("--report", action="store_true",
-                        help="写入 reports/knowledge-retrieval-ranking-query.json")
-    parser.add_argument("--embed", type=float, default=0.0,
-                        help="embedding 混合权重（>0 启用 DASHSCOPE embedding 召回，如 0.3）")
-    parser.add_argument("--rerank", action="store_true",
-                        help="启用 DEEPSEEK LLM 文档重排")
+    parser.add_argument(
+        "--report", action="store_true", help="写入 reports/knowledge-retrieval-ranking-query.json"
+    )
+    parser.add_argument(
+        "--embed",
+        type=float,
+        default=0.0,
+        help="embedding 混合权重（>0 启用 DASHSCOPE embedding 召回，如 0.3）",
+    )
+    parser.add_argument("--rerank", action="store_true", help="启用 DEEPSEEK LLM 文档重排")
     args = parser.parse_args()
     _report = run_all(
         write_report=args.report,

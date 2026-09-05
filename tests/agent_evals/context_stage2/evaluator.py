@@ -50,10 +50,7 @@ def _generate_mock_pair(item: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
     required = item.get("red_line_required", [])
 
     legacy = {
-        "answer": (
-            f"内容覆盖 {' '.join(facts)}。{' '.join(required)}"
-            + _LEGACY_KNOWLEDGE_PADDING
-        ),
+        "answer": (f"内容覆盖 {' '.join(facts)}。{' '.join(required)}" + _LEGACY_KNOWLEDGE_PADDING),
         "context_tokens": 3200,
         "latency_ms": 5200.0,
     }
@@ -116,17 +113,21 @@ def run_all() -> dict[str, Any]:
         token_pairs.append((legacy["context_tokens"], stage2["context_tokens"]))
         latency_pairs.append((legacy["latency_ms"], stage2["latency_ms"]))
 
-        results.append({
-            "id": item.get("id", ""),
-            "purpose": item.get("purpose", ""),
-            "product_id": item.get("product_id", ""),
-            "title": item.get("article_title") or item.get("query") or item.get("prompt", "")[:40],
-            "legacy_tokens": legacy["context_tokens"],
-            "stage2_tokens": stage2["context_tokens"],
-            "legacy_ms": legacy["latency_ms"],
-            "stage2_ms": stage2["latency_ms"],
-            **eval_result,
-        })
+        results.append(
+            {
+                "id": item.get("id", ""),
+                "purpose": item.get("purpose", ""),
+                "product_id": item.get("product_id", ""),
+                "title": item.get("article_title")
+                or item.get("query")
+                or item.get("prompt", "")[:40],
+                "legacy_tokens": legacy["context_tokens"],
+                "stage2_tokens": stage2["context_tokens"],
+                "legacy_ms": legacy["latency_ms"],
+                "stage2_ms": stage2["latency_ms"],
+                **eval_result,
+            }
+        )
 
     total = len(dataset)
     legacy_tokens_all = [p[0] for p in token_pairs]
@@ -141,9 +142,7 @@ def run_all() -> dict[str, Any]:
     )
     p95_legacy = _p95(legacy_ms_all)
     p95_stage2 = _p95(stage2_ms_all)
-    latency_p95_reduction = (
-        (p95_legacy - p95_stage2) / p95_legacy * 100 if p95_legacy else 0.0
-    )
+    latency_p95_reduction = (p95_legacy - p95_stage2) / p95_legacy * 100 if p95_legacy else 0.0
 
     fact_rate = fact_ok / total if total else 0.0
     ref_rate = ref_ok / total if total else 0.0
@@ -151,11 +150,27 @@ def run_all() -> dict[str, Any]:
 
     gates = {
         "skill_validation_100": {"pass": True, "value": 100.0, "threshold": "100%"},
-        "core_knowledge_miss": {"pass": ref_rate == 1.0, "value": (1 - ref_rate) * 100, "threshold": "0%"},
-        "scoring_fact_consistency": {"pass": fact_rate >= 0.98, "value": fact_rate * 100, "threshold": "≥98%"},
+        "core_knowledge_miss": {
+            "pass": ref_rate == 1.0,
+            "value": (1 - ref_rate) * 100,
+            "threshold": "0%",
+        },
+        "scoring_fact_consistency": {
+            "pass": fact_rate >= 0.98,
+            "value": fact_rate * 100,
+            "threshold": "≥98%",
+        },
         "red_line_recall": {"pass": red_rate == 1.0, "value": red_rate * 100, "threshold": "100%"},
-        "token_reduction": {"pass": token_reduction >= 30.0, "value": token_reduction, "threshold": "≥30%"},
-        "latency_p95_reduction": {"pass": latency_p95_reduction >= 20.0, "value": latency_p95_reduction, "threshold": "≥20%"},
+        "token_reduction": {
+            "pass": token_reduction >= 30.0,
+            "value": token_reduction,
+            "threshold": "≥30%",
+        },
+        "latency_p95_reduction": {
+            "pass": latency_p95_reduction >= 20.0,
+            "value": latency_p95_reduction,
+            "threshold": "≥20%",
+        },
     }
 
     passed = sum(1 for r in results if r["pass"])

@@ -110,9 +110,7 @@ class RolloutTracker:
         self._now = now_provider or _utc_now
 
     def record(self, *, user_id: str, outcome: str, ts: datetime | None = None) -> None:
-        self.samples.append(
-            RolloutSample(user_id=user_id, outcome=outcome, ts=ts or self._now())
-        )
+        self.samples.append(RolloutSample(user_id=user_id, outcome=outcome, ts=ts or self._now()))
 
     def sample_count(self) -> int:
         return len(self.samples)
@@ -257,7 +255,9 @@ class RollbackController:
     def evaluate(self, metrics: dict[str, float]) -> RollbackDecision:
         firing = self.evaluator.evaluate(metrics)
         if not firing:
-            return RollbackDecision(action=ACTION_NONE, reason_code="no_alert", fired_at=self._now())
+            return RollbackDecision(
+                action=ACTION_NONE, reason_code="no_alert", fired_at=self._now()
+            )
         worst = firing[0]
         return RollbackDecision(
             action=worst.action,

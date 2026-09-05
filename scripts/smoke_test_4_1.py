@@ -38,8 +38,14 @@ def test_prompt_templates():
     from agent.classifier_v2 import SYSTEM_PROMPT, ClassifierV2
 
     # System Prompt 包含所有类别
-    for cat in ["爆点事件", "法律法规/监管动态", "AI技术重大进展",
-                 "国内外竞品信息", "运营商/行业事件", "学术/会展/高校"]:
+    for cat in [
+        "爆点事件",
+        "法律法规/监管动态",
+        "AI技术重大进展",
+        "国内外竞品信息",
+        "运营商/行业事件",
+        "学术/会展/高校",
+    ]:
         assert cat in SYSTEM_PROMPT, f"SYSTEM_PROMPT missing: {cat}"
     print("  [PASS] SYSTEM_PROMPT: 6 类定义完整")
 
@@ -88,9 +94,7 @@ def test_result_validation():
     from agent.classifier_v2 import ClassifierV2
 
     # 合法类别
-    r = ClassifierV2._validate_and_fix(
-        {"category": "爆点事件", "confidence": 85, "reason": "ok"}
-    )
+    r = ClassifierV2._validate_and_fix({"category": "爆点事件", "confidence": 85, "reason": "ok"})
     assert r["category"] == "爆点事件"
     assert r["confidence"] == 85
 
@@ -132,7 +136,10 @@ def test_classify_result():
 
     # to_dict 输出
     d = ClassifyResultV2(
-        category="爆点事件", confidence=92, reason="重大漏洞", fallback=False,
+        category="爆点事件",
+        confidence=92,
+        reason="重大漏洞",
+        fallback=False,
     ).to_dict()
     assert d["category_v2"] == "爆点事件"
     assert d["is_pr_eligible"] is True

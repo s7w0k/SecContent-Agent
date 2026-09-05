@@ -14,6 +14,7 @@ query 以 `article.title` 形式传入（ProductMatcher 中 title 字段权重�
     python -m tests.agent_evals.knowledge_retrieval.generate_query_dataset
     python -m tests.agent_evals.knowledge_retrieval.evaluator --dataset query --report
 """
+
 from __future__ import annotations
 
 import json
@@ -27,22 +28,65 @@ PUBLISHED = ["agent-identity-security", "agent-security", "ai-bom"]
 # ── 产品识别强词（与 product_catalog.py keywords 对齐，用于自动派生 expected） ──
 _STRONG: dict[str, list[str]] = {
     "agent-identity-security": [
-        "身份认证", "身份治理", "授权", "最小权限", "权限边界", "凭证",
-        "密钥", "单点登录", "SSO", "委托授权", "反冒用", "agent身份",
+        "身份认证",
+        "身份治理",
+        "授权",
+        "最小权限",
+        "权限边界",
+        "凭证",
+        "密钥",
+        "单点登录",
+        "SSO",
+        "委托授权",
+        "反冒用",
+        "agent身份",
     ],
     "agent-security": [
-        "智能体防护", "智能体运行时", "agent防护", "agent runtime", "智能体检测",
-        "运行时防护", "沙箱", "提示词注入", "数据泄露", "行为分析", "异常检测",
-        "威胁检测", "进程隔离", "agent安全",
+        "智能体防护",
+        "智能体运行时",
+        "agent防护",
+        "agent runtime",
+        "智能体检测",
+        "运行时防护",
+        "沙箱",
+        "提示词注入",
+        "数据泄露",
+        "行为分析",
+        "异常检测",
+        "威胁检测",
+        "进程隔离",
+        "agent安全",
     ],
     "ai-bom": [
-        "AI资产", "AI组件", "AI供应链", "模型供应链", "物料清单", "SBOM",
-        "模型来源", "数据血缘", "依赖图谱", "资产台账", "AI-BOM",
+        "AI资产",
+        "AI组件",
+        "AI供应链",
+        "模型供应链",
+        "物料清单",
+        "SBOM",
+        "模型来源",
+        "数据血缘",
+        "依赖图谱",
+        "资产台账",
+        "AI-BOM",
     ],
 }
 
 # ── 混扰弱词（命中但不构成强产品信号，用于 forbidden 隔离压力） ──
-_WEAK = ("安全", "防护", "检测", "治理", "风险", "合规", "数据", "模型", "组件", "AI", "智能体", "供应链安全")
+_WEAK = (
+    "安全",
+    "防护",
+    "检测",
+    "治理",
+    "风险",
+    "合规",
+    "数据",
+    "模型",
+    "组件",
+    "AI",
+    "智能体",
+    "供应链安全",
+)
 
 # ── 真实 query 语料表：(query, expected, requires_expansion, forbidden覆盖) ──
 # forbidden 默认 = 除 expected 外全部已发布产品；None 表示沿用默认。
@@ -73,7 +117,6 @@ _QUERIES: list[tuple[str, list[str], bool, list[str] | None]] = [
     ("智能体身份认证 最小权限 授权", ["agent-identity-security"], False, None),
     ("agent 身份 凭证 越权", ["agent-identity-security"], False, None),
     ("智能体身份安全 权限 反冒用", ["agent-identity-security"], False, None),
-
     # ── 智能体安全（agent-security） ──────────────────────────
     ("智能体运行时防护", ["agent-security"], True, None),
     ("提示词注入怎么防", ["agent-security"], False, None),
@@ -98,7 +141,6 @@ _QUERIES: list[tuple[str, list[str], bool, list[str] | None]] = [
     ("智能体提示词注入 防护 沙箱", ["agent-security"], True, None),
     ("agent 运行时 威胁检测", ["agent-security"], False, None),
     ("智能体 数据泄露 应急", ["agent-security"], False, None),
-
     # ── AI-BOM（ai-bom） ─────────────────────────────────────
     ("AI 资产怎么盘点", ["ai-bom"], False, None),
     ("AI 组件清单", ["ai-bom"], False, None),
@@ -123,19 +165,27 @@ _QUERIES: list[tuple[str, list[str], bool, list[str] | None]] = [
     ("AI 组件 供应链 审计 台账", ["ai-bom"], False, None),
     ("模型供应链 依赖 血缘", ["ai-bom"], False, None),
     ("AI 资产 模型 来源 清单", ["ai-bom"], False, None),
-
     # ── 多产品（一个 query 命中多个产品） ────────────────────
     ("智能体身份认证 + 运行时防护", ["agent-identity-security", "agent-security"], False, None),
     ("智能体安全 从身份到运行时", ["agent-identity-security", "agent-security"], True, None),
     ("AI 资产 和 智能体防护一起管", ["ai-bom", "agent-security"], False, None),
-    ("智能体安全三件套 身份 运行时 清单", ["agent-identity-security", "agent-security", "ai-bom"], False, None),
+    (
+        "智能体安全三件套 身份 运行时 清单",
+        ["agent-identity-security", "agent-security", "ai-bom"],
+        False,
+        None,
+    ),
     ("Agent 身份 + 沙箱", ["agent-identity-security", "agent-security"], False, None),
     ("智能体供应链 资产 防护", ["ai-bom", "agent-security"], False, None),
     ("AI 物料清单 和 智能体安全", ["ai-bom", "agent-security"], False, None),
     ("智能体身份认证 AI 资产", ["agent-identity-security", "ai-bom"], False, None),
     ("Agent 权限 + 提示词注入", ["agent-identity-security", "agent-security"], True, None),
-    ("智能体安全 全栈 身份 资产 运行时", ["agent-identity-security", "agent-security", "ai-bom"], False, None),
-
+    (
+        "智能体安全 全栈 身份 资产 运行时",
+        ["agent-identity-security", "agent-security", "ai-bom"],
+        False,
+        None,
+    ),
     # ── 无命中（不得编造产品） ───────────────────────────────
     ("今天天气怎么样", [], False, []),
     ("公司组织架构调整怎么办", [], False, []),
@@ -147,7 +197,6 @@ _QUERIES: list[tuple[str, list[str], bool, list[str] | None]] = [
     ("怎么给领导写周报", [], False, []),
     ("开源社区怎么运营", [], False, []),
     ("项目管理工具推荐", [], False, []),
-
     # ── 竞品/边界（forbidden 隔离压力） ─────────────────────
     ("Agent 身份认证 相比传统 SSE", ["agent-identity-security"], False, ["ans", "agent-security"]),
     ("ANS 网络服务", [], False, []),  # ANS 未发布，不应作为正式路由结果
@@ -216,13 +265,15 @@ def _case(
 def _build_samples() -> list[dict[str, Any]]:
     samples: list[dict[str, Any]] = []
     for i, (query, expected, expand, forbidden) in enumerate(_QUERIES, start=1):
-        samples.append(_case(
-            f"q-{i:03d}",
-            query,
-            expected,
-            requires_expansion=expand,
-            forbidden=forbidden,
-        ))
+        samples.append(
+            _case(
+                f"q-{i:03d}",
+                query,
+                expected,
+                requires_expansion=expand,
+                forbidden=forbidden,
+            )
+        )
     return samples
 
 
@@ -247,7 +298,9 @@ def summary(samples: list[dict[str, Any]]) -> None:
     print(f"单产品 ai-bom: {exp[('ai-bom',)]}")
     multi = sum(v for k, v in exp.items() if len(k) >= 2)
     nohit = exp[()]
-    print(f"多产品: {multi}  无命中: {nohit}  章节展开: {sum(1 for c in samples if c['requires_expansion'])}")
+    print(
+        f"多产品: {multi}  无命中: {nohit}  章节展开: {sum(1 for c in samples if c['requires_expansion'])}"
+    )
 
 
 if __name__ == "__main__":

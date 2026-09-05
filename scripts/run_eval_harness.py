@@ -37,7 +37,9 @@ def _has_real_key() -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="真实 Agent Eval Harness（阶段2）")
-    parser.add_argument("--dataset", type=str, default=str(DEFAULT_DATASET), help="版本化数据集路径")
+    parser.add_argument(
+        "--dataset", type=str, default=str(DEFAULT_DATASET), help="版本化数据集路径"
+    )
     parser.add_argument("--level", choices=["pr", "nightly", "release"], default="pr")
     parser.add_argument("--llm", choices=["mock", "real", "auto"], default="auto")
     parser.add_argument("--runs", type=int, default=3, help="每个 case 每后端重复次数")

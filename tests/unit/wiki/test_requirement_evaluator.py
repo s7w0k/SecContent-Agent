@@ -13,8 +13,9 @@ from agent.wiki.requirement_evaluator import RequirementEvaluator
 from agent.wiki.requirements import EvidenceRequirement, default_requirements
 
 
-def _ev(*, fact="支持行为检测", rid="R1", conf=0.9, rel=0.8,
-        reason="VERIFIED", eid=None) -> EvidenceItem:
+def _ev(
+    *, fact="支持行为检测", rid="R1", conf=0.9, rel=0.8, reason="VERIFIED", eid=None
+) -> EvidenceItem:
     return EvidenceItem(
         evidence_id=eid or f"ev-{abs(hash(fact)) % 1000}",
         fact=fact,
@@ -44,9 +45,10 @@ def test_open_page_count_does_not_change_coverage():
     """访问页数不参与 coverage 公式（§5.11/§5.15）。"""
     no_pages = RequirementEvaluator().evaluate(score_reqs, [_ev(rid="R1")])
     fake_visited_extra = [_ev(rid="R1")]  # 同样只有 1 条有效证据
-    assert no_pages.coverage == RequirementEvaluator().evaluate(
-        score_reqs, fake_visited_extra
-    ).coverage
+    assert (
+        no_pages.coverage
+        == RequirementEvaluator().evaluate(score_reqs, fake_visited_extra).coverage
+    )
 
 
 def test_low_relevance_capability_does_not_satisfy_r1():
@@ -110,8 +112,11 @@ def test_duplicate_evidence_does_not_inflate():
 
 def test_minimum_evidence_is_enforced():
     req = EvidenceRequirement(
-        requirement_id="R1", description="d", weight=0.5,
-        required_page_types=["capability"], minimum_evidence=2,
+        requirement_id="R1",
+        description="d",
+        weight=0.5,
+        required_page_types=["capability"],
+        minimum_evidence=2,
     )
     ev = _ev(rid="R1")
     res = RequirementEvaluator().evaluate([req], [ev])

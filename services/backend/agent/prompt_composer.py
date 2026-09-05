@@ -96,7 +96,7 @@ def compose_classifier_prompt(
     return compose_prompt(
         user_business_prompt=user_business_prompt,
         readonly_contexts={"文章上下文": article_context} if article_context else None,
-        output_contract='严格按 JSON 格式输出，不要添加代码块标记。',
+        output_contract="严格按 JSON 格式输出，不要添加代码块标记。",
     )
 
 

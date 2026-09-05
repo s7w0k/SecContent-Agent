@@ -60,7 +60,9 @@ class FaultSpec:
 class FaultInjected(Exception):
     """错误类故障已注入。"""
 
-    def __init__(self, *, step: str, fault_type: FaultType, error_code: str = "", message: str = ""):
+    def __init__(
+        self, *, step: str, fault_type: FaultType, error_code: str = "", message: str = ""
+    ):
         super().__init__(message or f"fault injected at {step}: {fault_type.value}")
         self.step = step
         self.fault_type = fault_type
@@ -76,17 +78,66 @@ class ProcessKilled(FaultInjected):
 # ═══════════════════════════════════════════════════════════════
 
 FAULT_SCENARIOS: dict[str, list[FaultSpec]] = {
-    "timeout": [FaultSpec("execute", FaultType.TIMEOUT, error_code="timeout", message="tool timeout")],
-    "exception": [FaultSpec("execute", FaultType.EXCEPTION, error_code="internal_error", message="unclassified")],
-    "rate_limit_429": [FaultSpec("execute", FaultType.RATE_LIMIT_429, error_code="429", message="too many requests")],
-    "server_5xx": [FaultSpec("policy", FaultType.SERVER_5XX, error_code="503", message="upstream unavailable")],
-    "connection_drop": [FaultSpec("execute", FaultType.CONNECTION_DROP, error_code="connection_drop", message="conn reset")],
-    "invalid_schema": [FaultSpec("observe", FaultType.INVALID_SCHEMA, error_code="invalid_schema", message="bad json")],
-    "process_kill": [FaultSpec("checkpoint", FaultType.PROCESS_KILL, error_code="process_kill", message="worker killed")],
-    "lease_expiry": [FaultSpec("checkpoint", FaultType.LEASE_EXPIRY, error_code="lease_expired", message="lease expired")],
-    "duplicate_event": [FaultSpec("checkpoint", FaultType.DUPLICATE_EVENT, error_code="duplicate_event", message="event replayed")],
-    "out_of_order_event": [FaultSpec("observe", FaultType.OUT_OF_ORDER_EVENT, error_code="out_of_order", message="sequence gap")],
-    "log_failure": [FaultSpec("finalize", FaultType.LOG_FAILURE, error_code="log_failure", message="log write failed")],
+    "timeout": [
+        FaultSpec("execute", FaultType.TIMEOUT, error_code="timeout", message="tool timeout")
+    ],
+    "exception": [
+        FaultSpec(
+            "execute", FaultType.EXCEPTION, error_code="internal_error", message="unclassified"
+        )
+    ],
+    "rate_limit_429": [
+        FaultSpec(
+            "execute", FaultType.RATE_LIMIT_429, error_code="429", message="too many requests"
+        )
+    ],
+    "server_5xx": [
+        FaultSpec("policy", FaultType.SERVER_5XX, error_code="503", message="upstream unavailable")
+    ],
+    "connection_drop": [
+        FaultSpec(
+            "execute", FaultType.CONNECTION_DROP, error_code="connection_drop", message="conn reset"
+        )
+    ],
+    "invalid_schema": [
+        FaultSpec(
+            "observe", FaultType.INVALID_SCHEMA, error_code="invalid_schema", message="bad json"
+        )
+    ],
+    "process_kill": [
+        FaultSpec(
+            "checkpoint", FaultType.PROCESS_KILL, error_code="process_kill", message="worker killed"
+        )
+    ],
+    "lease_expiry": [
+        FaultSpec(
+            "checkpoint",
+            FaultType.LEASE_EXPIRY,
+            error_code="lease_expired",
+            message="lease expired",
+        )
+    ],
+    "duplicate_event": [
+        FaultSpec(
+            "checkpoint",
+            FaultType.DUPLICATE_EVENT,
+            error_code="duplicate_event",
+            message="event replayed",
+        )
+    ],
+    "out_of_order_event": [
+        FaultSpec(
+            "observe",
+            FaultType.OUT_OF_ORDER_EVENT,
+            error_code="out_of_order",
+            message="sequence gap",
+        )
+    ],
+    "log_failure": [
+        FaultSpec(
+            "finalize", FaultType.LOG_FAILURE, error_code="log_failure", message="log write failed"
+        )
+    ],
 }
 
 
@@ -151,9 +202,25 @@ class FaultInjector:
         if fault_type == FaultType.TIMEOUT:
             raise TimeoutError(spec.message or "injected timeout")
         if fault_type == FaultType.PROCESS_KILL:
-            raise ProcessKilled(step=spec.step, fault_type=fault_type, error_code=spec.error_code, message=spec.message)
-        if fault_type in (FaultType.EXCEPTION, FaultType.RATE_LIMIT_429, FaultType.SERVER_5XX, FaultType.CONNECTION_DROP, FaultType.INVALID_SCHEMA):
-            raise FaultInjected(step=spec.step, fault_type=fault_type, error_code=spec.error_code, message=spec.message)
+            raise ProcessKilled(
+                step=spec.step,
+                fault_type=fault_type,
+                error_code=spec.error_code,
+                message=spec.message,
+            )
+        if fault_type in (
+            FaultType.EXCEPTION,
+            FaultType.RATE_LIMIT_429,
+            FaultType.SERVER_5XX,
+            FaultType.CONNECTION_DROP,
+            FaultType.INVALID_SCHEMA,
+        ):
+            raise FaultInjected(
+                step=spec.step,
+                fault_type=fault_type,
+                error_code=spec.error_code,
+                message=spec.message,
+            )
         # 事件/日志类：返回 marker，由调用方决定处理方式
         return fault_type.value
 
@@ -190,7 +257,12 @@ class DrillReport:
             "name": self.name,
             "passed": self.passed,
             "steps": [
-                {"step": s.step, "fault_type": s.fault_type.value, "outcome": s.outcome, "observed": s.observed}
+                {
+                    "step": s.step,
+                    "fault_type": s.fault_type.value,
+                    "outcome": s.outcome,
+                    "observed": s.observed,
+                }
                 for s in self.steps
             ],
             "started_at": self.started_at.isoformat(),

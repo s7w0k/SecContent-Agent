@@ -37,8 +37,7 @@ def _build_kb(root: Path) -> None:
     raw = p1 / "原始文档"
     raw.mkdir(parents=True)
     (raw / "error-handbook.md").write_text(
-        "# 错误处理手册\n\n## 错误码\nE4002 余额不足处理，版本 v2.3.1。\n\n"
-        "## 重试\n必须指数退避。",
+        "# 错误处理手册\n\n## 错误码\nE4002 余额不足处理，版本 v2.3.1。\n\n## 重试\n必须指数退避。",
         encoding="utf-8",
     )
 
@@ -89,15 +88,11 @@ def _make_generate(case: dict, context: str, mode: str) -> dict:
 
 class TestReplayHelpers:
     def test_extract_products(self):
-        assert _extract_products(
-            "提到 agent-identity-security 能力"
-        ) == ["agent-identity-security"]
+        assert _extract_products("提到 agent-identity-security 能力") == ["agent-identity-security"]
         assert _extract_products("无产品") == []
 
     def test_count_citation_blocks(self):
-        assert _count_citation_blocks(
-            "a [KNOWLEDGE_SOURCE x] b [KNOWLEDGE_SOURCE y]"
-        ) == 2
+        assert _count_citation_blocks("a [KNOWLEDGE_SOURCE x] b [KNOWLEDGE_SOURCE y]") == 2
 
     def test_competitor_terms(self):
         assert any("竞品" in t for t in _competitor_terms("我们领先竞品产品"))

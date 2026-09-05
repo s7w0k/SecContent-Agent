@@ -215,9 +215,7 @@ async def create_feedback(
     from models.memory import MemorySourceType
 
     source_type = (
-        MemorySourceType.FEEDBACK_COMMENT
-        if feedback.comment
-        else MemorySourceType.FEEDBACK_RATING
+        MemorySourceType.FEEDBACK_COMMENT if feedback.comment else MemorySourceType.FEEDBACK_RATING
     )
     await create_memory_event(
         db,

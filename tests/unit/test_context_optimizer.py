@@ -12,8 +12,12 @@ class TestToolResultCache:
         cache = ToolResultCache()
         assert cache.get(user_id="u1", tool_name="t", args={"a": 1}) is None
         cache.set(
-            user_id="u1", tool_name="t", args={"a": 1},
-            content="data", source_ids=["s1"], result_hash="h1",
+            user_id="u1",
+            tool_name="t",
+            args={"a": 1},
+            content="data",
+            source_ids=["s1"],
+            result_hash="h1",
         )
         hit = cache.get(user_id="u1", tool_name="t", args={"a": 1})
         assert hit is not None

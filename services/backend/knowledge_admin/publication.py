@@ -187,8 +187,7 @@ class KnowledgePublicationService:
 
             # 构建并校验新索引（发布前预览，不覆盖线上知识）
             content_overrides = {
-                item["relative_path"]: item["after_content"]
-                for item in files_to_publish
+                item["relative_path"]: item["after_content"] for item in files_to_publish
             }
             new_manifest, new_index_version = self._build_index_preview(content_overrides)
 

@@ -91,11 +91,11 @@ async def execute_pipeline(
                     },
                 )
             except Exception:
-                logger.warning("persist selected_engine failed; default to mode selection", exc_info=True)
+                logger.warning(
+                    "persist selected_engine failed; default to mode selection", exc_info=True
+                )
         request.selected_engine = selected_engine
-        logger.info(
-            "task selected_engine=%s task_id=%s", request.selected_engine, task_id
-        )
+        logger.info("task selected_engine=%s task_id=%s", request.selected_engine, task_id)
         await router.execute(request)
     except Exception as exc:
         retry_count = await state_manager.increment_retry(task_id)

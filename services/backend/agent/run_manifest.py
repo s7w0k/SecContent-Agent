@@ -206,9 +206,7 @@ class RunManifestStore:
                     [("user_id", ASCENDING), ("created_at", DESCENDING)],
                     name="idx_manifest_user_created",
                 ),
-                IndexModel(
-                    [("code_revision", ASCENDING)], name="idx_manifest_code_revision"
-                ),
+                IndexModel([("code_revision", ASCENDING)], name="idx_manifest_code_revision"),
             ]
         }
 
@@ -234,10 +232,13 @@ class RunManifestStore:
             )
         except DuplicateKeyError as exc:
             existing = await self.col.find_one({"run_id": manifest.run_id})
-            if existing is None or manifest_fingerprint(
-                RunManifest.model_validate(existing)
-            ) != fingerprint:
-                raise ManifestError(f"manifest already frozen for run_id={manifest.run_id}") from exc
+            if (
+                existing is None
+                or manifest_fingerprint(RunManifest.model_validate(existing)) != fingerprint
+            ):
+                raise ManifestError(
+                    f"manifest already frozen for run_id={manifest.run_id}"
+                ) from exc
 
     async def load(self, run_id: str) -> RunManifest | None:
         doc = await self.col.find_one({"run_id": run_id})

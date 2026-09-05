@@ -99,7 +99,11 @@ class TestRunPairChecks:
             "red_line_required": ["合规"],
         }
         legacy = {"answer": "身份认证合规", "context_tokens": 3200, "latency_ms": 5200.0}
-        stage2 = {"answer": "身份认证合规，来源 [overview.md]", "context_tokens": 1600, "latency_ms": 3600.0}
+        stage2 = {
+            "answer": "身份认证合规，来源 [overview.md]",
+            "context_tokens": 1600,
+            "latency_ms": 3600.0,
+        }
         check = run_pair_checks(item, legacy, stage2)
         assert check["pass"]
 
@@ -111,7 +115,11 @@ class TestRunPairChecks:
             "red_line_required": [],
         }
         legacy = {"answer": "身份认证", "context_tokens": 3200, "latency_ms": 5200.0}
-        stage2 = {"answer": "身份认证，来源 [overview.md]", "context_tokens": 1600, "latency_ms": 3600.0}
+        stage2 = {
+            "answer": "身份认证，来源 [overview.md]",
+            "context_tokens": 1600,
+            "latency_ms": 3600.0,
+        }
         check = run_pair_checks(item, legacy, stage2)
         assert not check["pass"]
 

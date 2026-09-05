@@ -70,9 +70,7 @@ def _make_bundle(status: str) -> EvidenceBundle:
                 page_id="capability.identity_auth",
                 page_title="身份认证",
                 source_refs=[
-                    SourceRef(
-                        source_id="s1", relative_path="1-产品/overview.md", content_hash="h1"
-                    )
+                    SourceRef(source_id="s1", relative_path="1-产品/overview.md", content_hash="h1")
                 ],
                 relevance=0.9,
                 confidence=0.9,
@@ -110,9 +108,10 @@ async def test_case1_sufficient_uses_evidence_prompt_and_zero_legacy() -> None:
     """Case1 SUFFICIENT：只构建 Evidence Prompt，绝不调用 Legacy Prompt Builder。"""
     scorer = _make_strict_scorer(_make_bundle("SUFFICIENT"))
     stub_legacy = AsyncMock()
-    stub_legacy.return_value = (SYSTEM_PROMPT_TEMPLATE.format(
-        knowledge_context="LEGACY", product_list="- product_id: x"
-    ), {})
+    stub_legacy.return_value = (
+        SYSTEM_PROMPT_TEMPLATE.format(knowledge_context="LEGACY", product_list="- product_id: x"),
+        {},
+    )
     scorer._build_system_prompt_for_product = stub_legacy
 
     result = await scorer._score_single_product(

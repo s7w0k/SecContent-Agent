@@ -54,7 +54,9 @@ class RunLease(BaseModel):
 class RunLeaseStore:
     """runtime_leases 集合：acquire（CAS）/ renew（heartbeat）/ release。"""
 
-    def __init__(self, db: Any, *, collection: str = COLLECTION, ttl_seconds: int = DEFAULT_TTL_SECONDS):
+    def __init__(
+        self, db: Any, *, collection: str = COLLECTION, ttl_seconds: int = DEFAULT_TTL_SECONDS
+    ):
         self.db = db
         self.collection_name = collection
         self.col = db[collection]
@@ -150,9 +152,7 @@ class RunLeaseStore:
             updated_at=stamp,
         )
 
-    async def release(
-        self, run_id: str, owner_id: str, fencing_token: int
-    ) -> bool:
+    async def release(self, run_id: str, owner_id: str, fencing_token: int) -> bool:
         """释放租约（owner + fencing 匹配才删除）。"""
         result = await self.col.delete_one(
             {"run_id": run_id, "owner_id": owner_id, "fencing_token": fencing_token}

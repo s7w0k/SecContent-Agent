@@ -28,20 +28,24 @@ async def find_duplicates(db) -> list[dict[str, Any]]:
         每组包含 _id (url_hash), count, docs (文档列表)
     """
     pipeline = [
-        {"$group": {
-            "_id": "$url_hash",
-            "count": {"$sum": 1},
-            "docs": {"$push": {
-                "_id": "$_id",
-                "title": "$title",
-                "content_md": {"$ifNull": ["$content_md", ""]},
-                "category_v2": {"$ifNull": ["$category_v2", None]},
-                "pr_total_score": {"$ifNull": ["$pr_total_score", None]},
-                "report_id": {"$ifNull": ["$report_id", None]},
-                "added_at": {"$ifNull": ["$added_at", None]},
-                "source": {"$ifNull": ["$source", ""]},
-            }},
-        }},
+        {
+            "$group": {
+                "_id": "$url_hash",
+                "count": {"$sum": 1},
+                "docs": {
+                    "$push": {
+                        "_id": "$_id",
+                        "title": "$title",
+                        "content_md": {"$ifNull": ["$content_md", ""]},
+                        "category_v2": {"$ifNull": ["$category_v2", None]},
+                        "pr_total_score": {"$ifNull": ["$pr_total_score", None]},
+                        "report_id": {"$ifNull": ["$report_id", None]},
+                        "added_at": {"$ifNull": ["$added_at", None]},
+                        "source": {"$ifNull": ["$source", ""]},
+                    }
+                },
+            }
+        },
         {"$match": {"count": {"$gt": 1}}},
     ]
     return await db["articles"].aggregate(pipeline).to_list(length=1000)
@@ -100,8 +104,14 @@ async def merge_and_dedupe(db, dry_run: bool = True) -> dict[str, int]:
         # 合并缺失字段到主文档
         merge_fields: dict[str, Any] = {}
         for doc in redundant:
-            for field in ("content_md", "summary_cn", "category_v2",
-                          "pr_total_score", "report_id", "source"):
+            for field in (
+                "content_md",
+                "summary_cn",
+                "category_v2",
+                "pr_total_score",
+                "report_id",
+                "source",
+            ):
                 if not primary.get(field) and doc.get(field):
                     merge_fields[field] = doc[field]
 
@@ -116,9 +126,7 @@ async def merge_and_dedupe(db, dry_run: bool = True) -> dict[str, int]:
         # 删除冗余文档
         redundant_ids = [d["_id"] for d in redundant]
         if not dry_run:
-            result = await db["articles"].delete_many(
-                {"_id": {"$in": redundant_ids}}
-            )
+            result = await db["articles"].delete_many({"_id": {"$in": redundant_ids}})
             total_deleted += result.deleted_count
             logger.info("  删除 %d 个冗余文档", result.deleted_count)
         else:
@@ -147,7 +155,6 @@ async def main(dry_run: bool = True) -> None:
         min_pool_size=settings.MONGODB_MIN_POOL_SIZE,
     )
     db = MongoDB.get_db()
-
 
     # 检查重复
     await merge_and_dedupe(db, dry_run=dry_run)

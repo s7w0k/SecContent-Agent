@@ -251,9 +251,7 @@ class EvalRunner:
             output_tokens_estimated=estimated,
         )
         status = (
-            LoopStatus.COMPLETED.value
-            if answer and not error_type
-            else LoopStatus.FAILED.value
+            LoopStatus.COMPLETED.value if answer and not error_type else LoopStatus.FAILED.value
         )
         return EvalResult(
             backend="legacy",
@@ -365,9 +363,7 @@ class EvalRunner:
                 "retries": 0,
             },
             latency_ms=latency_ms,
-            failure_attribution=result.degrade_reason or (
-                "" if result.ok else result.status.value
-            ),
+            failure_attribution=result.degrade_reason or ("" if result.ok else result.status.value),
             llm_events=[e.to_log_dict() for e in result.events],
         )
 

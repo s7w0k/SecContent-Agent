@@ -99,7 +99,10 @@ class TestArgsAndDataScope:
             )
         }
         engine = PolicyEngine(rules=rules)
-        ok = engine.evaluate(tool_name="fetch_external", args={"url": "https://example.com/x", "idempotency_key": "k"})
+        ok = engine.evaluate(
+            tool_name="fetch_external",
+            args={"url": "https://example.com/x", "idempotency_key": "k"},
+        )
         assert ok.allowed
         bad = engine.evaluate(
             tool_name="fetch_external", args={"url": "https://evil.com/x", "idempotency_key": "k"}
@@ -148,20 +151,28 @@ class TestApprovalLifecycle:
         """不可破坏规则 1：参数变化后原审批失效。"""
         service = ApprovalService(ttl_seconds=1800)
         approval = await service.request(
-            run_id="run-1", action="submit_pr", params_hash=params_hash({"title": "A"}),
-            params_summary="title=A", risk_level="L2", trigger_rule="risk_level_l2",
+            run_id="run-1",
+            action="submit_pr",
+            params_hash=params_hash({"title": "A"}),
+            params_summary="title=A",
+            risk_level="L2",
+            trigger_rule="risk_level_l2",
             now=_fixed_now(),
         )
         assert approval.status == "pending"
         # 参数变化（不同 params_hash）→ 拒绝
         changed = await service.approve(
-            approval, approver="admin", params_hash=params_hash({"title": "B"}),
+            approval,
+            approver="admin",
+            params_hash=params_hash({"title": "B"}),
             now=_fixed_now(),
         )
         assert changed.status == "rejected"
         # 参数一致 → 通过
         ok = await service.approve(
-            approval, approver="admin", params_hash=params_hash({"title": "A"}),
+            approval,
+            approver="admin",
+            params_hash=params_hash({"title": "A"}),
             now=_fixed_now(),
         )
         assert ok.status == "approved"
@@ -170,8 +181,12 @@ class TestApprovalLifecycle:
     async def test_approval_expired(self):
         service = ApprovalService(ttl_seconds=10)
         approval = await service.request(
-            run_id="run-1", action="send_message", params_hash="h",
-            params_summary="recipient=u2", risk_level="L2", trigger_rule="risk_level_l2",
+            run_id="run-1",
+            action="send_message",
+            params_hash="h",
+            params_summary="recipient=u2",
+            risk_level="L2",
+            trigger_rule="risk_level_l2",
             now=_fixed_now(),
         )
         result = await service.approve(
@@ -183,8 +198,12 @@ class TestApprovalLifecycle:
     async def test_approval_not_pending_rejected(self):
         service = ApprovalService(ttl_seconds=1800)
         approval = await service.request(
-            run_id="run-1", action="send_message", params_hash="h",
-            params_summary="recipient=u2", risk_level="L2", trigger_rule="risk_level_l2",
+            run_id="run-1",
+            action="send_message",
+            params_hash="h",
+            params_summary="recipient=u2",
+            risk_level="L2",
+            trigger_rule="risk_level_l2",
             now=_fixed_now(),
         )
         rejected = await service.reject(approval, approver="admin", reason="no", now=_fixed_now())
@@ -211,7 +230,12 @@ class TestRedaction:
         engine = PolicyEngine()
         decision = engine.evaluate(
             tool_name="submit_pr",
-            args={"title": "机密标题很长的正文内容超过了阈值显示截断", "body": "x" * 100, "api_key": "sk-secret", "idempotency_key": "k"},
+            args={
+                "title": "机密标题很长的正文内容超过了阈值显示截断",
+                "body": "x" * 100,
+                "api_key": "sk-secret",
+                "idempotency_key": "k",
+            },
         )
         serialized = decision.model_dump_json()
         assert "sk-secret" not in serialized

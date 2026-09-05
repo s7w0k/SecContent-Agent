@@ -152,12 +152,17 @@ class PersonalizationTraceService:
         """更新审核结果。"""
         await self.db["generation_runs"].update_one(
             {"generation_id": generation_id},
-            {"$set": {
-                "review": ReviewSummary(
-                    status=review_status, high=high, medium=medium, low=low,
-                ).model_dump(),
-                "updated_at": datetime.now(UTC),
-            }},
+            {
+                "$set": {
+                    "review": ReviewSummary(
+                        status=review_status,
+                        high=high,
+                        medium=medium,
+                        low=low,
+                    ).model_dump(),
+                    "updated_at": datetime.now(UTC),
+                }
+            },
         )
 
     async def record_outcome(
@@ -188,6 +193,11 @@ class PersonalizationTraceService:
 
         await self.db["generation_runs"].update_one(
             {"generation_id": generation_id},
-            {"$set": {field: value if value is not None else True, "updated_at": datetime.now(UTC)}},
+            {
+                "$set": {
+                    field: value if value is not None else True,
+                    "updated_at": datetime.now(UTC),
+                }
+            },
         )
         logger.info("outcome recorded: generation_id=%s type=%s", generation_id, outcome_type)

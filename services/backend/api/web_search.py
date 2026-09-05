@@ -114,8 +114,12 @@ async def search_query(
 
     # 尝试命中缓存
     cached = await get_cached_result(
-        body.q, body.categories, body.language,
-        body.time_range, body.safesearch, body.pageno,
+        body.q,
+        body.categories,
+        body.language,
+        body.time_range,
+        body.safesearch,
+        body.pageno,
     )
     if cached is not None:
         # 用缓存结果创建新会话（会话仍归属于当前用户）
@@ -123,7 +127,9 @@ async def search_query(
         allowed_cats = settings.WEB_SEARCH_ALLOWED_CATEGORIES.split(",")
         search_id = session_svc._generate_search_id()
         results = session_svc.normalize_results(
-            cached.get("results", []), search_id, allowed_cats,
+            cached.get("results", []),
+            search_id,
+            allowed_cats,
         )
         warnings = session_svc.build_warnings(cached)
         results = await session_svc.mark_imported_results(results)
@@ -140,14 +146,19 @@ async def search_query(
             "pageno": body.pageno,
         }
         session = await session_svc.create_session(
-            user_id=user_id, query=query_dict, results=results, warnings=warnings,
+            user_id=user_id,
+            query=query_dict,
+            results=results,
+            warnings=warnings,
         )
         await db["search_sessions"].update_one(
             {"search_id": session["search_id"]},
             {"$set": {"search_id": search_id, "results": results}},
         )
         expires_at = session["expires_at"]
-        expires_str = expires_at.isoformat() if hasattr(expires_at, "isoformat") else str(expires_at)
+        expires_str = (
+            expires_at.isoformat() if hasattr(expires_at, "isoformat") else str(expires_at)
+        )
         return {
             "ok": True,
             "data": {
@@ -176,8 +187,13 @@ async def search_query(
 
     # 写入缓存
     await set_cached_result(
-        body.q, body.categories, body.language,
-        body.time_range, body.safesearch, body.pageno, raw,
+        body.q,
+        body.categories,
+        body.language,
+        body.time_range,
+        body.safesearch,
+        body.pageno,
+        raw,
     )
 
     _, session_svc = _get_services(db, settings)
@@ -186,7 +202,9 @@ async def search_query(
     # Generate search_id first so result_ids are deterministic
     search_id = session_svc._generate_search_id()
     results = session_svc.normalize_results(
-        raw.get("results", []), search_id, allowed_cats,
+        raw.get("results", []),
+        search_id,
+        allowed_cats,
     )
     warnings = session_svc.build_warnings(raw)
 
@@ -251,7 +269,9 @@ async def get_session(
     settings, _, db = _get_search_deps(request)
 
     if db is None:
-        raise HTTPException(status_code=503, detail={"code": "DB_UNAVAILABLE", "message": "数据库不可用"})
+        raise HTTPException(
+            status_code=503, detail={"code": "DB_UNAVAILABLE", "message": "数据库不可用"}
+        )
 
     _, session_svc = _get_services(db, settings)
 
@@ -366,12 +386,14 @@ async def import_results(
     for result_id in body.result_ids:
         result = session_results.get(result_id)
         if result is None:
-            items.append({
-                "result_id": result_id,
-                "status": "failed",
-                "article_url_hash": None,
-                "message": "结果不在当前搜索会话中",
-            })
+            items.append(
+                {
+                    "result_id": result_id,
+                    "status": "failed",
+                    "article_url_hash": None,
+                    "message": "结果不在当前搜索会话中",
+                }
+            )
             failed_count += 1
             continue
 
@@ -383,23 +405,35 @@ async def import_results(
         category = result.get("category", "general")
 
         if not is_safe_url(url):
-            items.append({
-                "result_id": result_id,
-                "status": "invalid_url",
-                "article_url_hash": None,
-                "message": "URL 不安全或协议不允许",
-            })
+            items.append(
+                {
+                    "result_id": result_id,
+                    "status": "invalid_url",
+                    "article_url_hash": None,
+                    "message": "URL 不安全或协议不允许",
+                }
+            )
             failed_count += 1
             await ingestion_svc.save_import_item(
-                user_id, batch_id, body.search_id, result_id,
-                "", None, "invalid_url", "UNSAFE_URL",
+                user_id,
+                batch_id,
+                body.search_id,
+                result_id,
+                "",
+                None,
+                "invalid_url",
+                "UNSAFE_URL",
             )
             continue
 
         try:
             result_data = await ingestion_svc.insert_or_get_existing(
-                url=url, title=title, snippet=snippet,
-                published_at=published_at, engines=engines, category=category,
+                url=url,
+                title=title,
+                snippet=snippet,
+                published_at=published_at,
+                engines=engines,
+                category=category,
             )
             status = result_data["status"]
             article_url_hash = result_data["article_url_hash"]
@@ -412,34 +446,51 @@ async def import_results(
                 duplicate_count += 1
                 message = "文章库中已存在"
 
-            items.append({
-                "result_id": result_id,
-                "status": status,
-                "article_url_hash": article_url_hash,
-                "message": message,
-            })
+            items.append(
+                {
+                    "result_id": result_id,
+                    "status": status,
+                    "article_url_hash": article_url_hash,
+                    "message": message,
+                }
+            )
 
             await ingestion_svc.save_import_item(
-                user_id, batch_id, body.search_id, result_id,
+                user_id,
+                batch_id,
+                body.search_id,
+                result_id,
                 result_data.get("canonical_url", ""),
-                article_url_hash, status,
+                article_url_hash,
+                status,
             )
             await session_svc.update_imported_status(
-                body.search_id, user_id, result_id, article_url_hash,
+                body.search_id,
+                user_id,
+                result_id,
+                article_url_hash,
             )
 
         except Exception as e:
             logger.error("Import failed for result %s: %s", result_id, e)
-            items.append({
-                "result_id": result_id,
-                "status": "failed",
-                "article_url_hash": None,
-                "message": "导入失败",
-            })
+            items.append(
+                {
+                    "result_id": result_id,
+                    "status": "failed",
+                    "article_url_hash": None,
+                    "message": "导入失败",
+                }
+            )
             failed_count += 1
             await ingestion_svc.save_import_item(
-                user_id, batch_id, body.search_id, result_id,
-                "", None, "failed", "INTERNAL_ERROR",
+                user_id,
+                batch_id,
+                body.search_id,
+                result_id,
+                "",
+                None,
+                "failed",
+                "INTERNAL_ERROR",
             )
 
     if failed_count == len(body.result_ids):
@@ -458,7 +509,11 @@ async def import_results(
     }
 
     await ingestion_svc.complete_import_batch(
-        batch_id, user_id, summary, items, batch_status,
+        batch_id,
+        user_id,
+        summary,
+        items,
+        batch_status,
     )
 
     # Enqueue async enrichment for newly imported articles
@@ -467,7 +522,8 @@ async def import_results(
             arq_pool = getattr(request.app.state, "arq_pool", None)
             if arq_pool is not None:
                 new_hashes = [
-                    item["article_url_hash"] for item in items
+                    item["article_url_hash"]
+                    for item in items
                     if item.get("status") == "imported" and item.get("article_url_hash")
                 ]
                 if new_hashes:

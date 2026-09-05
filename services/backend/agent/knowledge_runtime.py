@@ -107,9 +107,7 @@ class KnowledgeRuntimeRefresher:
         db = getattr(self.app_state, "db", None)
         if db is not None:
             for _ in range(_LOCK_WAIT_MAX_SECONDS):
-                lock = await db["knowledge_publish_locks"].find_one(
-                    {"lock_key": _LOCK_KEY}
-                )
+                lock = await db["knowledge_publish_locks"].find_one({"lock_key": _LOCK_KEY})
                 if lock is None:
                     break
                 # Check if expired

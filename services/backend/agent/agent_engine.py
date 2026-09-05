@@ -24,8 +24,8 @@ import json
 import logging
 import re
 import time
-from datetime import UTC, datetime
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from agent.business_tools.contracts import ToolRequestContext
 from agent.llm_wrapper import LLMWrapper, UnsupportedToolCallError
@@ -57,7 +57,9 @@ _SIDE_EFFECT_ORDER = {"L1": 1, "L2": 2, "L3": 3}
 _DS_OPEN = r"<[｜|]tool_calls[｜|]>"
 _DS_CLOSE = r"<[｜|]/tool_calls[｜|]>"
 TOOL_BLOCK_RE = re.compile(_DS_OPEN + r".*?" + _DS_CLOSE, re.DOTALL)
-_SINGLE_TAG_RE = re.compile(r"^\s*<[｜|](?:invoke|/?tool_calls|/?/tool_calls|/?parameter).*?>\s*$", re.MULTILINE)
+_SINGLE_TAG_RE = re.compile(
+    r"^\s*<[｜|](?:invoke|/?tool_calls|/?/tool_calls|/?parameter).*?>\s*$", re.MULTILINE
+)
 
 # 计划性口吻标记：当模型只输出"我打算/我先/接下来要…"之类的计划叙述、
 # 却没有实际调用工具产出结果时，判定为"把计划当交付"，应引导其继续执行工具而非直接收尾。
@@ -202,7 +204,7 @@ def summarize_result(tool_name: str, result: Any) -> dict[str, Any]:
         data["_summary"] = {
             "kind": "save",
             "saved": data.get("saved", False),
-            "kind": data.get("kind", ""),
+            "save_kind": data.get("kind", ""),
             "duplicate": data.get("duplicate", False),
         }
     return data
@@ -419,7 +421,10 @@ class AgentEngine:
                     },
                 )
                 break
-            if self.timeout_seconds is not None and (time.monotonic() - started_at) > self.timeout_seconds:
+            if (
+                self.timeout_seconds is not None
+                and (time.monotonic() - started_at) > self.timeout_seconds
+            ):
                 status = "budget_timeout"
                 await self._emit(
                     "budget_exceeded",
@@ -438,7 +443,9 @@ class AgentEngine:
 
             narration = clean_narration(self._content_of(response))
             if narration:
-                await self._emit("agent_message", {"run_id": self.run_context.run_id, "content": narration})
+                await self._emit(
+                    "agent_message", {"run_id": self.run_context.run_id, "content": narration}
+                )
                 trace.append({"type": "text", "text": narration[:400]})
 
             tool_calls = getattr(response, "tool_calls", None) or []
@@ -484,7 +491,9 @@ class AgentEngine:
                         {"run_id": self.run_context.run_id, "error": "模型未返回任何内容"},
                     )
                 else:
-                    await self._emit("final", {"run_id": self.run_context.run_id, "content": final_text})
+                    await self._emit(
+                        "final", {"run_id": self.run_context.run_id, "content": final_text}
+                    )
                 break
 
             # 执行本轮全部工具调用
@@ -504,7 +513,10 @@ class AgentEngine:
                         },
                     )
                     messages.append(
-                        ToolMessage(content=f"[工具错误] 未知工具 {name}，请使用系统提供的工具。", tool_call_id=call_id)
+                        ToolMessage(
+                            content=f"[工具错误] 未知工具 {name}，请使用系统提供的工具。",
+                            tool_call_id=call_id,
+                        )
                     )
                     continue
 
@@ -564,7 +576,9 @@ class AgentEngine:
                         },
                     )
                     messages.append(
-                        ToolMessage(content=_tool_message_content(name, result), tool_call_id=call_id)
+                        ToolMessage(
+                            content=_tool_message_content(name, result), tool_call_id=call_id
+                        )
                     )
                     if name not in tools_used:
                         tools_used.append(name)
@@ -576,11 +590,14 @@ class AgentEngine:
                             "run_id": self.run_context.run_id,
                             "id": call_id,
                             "name": name,
-                            "error": f"{type(exc).__name__}: {str(exc)}"[:400],
+                            "error": f"{type(exc).__name__}: {exc!s}"[:400],
                         },
                     )
                     messages.append(
-                        ToolMessage(content=f"[工具执行失败] {type(exc).__name__}: {str(exc)}"[:1000], tool_call_id=call_id)
+                        ToolMessage(
+                            content=f"[工具执行失败] {type(exc).__name__}: {exc!s}"[:1000],
+                            tool_call_id=call_id,
+                        )
                     )
 
                 if len(messages) > MAX_HISTORY_MESSAGES + 20:
@@ -597,7 +614,9 @@ class AgentEngine:
                 final_text = await self._finalize(bound_llm, messages)
                 status = "max_rounds" if not final_text else "completed"
                 if final_text:
-                    await self._emit("final", {"run_id": self.run_context.run_id, "content": final_text})
+                    await self._emit(
+                        "final", {"run_id": self.run_context.run_id, "content": final_text}
+                    )
 
             if final_text:
                 await self._emit("done", {"run_id": self.run_context.run_id, "status": status})
@@ -653,7 +672,12 @@ class AgentEngine:
         except UnsupportedToolCallError as exc:
             await self._emit(
                 "tool_error",
-                {"run_id": self.run_context.run_id, "id": "", "name": "?", "error": f"模型幻觉工具：{str(exc)[:300]}"},
+                {
+                    "run_id": self.run_context.run_id,
+                    "id": "",
+                    "name": "?",
+                    "error": f"模型幻觉工具：{str(exc)[:300]}",
+                },
             )
             logger.warning("[agent_engine] unsupported tool call: %s", exc)
             return self._pseudo_notice(str(exc))
@@ -685,7 +709,7 @@ class AgentEngine:
         budget = self.history_tokens
         used = 0
         # 从最近的开始往回累积，直到预算用尽；这样最旧消息优先被挤出
-        for item in reversed(history[-MAX_HISTORY_MESSAGES * 2:]):
+        for item in reversed(history[-MAX_HISTORY_MESSAGES * 2 :]):
             role = str(item.get("role", ""))
             content = str(item.get("content", ""))[:MAX_MESSAGE_CHARS]
             msg_tokens = max(1, len(content) // 4)
@@ -748,7 +772,7 @@ class AgentEngine:
             kept_prefix.append(m)
         kept_prefix.reverse()
 
-        head = (([system] if system else []) + kept_prefix + tail)
+        head = ([system] if system else []) + kept_prefix + tail
         return head
 
     async def _finalize(self, bound_llm, messages: list[BaseMessage]) -> str:
@@ -807,4 +831,6 @@ class AgentEngine:
             return ToolMessage(content=content, tool_call_id=str(raw.get("tool_call_id") or ""))
         # assistant：还原 tool_calls（dict 形态，langchain 接受）
         tool_calls = raw.get("tool_calls") or []
-        return AIMessage(content=content, tool_calls=json.loads(json.dumps(tool_calls, default=str)))
+        return AIMessage(
+            content=content, tool_calls=json.loads(json.dumps(tool_calls, default=str))
+        )

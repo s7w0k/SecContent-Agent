@@ -62,9 +62,7 @@ async def get_effective_prompt(db, user_id: str, prompt_key: str) -> EffectivePr
     default_content = PROMPT_DEFAULTS.get(prompt_key, "")
     required_placeholders = list(PROMPT_PLACEHOLDERS.get(prompt_key, []))
 
-    document = await db["user_prompts"].find_one(
-        {"user_id": user_id, "prompt_key": prompt_key}
-    )
+    document = await db["user_prompts"].find_one({"user_id": user_id, "prompt_key": prompt_key})
     if document is None:
         return EffectivePrompt(
             prompt_key=prompt_key,
@@ -157,9 +155,7 @@ async def reset_draft_system_prompt(
 ):
     """旧端点，保持向后兼容。"""
     db = _get_db(request)
-    await db["user_prompts"].delete_one(
-        {"user_id": user_id, "prompt_key": DRAFT_SYSTEM_PROMPT_KEY}
-    )
+    await db["user_prompts"].delete_one({"user_id": user_id, "prompt_key": DRAFT_SYSTEM_PROMPT_KEY})
     return await get_draft_system_prompt(request, user_id)
 
 
@@ -178,17 +174,19 @@ async def list_prompts(
     items = []
     for definition in registry.list_all():
         effective = await resolver.get_effective(user_id, definition.prompt_key)
-        items.append({
-            "prompt_key": definition.prompt_key,
-            "display_name": definition.display_name,
-            "stage": definition.stage,
-            "description": definition.description,
-            "source": effective.source,
-            "version": effective.version,
-            "default_version": definition.default_version,
-            "is_custom": effective.is_custom,
-            "updated_at": effective.updated_at.isoformat() if effective.updated_at else None,
-        })
+        items.append(
+            {
+                "prompt_key": definition.prompt_key,
+                "display_name": definition.display_name,
+                "stage": definition.stage,
+                "description": definition.description,
+                "source": effective.source,
+                "version": effective.version,
+                "default_version": definition.default_version,
+                "is_custom": effective.is_custom,
+                "updated_at": effective.updated_at.isoformat() if effective.updated_at else None,
+            }
+        )
 
     return {"ok": True, "data": {"items": items}}
 
@@ -229,16 +227,14 @@ async def validate_prompt(
     warnings: list[str] = []
 
     # 检查必需占位符
-    missing = [
-        name for name in definition.required_placeholders
-        if f"{{{name}}}" not in content
-    ]
+    missing = [name for name in definition.required_placeholders if f"{{{name}}}" not in content]
     if missing:
         rendered = ", ".join(f"{{{name}}}" for name in missing)
         errors.append(f"缺少必需占位符: {rendered}")
 
     # 检查未允许的占位符
     import re
+
     found_placeholders = set(re.findall(r"\{(\w+)\}", content))
     unknown = found_placeholders - set(definition.allowed_placeholders)
     if unknown:
@@ -337,9 +333,7 @@ async def list_versions(
     """分页查询提示词历史版本。"""
     resolver = _get_resolver(request)
     try:
-        result = await resolver.list_versions(
-            user_id, prompt_key, page=page, page_size=page_size
-        )
+        result = await resolver.list_versions(user_id, prompt_key, page=page, page_size=page_size)
     except KeyError:
         raise UserPromptError(404, "PROMPT_NOT_FOUND", f"不支持的提示词键: {prompt_key}") from None
     return {"ok": True, "data": result}
@@ -403,7 +397,9 @@ async def preview_prompt(
             "composed_preview": composed,
             "layers": {
                 "fixed_policy": "[固定策略层 - 不可编辑]",
-                "user_business": effective.content[:200] + "..." if len(effective.content) > 200 else effective.content,
+                "user_business": effective.content[:200] + "..."
+                if len(effective.content) > 200
+                else effective.content,
                 "runtime_data": "[运行时数据层 - 系统注入]",
                 "output_contract": "[输出协议 - 代码固定]",
             },

@@ -305,7 +305,8 @@ async def recovery_replay(
             run_id=run_id,
             executed=True,
             status=result.status.value,
-            recovered_from_step=state.current_step or (state.completed_steps[-1] if state.completed_steps else ""),
+            recovered_from_step=state.current_step
+            or (state.completed_steps[-1] if state.completed_steps else ""),
             completed_steps=list(result.completed_steps),
             lease_ok=True,
             idempotency_missing=idempotency_missing,

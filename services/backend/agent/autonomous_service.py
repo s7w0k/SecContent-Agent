@@ -156,9 +156,7 @@ class AutonomousRunService:
         self.outbox: EventOutbox | None = None
         if db is not None:
             max_attempts = (
-                getattr(settings, "OUTBOX_MAX_ATTEMPTS", 5)
-                if settings is not None
-                else 5
+                getattr(settings, "OUTBOX_MAX_ATTEMPTS", 5) if settings is not None else 5
             )
             self.outbox = EventOutbox(
                 store=OutboxStore(db=db, max_attempts=max_attempts),
@@ -255,9 +253,7 @@ class AutonomousRunService:
                     ).envelope
             from agent.rule_planner import RulePlannerV1
 
-            planned = await RulePlannerV1(self.business_registry).plan(
-                envelope, run_id=run_id
-            )
+            planned = await RulePlannerV1(self.business_registry).plan(envelope, run_id=run_id)
             chain = [step.tool for step in planned.plan.steps]
             planner_version = planned.plan.planner_version
             runtime_adapter = "agent-runtime-production-v1"
@@ -351,9 +347,7 @@ class AutonomousRunService:
             runtime_event_store=self.event_store,
         )
 
-    async def get_recovery_suggestion(
-        self, run_id: str, user_id: str
-    ) -> dict[str, Any] | None:
+    async def get_recovery_suggestion(self, run_id: str, user_id: str) -> dict[str, Any] | None:
         """恢复建议对外接口（阶段3 WBS 3.6）：依据当前故障快照输出确定性恢复动作。
 
         输入仅来自 RuntimeState（脱敏：错误码/失败步骤/用量/审批状态）；
@@ -491,15 +485,37 @@ class AutonomousRunService:
             if any(marker in normalized for marker in ("你决定", "你来定", "随便", "都可以")):
                 combined_values["auto_select"] = True
             # 分类/产品关卡：用户授权"仍用这篇继续" → 打开 auto_select 跳过离题关卡
-            if any(marker in normalized for marker in (
-                "继续用这篇", "仍用这篇", "继续", "用这篇", "通用口径", "第一个", "方案一", "选一"
-            )):
+            if any(
+                marker in normalized
+                for marker in (
+                    "继续用这篇",
+                    "仍用这篇",
+                    "继续",
+                    "用这篇",
+                    "通用口径",
+                    "第一个",
+                    "方案一",
+                    "选一",
+                )
+            ):
                 combined_values["auto_select"] = True
             # 分类/产品关卡：用户要求换下一条候选 → 直接切到下一条（若有）
-            if any(marker in normalized for marker in (
-                "换下一条", "换一条", "换下一", "换一个", "下一个", "第二条", "方案二", "选二",
-                "换别的", "另一条", "其他一条",
-            )):
+            if any(
+                marker in normalized
+                for marker in (
+                    "换下一条",
+                    "换一条",
+                    "换下一",
+                    "换一个",
+                    "下一个",
+                    "第二条",
+                    "方案二",
+                    "选二",
+                    "换别的",
+                    "另一条",
+                    "其他一条",
+                )
+            ):
                 discover = state.normalized_observations.get("discover", {}).get("data", {})
                 candidates = discover.get("items") or discover.get("articles") or []
                 current = state.slot_states.get("selected_article_ids")
@@ -518,10 +534,24 @@ class AutonomousRunService:
                         combined_values["selected_article_ids"] = [picked]
                         combined_values["auto_select"] = True
             # 用户对候选不满意，要求重新抓取最新 → 置 crawl_approved，使 discover 失效并改用 crawl_news 实爬
-            if any(marker in normalized for marker in (
-                "爬最新", "爬取最新", "抓取最新", "重新爬", "重新抓", "重新抓取",
-                "重新爬取", "重爬", "重抓", "更新新闻", "拉取最新", "拉最新", "不满意",
-            )):
+            if any(
+                marker in normalized
+                for marker in (
+                    "爬最新",
+                    "爬取最新",
+                    "抓取最新",
+                    "重新爬",
+                    "重新抓",
+                    "重新抓取",
+                    "重新爬取",
+                    "重爬",
+                    "重抓",
+                    "更新新闻",
+                    "拉取最新",
+                    "拉最新",
+                    "不满意",
+                )
+            ):
                 combined_values["crawl_approved"] = True
             ordinal_map = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5}
             match = re.search(r"第?\s*([一二三四五\d]+)\s*(?:条|篇|个)?", normalized)
@@ -549,14 +579,31 @@ class AutonomousRunService:
             completed_steps=set(state.completed_steps),
         )
         invalidate_by_slot = {
-            "selected_article_ids": {"article", "classify", "products", "score", "draft", "review", "save", "export"},
+            "selected_article_ids": {
+                "article",
+                "classify",
+                "products",
+                "score",
+                "draft",
+                "review",
+                "save",
+                "export",
+            },
             "product_ids": {"score", "draft", "review", "save", "export"},
             "template_key": {"draft", "review", "save", "export"},
             "angle": {"draft", "review", "save", "export"},
             "tone": {"draft", "review", "save", "export"},
             "length": {"draft", "review", "save", "export"},
             "revision_instruction": {"revise", "review", "save", "export"},
-            "crawl_approved": {"discover", "article", "classify", "products", "score", "draft", "review"},
+            "crawl_approved": {
+                "discover",
+                "article",
+                "classify",
+                "products",
+                "score",
+                "draft",
+                "review",
+            },
             "auto_select": {"article", "classify", "products", "score", "draft", "review"},
         }
         invalidated: set[str] = set()
@@ -814,7 +861,9 @@ class AutonomousRunService:
             )
             return True
         except Exception:
-            logger.exception("[autonomous] outbox deliver failed: %s", getattr(entry, "entry_id", "?"))
+            logger.exception(
+                "[autonomous] outbox deliver failed: %s", getattr(entry, "entry_id", "?")
+            )
             return False
 
     async def _execute(

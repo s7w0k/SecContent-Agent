@@ -98,7 +98,9 @@ def test_scan_and_snapshot(tmp_path):
     snap = registry.snapshot
     assert snap is not None
     assert set(snap.skills) == {
-        "scoring-knowledge", "draft-writing", "compliance-review",
+        "scoring-knowledge",
+        "draft-writing",
+        "compliance-review",
     }
     assert snap.version
     assert snap.snapshot_hash.startswith("sha256:")
@@ -132,7 +134,9 @@ def test_snapshot_hash_stable_and_sensitive(tmp_path):
 
 def test_manifest_content_hash_and_references(tmp_path):
     _write_skill(
-        tmp_path, "draft-writing", "用于稿件生成，不用于评分。",
+        tmp_path,
+        "draft-writing",
+        "用于稿件生成，不用于评分。",
         extra_refs={"references/a.md": "# A\n参考：../SKILL.md"},
     )
     _write_skill(tmp_path, "scoring-knowledge", "用于评分，不用于对话。")
@@ -159,7 +163,9 @@ def test_load_instructions(tmp_path):
 
 def test_load_reference(tmp_path):
     _write_skill(
-        tmp_path, "draft-writing", "用于稿件生成，不用于评分。",
+        tmp_path,
+        "draft-writing",
+        "用于稿件生成，不用于评分。",
         extra_refs={"assets/templates/pr.md": "# 模板\n正文"},
     )
     _write_skill(tmp_path, "scoring-knowledge", "用于评分，不用于对话。")

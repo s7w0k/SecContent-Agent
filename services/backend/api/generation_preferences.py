@@ -62,7 +62,9 @@ def _validate_product_ids(product_ids: list[str], mode: ProductTargetMode) -> No
     """校验产品 ID。"""
     if mode == ProductTargetMode.SELECTED:
         if not product_ids:
-            raise PreferenceError(422, "INVALID_PRODUCT_SELECTION", "selected 模式必须指定至少一个产品")
+            raise PreferenceError(
+                422, "INVALID_PRODUCT_SELECTION", "selected 模式必须指定至少一个产品"
+            )
         catalog = ProductCatalogService(get_settings().KNOWLEDGE_BASE_DIR)
         try:
             catalog.validate_product_ids(product_ids, max_count=5)

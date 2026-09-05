@@ -249,9 +249,7 @@ async def test_enrich_marks_failed_for_timeout():
     ctx = {"db": db}
 
     with patch("httpx.AsyncClient") as mock_client_class:
-        _setup_httpx_client_mock(
-            mock_client_class, side_effect=httpx.TimeoutException("timed out")
-        )
+        _setup_httpx_client_mock(mock_client_class, side_effect=httpx.TimeoutException("timed out"))
         result = await enrich_web_search_articles(ctx, ["hash-1"])
 
     assert result == {"success": 0, "failed": 1, "skipped": 0}
@@ -270,9 +268,7 @@ async def test_enrich_marks_failed_for_general_exception():
     ctx = {"db": db}
 
     with patch("httpx.AsyncClient") as mock_client_class:
-        _setup_httpx_client_mock(
-            mock_client_class, side_effect=ConnectionError("network down")
-        )
+        _setup_httpx_client_mock(mock_client_class, side_effect=ConnectionError("network down"))
         result = await enrich_web_search_articles(ctx, ["hash-1"])
 
     assert result == {"success": 0, "failed": 1, "skipped": 0}

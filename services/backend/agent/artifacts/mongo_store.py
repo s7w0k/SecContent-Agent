@@ -86,9 +86,7 @@ class MongoArtifactStore:
         await self.collection.insert_one(record)
         return record
 
-    async def get(
-        self, *, artifact_id: str, artifact_type: str, version: int
-    ) -> dict[str, Any]:
+    async def get(self, *, artifact_id: str, artifact_type: str, version: int) -> dict[str, Any]:
         doc = await self.collection.find_one(
             {"artifact_type": artifact_type, "artifact_id": artifact_id, "version": version}
         )

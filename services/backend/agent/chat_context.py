@@ -69,15 +69,15 @@ class ChatContext:
     """一次组装的结果：可注入的 system prompt + 各项度量。"""
 
     __slots__ = (
-        "system_prompt",
-        "input_budget",
-        "used_tokens",
         "base_tokens",
-        "skill_tokens",
-        "memory_tokens",
+        "input_budget",
         "memory_dropped",
-        "skill_names",
+        "memory_tokens",
         "model_window",
+        "skill_names",
+        "skill_tokens",
+        "system_prompt",
+        "used_tokens",
     )
 
     def __init__(
@@ -176,7 +176,9 @@ def build_chat_context(
         memory_tokens = 0
         logger.info(
             "chat_context: memory dropped (budget=%d used=%d need=%d)",
-            effective_budget, used, memory_tokens,
+            effective_budget,
+            used,
+            memory_tokens,
         )
     else:
         used += memory_tokens

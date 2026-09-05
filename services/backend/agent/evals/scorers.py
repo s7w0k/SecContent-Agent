@@ -94,7 +94,11 @@ def check_budget(case: EvalCase, result: EvalResult) -> dict[str, Any]:
     steps = len(result.tool_trace) + (1 if result.llm_events else 0)
     total_tokens = int(tc.get("input_tokens", 0)) + int(tc.get("output_tokens", 0))
     # 预算边界用例（预期 budget_exceeded）：触发上限是预期行为，不做步数越限判定
-    if case.expected_terminal_status != "budget_exceeded" and case.max_steps > 0 and steps > case.max_steps:
+    if (
+        case.expected_terminal_status != "budget_exceeded"
+        and case.max_steps > 0
+        and steps > case.max_steps
+    ):
         violations.append(f"步骤 {steps}>{case.max_steps}")
     if case.max_tokens > 0 and total_tokens > case.max_tokens * 2:
         violations.append(f"Token {total_tokens}>{case.max_tokens * 2}（预算边界 2 倍）")

@@ -106,7 +106,11 @@ def _validate_skill_dir(skill_dir: Path, strict: bool) -> list[str]:
 
     if not description:
         errors.append(f"{skill_dir.name}: description 为空")
-    if "何时不用" not in description and "不用于" not in description and "不适用" not in description:
+    if (
+        "何时不用" not in description
+        and "不用于" not in description
+        and "不适用" not in description
+    ):
         errors.append(f"{skill_dir.name}: description 未写明何时不用（负向边界）")
 
     body_lines = len(body.splitlines())
@@ -201,7 +205,7 @@ def _detect_cycles(skill_dir: Path) -> list[str]:
             if nxt not in color:
                 continue
             if color[nxt] == GRAY:
-                cycle = [*stack[stack.index(nxt):], nxt]
+                cycle = [*stack[stack.index(nxt) :], nxt]
                 errors.append(f"{skill_dir.name}: 循环引用被拒绝: {' → '.join(cycle)}")
             elif color[nxt] == WHITE:
                 visit(nxt)
@@ -228,10 +232,13 @@ def validate_skills_root(root: Path, strict: bool = False) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="校验 Agent Skills 包合规性")
-    parser.add_argument("skills_root", nargs="?", default=None,
-                        help="skills 根目录（默认 agent-security-briefs/skills）")
-    parser.add_argument("--strict", action="store_true",
-                        help="严格模式：仅允许三个规范包")
+    parser.add_argument(
+        "skills_root",
+        nargs="?",
+        default=None,
+        help="skills 根目录（默认 agent-security-briefs/skills）",
+    )
+    parser.add_argument("--strict", action="store_true", help="严格模式：仅允许三个规范包")
     args = parser.parse_args()
 
     if args.skills_root:

@@ -49,9 +49,7 @@ class EmbeddingStore:
         if not vector:
             return
         if self._dim and len(vector) != self._dim:
-            raise ValueError(
-                f"vector dim {len(vector)} mismatch store dim {self._dim}"
-            )
+            raise ValueError(f"vector dim {len(vector)} mismatch store dim {self._dim}")
         if not self._dim:
             self._dim = len(vector)
         self._vectors[doc_id] = vector
@@ -77,9 +75,7 @@ class EmbeddingStore:
             return 0.0
         return _cosine(vec, query_vector)
 
-    def score_many(
-        self, doc_ids: list[str], query_vector: list[float] | None
-    ) -> dict[str, float]:
+    def score_many(self, doc_ids: list[str], query_vector: list[float] | None) -> dict[str, float]:
         return {d: self.score(d, query_vector) for d in doc_ids}
 
 

@@ -165,7 +165,9 @@ class BudgetReservation:
     @property
     def released_tokens(self) -> int:
         if self.status == ReservationStatus.SETTLED:
-            return max(0, self.reserved_tokens - (self.actual_input_tokens + self.actual_output_tokens))
+            return max(
+                0, self.reserved_tokens - (self.actual_input_tokens + self.actual_output_tokens)
+            )
         if self.status == ReservationStatus.RELEASED:
             return self.reserved_tokens
         return 0
@@ -614,7 +616,9 @@ class BudgetManager:
             try:
                 self.on_event(event_type, payload)
             except Exception:
-                logger.warning("[budget] on_event callback failed for %s", event_type, exc_info=True)
+                logger.warning(
+                    "[budget] on_event callback failed for %s", event_type, exc_info=True
+                )
 
     def to_metrics(self) -> dict[str, Any]:
         """汇总指标（验证指标 5 节）。"""

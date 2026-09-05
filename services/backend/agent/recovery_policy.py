@@ -174,9 +174,11 @@ def _default_rules() -> dict[ErrorCategory, list[RecoveryRule]]:
         # 工具瞬时故障：幂等前提重试 → 替代工具 → 部分结果
         ErrorCategory.TOOL_TRANSIENT: [
             RecoveryRule(
-                lambda c: c.attempt < c.max_attempts
-                and c.side_effect_level in ("L0", "L1")
-                and _has_budget(c),
+                lambda c: (
+                    c.attempt < c.max_attempts
+                    and c.side_effect_level in ("L0", "L1")
+                    and _has_budget(c)
+                ),
                 RecoveryAction.RETRY_SAME,
                 "工具瞬时故障且幂等/只读，有限重试",
                 attempts_left=_attempts_left,

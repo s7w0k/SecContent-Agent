@@ -57,12 +57,18 @@ def mock_llm():
     """创建 mock LLM，返回预定义打分结果"""
     llm = MagicMock()
     llm.temperature = None  # 将被 scorer 覆盖
-    llm.ainvoke = AsyncMock(return_value=AIMessage(content=json.dumps({
-        "ai_relevance_score": 92,
-        "reportability_score": 78,
-        "score_reason": "MCP协议漏洞直接涉及Agent身份安全核心领域",
-        "tags": ["MCP协议", "身份认证", "漏洞披露"],
-    })))
+    llm.ainvoke = AsyncMock(
+        return_value=AIMessage(
+            content=json.dumps(
+                {
+                    "ai_relevance_score": 92,
+                    "reportability_score": 78,
+                    "score_reason": "MCP协议漏洞直接涉及Agent身份安全核心领域",
+                    "tags": ["MCP协议", "身份认证", "漏洞披露"],
+                }
+            )
+        )
+    )
     return llm
 
 
@@ -181,7 +187,12 @@ class TestScoreValidation:
     def test_valid_scores_pass_through(self):
         from agent.scorer import ScoringAgent
 
-        parsed = {"ai_relevance_score": 80, "reportability_score": 60, "score_reason": "ok", "tags": ["x"]}
+        parsed = {
+            "ai_relevance_score": 80,
+            "reportability_score": 60,
+            "score_reason": "ok",
+            "tags": ["x"],
+        }
         result = ScoringAgent._validate_and_fix(parsed)
         assert result["ai_relevance_score"] == 80
         assert result["reportability_score"] == 60
@@ -189,7 +200,12 @@ class TestScoreValidation:
     def test_score_clamped_to_max(self):
         from agent.scorer import ScoringAgent
 
-        parsed = {"ai_relevance_score": 150, "reportability_score": 200, "score_reason": "ok", "tags": []}
+        parsed = {
+            "ai_relevance_score": 150,
+            "reportability_score": 200,
+            "score_reason": "ok",
+            "tags": [],
+        }
         result = ScoringAgent._validate_and_fix(parsed)
         assert result["ai_relevance_score"] == 100
         assert result["reportability_score"] == 100
@@ -197,7 +213,12 @@ class TestScoreValidation:
     def test_score_clamped_to_min(self):
         from agent.scorer import ScoringAgent
 
-        parsed = {"ai_relevance_score": -10, "reportability_score": -50, "score_reason": "ok", "tags": []}
+        parsed = {
+            "ai_relevance_score": -10,
+            "reportability_score": -50,
+            "score_reason": "ok",
+            "tags": [],
+        }
         result = ScoringAgent._validate_and_fix(parsed)
         assert result["ai_relevance_score"] == 0
         assert result["reportability_score"] == 0
@@ -214,7 +235,12 @@ class TestScoreValidation:
     def test_tags_converted_to_list(self):
         from agent.scorer import ScoringAgent
 
-        parsed = {"ai_relevance_score": 50, "reportability_score": 50, "score_reason": "x", "tags": "not a list"}
+        parsed = {
+            "ai_relevance_score": 50,
+            "reportability_score": 50,
+            "score_reason": "x",
+            "tags": "not a list",
+        }
         result = ScoringAgent._validate_and_fix(parsed)
         assert isinstance(result["tags"], list)
         assert len(result["tags"]) == 1
@@ -222,8 +248,12 @@ class TestScoreValidation:
     def test_tags_truncated_to_5(self):
         from agent.scorer import ScoringAgent
 
-        parsed = {"ai_relevance_score": 50, "reportability_score": 50, "score_reason": "x",
-                   "tags": ["a", "b", "c", "d", "e", "f", "g"]}
+        parsed = {
+            "ai_relevance_score": 50,
+            "reportability_score": 50,
+            "score_reason": "x",
+            "tags": ["a", "b", "c", "d", "e", "f", "g"],
+        }
         result = ScoringAgent._validate_and_fix(parsed)
         assert len(result["tags"]) <= 5
 
@@ -251,12 +281,18 @@ class TestScoringFlow:
         from agent.scorer import ScoringAgent
 
         # Mock 返回低分
-        mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content=json.dumps({
-            "ai_relevance_score": 30,
-            "reportability_score": 20,
-            "score_reason": "Not relevant",
-            "tags": [],
-        })))
+        mock_llm.ainvoke = AsyncMock(
+            return_value=AIMessage(
+                content=json.dumps(
+                    {
+                        "ai_relevance_score": 30,
+                        "reportability_score": 20,
+                        "score_reason": "Not relevant",
+                        "tags": [],
+                    }
+                )
+            )
+        )
         scorer = ScoringAgent(llm=mock_llm, knowledge=knowledge)
         result = await scorer.score_single(sample_article)
         assert result["is_high_value"] is False
@@ -295,15 +331,21 @@ class TestScoringFlow:
         from agent.scorer import ScoringAgent
 
         # 第一次失败，第二次成功
-        mock_llm.ainvoke = AsyncMock(side_effect=[
-            Exception("Temporary error"),
-            AIMessage(content=json.dumps({
-                "ai_relevance_score": 88,
-                "reportability_score": 66,
-                "score_reason": "Recovered",
-                "tags": ["测试"],
-            })),
-        ])
+        mock_llm.ainvoke = AsyncMock(
+            side_effect=[
+                Exception("Temporary error"),
+                AIMessage(
+                    content=json.dumps(
+                        {
+                            "ai_relevance_score": 88,
+                            "reportability_score": 66,
+                            "score_reason": "Recovered",
+                            "tags": ["测试"],
+                        }
+                    )
+                ),
+            ]
+        )
         scorer = ScoringAgent(llm=mock_llm, knowledge=knowledge)
         result = await scorer.score_single(sample_article)
         assert result["_fallback"] is False
@@ -312,17 +354,28 @@ class TestScoringFlow:
     @pytest.mark.asyncio
     async def test_score_dict_article(self, scorer):
         """测试 dict 格式文章输入"""
-        result = await scorer.score_single({
-            "title": "T", "source": "S", "category": "C",
-            "summary": "Sum", "is_ai_security": False, "is_agent_security": False,
-        })
+        result = await scorer.score_single(
+            {
+                "title": "T",
+                "source": "S",
+                "category": "C",
+                "summary": "Sum",
+                "is_ai_security": False,
+                "is_agent_security": False,
+            }
+        )
         assert result["ai_relevance_score"] == 92  # mock returns this
 
     @pytest.mark.asyncio
     async def test_enrich_result(self):
         from agent.scorer import ScoringAgent
 
-        validated = {"ai_relevance_score": 85, "reportability_score": 72, "score_reason": "ok", "tags": []}
+        validated = {
+            "ai_relevance_score": 85,
+            "reportability_score": 72,
+            "score_reason": "ok",
+            "tags": [],
+        }
         result = ScoringAgent._enrich_result(validated)
         assert result["total_score"] == 157
         assert result["is_high_value"] is True

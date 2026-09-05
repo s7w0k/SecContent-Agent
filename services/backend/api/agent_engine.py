@@ -134,7 +134,9 @@ async def send_message(
     return _summarize(thread)
 
 
-@router.post("/threads/{thread_id}/stop", summary="中断当前正在进行的生成（保留断点，可\"继续\"续跑）")
+@router.post(
+    "/threads/{thread_id}/stop", summary='中断当前正在进行的生成（保留断点，可"继续"续跑）'
+)
 async def stop_generation(
     thread_id: str,
     request: Request,

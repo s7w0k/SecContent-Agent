@@ -135,7 +135,7 @@ class LLMDocumentReranker:
     def _build_prompt(self, doc_ids: list[str], query: str) -> str:
         lines = [
             "请根据检索查询，对候选文档按相关性从高到低重排。",
-            "严格只输出 JSON，格式：{\"ranked_doc_ids\": [\"doc_id\", ...]}",
+            '严格只输出 JSON，格式：{"ranked_doc_ids": ["doc_id", ...]}',
             "",
             f"查询：{query}",
             "",

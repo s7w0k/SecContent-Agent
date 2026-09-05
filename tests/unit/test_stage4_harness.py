@@ -243,7 +243,12 @@ class TestToolContract:
         ToolContract(name="t", side_effect_level=SideEffectLevel.L1, retryable=True)
 
     def test_l2_idempotent_retryable_ok(self):
-        ToolContract(name="t", side_effect_level=SideEffectLevel.L2, idempotency_required=True, retryable=True)
+        ToolContract(
+            name="t",
+            side_effect_level=SideEffectLevel.L2,
+            idempotency_required=True,
+            retryable=True,
+        )
 
 
 class TestToolRegistry:
@@ -296,7 +301,9 @@ class TestToolAdapters:
         adapter = SandboxToolAdapter(registry=_registry())
         with pytest.raises(PermissionError, match="L3"):
             asyncio.run(adapter.invoke("delete_repo", {}))
-        assert asyncio.run(adapter.invoke("search_knowledge", {})) == "[sandbox:search_knowledge ok]"
+        assert (
+            asyncio.run(adapter.invoke("search_knowledge", {})) == "[sandbox:search_knowledge ok]"
+        )
 
 
 class TestToolResultSanitizer:
@@ -347,7 +354,10 @@ class TestRecordedToolLog:
 
 class TestProtectedToolCaller:
     def _caller(self, **kw) -> ProtectedToolCaller:
-        base = {"registry": _registry(), "adapter": FakeToolAdapter(results={"search_knowledge": "ok"})}
+        base = {
+            "registry": _registry(),
+            "adapter": FakeToolAdapter(results={"search_knowledge": "ok"}),
+        }
         base.update(kw)
         return ProtectedToolCaller(**base)
 
@@ -384,7 +394,9 @@ class TestProtectedToolCaller:
         contract = ToolContract(name="flaky", side_effect_level=SideEffectLevel.L1, retryable=True)
         reg = ToolRegistry()
         reg.register(contract)
-        caller = ProtectedToolCaller(registry=reg, adapter=FlakyAdapter(), max_retries=2, backoff_jitter=0.0)
+        caller = ProtectedToolCaller(
+            registry=reg, adapter=FlakyAdapter(), max_retries=2, backoff_jitter=0.0
+        )
         outcome = asyncio.run(caller.call("flaky", {}))
         assert outcome.ok
         assert attempts["n"] == 3
@@ -442,7 +454,9 @@ class TestModelRateLimiter:
         now = self._clock()
         limiter = ModelRateLimiter(max_tokens_per_minute=100, now_provider=now)
         assert asyncio.run(limiter.acquire(model_id="m", estimated_input_tokens=60))
-        assert not asyncio.run(limiter.acquire(model_id="m", estimated_input_tokens=60))  # 120 > 100
+        assert not asyncio.run(
+            limiter.acquire(model_id="m", estimated_input_tokens=60)
+        )  # 120 > 100
 
     def test_no_limit_always_allowed(self):
         limiter = ModelRateLimiter()
@@ -997,14 +1011,20 @@ class TestLoadSimulation:
 
     def test_deterministic_with_seed(self):
         inputs = CapacityInputs()
-        a = run_load_simulation(inputs, LoadScenario(arrival_rps=2.0, duration_seconds=5.0, seed=42))
-        b = run_load_simulation(inputs, LoadScenario(arrival_rps=2.0, duration_seconds=5.0, seed=42))
+        a = run_load_simulation(
+            inputs, LoadScenario(arrival_rps=2.0, duration_seconds=5.0, seed=42)
+        )
+        b = run_load_simulation(
+            inputs, LoadScenario(arrival_rps=2.0, duration_seconds=5.0, seed=42)
+        )
         assert a.served == b.served
         assert a.rejected == b.rejected
 
     def test_report_legacy_dict(self):
         inputs = CapacityInputs()
-        sim = run_load_simulation(inputs, LoadScenario(arrival_rps=0.5, duration_seconds=5.0, seed=1))
+        sim = run_load_simulation(
+            inputs, LoadScenario(arrival_rps=0.5, duration_seconds=5.0, seed=1)
+        )
         legacy = sim.to_legacy_dict()
         assert "peak_queue_depth" in legacy
         assert "success_rate" in legacy

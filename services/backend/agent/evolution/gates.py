@@ -16,12 +16,12 @@ class GateChecker:
 
     # 门禁定义
     GATES: ClassVar[list[str]] = [
-        "fact_safety",          # 事实高危问题不增加
-        "propaganda_safety",    # 高危宣传问题不增加
-        "format_success",       # 格式成功率不低于基线
-        "prompt_injection",     # Prompt 注入测试通过
-        "multi_tenant",         # 多租户测试通过
-        "token_budget",         # Token 增幅不超预算
+        "fact_safety",  # 事实高危问题不增加
+        "propaganda_safety",  # 高危宣传问题不增加
+        "format_success",  # 格式成功率不低于基线
+        "prompt_injection",  # Prompt 注入测试通过
+        "multi_tenant",  # 多租户测试通过
+        "token_budget",  # Token 增幅不超预算
         "holdout_improvement",  # 留出集必须提升
         "category_regression",  # 关键分类不显著回归
     ]
@@ -92,25 +92,35 @@ class GateChecker:
         if not all_passed:
             await self.db["personalization_candidates"].update_one(
                 {"candidate_id": candidate_id},
-                {"$set": {
-                    "status": "gate_failed",
-                    "gate_results": results,
-                    "updated_at": __import__("datetime").datetime.now(__import__("datetime").UTC),
-                }},
+                {
+                    "$set": {
+                        "status": "gate_failed",
+                        "gate_results": results,
+                        "updated_at": __import__("datetime").datetime.now(
+                            __import__("datetime").UTC
+                        ),
+                    }
+                },
             )
         else:
             await self.db["personalization_candidates"].update_one(
                 {"candidate_id": candidate_id},
-                {"$set": {
-                    "status": "ready_for_review",
-                    "gate_results": results,
-                    "updated_at": __import__("datetime").datetime.now(__import__("datetime").UTC),
-                }},
+                {
+                    "$set": {
+                        "status": "ready_for_review",
+                        "gate_results": results,
+                        "updated_at": __import__("datetime").datetime.now(
+                            __import__("datetime").UTC
+                        ),
+                    }
+                },
             )
 
         logger.info(
             "gates checked: candidate=%s passed=%d/%d",
-            candidate_id, sum(results.values()), len(results),
+            candidate_id,
+            sum(results.values()),
+            len(results),
         )
 
         return results

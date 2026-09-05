@@ -24,9 +24,12 @@ async def cmd_build(args):
     from db.mongo import MongoDB
 
     settings = get_settings()
-    await MongoDB.connect(uri=settings.MONGODB_URI, db_name=settings.MONGODB_DB,
-                          max_pool_size=settings.MONGODB_MAX_POOL_SIZE,
-                          min_pool_size=settings.MONGODB_MIN_POOL_SIZE)
+    await MongoDB.connect(
+        uri=settings.MONGODB_URI,
+        db_name=settings.MONGODB_DB,
+        max_pool_size=settings.MONGODB_MAX_POOL_SIZE,
+        min_pool_size=settings.MONGODB_MIN_POOL_SIZE,
+    )
     db = MongoDB.get_db()
 
     builder = DatasetBuilder(db)
@@ -41,9 +44,12 @@ async def cmd_generate(args):
     from db.mongo import MongoDB
 
     settings = get_settings()
-    await MongoDB.connect(uri=settings.MONGODB_URI, db_name=settings.MONGODB_DB,
-                          max_pool_size=settings.MONGODB_MAX_POOL_SIZE,
-                          min_pool_size=settings.MONGODB_MIN_POOL_SIZE)
+    await MongoDB.connect(
+        uri=settings.MONGODB_URI,
+        db_name=settings.MONGODB_DB,
+        max_pool_size=settings.MONGODB_MAX_POOL_SIZE,
+        min_pool_size=settings.MONGODB_MIN_POOL_SIZE,
+    )
     db = MongoDB.get_db()
 
     gen = CandidateGenerator(db)
@@ -65,14 +71,21 @@ async def cmd_evaluate(args):
     from db.mongo import MongoDB
 
     settings = get_settings()
-    await MongoDB.connect(uri=settings.MONGODB_URI, db_name=settings.MONGODB_DB,
-                          max_pool_size=settings.MONGODB_MAX_POOL_SIZE,
-                          min_pool_size=settings.MONGODB_MIN_POOL_SIZE)
+    await MongoDB.connect(
+        uri=settings.MONGODB_URI,
+        db_name=settings.MONGODB_DB,
+        max_pool_size=settings.MONGODB_MAX_POOL_SIZE,
+        min_pool_size=settings.MONGODB_MIN_POOL_SIZE,
+    )
     db = MongoDB.get_db()
 
     evaluator = Evaluator(db)
     result = await evaluator.evaluate(args.candidate, args.dataset)
-    logger.info("Evaluation result: fitness=%s, holdout=%s", result.get("fitness"), result.get("holdout_fitness"))
+    logger.info(
+        "Evaluation result: fitness=%s, holdout=%s",
+        result.get("fitness"),
+        result.get("holdout_fitness"),
+    )
     await MongoDB.close()
 
 
@@ -82,9 +95,12 @@ async def cmd_gates(args):
     from db.mongo import MongoDB
 
     settings = get_settings()
-    await MongoDB.connect(uri=settings.MONGODB_URI, db_name=settings.MONGODB_DB,
-                          max_pool_size=settings.MONGODB_MAX_POOL_SIZE,
-                          min_pool_size=settings.MONGODB_MIN_POOL_SIZE)
+    await MongoDB.connect(
+        uri=settings.MONGODB_URI,
+        db_name=settings.MONGODB_DB,
+        max_pool_size=settings.MONGODB_MAX_POOL_SIZE,
+        min_pool_size=settings.MONGODB_MIN_POOL_SIZE,
+    )
     db = MongoDB.get_db()
 
     checker = GateChecker(db)
@@ -103,9 +119,12 @@ async def cmd_publish(args):
     from db.mongo import MongoDB
 
     settings = get_settings()
-    await MongoDB.connect(uri=settings.MONGODB_URI, db_name=settings.MONGODB_DB,
-                          max_pool_size=settings.MONGODB_MAX_POOL_SIZE,
-                          min_pool_size=settings.MONGODB_MIN_POOL_SIZE)
+    await MongoDB.connect(
+        uri=settings.MONGODB_URI,
+        db_name=settings.MONGODB_DB,
+        max_pool_size=settings.MONGODB_MAX_POOL_SIZE,
+        min_pool_size=settings.MONGODB_MIN_POOL_SIZE,
+    )
     db = MongoDB.get_db()
 
     publisher = Publisher(db)

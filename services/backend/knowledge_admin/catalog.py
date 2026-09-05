@@ -58,18 +58,22 @@ class KnowledgeCatalog:
                 children = self._scan_dir(entry, include_empty, include_raw)
                 if not children and not include_empty:
                     continue
-                nodes.append({
-                    "name": entry.name,
-                    "path": self._relative_path(entry),
-                    "node_type": "dir",
-                    "children": children,
-                })
+                nodes.append(
+                    {
+                        "name": entry.name,
+                        "path": self._relative_path(entry),
+                        "node_type": "dir",
+                        "children": children,
+                    }
+                )
             elif entry.is_file() and entry.suffix == ".md":
-                nodes.append({
-                    "name": entry.name,
-                    "path": self._relative_path(entry),
-                    "node_type": "file",
-                })
+                nodes.append(
+                    {
+                        "name": entry.name,
+                        "path": self._relative_path(entry),
+                        "node_type": "file",
+                    }
+                )
         return nodes
 
     # ── 文档读取 ───────────────────────────────────────────────
@@ -90,7 +94,7 @@ class KnowledgeCatalog:
         return {
             "relative_path": self._relative_path(safe_path),
             "content": content,
-            "content_hash": f"sha256:{hashlib.sha256(content.encode("utf-8")).hexdigest()}",
+            "content_hash": f"sha256:{hashlib.sha256(content.encode('utf-8')).hexdigest()}",
             "size": stat.st_size,
             "updated_at": datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
         }
@@ -123,13 +127,15 @@ class KnowledgeCatalog:
             if query_lower not in filename_lower and query_lower not in content.lower():
                 continue
 
-            results.append({
-                "relative_path": rel_path,
-                "name": md_file.name,
-                "content_hash": f"sha256:{hashlib.sha256(content.encode("utf-8")).hexdigest()}",
-                "size": md_file.stat().st_size,
-                "snippet": content[:200] if content else "",
-            })
+            results.append(
+                {
+                    "relative_path": rel_path,
+                    "name": md_file.name,
+                    "content_hash": f"sha256:{hashlib.sha256(content.encode('utf-8')).hexdigest()}",
+                    "size": md_file.stat().st_size,
+                    "snippet": content[:200] if content else "",
+                }
+            )
 
         return results
 
@@ -155,11 +161,7 @@ class KnowledgeCatalog:
 
     def count_files(self) -> int:
         """统计全部 Markdown 文件数量。"""
-        return sum(
-            1
-            for f in self.root_dir.rglob("*.md")
-            if ".git" not in f.parts
-        )
+        return sum(1 for f in self.root_dir.rglob("*.md") if ".git" not in f.parts)
 
     # ── 内部工具 ───────────────────────────────────────────────
 

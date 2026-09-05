@@ -148,9 +148,7 @@ class ReplayRunner:
 
     # ── 评估 ────────────────────────────────────────────────
 
-    def _evaluate(
-        self, case: dict[str, Any], mode: str, content: str
-    ) -> ReplayCaseResult:
+    def _evaluate(self, case: dict[str, Any], mode: str, content: str) -> ReplayCaseResult:
         from agent.fact_citation import audit_fact_citations
 
         expected = list(case.get("expected_product_ids", []))
@@ -197,18 +195,22 @@ class ReplayRunner:
         def _agg(mode: str) -> dict[str, Any]:
             rows = by_mode[mode]
             if not rows:
-                return {"cases": 0, "product_relevance": 0.0, "fact_source_rate": 0.0,
-                        "unsupported_high_risk": 0, "avg_citation_blocks": 0.0,
-                        "competitor_terms": 0, "avg_chars": 0}
+                return {
+                    "cases": 0,
+                    "product_relevance": 0.0,
+                    "fact_source_rate": 0.0,
+                    "unsupported_high_risk": 0,
+                    "avg_citation_blocks": 0.0,
+                    "competitor_terms": 0,
+                    "avg_chars": 0,
+                }
             prod_ok = sum(1 for r in rows if r["product_ok"])
             fact_rates = [r["fact_source_rate"] for r in rows]
             unsupported = sum(r["unsupported_high_risk"] for r in rows)
             return {
                 "cases": len(rows),
                 "product_relevance": round(prod_ok / len(rows), 4),
-                "fact_source_rate": round(
-                    sum(fact_rates) / len(rows) if fact_rates else 0.0, 4
-                ),
+                "fact_source_rate": round(sum(fact_rates) / len(rows) if fact_rates else 0.0, 4),
                 "unsupported_high_risk": unsupported,
                 "avg_citation_blocks": round(
                     sum(r["citation_blocks"] for r in rows) / len(rows), 2
@@ -264,9 +266,7 @@ class ReplayRunner:
         return text
 
     @staticmethod
-    def _default_generate(
-        case: dict[str, Any], context: str, mode: str
-    ) -> dict[str, Any]:
+    def _default_generate(case: dict[str, Any], context: str, mode: str) -> dict[str, Any]:
         """默认生成：直接把上下文作为候选正文（确定性，供 runner 流程自测）。"""
         return {"content": context}
 
@@ -335,11 +335,7 @@ def build_llm_generate(
         )
         if not result.get("ok"):
             return {"content": "", "error": result.get("error")}
-        pieces = [
-            d.get("content_md", "")
-            for d in result.get("drafts", [])
-            if d.get("content_md")
-        ]
+        pieces = [d.get("content_md", "") for d in result.get("drafts", []) if d.get("content_md")]
         return {"content": "\n\n".join(pieces), "drafts": len(pieces)}
 
     return _generate
@@ -349,9 +345,7 @@ def run_all(
     *, write_report: bool = False, use_llm: bool = False, max_drafts: int | None = 1
 ) -> dict[str, Any]:
     """运行离线回放并聚合报告。"""
-    runner = ReplayRunner(
-        generate=build_llm_generate(max_drafts=max_drafts) if use_llm else None
-    )
+    runner = ReplayRunner(generate=build_llm_generate(max_drafts=max_drafts) if use_llm else None)
     report = asyncio.run(runner.run())
     if write_report:
         out = REPO_ROOT / "reports"
@@ -386,7 +380,9 @@ def print_report(report: dict[str, Any]) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="阶段7 知识检索离线回放")
     parser.add_argument("--report", action="store_true", help="写入 reports/knowledge-replay.json")
-    parser.add_argument("--llm", action="store_true", help="使用真实 LLM 生成（DraftGenerator + ChatOpenAI）")
+    parser.add_argument(
+        "--llm", action="store_true", help="使用真实 LLM 生成（DraftGenerator + ChatOpenAI）"
+    )
     parser.add_argument("--max-drafts", type=int, default=1, help="每用例生成草稿数（默认 1）")
     args = parser.parse_args()
     _rep = run_all(write_report=args.report, use_llm=args.llm, max_drafts=args.max_drafts)

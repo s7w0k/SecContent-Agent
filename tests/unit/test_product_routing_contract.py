@@ -24,7 +24,8 @@ from pydantic import ValidationError
 def _snapshot(products=None, mode="auto"):
     return build_routing_snapshot(
         mode=mode,
-        resolved_products=products or [
+        resolved_products=products
+        or [
             ResolvedProduct(
                 product_id="ai-bom",
                 product_name="AI-BOM",
@@ -153,7 +154,10 @@ class TestLegacyCompatibility:
 
     def test_user_assessment_snapshot_with_routing(self):
         """用户级评分快照可保存路由快照副本。"""
-        snap = _snapshot(mode="selected", products=[ResolvedProduct(product_id="ai-bom", match_source="user_selected")])
+        snap = _snapshot(
+            mode="selected",
+            products=[ResolvedProduct(product_id="ai-bom", match_source="user_selected")],
+        )
         ps = ProductSnapshot(mode="selected", routing=snap)
         restored = ProductSnapshot.model_validate_json(ps.model_dump_json())
         assert restored.routing is not None

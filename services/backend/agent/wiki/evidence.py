@@ -101,7 +101,9 @@ class EvidenceBundle(BaseModel):
     wiki_version: str = Field(default="")
 
     # PR-B（V2）：按 Requirement 评估的结果（替代 Page-count Coverage）
-    requirements: list[dict] = Field(default_factory=list, description="RequirementResult dict 列表")
+    requirements: list[dict] = Field(
+        default_factory=list, description="RequirementResult dict 列表"
+    )
     missing_requirements: list[str] = Field(default_factory=list)
 
     status: BundleStatus = Field(default="FAILED")

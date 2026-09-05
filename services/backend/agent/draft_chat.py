@@ -325,7 +325,11 @@ class DraftChatAgent:
         from config import get_settings
 
         settings = get_settings()
-        if settings.CHAT_AGENT_ENABLED and settings.CHAT_ASK_AGENT_ENABLED and run_context is not None:
+        if (
+            settings.CHAT_AGENT_ENABLED
+            and settings.CHAT_ASK_AGENT_ENABLED
+            and run_context is not None
+        ):
             return await self._answer_agent(
                 message=message,
                 article=article,
@@ -535,7 +539,11 @@ class DraftChatAgent:
         from config import get_settings
 
         settings = get_settings()
-        if settings.CHAT_AGENT_ENABLED and settings.CHAT_ASK_AGENT_ENABLED and run_context is not None:
+        if (
+            settings.CHAT_AGENT_ENABLED
+            and settings.CHAT_ASK_AGENT_ENABLED
+            and run_context is not None
+        ):
             async for chunk in self._stream_answer_agent(
                 message=message,
                 article=article,
@@ -632,7 +640,7 @@ class DraftChatAgent:
             # 按 20 字一组 yield（模拟流式体验）
             chunk_size = 20
             for i in range(0, len(answer), chunk_size):
-                yield answer[i:i + chunk_size]
+                yield answer[i : i + chunk_size]
 
     # ── 改稿 ──────────────────────────────────────────────────
 

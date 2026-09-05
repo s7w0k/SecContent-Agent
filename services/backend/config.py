@@ -139,15 +139,9 @@ class Settings(BaseSettings):
     SEARXNG_READ_TIMEOUT: float = Field(
         default=15.0, gt=0, le=60, description="SearXNG 读取超时秒数"
     )
-    SEARXNG_MAX_RETRIES: int = Field(
-        default=1, ge=0, le=3, description="SearXNG 最大重试次数"
-    )
-    WEB_SEARCH_RESULT_LIMIT: int = Field(
-        default=20, ge=1, le=50, description="单页返回结果上限"
-    )
-    WEB_SEARCH_IMPORT_BATCH_LIMIT: int = Field(
-        default=20, ge=1, le=50, description="单批导入上限"
-    )
+    SEARXNG_MAX_RETRIES: int = Field(default=1, ge=0, le=3, description="SearXNG 最大重试次数")
+    WEB_SEARCH_RESULT_LIMIT: int = Field(default=20, ge=1, le=50, description="单页返回结果上限")
+    WEB_SEARCH_IMPORT_BATCH_LIMIT: int = Field(default=20, ge=1, le=50, description="单批导入上限")
     WEB_SEARCH_SESSION_TTL_MINUTES: int = Field(
         default=30, ge=5, le=120, description="搜索会话保留时间分钟"
     )
@@ -157,15 +151,9 @@ class Settings(BaseSettings):
     WEB_SEARCH_CACHE_TTL_MINUTES: int = Field(
         default=10, ge=0, le=60, description="搜索结果缓存分钟数，0 表示禁用"
     )
-    WEB_SEARCH_ALLOWED_CATEGORIES: str = Field(
-        default="general,news", description="允许的搜索分类"
-    )
-    WEB_SEARCH_ALLOWED_LANGUAGES: str = Field(
-        default="all,zh-CN,en", description="允许的搜索语言"
-    )
-    WEB_SEARCH_ENRICH_ON_IMPORT: bool = Field(
-        default=True, description="导入后是否自动补全文"
-    )
+    WEB_SEARCH_ALLOWED_CATEGORIES: str = Field(default="general,news", description="允许的搜索分类")
+    WEB_SEARCH_ALLOWED_LANGUAGES: str = Field(default="all,zh-CN,en", description="允许的搜索语言")
+    WEB_SEARCH_ENRICH_ON_IMPORT: bool = Field(default=True, description="导入后是否自动补全文")
     WEB_SEARCH_FETCH_MAX_CONCURRENCY: int = Field(
         default=3, ge=1, le=10, description="全文抓取最大并发"
     )
@@ -174,18 +162,12 @@ class Settings(BaseSettings):
     )
 
     # ── 阶段十四 Feature Flags ──────────────────────────
-    USER_PROMPT_V2_ENABLED: bool = Field(
-        default=True, description="启用用户级提示词中心（T1-T2）"
-    )
-    PRODUCT_CATALOG_ENABLED: bool = Field(
-        default=True, description="启用产品目录和知识切片（T3）"
-    )
+    USER_PROMPT_V2_ENABLED: bool = Field(default=True, description="启用用户级提示词中心（T1-T2）")
+    PRODUCT_CATALOG_ENABLED: bool = Field(default=True, description="启用产品目录和知识切片（T3）")
     GENERATION_PREFERENCES_ENABLED: bool = Field(
         default=True, description="启用用户级生成偏好（T4）"
     )
-    USER_ASSESSMENT_ENABLED: bool = Field(
-        default=True, description="启用用户级文章评估（T5）"
-    )
+    USER_ASSESSMENT_ENABLED: bool = Field(default=True, description="启用用户级文章评估（T5）")
     PIPELINE_CONFIG_FREEZE_ENABLED: bool = Field(
         default=True, description="启用流水线配置冻结（T6）"
     )
@@ -197,15 +179,11 @@ class Settings(BaseSettings):
     )
 
     # ── 海外新闻每日定时抓取（阶段十六） ──────────────
-    OVERSEAS_NEWS_SCHEDULE_ENABLED: bool = Field(
-        default=True, description="是否启用每日定时抓取"
-    )
+    OVERSEAS_NEWS_SCHEDULE_ENABLED: bool = Field(default=True, description="是否启用每日定时抓取")
     OVERSEAS_NEWS_SCHEDULE_TIMEZONE: str = Field(
         default="Asia/Shanghai", description="业务时区（IANA 时区名）"
     )
-    OVERSEAS_NEWS_SCHEDULE_HOUR: int = Field(
-        default=7, ge=0, le=23, description="当地小时（0-23）"
-    )
+    OVERSEAS_NEWS_SCHEDULE_HOUR: int = Field(default=7, ge=0, le=23, description="当地小时（0-23）")
     OVERSEAS_NEWS_SCHEDULE_MINUTE: int = Field(
         default=0, ge=0, le=59, description="当地分钟（0-59）"
     )
@@ -241,9 +219,7 @@ class Settings(BaseSettings):
     CHAT_AGENT_ROLLOUT_PERCENT: int = Field(
         default=0, ge=0, le=100, description="灰度百分比（0-100）"
     )
-    CHAT_AGENT_MAX_ROUNDS: int = Field(
-        default=5, ge=1, le=20, description="Agent Loop 最大轮次"
-    )
+    CHAT_AGENT_MAX_ROUNDS: int = Field(default=5, ge=1, le=20, description="Agent Loop 最大轮次")
     CHAT_AGENT_MAX_INPUT_TOKENS: int = Field(
         default=24000, ge=1000, le=128000, description="Agent Loop 输入 token 上限"
     )
@@ -268,9 +244,7 @@ class Settings(BaseSettings):
     CHAT_AGENT_MAX_COST_USD: float = Field(
         default=0.0, ge=0, description="单次 Agent 运行成本上限（USD），0=不限制"
     )
-    CHAT_SSE_SCHEMA_VERSION: str = Field(
-        default="1.0", description="SSE 事件 schema 版本"
-    )
+    CHAT_SSE_SCHEMA_VERSION: str = Field(default="1.0", description="SSE 事件 schema 版本")
     CHAT_AGENT_MEMORY_ENABLED: bool = Field(
         default=True, description="聊天 Agent 注入用户长期记忆（token 预算内）"
     )
@@ -322,12 +296,8 @@ class Settings(BaseSettings):
     PLANNER_TIMEOUT_SECONDS: int = Field(
         default=10, ge=1, le=120, description="Planner LLM 单次调用超时（秒）"
     )
-    PLAN_MAX_STEPS: int = Field(
-        default=50, ge=1, le=100, description="计划最大步骤数"
-    )
-    PLAN_MAX_DEPTH: int = Field(
-        default=10, ge=1, le=20, description="计划最大依赖深度"
-    )
+    PLAN_MAX_STEPS: int = Field(default=50, ge=1, le=100, description="计划最大步骤数")
+    PLAN_MAX_DEPTH: int = Field(default=10, ge=1, le=20, description="计划最大依赖深度")
     ORCHESTRATOR_MAX_CONCURRENCY: int = Field(
         default=5, ge=1, le=50, description="Orchestrator 全局最大并发 Worker"
     )
@@ -337,9 +307,7 @@ class Settings(BaseSettings):
     WORKER_LEASE_SECONDS: int = Field(
         default=120, ge=10, le=3600, description="Worker 步骤租约 TTL（秒）"
     )
-    WORKER_MAX_ATTEMPTS: int = Field(
-        default=3, ge=1, le=10, description="Worker 最大尝试次数"
-    )
+    WORKER_MAX_ATTEMPTS: int = Field(default=3, ge=1, le=10, description="Worker 最大尝试次数")
 
     # ── 新架构生产接管（Cutover 计划 §27 / §49 / §118；Final Closure §44）────
     # 唯一 authoritative rollout 配置。legacy=显式回滚；skill_planned=正式新主链。
@@ -353,7 +321,10 @@ class Settings(BaseSettings):
         default=100, ge=0, le=100, description="Shadow 双跑抽样比例（0-100，按 tenant:user 确定性）"
     )
     AGENT_SHADOW_TIMEOUT_SECONDS: int = Field(
-        default=60, ge=1, le=600, description="Shadow Skill 路径超时（秒），超时不影响 legacy primary"
+        default=60,
+        ge=1,
+        le=600,
+        description="Shadow Skill 路径超时（秒），超时不影响 legacy primary",
     )
     AGENT_SKILL_CANARY_PERCENT: int = Field(
         default=0,
@@ -366,7 +337,8 @@ class Settings(BaseSettings):
         description="Canary 确定性散列种子",
     )
     AGENT_EXECUTION_REQUIRE_SKILL_SNAPSHOT_MATCH: bool = Field(
-        default=False, description="FastAPI 与 Worker 的 skill_snapshot_hash 是否强制一致（startup fail）"
+        default=False,
+        description="FastAPI 与 Worker 的 skill_snapshot_hash 是否强制一致（startup fail）",
     )
 
     # ── 全自主 Agent（阶段四 4A，默认关闭）────────────────────────
@@ -383,9 +355,7 @@ class Settings(BaseSettings):
         default="rule",
         description="自主运行选步模式：rule=固定顺序 SOP；llm=LLM 每轮决策下一步（关卡护栏不变，LLM 故障自动回退 rule）",
     )
-    AUTONOMOUS_MAX_STEPS: int = Field(
-        default=20, ge=1, le=100, description="自主运行最大步骤数"
-    )
+    AUTONOMOUS_MAX_STEPS: int = Field(default=20, ge=1, le=100, description="自主运行最大步骤数")
     AUTONOMOUS_MAX_RUNTIME_SECONDS: int = Field(
         default=600, ge=30, le=86400, description="自主运行最大墙钟时间（秒）"
     )
@@ -425,9 +395,7 @@ class Settings(BaseSettings):
     AUTONOMOUS_EVENT_TTL_DAYS: int = Field(
         default=30, ge=1, le=365, description="runtime_events 保留天数"
     )
-    AUTONOMOUS_MODEL: str = Field(
-        default="deepseek-chat", description="自主模式默认模型名"
-    )
+    AUTONOMOUS_MODEL: str = Field(default="deepseek-chat", description="自主模式默认模型名")
     AUTONOMOUS_ROUTER_FALLBACK_MODEL: str = Field(
         default="", description="模型路由回退链（逗号分隔）；空=不降级"
     )
@@ -553,7 +521,10 @@ class Settings(BaseSettings):
         default=200, ge=1, le=1_000_000, description="灰度档位推进的最小成功样本量"
     )
     ROLLOUT_OBSERVATION_WINDOW_SECONDS: int = Field(
-        default=86_400, ge=60, le=2_592_000, description="灰度档位观察窗口（秒，不以自然日替代样本量）"
+        default=86_400,
+        ge=60,
+        le=2_592_000,
+        description="灰度档位观察窗口（秒，不以自然日替代样本量）",
     )
     ROLLOUT_LATENCY_P95_SLO_SECONDS: float = Field(
         default=5.0, gt=0, le=300, description="端到端 p95 时延 SLO 阈值（秒）"
@@ -588,7 +559,6 @@ class Settings(BaseSettings):
                     "拒绝启动以避免无上限运行"
                 )
         return self
-
 
     @field_validator("OVERSEAS_NEWS_SCHEDULE_TIMEZONE")
     @classmethod
@@ -717,7 +687,9 @@ class Settings(BaseSettings):
         description="知识后端模式：wiki=Wiki 为主（默认），legacy=显式回滚，shadow=对比期",
     )
     # Wiki Root（默认位于知识库根目录下）
-    WIKI_ROOT_DIR: str = Field(default="", description="Wiki 根目录；空则取 KNOWLEDGE_BASE_DIR/_wiki")
+    WIKI_ROOT_DIR: str = Field(
+        default="", description="Wiki 根目录；空则取 KNOWLEDGE_BASE_DIR/_wiki"
+    )
     # 各类任务单次导航最多打开的页面数
     WIKI_MAX_PAGES_SCORE: int = Field(default=6, ge=1, le=50, description="评分导航最大页面数")
     WIKI_MAX_PAGES_DRAFT: int = Field(default=8, ge=1, le=50, description="草稿导航最大页面数")

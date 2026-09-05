@@ -91,8 +91,12 @@ async def upload_article(
         raise UploadError(422, "INVALID_TITLE", "文章标题不能超过 500 个字符")
 
     pseudo_url = f"upload://{user_id}/{filename}"
-    content_digest = hashlib.sha1(content_md.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
-    url_hash = hashlib.md5(f"{pseudo_url}#{content_digest}".encode(), usedforsecurity=False).hexdigest()
+    content_digest = hashlib.sha1(content_md.encode("utf-8"), usedforsecurity=False).hexdigest()[
+        :16
+    ]
+    url_hash = hashlib.md5(
+        f"{pseudo_url}#{content_digest}".encode(), usedforsecurity=False
+    ).hexdigest()
     articles = db["articles"]
     if await articles.find_one({"url_hash": url_hash}) is not None:
         raise UploadError(409, "DUPLICATE_ARTICLE", "该文件内容已上传过")

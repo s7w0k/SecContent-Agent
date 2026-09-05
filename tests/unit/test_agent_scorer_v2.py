@@ -526,15 +526,21 @@ class TestProductKnowledgeInjection:
         knowledge.as_scoring_prompt.return_value = "GLOBAL_KNOWLEDGE_PLACEHOLDER"
 
         user_product = {
-            "product_id": "user-prod-1", "user_id": "u-1",
-            "name": "星海外部攻击面管理平台", "enabled": True,
+            "product_id": "user-prod-1",
+            "user_id": "u-1",
+            "name": "星海外部攻击面管理平台",
+            "enabled": True,
         }
         user_entry = {
-            "entry_id": "entry-1", "user_id": "u-1",
-            "product_id": "user-prod-1", "product_scope": "user",
-            "doc_type": "overview", "title": "产品概述",
+            "entry_id": "entry-1",
+            "user_id": "u-1",
+            "product_id": "user-prod-1",
+            "product_scope": "user",
+            "doc_type": "overview",
+            "title": "产品概述",
             "content": "该产品用于外部攻击面发现与管理，可对暴露面持续监测。",
-            "enabled": True, "sort_order": 1,
+            "enabled": True,
+            "sort_order": 1,
         }
 
         user_products_col = MagicMock()
@@ -546,14 +552,10 @@ class TestProductKnowledgeInjection:
             # 用户对全局产品的补充条目查询返回空
             if query.get("product_scope") == "global":
                 return MagicMock(
-                    sort=MagicMock(
-                        return_value=MagicMock(to_list=AsyncMock(return_value=[]))
-                    )
+                    sort=MagicMock(return_value=MagicMock(to_list=AsyncMock(return_value=[])))
                 )
             return MagicMock(
-                sort=MagicMock(
-                    return_value=MagicMock(to_list=AsyncMock(return_value=[user_entry]))
-                )
+                sort=MagicMock(return_value=MagicMock(to_list=AsyncMock(return_value=[user_entry])))
             )
 
         entries_col = MagicMock()

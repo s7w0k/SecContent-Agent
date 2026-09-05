@@ -77,9 +77,7 @@ class TestProductCatalogService:
 
     def test_validate_product_ids_success(self):
         """批量校验成功。"""
-        products = self.catalog.validate_product_ids(
-            ["agent-identity-security", "ai-bom"]
-        )
+        products = self.catalog.validate_product_ids(["agent-identity-security", "ai-bom"])
         assert len(products) == 2
 
     def test_is_path_safe_rejects_dot_dot(self):

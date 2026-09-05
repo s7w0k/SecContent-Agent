@@ -364,9 +364,7 @@ class ContextBridge:
                 db=self._db,
             )
             # 新链路：仅当非 off 且带 query 时启用自适应检索
-            new_retrieval = retr_mode in ("shadow", "active") and bool(
-                (query or "").strip()
-            )
+            new_retrieval = retr_mode in ("shadow", "active") and bool((query or "").strip())
             new_resolver = None
             if new_retrieval:
                 from agent.document_retriever import DocumentRetriever
@@ -375,9 +373,7 @@ class ContextBridge:
                     self._knowledge_base_dir,
                     db=self._db,
                     retriever=DocumentRetriever(
-                        index_path=getattr(
-                            self._settings, "KNOWLEDGE_INDEX_PATH", None
-                        ),
+                        index_path=getattr(self._settings, "KNOWLEDGE_INDEX_PATH", None),
                         settings=self._settings,
                     ),
                     max_optional_docs=int(
@@ -385,9 +381,7 @@ class ContextBridge:
                     ),
                 )
 
-            expected_index_version = getattr(
-                self._settings, "KNOWLEDGE_INDEX_VERSION", ""
-            )
+            expected_index_version = getattr(self._settings, "KNOWLEDGE_INDEX_VERSION", "")
 
             async def _resolve(resolver, with_query: bool):
                 return await resolver.resolve(
@@ -594,9 +588,7 @@ class ContextBridge:
 
         if not parts:
             return "none"
-        return "sha256:" + hashlib.sha256(
-            "\n".join(sorted(parts)).encode("utf-8")
-        ).hexdigest()
+        return "sha256:" + hashlib.sha256("\n".join(sorted(parts)).encode("utf-8")).hexdigest()
 
     def _telemetry(
         self,
@@ -625,13 +617,11 @@ class ContextBridge:
             "budget_tokens": plan.budget_tokens,
             "total_tokens": plan.total_tokens,
             "dropped": [
-                {"source": d.source, "reason": d.reason, "tokens": d.tokens}
-                for d in plan.dropped
+                {"source": d.source, "reason": d.reason, "tokens": d.tokens} for d in plan.dropped
             ],
             "fallback": None,
             "conflicts": [
-                {"source": c.source, "suppressed_by": c.suppressed_by}
-                for c in plan.conflicts
+                {"source": c.source, "suppressed_by": c.suppressed_by} for c in plan.conflicts
             ],
         }
 

@@ -312,12 +312,15 @@ class TestConfigDefaults:
         import os
 
         from config import Settings
+
         old_environ = dict(os.environ)
         try:
             # 清除可能影响的环境变量
             for key in [
-                "CHAT_AGENT_ENABLED", "CHAT_ASK_AGENT_ENABLED",
-                "CHAT_REVISE_AGENT_ENABLED", "CHAT_AGENT_SHADOW_ENABLED",
+                "CHAT_AGENT_ENABLED",
+                "CHAT_ASK_AGENT_ENABLED",
+                "CHAT_REVISE_AGENT_ENABLED",
+                "CHAT_AGENT_SHADOW_ENABLED",
             ]:
                 os.environ.pop(key, None)
             s = Settings()

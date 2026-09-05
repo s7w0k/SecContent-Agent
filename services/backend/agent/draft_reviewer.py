@@ -198,7 +198,9 @@ class DraftReviewer:
     ) -> None:
         self.llm = llm
         # 启用 JSON 模式，强制 DeepSeek 返回合法 JSON
-        self.json_llm = llm.bind(response_format={"type": "json_object"}) if hasattr(llm, "bind") else llm
+        self.json_llm = (
+            llm.bind(response_format={"type": "json_object"}) if hasattr(llm, "bind") else llm
+        )
         self.timeout_seconds = timeout_seconds
         self.max_retries = max(0, max_retries)
 
@@ -240,10 +242,15 @@ class DraftReviewer:
                 # 构建系统提示词：固定红线 + 用户关注项（只增不减）
                 effective_system_prompt = SYSTEM_PROMPT
                 if user_focus_items and user_focus_items.strip():
-                    effective_system_prompt += f"\n\n## 当前用户额外关注项\n{user_focus_items.strip()}"
+                    effective_system_prompt += (
+                        f"\n\n## 当前用户额外关注项\n{user_focus_items.strip()}"
+                    )
                 response = await asyncio.wait_for(
                     self.json_llm.ainvoke(
-                        [SystemMessage(content=effective_system_prompt), HumanMessage(content=prompt)]
+                        [
+                            SystemMessage(content=effective_system_prompt),
+                            HumanMessage(content=prompt),
+                        ]
                     ),
                     timeout=self.timeout_seconds,
                 )

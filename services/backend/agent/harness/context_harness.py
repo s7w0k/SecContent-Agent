@@ -175,7 +175,11 @@ class ContextHarness:
             plan_hash=plan.plan_hash,
             total_tokens=plan.total_tokens,
             budget_tokens=plan.budget_tokens,
-            dropped=[{"source": d.source, "reason": d.reason, "tokens": d.tokens} for d in plan.dropped],
-            conflicts=[{"source": c.source, "suppressed_by": c.suppressed_by} for c in plan.conflicts],
+            dropped=[
+                {"source": d.source, "reason": d.reason, "tokens": d.tokens} for d in plan.dropped
+            ],
+            conflicts=[
+                {"source": c.source, "suppressed_by": c.suppressed_by} for c in plan.conflicts
+            ],
             truncated_sections=sorted(s.source_id for s in plan.sections if s.truncated),
         )

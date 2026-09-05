@@ -51,7 +51,11 @@ class GenerationOptions(BaseModel):
                 self.product_relevance_enabled = False
             elif self.product_relevance_enabled is True:
                 raise ValueError("none 模式不允许启用产品相关性")
-        if self.product_target_mode == ProductTargetMode.SELECTED and self.selected_product_ids is not None and len(self.selected_product_ids) == 0:
+        if (
+            self.product_target_mode == ProductTargetMode.SELECTED
+            and self.selected_product_ids is not None
+            and len(self.selected_product_ids) == 0
+        ):
             raise ValueError("selected 模式必须指定至少一个产品")
         return self
 
@@ -259,7 +263,11 @@ def merge_options_with_preferences(
     if options is None:
         return sys_relevance, sys_mode, sys_products
 
-    relevance = options.product_relevance_enabled if options.product_relevance_enabled is not None else sys_relevance
+    relevance = (
+        options.product_relevance_enabled
+        if options.product_relevance_enabled is not None
+        else sys_relevance
+    )
     mode = options.product_target_mode if options.product_target_mode is not None else sys_mode
     products = list(options.selected_product_ids) if options.selected_product_ids else sys_products
 

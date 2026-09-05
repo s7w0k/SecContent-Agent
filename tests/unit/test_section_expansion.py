@@ -227,9 +227,7 @@ class TestSectionExpander:
         _build_kb(tmp_path)
         expander, indexer = self._make(tmp_path)
         raw = next(d for d in indexer.manifest.docs if d.doc_type == "raw")
-        body = expander.get_section(
-            raw.doc_id, "doc:does-not-exist", product_ids=[P1]
-        )
+        body = expander.get_section(raw.doc_id, "doc:does-not-exist", product_ids=[P1])
         assert body is None
 
     def test_long_section_under_token_budget(self, tmp_path):
@@ -304,9 +302,7 @@ class TestFactAudit:
 
     def test_cited_fact_not_flagged(self):
         # 事实句位于引用块内 → 有来源，不标记
-        draft = render_citation(
-            "doc:x", "doc:x:0", quote="该方案支持 99.99% 可用性，版本 v2.3.1"
-        )
+        draft = render_citation("doc:x", "doc:x:0", quote="该方案支持 99.99% 可用性，版本 v2.3.1")
         result = audit_fact_citations(draft)
         assert result.issues == []
 

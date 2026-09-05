@@ -102,8 +102,7 @@ def aggregate_backend(results: list[Any]) -> dict[str, Any]:
     costs = [float((r.token_and_cost or {}).get("cost_usd", 0.0)) for r in results]
     latencies = [r.latency_ms for r in results]
     est_ratio = (
-        sum(1 for r in results if (r.token_and_cost or {}).get("usage_estimated"))
-        / total
+        sum(1 for r in results if (r.token_and_cost or {}).get("usage_estimated")) / total
         if total
         else 0.0
     )
@@ -190,7 +189,9 @@ def paired_report(
                 },
                 "token_delta_pct": round(_pct_reduction(lt, ct), 2),
                 "cost_delta_pct": round(_pct_reduction(lc, cc), 2),
-                "latency_delta_pct": round(_pct_reduction(p.legacy.latency_ms, p.candidate.latency_ms), 2),
+                "latency_delta_pct": round(
+                    _pct_reduction(p.legacy.latency_ms, p.candidate.latency_ms), 2
+                ),
                 "quality_regressed": _quality_regressed(p),
             }
         )
@@ -240,8 +241,24 @@ def paired_report(
         "paired": {
             "token_reduction_pct": round(_pct_reduction(sum(legacy_tokens), sum(cand_tokens)), 2),
             "token_delta_ci95": [
-                round(bootstrap_ci([_pct_reduction(lt, ct) for lt, ct in zip(legacy_tokens, cand_tokens, strict=True)])[0], 2),
-                round(bootstrap_ci([_pct_reduction(lt, ct) for lt, ct in zip(legacy_tokens, cand_tokens, strict=True)])[1], 2),
+                round(
+                    bootstrap_ci(
+                        [
+                            _pct_reduction(lt, ct)
+                            for lt, ct in zip(legacy_tokens, cand_tokens, strict=True)
+                        ]
+                    )[0],
+                    2,
+                ),
+                round(
+                    bootstrap_ci(
+                        [
+                            _pct_reduction(lt, ct)
+                            for lt, ct in zip(legacy_tokens, cand_tokens, strict=True)
+                        ]
+                    )[1],
+                    2,
+                ),
             ],
             "cost_reduction_pct": round(_pct_reduction(sum(legacy_costs), sum(cand_costs)), 2),
             "success_rate_delta": round(cand_agg["success_rate"] - legacy_agg["success_rate"], 4),

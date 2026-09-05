@@ -45,8 +45,16 @@ def _ctx(candidates=None, missing=None, visited=None):
         visited_pages=visited or [],
         candidate_pages=candidates
         or [
-            {"page_id": "product.agent.capability.a", "page_type": "capability", "task_affinity": ["R1"]},
-            {"page_id": "product.agent.scenario.b", "page_type": "scenario", "task_affinity": ["R2"]},
+            {
+                "page_id": "product.agent.capability.a",
+                "page_type": "capability",
+                "task_affinity": ["R1"],
+            },
+            {
+                "page_id": "product.agent.scenario.b",
+                "page_type": "scenario",
+                "task_affinity": ["R2"],
+            },
         ],
         pages_remaining=4,
         tool_calls_remaining=8,

@@ -27,6 +27,7 @@ logger = logging.getLogger("mcp-crawl.classifier")
 # 分类标签
 # ═══════════════════════════════════════════════════════════
 
+
 class ArticleCategory(StrEnum):
     AI_SECURITY = "AI安全"
     AGENT_SECURITY = "Agent安全"
@@ -45,6 +46,7 @@ class ArticleCategory(StrEnum):
 # ═══════════════════════════════════════════════════════════
 # 分类结果
 # ═══════════════════════════════════════════════════════════
+
 
 class ClassifiedArticle:
     """分类后的文章"""
@@ -139,6 +141,7 @@ class ClassifiedArticle:
 # ═══════════════════════════════════════════════════════════
 # 分类器
 # ═══════════════════════════════════════════════════════════
+
 
 class AISecurityClassifier:
     """使用 DeepSeek LLM 进行 AI/Agent 安全话题分类"""
@@ -235,7 +238,9 @@ Agent安全包括：
                         url_hash=art.url_hash,
                         source=art.source,
                         source_type=art.source_type,
-                        published_at=art.published_at.strftime("%Y-%m-%d") if art.published_at else "",
+                        published_at=art.published_at.strftime("%Y-%m-%d")
+                        if art.published_at
+                        else "",
                         summary=art.summary,
                         content_md=art.content_md,
                         is_ai_security=c.get("is_ai_security", False),

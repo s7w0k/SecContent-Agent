@@ -4,21 +4,67 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent.contracts.task import SlotSource, SlotState, SlotStatus, TaskAssumption, TaskEnvelope, merge_slot
+from agent.contracts.task import (
+    SlotSource,
+    SlotState,
+    SlotStatus,
+    TaskAssumption,
+    TaskEnvelope,
+    merge_slot,
+)
 from agent.task_understanding import TaskEnvelopePatch
 from pydantic import BaseModel, Field
 
 INVALIDATION_GRAPH: dict[str, tuple[str, ...]] = {
-    "intent": ("plan", "search_news", "classify_article", "match_products", "score_article", "generate_draft", "review_draft", "save_draft_version", "export_draft"),
-    "news_query": ("search_news", "candidate_selection", "classify_article", "match_products", "score_article", "generate_draft", "review_draft"),
-    "selected_article_ids": ("candidate_selection", "classify_article", "match_products", "score_article", "generate_draft", "review_draft", "save_draft_version", "export_draft"),
+    "intent": (
+        "plan",
+        "search_news",
+        "classify_article",
+        "match_products",
+        "score_article",
+        "generate_draft",
+        "review_draft",
+        "save_draft_version",
+        "export_draft",
+    ),
+    "news_query": (
+        "search_news",
+        "candidate_selection",
+        "classify_article",
+        "match_products",
+        "score_article",
+        "generate_draft",
+        "review_draft",
+    ),
+    "selected_article_ids": (
+        "candidate_selection",
+        "classify_article",
+        "match_products",
+        "score_article",
+        "generate_draft",
+        "review_draft",
+        "save_draft_version",
+        "export_draft",
+    ),
     "category": ("match_products", "score_article", "generate_draft", "review_draft"),
-    "product_ids": ("score_article", "generate_draft", "review_draft", "save_draft_version", "export_draft"),
+    "product_ids": (
+        "score_article",
+        "generate_draft",
+        "review_draft",
+        "save_draft_version",
+        "export_draft",
+    ),
     "template_key": ("generate_draft", "review_draft", "save_draft_version", "export_draft"),
     "angle": ("generate_draft", "review_draft", "save_draft_version", "export_draft"),
     "tone": ("generate_draft", "review_draft", "save_draft_version", "export_draft"),
     "length": ("generate_draft", "review_draft", "save_draft_version", "export_draft"),
-    "constraints": ("score_article", "generate_draft", "review_draft", "save_draft_version", "export_draft"),
+    "constraints": (
+        "score_article",
+        "generate_draft",
+        "review_draft",
+        "save_draft_version",
+        "export_draft",
+    ),
     "save_policy": ("save_draft_version", "export_draft"),
     "requested_outputs": ("export_draft",),
     "draft_artifact": ("revise_draft", "review_draft", "save_draft_version", "export_draft"),
@@ -47,7 +93,11 @@ class SlotMerger:
         source: SlotSource = SlotSource.USER,
         completed_steps: set[str] | None = None,
     ) -> SlotMergeResult:
-        parsed = patch if isinstance(patch, TaskEnvelopePatch) else TaskEnvelopePatch.model_validate(patch)
+        parsed = (
+            patch
+            if isinstance(patch, TaskEnvelopePatch)
+            else TaskEnvelopePatch.model_validate(patch)
+        )
         updates: dict[str, SlotState] = {}
         changed: list[str] = []
         conflicted: list[str] = []

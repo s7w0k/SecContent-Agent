@@ -44,10 +44,12 @@ async def submit_personalization_feedback(
     db = _get_db(request)
 
     # 验证 generation_run 存在且属于该用户
-    run = await db["generation_runs"].find_one({
-        "generation_id": body.generation_id,
-        "user_id": user_id,
-    })
+    run = await db["generation_runs"].find_one(
+        {
+            "generation_id": body.generation_id,
+            "user_id": user_id,
+        }
+    )
     if run is None:
         raise HTTPException(status_code=404, detail="Generation run not found")
 
@@ -82,10 +84,12 @@ async def submit_personalization_feedback(
     if body.verdict == "reject":
         await db["user_memory_items"].update_one(
             {"memory_id": body.memory_id, "user_id": user_id},
-            {"$set": {
-                "status": "rejected",
-                "updated_at": datetime.now(UTC),
-            }},
+            {
+                "$set": {
+                    "status": "rejected",
+                    "updated_at": datetime.now(UTC),
+                }
+            },
         )
 
     return {"ok": True, "data": {"feedback_id": feedback_id}}

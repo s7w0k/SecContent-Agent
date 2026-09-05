@@ -168,9 +168,7 @@ class SearXNGClient:
                 elif response.status_code in (400,):
                     raise SearXNGBadResponseError(f"搜索请求无效: {response.status_code}")
                 elif response.status_code in (502, 503, 504):
-                    last_exc = SearXNGConnectionError(
-                        f"搜索服务暂时不可用: {response.status_code}"
-                    )
+                    last_exc = SearXNGConnectionError(f"搜索服务暂时不可用: {response.status_code}")
                     if attempt < self._max_retries:
                         await asyncio.sleep(0.5 * (attempt + 1))
                         continue

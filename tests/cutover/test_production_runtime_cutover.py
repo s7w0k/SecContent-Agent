@@ -33,6 +33,7 @@ MODES = ("legacy", "skill_shadow", "skill_canary", "skill_planned")
 # 桩：Settings / Legacy 执行器 / Mongo 假库
 # ══════════════════════════════════════════════════════════════
 
+
 class _ModeSettings:
     """依据 mode 动态生成 Settings 桩。"""
 
@@ -123,7 +124,9 @@ class _MemoryCollection:
                 matched = sorted(matched, key=lambda d: d.get(key, 0), reverse=rev)
         return matched[0]
 
-    async def find_one_and_update(self, query: dict[str, Any], update: dict[str, Any], **_: Any) -> dict[str, Any]:
+    async def find_one_and_update(
+        self, query: dict[str, Any], update: dict[str, Any], **_: Any
+    ) -> dict[str, Any]:
         doc = await self.find_one(query)
         if doc is None:
             return {"retry_count": 0}
@@ -160,6 +163,7 @@ def _build(mode: str, *, legacy_executor: WorkflowExecutor | None, db: Any) -> A
 # ══════════════════════════════════════════════════════════════
 # §59 Startup Matrix：四模式
 # ══════════════════════════════════════════════════════════════
+
 
 class TestStartupMatrix:
     def test_legacy_mode(self) -> None:
@@ -217,6 +221,7 @@ class TestStartupMatrix:
 # §60 / 61 Critical Test 1 / 2：skill_planned 不构造旧链
 # ══════════════════════════════════════════════════════════════
 
+
 class TestSkillPlannedNoOldChain:
     def test_worker_guards_old_constructs_behind_need_legacy(self) -> None:
         """worker.py 中 PipelineManagerV2 / build_multi_agent_runtime / LLMWrapper
@@ -252,6 +257,7 @@ def _read_worker_source() -> str:
 # §62 Critical Test 3：legacy 模式匹配切机前行为
 # ══════════════════════════════════════════════════════════════
 
+
 class TestLegacyBehaviorMatch:
     async def test_legacy_selects_legacy_engine(self) -> None:
         legacy = _LegacyStub()
@@ -266,6 +272,7 @@ class TestLegacyBehaviorMatch:
 # ══════════════════════════════════════════════════════════════
 # §63 Critical Test 4：Shadow 只读，绝不写生产
 # ══════════════════════════════════════════════════════════════
+
 
 class TestShadowNoProductionWrite:
     def test_shadow_skill_runtime_is_readonly(self) -> None:
@@ -286,6 +293,7 @@ class TestShadowNoProductionWrite:
 # ══════════════════════════════════════════════════════════════
 # §64 Critical Test 5：Skill 失败绝不自动 fallback Legacy
 # ══════════════════════════════════════════════════════════════
+
 
 class TestNoAutoFallback:
     async def test_skill_planned_skill_boom_propagates(self) -> None:
@@ -308,6 +316,7 @@ class TestNoAutoFallback:
 # ══════════════════════════════════════════════════════════════
 # §65 / 66 Critical Test 6 / 7：Retry / Resume sticky
 # ══════════════════════════════════════════════════════════════
+
 
 class _RouterRecorder:
     """记录 select_engine / execute / resume 调用。"""
@@ -399,6 +408,7 @@ class TestRetryResumeSticky:
 # §67 Critical Test 8：Worker 与 Main 共用统一 production builder
 # ══════════════════════════════════════════════════════════════
 
+
 class TestWorkerMainSharedBuilder:
     def test_worker_source_uses_builder(self) -> None:
         src = _read_worker_source()
@@ -418,6 +428,7 @@ class TestWorkerMainSharedBuilder:
 # §68 Critical Test 9：Worker skill_planned 具备完整 Skill Runtime
 # ══════════════════════════════════════════════════════════════
 
+
 class TestWorkerSkillPlannedHasSkillRuntime:
     def test_skill_planned_runtime_components(self) -> None:
         rt = _build("skill_planned", legacy_executor=None, db=_MemoryDB())
@@ -431,6 +442,7 @@ class TestWorkerSkillPlannedHasSkillRuntime:
 # ══════════════════════════════════════════════════════════════
 # §69 Critical Test 10：生产 Artifact 跨 Worker 重启持久
 # ══════════════════════════════════════════════════════════════
+
 
 class TestProductionArtifactPersists:
     @pytest.mark.asyncio
@@ -462,7 +474,5 @@ class TestProductionArtifactPersists:
         assert record["tenant_id"] == "ten-1"
         assert record["user_id"] == "usr-1"
 
-        payload = await store2.get(
-            artifact_id="art-1", artifact_type="TriageArtifact", version=1
-        )
+        payload = await store2.get(artifact_id="art-1", artifact_type="TriageArtifact", version=1)
         assert payload["category"] == "MCP协议漏洞"

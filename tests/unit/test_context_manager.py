@@ -29,7 +29,9 @@ from agent.context_manager import (
 )
 
 
-def _source(source: str, content: str, section_type: str, *, required: bool = False, source_hash: str = "h") -> ContextSource:
+def _source(
+    source: str, content: str, section_type: str, *, required: bool = False, source_hash: str = "h"
+) -> ContextSource:
     return ContextSource(
         source=source,
         content=content,
@@ -53,13 +55,15 @@ def test_estimate_tokens():
 def test_resolve_model_window():
     assert resolve_model_window("deepseek-chat") == 64000
     assert resolve_model_window("deepseek-chat-v3") == 64000  # 前缀匹配
-    assert resolve_model_window("unknown-model") == 64000     # 默认
+    assert resolve_model_window("unknown-model") == 64000  # 默认
 
 
 def test_derive_input_budget_dynamic():
     cm = ContextManager()
     req = ContextRequest(
-        purpose="score", user_id="u-1", model_id="deepseek-chat",
+        purpose="score",
+        user_id="u-1",
+        model_id="deepseek-chat",
         max_input_tokens=0,  # 动态
         metadata={"system_tokens": 0},
     )
@@ -70,9 +74,7 @@ def test_derive_input_budget_dynamic():
 
 def test_derive_input_budget_explicit():
     cm = ContextManager()
-    req = ContextRequest(
-        purpose="score", user_id="u-1", max_input_tokens=12000
-    )
+    req = ContextRequest(purpose="score", user_id="u-1", max_input_tokens=12000)
     assert cm.derive_input_budget(req) == 12000
 
 
@@ -102,7 +104,9 @@ def test_optional_dropped_when_budget_exceeded():
     big_optional = _source("optional:memory", "记忆" * 400, "memory_preference")  # 200 tokens
     plan = cm.build(req, [big_optional])
     assert plan.total_tokens == 0
-    assert any(d.source == "optional:memory" and d.reason == "budget_exceeded" for d in plan.dropped)
+    assert any(
+        d.source == "optional:memory" and d.reason == "budget_exceeded" for d in plan.dropped
+    )
 
 
 def test_required_not_evicted_by_optional():
@@ -110,8 +114,10 @@ def test_required_not_evicted_by_optional():
     cm = ContextManager()
     req = ContextRequest(purpose="score", user_id="u-1", max_input_tokens=1000)
     sources = [
-        _source("optional:external", "外部" * 6000, "external"),          # 1500 tokens
-        _source("required:overview", "概述" * 2000, "required_product", required=True),  # 500 tokens
+        _source("optional:external", "外部" * 6000, "external"),  # 1500 tokens
+        _source(
+            "required:overview", "概述" * 2000, "required_product", required=True
+        ),  # 500 tokens
     ]
     plan = cm.build(req, sources)
     allocated = {s.source.source for s in plan.sections}
@@ -126,7 +132,10 @@ def test_required_insufficient_budget_recorded():
     src = _source("required:policy", "政策" * 400, "security_policy", required=True)  # 200 tokens
     plan = cm.build(req, [src])
     assert plan.total_tokens == 0
-    assert any(d.source == "required:policy" and d.reason == "required_insufficient_budget" for d in plan.dropped)
+    assert any(
+        d.source == "required:policy" and d.reason == "required_insufficient_budget"
+        for d in plan.dropped
+    )
 
 
 def test_conflict_suppression():
@@ -140,7 +149,9 @@ def test_conflict_suppression():
     plan = cm.build(req, sources)
     # 第一个分配，第二个被抑制
     assert len(plan.sections) == 1
-    assert any(c.suppressed_by == "policy:base" and c.source == "policy:extra" for c in plan.conflicts)
+    assert any(
+        c.suppressed_by == "policy:base" and c.source == "policy:extra" for c in plan.conflicts
+    )
 
 
 def test_allocation_order():
@@ -161,16 +172,28 @@ def test_plan_hash_stable_and_sensitive():
     cm = ContextManager()
     req = ContextRequest(purpose="score", user_id="u-1", max_input_tokens=100000)
     sources = [
-        _source("required:overview", "概述" * 10, "required_product", required=True, source_hash="h1"),
+        _source(
+            "required:overview", "概述" * 10, "required_product", required=True, source_hash="h1"
+        ),
     ]
     plan1 = cm.build(req, sources, snapshot={"skill_versions": "v1", "knowledge_snapshot": "k1"})
     plan2 = cm.build(req, sources, snapshot={"skill_versions": "v1", "knowledge_snapshot": "k1"})
     assert plan1.plan_hash == plan2.plan_hash
 
     # 内容变化 → hash 变化
-    plan3 = cm.build(req, [
-        _source("required:overview", "概述不同" * 10, "required_product", required=True, source_hash="h2"),
-    ], snapshot={"skill_versions": "v1", "knowledge_snapshot": "k1"})
+    plan3 = cm.build(
+        req,
+        [
+            _source(
+                "required:overview",
+                "概述不同" * 10,
+                "required_product",
+                required=True,
+                source_hash="h2",
+            ),
+        ],
+        snapshot={"skill_versions": "v1", "knowledge_snapshot": "k1"},
+    )
     assert plan1.plan_hash != plan3.plan_hash
 
 

@@ -54,14 +54,14 @@ CHARS_PER_TOKEN = 4
 
 # 分配顺序（与文档一致）
 ALLOCATION_ORDER = (
-    "security_policy",      # 安全/合规政策
-    "user_constraints",     # 用户本次明确约束
-    "skill_core",           # Skill 核心指令
-    "required_product",     # required 产品知识
-    "user_knowledge",       # 用户知识
-    "memory_preference",    # 记忆偏好
-    "skill_references",     # Skill 可选 references
-    "external",             # 外部资料
+    "security_policy",  # 安全/合规政策
+    "user_constraints",  # 用户本次明确约束
+    "skill_core",  # Skill 核心指令
+    "required_product",  # required 产品知识
+    "user_knowledge",  # 用户知识
+    "memory_preference",  # 记忆偏好
+    "skill_references",  # Skill 可选 references
+    "external",  # 外部资料
 )
 
 # 优先级数值（用于冲突抑制）
@@ -174,7 +174,9 @@ class ContextPlan:
     sections: list[ContextSection] = field(default_factory=list)
     dropped: list[DropRecord] = field(default_factory=list)
     conflicts: list[ConflictRecord] = field(default_factory=list)
-    snapshot: dict[str, str] = field(default_factory=dict)  # skill_versions / knowledge_snapshot / memory_version
+    snapshot: dict[str, str] = field(
+        default_factory=dict
+    )  # skill_versions / knowledge_snapshot / memory_version
     budget_tokens: int = 0
     input_budget_tokens: int = 0
 
@@ -258,10 +260,14 @@ class ContextManager:
             if used + tokens > budget:
                 # required 不可被挤出：记录 dropped(insufficient) 并跳过该节
                 self._dropped.append(
-                    DropRecord(source=src.source, reason="required_insufficient_budget", tokens=tokens)
+                    DropRecord(
+                        source=src.source, reason="required_insufficient_budget", tokens=tokens
+                    )
                 )
                 continue
-            self._sections_accum.append(ContextSection(source=src, content=src.content, tokens=tokens))
+            self._sections_accum.append(
+                ContextSection(source=src, content=src.content, tokens=tokens)
+            )
             used += tokens
 
         # 2. 可选来源：按 ALLOCATION_ORDER 顺序，预算充足则分配，否则丢弃
@@ -279,7 +285,9 @@ class ContextManager:
             if conflict is not None:
                 self._conflicts.append(conflict)
                 continue
-            self._sections_accum.append(ContextSection(source=src, content=src.content, tokens=tokens))
+            self._sections_accum.append(
+                ContextSection(source=src, content=src.content, tokens=tokens)
+            )
             used += tokens
 
         # 3. required 缺失检查：评分上下文不允许残缺
@@ -306,10 +314,7 @@ class ContextManager:
 
     def _find_conflict(self, src: ContextSource) -> ConflictRecord | None:
         """冲突规则：已存在更高或相同优先级来源时抑制（仅跨来源同类型）。"""
-        existing = [
-            s for s in self._sections_accum
-            if s.source.section_type == src.section_type
-        ]
+        existing = [s for s in self._sections_accum if s.source.section_type == src.section_type]
         if not existing:
             return None
         # 同 section_type 只允许一个（如 required_product 每产品唯一）

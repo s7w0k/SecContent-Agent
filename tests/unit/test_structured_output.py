@@ -138,9 +138,7 @@ async def test_native_structured_output_persists_complete_metadata() -> None:
 async def test_provider_incompatibility_falls_back_and_records_reason() -> None:
     collection = FakeCollection()
     wrapper = LLMWrapper(
-        FallbackLLM(
-            '{"relevance": 88, "event_impact": 77, "reason": "高度相关"}'
-        ),
+        FallbackLLM('{"relevance": 88, "event_impact": 77, "reason": "高度相关"}'),
         {"llm_call_logs": collection},
     )
 

@@ -22,17 +22,17 @@ VALID_SPLITS = ("train", "validation", "holdout", "safety_holdout")
 
 # 阶段2 §2.1 数据集至少覆盖的场景类别
 REQUIRED_CATEGORIES = {
-    "no_tool",               # 无工具直接回答
-    "product_knowledge",     # 产品知识检索
-    "article",               # 文章/草稿/记忆检索
-    "multi_turn",            # 多轮上下文和长历史
-    "multi_tool",            # 多工具与并行工具
+    "no_tool",  # 无工具直接回答
+    "product_knowledge",  # 产品知识检索
+    "article",  # 文章/草稿/记忆检索
+    "multi_turn",  # 多轮上下文和长历史
+    "multi_tool",  # 多工具与并行工具
     "insufficient_evidence",  # 不充分证据和冲突证据
-    "budget_limits",         # 超预算、超时、429、5xx
-    "permissions",           # 工具权限、跨用户、跨租户
-    "security",              # 提示注入与恶意工具文本
-    "finalization",          # 审批、取消、重启与补偿
-    "a2a",                   # A2A 重复投递、乱序、断流和恶意 peer
+    "budget_limits",  # 超预算、超时、429、5xx
+    "permissions",  # 工具权限、跨用户、跨租户
+    "security",  # 提示注入与恶意工具文本
+    "finalization",  # 审批、取消、重启与补偿
+    "a2a",  # A2A 重复投递、乱序、断流和恶意 peer
 }
 
 DATASET_VERSION_RE = re.compile(r"^(?P<name>.+)_v(?P<version>\d+)\.jsonl$")

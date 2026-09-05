@@ -90,7 +90,6 @@ USER_PROMPT_TEMPLATE = """请基于产品知识库对以下文章进行语义相
 """
 
 
-
 # ═══════════════════════════════════════════════════════════════
 # ScoringAgent
 # ═══════════════════════════════════════════════════════════════
@@ -125,10 +124,12 @@ class ScoringAgent:
         user_prompt = self._build_user_prompt(art)
         for attempt in range(MAX_RETRIES + 1):
             try:
-                response = await self.llm.ainvoke([
-                    SystemMessage(content=self.system_prompt),
-                    HumanMessage(content=user_prompt),
-                ])
+                response = await self.llm.ainvoke(
+                    [
+                        SystemMessage(content=self.system_prompt),
+                        HumanMessage(content=user_prompt),
+                    ]
+                )
                 raw = response.content if hasattr(response, "content") else str(response)
                 return self._enrich_result(self._validate_and_fix(self._parse_response(raw)))
             except Exception as e:
@@ -140,9 +141,9 @@ class ScoringAgent:
         if not articles:
             return []
         logger.info("Scoring %d articles (parallel)", len(articles))
-        results = await asyncio.gather(*[self._score_with_llm(
-            a if isinstance(a, dict) else a.model_dump()
-        ) for a in articles])
+        results = await asyncio.gather(
+            *[self._score_with_llm(a if isinstance(a, dict) else a.model_dump()) for a in articles]
+        )
         rlist = list(results)
         ok = sum(1 for r in rlist if not r.get("_fallback"))
         logger.info("Scored: %d/%d ok", ok, len(rlist))

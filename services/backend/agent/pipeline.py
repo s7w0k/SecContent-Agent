@@ -277,7 +277,10 @@ async def crawl_node(
                         continue
                     import hashlib
 
-                    url_hash = art.get("url_hash") or hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()
+                    url_hash = (
+                        art.get("url_hash")
+                        or hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()
+                    )
 
                     # 去重：检查是否已存在
                     existing = await db["articles"].find_one({"url_hash": url_hash})
@@ -337,7 +340,10 @@ async def crawl_node(
             for art in articles:
                 if art.get("source_type", "overseas_news") == "overseas_news":
                     url = art.get("url", "")
-                    url_hash = art.get("url_hash") or hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()
+                    url_hash = (
+                        art.get("url_hash")
+                        or hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()
+                    )
                     if url:
                         overseas_urls.append({"url_hash": url_hash, "url": url})
 

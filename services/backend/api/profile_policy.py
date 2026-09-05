@@ -59,9 +59,15 @@ async def get_policy(request: Request, user_id: str = Depends(get_current_user))
     db = _get_db(request)
     doc = await db["user_profile_policies"].find_one({"user_id": user_id})
     if doc is None:
-        return {"ok": True, "data": {"policy": _default_policy(user_id), "is_default": True, "version": 1}}
+        return {
+            "ok": True,
+            "data": {"policy": _default_policy(user_id), "is_default": True, "version": 1},
+        }
     doc.pop("_id", None)
-    return {"ok": True, "data": {"policy": doc, "is_default": False, "version": doc.get("version", 1)}}
+    return {
+        "ok": True,
+        "data": {"policy": doc, "is_default": False, "version": doc.get("version", 1)},
+    }
 
 
 @router.put("", summary="保存用户显式偏好 Policy")
@@ -100,7 +106,9 @@ async def save_policy(
         "structure_preference": body.structure_preference,
         "required_patterns": [p[:200] for p in body.required_patterns],
         "avoid_patterns": [p[:200] for p in body.avoid_patterns],
-        "custom_instructions": (body.custom_instructions or "")[:2000] if body.custom_instructions else None,
+        "custom_instructions": (body.custom_instructions or "")[:2000]
+        if body.custom_instructions
+        else None,
         "auto_learning_enabled": body.auto_learning_enabled,
         "memory_write_approval": body.memory_write_approval,
         "version": new_version,
@@ -127,4 +135,7 @@ async def reset_policy(request: Request, user_id: str = Depends(get_current_user
     """只删除显式 Policy，不删除自动记忆。"""
     db = _get_db(request)
     await db["user_profile_policies"].delete_one({"user_id": user_id})
-    return {"ok": True, "data": {"policy": _default_policy(user_id), "is_default": True, "version": 1}}
+    return {
+        "ok": True,
+        "data": {"policy": _default_policy(user_id), "is_default": True, "version": 1},
+    }

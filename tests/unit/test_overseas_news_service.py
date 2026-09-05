@@ -65,27 +65,43 @@ class TestOverseasNewsIngestionService:
         from agent.overseas_news_service import OverseasNewsIngestionService
 
         mock_tool = AsyncMock()
-        mock_tool.ainvoke = AsyncMock(return_value={
-            "ok": True,
-            "data": {
-                "articles": [
-                    {"url": "https://example.com/1", "title": "新闻1", "source": "THN",
-                     "summary": "摘要1", "published_at": "2026-08-03"},
-                    {"url": "https://example.com/2", "title": "新闻2", "source": "THN",
-                     "summary": "摘要2", "published_at": "2026-08-03"},
-                ],
-                "per_site": {"THN": 2},
-                "errors": {},
+        mock_tool.ainvoke = AsyncMock(
+            return_value={
+                "ok": True,
+                "data": {
+                    "articles": [
+                        {
+                            "url": "https://example.com/1",
+                            "title": "新闻1",
+                            "source": "THN",
+                            "summary": "摘要1",
+                            "published_at": "2026-08-03",
+                        },
+                        {
+                            "url": "https://example.com/2",
+                            "title": "新闻2",
+                            "source": "THN",
+                            "summary": "摘要2",
+                            "published_at": "2026-08-03",
+                        },
+                    ],
+                    "per_site": {"THN": 2},
+                    "errors": {},
+                },
             }
-        })
+        )
 
         tools = {"crawl_overseas_news": mock_tool}
         db = MockDb([])
         service = OverseasNewsIngestionService(db=db, tools=tools)
 
         result = await service.run(
-            crawl_days=1, trigger="manual", actor_id="user-1",
-            trace_id="trace-1", request_id="req-1", run_id="run-1",
+            crawl_days=1,
+            trigger="manual",
+            actor_id="user-1",
+            trace_id="trace-1",
+            request_id="req-1",
+            run_id="run-1",
         )
 
         assert result["ok"] is True
@@ -106,24 +122,31 @@ class TestOverseasNewsIngestionService:
         hash1 = hashlib.md5(url1.encode()).hexdigest()
         existing = [{"url_hash": hash1, "url": url1, "content_md": "已有正文"}]
         mock_tool = AsyncMock()
-        mock_tool.ainvoke = AsyncMock(return_value={
-            "ok": True,
-            "data": {
-                "articles": [
-                    {"url": "https://example.com/1", "title": "新闻1"},
-                    {"url": "https://example.com/2", "title": "新闻2"},
-                ],
-                "per_site": {}, "errors": {},
+        mock_tool.ainvoke = AsyncMock(
+            return_value={
+                "ok": True,
+                "data": {
+                    "articles": [
+                        {"url": "https://example.com/1", "title": "新闻1"},
+                        {"url": "https://example.com/2", "title": "新闻2"},
+                    ],
+                    "per_site": {},
+                    "errors": {},
+                },
             }
-        })
+        )
 
         tools = {"crawl_overseas_news": mock_tool}
         db = MockDb(existing)
         service = OverseasNewsIngestionService(db=db, tools=tools)
 
         result = await service.run(
-            crawl_days=1, trigger="manual", actor_id="user-1",
-            trace_id="t", request_id="r", run_id="run-1",
+            crawl_days=1,
+            trigger="manual",
+            actor_id="user-1",
+            trace_id="t",
+            request_id="r",
+            run_id="run-1",
         )
 
         assert result["saved"] == 1
@@ -135,24 +158,32 @@ class TestOverseasNewsIngestionService:
         from agent.overseas_news_service import OverseasNewsIngestionService
 
         mock_tool = AsyncMock()
-        mock_tool.ainvoke = AsyncMock(return_value={
-            "ok": True,
-            "data": {
-                "articles": [
-                    {"url": "", "title": "无URL"},
-                    {"url": "ftp://bad", "title": "非HTTP"},
-                    {"url": "https://good.com/1", "title": "正常"},
-                ],
-                "per_site": {}, "errors": {},
+        mock_tool.ainvoke = AsyncMock(
+            return_value={
+                "ok": True,
+                "data": {
+                    "articles": [
+                        {"url": "", "title": "无URL"},
+                        {"url": "ftp://bad", "title": "非HTTP"},
+                        {"url": "https://good.com/1", "title": "正常"},
+                    ],
+                    "per_site": {},
+                    "errors": {},
+                },
             }
-        })
+        )
 
         service = OverseasNewsIngestionService(
-            db=MockDb([]), tools={"crawl_overseas_news": mock_tool},
+            db=MockDb([]),
+            tools={"crawl_overseas_news": mock_tool},
         )
         result = await service.run(
-            crawl_days=1, trigger="manual", actor_id="u",
-            trace_id="t", request_id="r", run_id="run-1",
+            crawl_days=1,
+            trigger="manual",
+            actor_id="u",
+            trace_id="t",
+            request_id="r",
+            run_id="run-1",
         )
 
         assert result["invalid"] == 2
@@ -164,21 +195,28 @@ class TestOverseasNewsIngestionService:
         from agent.overseas_news_service import OverseasNewsIngestionService
 
         mock_tool = AsyncMock()
-        mock_tool.ainvoke = AsyncMock(return_value={
-            "ok": True,
-            "data": {
-                "articles": [{"url": "https://ok.com/1", "title": "OK"}],
-                "per_site": {"site-a": 1},
-                "errors": {"site-b": "timeout"},
+        mock_tool.ainvoke = AsyncMock(
+            return_value={
+                "ok": True,
+                "data": {
+                    "articles": [{"url": "https://ok.com/1", "title": "OK"}],
+                    "per_site": {"site-a": 1},
+                    "errors": {"site-b": "timeout"},
+                },
             }
-        })
+        )
 
         service = OverseasNewsIngestionService(
-            db=MockDb([]), tools={"crawl_overseas_news": mock_tool},
+            db=MockDb([]),
+            tools={"crawl_overseas_news": mock_tool},
         )
         result = await service.run(
-            crawl_days=1, trigger="manual", actor_id="u",
-            trace_id="t", request_id="r", run_id="run-1",
+            crawl_days=1,
+            trigger="manual",
+            actor_id="u",
+            trace_id="t",
+            request_id="r",
+            run_id="run-1",
         )
 
         assert result["status"] == "partial"
@@ -193,13 +231,18 @@ class TestOverseasNewsIngestionService:
         mock_tool.ainvoke = AsyncMock(side_effect=ConnectionError("timeout"))
 
         service = OverseasNewsIngestionService(
-            db=MockDb([]), tools={"crawl_overseas_news": mock_tool},
+            db=MockDb([]),
+            tools={"crawl_overseas_news": mock_tool},
         )
 
         with pytest.raises(CrawlServiceError) as exc_info:
             await service.run(
-                crawl_days=1, trigger="scheduled", actor_id="system:scheduler",
-                trace_id="t", request_id="r", run_id="run-1",
+                crawl_days=1,
+                trigger="scheduled",
+                actor_id="system:scheduler",
+                trace_id="t",
+                request_id="r",
+                run_id="run-1",
             )
 
         assert exc_info.value.retryable is True
@@ -211,16 +254,21 @@ class TestOverseasNewsIngestionService:
         from agent.overseas_news_service import OverseasNewsIngestionService
 
         mock_tool = AsyncMock()
-        mock_tool.ainvoke = AsyncMock(return_value={
-            "ok": True, "data": {"articles": [], "per_site": {}, "errors": {}}
-        })
+        mock_tool.ainvoke = AsyncMock(
+            return_value={"ok": True, "data": {"articles": [], "per_site": {}, "errors": {}}}
+        )
 
         service = OverseasNewsIngestionService(
-            db=MockDb([]), tools={"crawl_overseas_news": mock_tool},
+            db=MockDb([]),
+            tools={"crawl_overseas_news": mock_tool},
         )
         result = await service.run(
-            crawl_days=1, trigger="scheduled", actor_id="system:scheduler",
-            trace_id="t", request_id="r", run_id="run-1",
+            crawl_days=1,
+            trigger="scheduled",
+            actor_id="system:scheduler",
+            trace_id="t",
+            request_id="r",
+            run_id="run-1",
         )
 
         assert result["ok"] is True
@@ -234,21 +282,29 @@ class TestOverseasNewsIngestionService:
         from agent.overseas_news_service import OverseasNewsIngestionService
 
         mock_tool = AsyncMock()
-        mock_tool.ainvoke = AsyncMock(return_value={
-            "ok": True,
-            "data": {
-                "articles": [{"url": "https://new.com/1", "title": "新"}],
-                "per_site": {}, "errors": {},
+        mock_tool.ainvoke = AsyncMock(
+            return_value={
+                "ok": True,
+                "data": {
+                    "articles": [{"url": "https://new.com/1", "title": "新"}],
+                    "per_site": {},
+                    "errors": {},
+                },
             }
-        })
+        )
 
         service = OverseasNewsIngestionService(
-            db=MockDb([]), tools={"crawl_overseas_news": mock_tool},
+            db=MockDb([]),
+            tools={"crawl_overseas_news": mock_tool},
             arq_pool=None,
         )
         result = await service.run(
-            crawl_days=1, trigger="manual", actor_id="u",
-            trace_id="t", request_id="r", run_id="run-1",
+            crawl_days=1,
+            trigger="manual",
+            actor_id="u",
+            trace_id="t",
+            request_id="r",
+            run_id="run-1",
         )
 
         assert result["fulltext_status"] == "failed"

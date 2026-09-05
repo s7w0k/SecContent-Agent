@@ -43,9 +43,7 @@ def _slot(key: str, *, path: str = "") -> ArgumentBinding:
 
 
 def _obs(key: str, step_id: str, path: str) -> ArgumentBinding:
-    return ArgumentBinding(
-        source=BindingSource.OBSERVATION, key=key, step_id=step_id, path=path
-    )
+    return ArgumentBinding(source=BindingSource.OBSERVATION, key=key, step_id=step_id, path=path)
 
 
 def _server(key: str, value: Any) -> ArgumentBinding:
@@ -182,11 +180,15 @@ class RulePlannerV1:
                 )
             ], ""
 
-        search = intent in {
-            TaskIntent.SEARCH_AND_DRAFT.value,
-            TaskIntent.CURATE_NEWS.value,
-            TaskIntent.SEARCH_AND_RANK.value,
-        } and "selected_article_ids" not in confirmed
+        search = (
+            intent
+            in {
+                TaskIntent.SEARCH_AND_DRAFT.value,
+                TaskIntent.CURATE_NEWS.value,
+                TaskIntent.SEARCH_AND_RANK.value,
+            }
+            and "selected_article_ids" not in confirmed
+        )
         draft = intent in {TaskIntent.GENERATE_DRAFT.value, TaskIntent.SEARCH_AND_DRAFT.value}
         if intent not in {
             TaskIntent.GENERATE_DRAFT.value,
@@ -236,7 +238,10 @@ class RulePlannerV1:
                 article_step,
                 "Load the selected article",
                 "get_article",
-                {"article_id": article_binding, "include_content": _server("include_content", True)},
+                {
+                    "article_id": article_binding,
+                    "include_content": _server("include_content", True),
+                },
                 dependencies=dependencies,
                 expected=["found", "article.article_id"],
                 acceptance=["article exists and content reference is immutable"],
@@ -311,13 +316,19 @@ class RulePlannerV1:
                     "generate_draft",
                     {
                         "article": _obs("article", "score", "article"),
-                        "product_ids": product_binding.model_copy(
-                            update={"step_id": "products"}
-                        ) if product_binding.source == BindingSource.OBSERVATION else product_binding,
-                        "template_key": _slot("template_key") if "template_key" in confirmed else _server("template_key", "default"),
+                        "product_ids": product_binding.model_copy(update={"step_id": "products"})
+                        if product_binding.source == BindingSource.OBSERVATION
+                        else product_binding,
+                        "template_key": _slot("template_key")
+                        if "template_key" in confirmed
+                        else _server("template_key", "default"),
                         "angle": _slot("angle") if "angle" in confirmed else _server("angle", ""),
-                        "tone": _slot("tone") if "tone" in confirmed else _server("tone", "professional"),
-                        "target_length": _slot("length") if "length" in confirmed else _server("target_length", 1200),
+                        "tone": _slot("tone")
+                        if "tone" in confirmed
+                        else _server("tone", "professional"),
+                        "target_length": _slot("length")
+                        if "length" in confirmed
+                        else _server("target_length", 1200),
                         "idempotency_key": _server("idempotency_key", f"{run_id}-draft"),
                     },
                     dependencies=["score", "products"],

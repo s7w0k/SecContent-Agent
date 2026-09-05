@@ -409,8 +409,12 @@ class TestV2MultiFile:
         import os as _os
 
         from agent.knowledge import KnowledgeLoader
+
         docs_dir = _os.path.join(
-            _os.path.dirname(__file__), "..", "..", "docs",
+            _os.path.dirname(__file__),
+            "..",
+            "..",
+            "docs",
         )
         if _os.path.isdir(docs_dir):
             loader = KnowledgeLoader(docs_dir=docs_dir)
@@ -421,6 +425,7 @@ class TestV2MultiFile:
     async def test_multi_file_merge(self):
         """加载多个文件并合并知识"""
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmpdir:
             doc1 = Path(tmpdir) / "产品.md"
             doc1.write_text(SAMPLE_DOC, encoding="utf-8")
@@ -428,6 +433,7 @@ class TestV2MultiFile:
             doc2.write_text(SAMPLE_DOC_2, encoding="utf-8")
 
             from agent.knowledge import KnowledgeLoader
+
             loader = KnowledgeLoader(docs_dir=tmpdir)
             knowledge = await loader.load()
 
@@ -448,7 +454,7 @@ class TestV2MultiFile:
         )
         add = ProductKnowledge(
             core_features=["功能B", "功能C"],  # "功能B" 重复
-            key_terms=["术语1", "术语2"],       # "术语1" 重复
+            key_terms=["术语1", "术语2"],  # "术语1" 重复
         )
         merged = KnowledgeLoader._merge_knowledge(base, add)
         assert len(merged.core_features) == 3  # A, B, C
@@ -459,6 +465,7 @@ class TestV2MultiFile:
     async def test_source_files_tracking(self):
         """验证 source_files 追踪所有来源"""
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmpdir:
             doc1 = Path(tmpdir) / "doc1.md"
             doc1.write_text("# Test\n\n## 核心功能\n- 功能X\n- 功能Y", encoding="utf-8")
@@ -466,6 +473,7 @@ class TestV2MultiFile:
             doc2.write_text("# Test2\n\n## 竞品\n- 竞品Z", encoding="utf-8")
 
             from agent.knowledge import KnowledgeLoader
+
             loader = KnowledgeLoader(docs_dir=tmpdir)
             knowledge = await loader.load()
             assert len(knowledge.source_files) == 2
@@ -531,11 +539,13 @@ class TestV2HotReload:
     async def test_multi_file_reload(self):
         """多文件变更检测"""
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmpdir:
             doc1 = Path(tmpdir) / "doc1.md"
             doc1.write_text("# Test\n\n## 核心功能\n- MCP协议安全防护能力", encoding="utf-8")
 
             from agent.knowledge import KnowledgeLoader
+
             loader = KnowledgeLoader(docs_dir=tmpdir)
             knowledge = await loader.load()
             assert len(knowledge.core_features) >= 1
@@ -555,11 +565,13 @@ class TestV2HotReload:
     async def test_file_removal_detected(self):
         """文件被删除后重载（无文件时不触发变更）"""
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmpdir:
             doc1 = Path(tmpdir) / "doc1.md"
             doc1.write_text("# Test\n\n## 核心功能\n- MCP协议安全防护", encoding="utf-8")
 
             from agent.knowledge import KnowledgeLoader
+
             loader = KnowledgeLoader(docs_dir=tmpdir)
             await loader.load()
 

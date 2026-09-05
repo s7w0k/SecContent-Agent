@@ -35,7 +35,9 @@ class TestSameResult:
                 )
                 is None
             )
-        d = detector.observe_action(tool_name="t", args_hash="a5", result_hash="R", new_evidence_count=1)
+        d = detector.observe_action(
+            tool_name="t", args_hash="a5", result_hash="R", new_evidence_count=1
+        )
         assert d is not None
         assert d.signal == LoopSignal.SAME_RESULT
         assert d.detail.get("count", 0) >= 5
@@ -60,9 +62,15 @@ class TestNoNewEvidence:
 class TestSameError:
     def test_same_error_three_times(self):
         detector = LoopDetector(same_error_window=3)
-        detector.observe_action(tool_name="t1", args_hash="a1", error_code="timeout", new_evidence_count=1)
-        detector.observe_action(tool_name="t2", args_hash="a2", error_code="timeout", new_evidence_count=1)
-        d = detector.observe_action(tool_name="t3", args_hash="a3", error_code="timeout", new_evidence_count=1)
+        detector.observe_action(
+            tool_name="t1", args_hash="a1", error_code="timeout", new_evidence_count=1
+        )
+        detector.observe_action(
+            tool_name="t2", args_hash="a2", error_code="timeout", new_evidence_count=1
+        )
+        d = detector.observe_action(
+            tool_name="t3", args_hash="a3", error_code="timeout", new_evidence_count=1
+        )
         assert d is not None
         assert d.signal == LoopSignal.SAME_ERROR
 
@@ -70,10 +78,18 @@ class TestSameError:
 class TestPlanOscillation:
     def test_abab_oscillation(self):
         detector = LoopDetector(plan_oscillation_window=4)
-        detector.observe_action(tool_name="t1", args_hash="a1", plan_state="A", new_evidence_count=1)
-        detector.observe_action(tool_name="t2", args_hash="a2", plan_state="B", new_evidence_count=1)
-        detector.observe_action(tool_name="t3", args_hash="a3", plan_state="A", new_evidence_count=1)
-        d = detector.observe_action(tool_name="t4", args_hash="a4", plan_state="B", new_evidence_count=1)
+        detector.observe_action(
+            tool_name="t1", args_hash="a1", plan_state="A", new_evidence_count=1
+        )
+        detector.observe_action(
+            tool_name="t2", args_hash="a2", plan_state="B", new_evidence_count=1
+        )
+        detector.observe_action(
+            tool_name="t3", args_hash="a3", plan_state="A", new_evidence_count=1
+        )
+        d = detector.observe_action(
+            tool_name="t4", args_hash="a4", plan_state="B", new_evidence_count=1
+        )
         assert d is not None
         assert d.signal == LoopSignal.PLAN_OSCILLATION
 
@@ -83,7 +99,9 @@ class TestStalledCoverage:
         detector = LoopDetector(stalled_coverage_window=3)
         detector.observe_action(tool_name="t1", args_hash="a1", coverage=0.5, new_evidence_count=1)
         detector.observe_action(tool_name="t2", args_hash="a2", coverage=0.5, new_evidence_count=1)
-        d = detector.observe_action(tool_name="t3", args_hash="a3", coverage=0.5, new_evidence_count=1)
+        d = detector.observe_action(
+            tool_name="t3", args_hash="a3", coverage=0.5, new_evidence_count=1
+        )
         assert d is not None
         assert d.signal == LoopSignal.STALLED_COVERAGE
 
