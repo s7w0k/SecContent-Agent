@@ -607,3 +607,73 @@ async def test_resume_endpoint_enqueues_worker_and_rejects_completed_task():
         await resume_pipeline_task(task["task_id"], request, user_id="user-a")
     assert no_checkpoint.value.status_code == 404
     assert no_checkpoint.value.detail["code"] == "CHECKPOINT_NOT_FOUND"
+
+
+class _ClaimOnceCollection(FakeTaskCollection):
+    """模拟并发恢复：第一次 CAS 领取成功，之后的领取全部失败（已被他人领取）。"""
+
+    def __init__(self):
+        super().__init__()
+        self.claim_attempts = 0
+
+    async def update_one(self, query: dict, update: dict):
+        self.claim_attempts += 1
+        if self.claim_attempts == 1:
+            return await super().update_one(query, update)
+        return SimpleNamespace(modified_count=0)
+
+
+@pytest.mark.asyncio
+async def test_resume_double_submit_only_enqueues_once():
+    """并发/双击恢复：任务从 failed 恢复为 pending 后，重复触发必须 409 且只入队一次。"""
+    tasks = FakeTaskCollection()
+    db = FakeDatabase(pipeline_tasks=tasks)
+    task = await _create_pipeline_task(db, "user-a", "run-v2")
+    tasks.documents[task["task_id"]]["status"] = "failed"
+    arq_pool = MagicMock()
+    arq_pool.enqueue_job = AsyncMock(return_value=SimpleNamespace(job_id="resume-job-1"))
+    request = SimpleNamespace(app=_app(db, arq_pool=arq_pool))
+    checkpoint = {"checkpoint_id": "ckpt-1", "node": "score_v2"}
+
+    with patch("api.pipeline._read_task_checkpoints", new=AsyncMock(return_value=[checkpoint])):
+        first = await resume_pipeline_task(task["task_id"], request, user_id="user-a")
+    assert first["ok"] is True
+    assert arq_pool.enqueue_job.await_count == 1
+
+    # 任务已处于 pending（第一个恢复请求已领取）：第二次触发被拒，不再入队。
+    with pytest.raises(HTTPException) as exc_info:
+        await resume_pipeline_task(task["task_id"], request, user_id="user-a")
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "TASK_NOT_RESUMABLE"
+    assert arq_pool.enqueue_job.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_resume_loses_cas_claim_returns_conflict():
+    """并发竞态：第二个恢复请求基于过期快照仍读到 failed，但 CAS 领取失败 → 409 且不入队。"""
+    tasks = _ClaimOnceCollection()
+    db = FakeDatabase(pipeline_tasks=tasks)
+    task = await _create_pipeline_task(db, "user-a", "run-v2")
+    tasks.documents[task["task_id"]]["status"] = "failed"
+    arq_pool = MagicMock()
+    arq_pool.enqueue_job = AsyncMock(return_value=SimpleNamespace(job_id="resume-job-1"))
+    request = SimpleNamespace(app=_app(db, arq_pool=arq_pool))
+    checkpoint = {"checkpoint_id": "ckpt-1", "node": "score_v2"}
+
+    with patch("api.pipeline._read_task_checkpoints", new=AsyncMock(return_value=[checkpoint])):
+        ok = await resume_pipeline_task(task["task_id"], request, user_id="user-a")
+    assert ok["ok"] is True
+    assert tasks.claim_attempts == 1
+
+    # 竞态模拟：第二请求读到的是领取前的 failed 快照，但 CAS 领取已被第一个请求占用。
+    tasks.documents[task["task_id"]]["status"] = "failed"
+    with (
+        patch("api.pipeline._read_task_checkpoints", new=AsyncMock(return_value=[checkpoint])),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await resume_pipeline_task(task["task_id"], request, user_id="user-a")
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "TASK_NOT_RESUMABLE"
+    assert "其他恢复请求" in exc_info.value.detail["message"]
+    assert tasks.claim_attempts == 2
+    assert arq_pool.enqueue_job.await_count == 1
